@@ -12,6 +12,8 @@ interface CloudProps {
   blurRadius?: number;
   flipX?: boolean;
   parallaxSpeed?: number;
+  /** Hide on narrow viewports — fewer clouds so the layer doesn’t feel crowded */
+  hideOnMobile?: boolean;
 }
 
 function GlassCloud({
@@ -26,6 +28,7 @@ function GlassCloud({
   blurRadius = 25,
   flipX = false,
   parallaxSpeed = -0.05,
+  hideOnMobile = false,
 }: CloudProps) {
   const vbW = viewBoxWidth ?? width;
   const vbH = viewBoxHeight ?? height;
@@ -34,7 +37,7 @@ function GlassCloud({
   const pad = Math.max(Math.ceil(blurRadius * 3), 72);
   return (
     <svg
-      class="cloud-svg"
+      class={`cloud-svg${hideOnMobile ? " cloud-svg--hide-sm" : ""}`}
       data-speed={parallaxSpeed}
       data-flip={flipX ? "1" : "0"}
       width={width}
@@ -145,6 +148,7 @@ const clouds: CloudProps[] = [
     blurRadius: 22,
     flipX: true,
     parallaxSpeed: -0.07,
+    hideOnMobile: true,
     style: { position: "absolute", top: "12%", right: "-6%" },
   },
   {
@@ -169,6 +173,7 @@ const clouds: CloudProps[] = [
     blurRadius: 20,
     flipX: true,
     parallaxSpeed: -0.1,
+    hideOnMobile: true,
     style: { position: "absolute", top: "58%", right: "2%" },
   },
   {
@@ -181,6 +186,7 @@ const clouds: CloudProps[] = [
     blurRadius: 24,
     flipX: true,
     parallaxSpeed: -0.05,
+    hideOnMobile: true,
     style: { position: "absolute", top: "76%", left: "-2%" },
   },
   {

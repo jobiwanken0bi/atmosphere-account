@@ -101,6 +101,27 @@ a:hover {
   isolation: isolate;
 }
 
+/* Mobile: fewer clouds + slightly smaller layer (zoom avoids fighting per-SVG parallax transforms) */
+@media (max-width: 768px) {
+  .cloud-layer {
+    zoom: 0.82;
+  }
+
+  .cloud-layer svg.cloud-svg--hide-sm {
+    display: none !important;
+  }
+
+  .cloud-layer svg.cloud-svg {
+    filter: drop-shadow(0 0 0.5px rgba(120, 200, 255, 0.35));
+  }
+}
+
+@media (max-width: 480px) {
+  .cloud-layer {
+    zoom: 0.72;
+  }
+}
+
 .cloud-layer svg.cloud-svg {
   position: absolute;
   display: block;
