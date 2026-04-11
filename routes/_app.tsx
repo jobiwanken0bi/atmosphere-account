@@ -1,5 +1,12 @@
 import { define } from "../utils.ts";
 
+/** Open Graph / social crawlers prefer absolute image URLs. Set FRESH_PUBLIC_SITE_URL on Deno Deploy (e.g. https://atmosphereaccount.com). */
+function socialImageUrl(path: string): string {
+  const base = Deno.env.get("FRESH_PUBLIC_SITE_URL")?.replace(/\/$/, "");
+  if (base) return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  return path;
+}
+
 const inlineScript = `
 (function(){
   /* ---- Scroll reveal ---- */
@@ -196,8 +203,16 @@ export default define.page(function App({ Component }) {
           content="The last social account you'll ever need. One account for all your apps."
         />
         <meta property="og:type" content="website" />
+        <meta property="og:image" content={socialImageUrl("/union.svg")} />
+        <meta property="og:image:type" content="image/svg+xml" />
+        <meta
+          property="og:image:alt"
+          content="Atmosphere Account — logo"
+        />
         <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:image" content={socialImageUrl("/union.svg")} />
         <link rel="icon" type="image/svg+xml" href="/union.svg" />
+        <link rel="apple-touch-icon" href="/union.svg" />
         <script
           src="https://unpkg.com/@lottiefiles/lottie-player@2.0.8/dist/lottie-player.js"
           defer
