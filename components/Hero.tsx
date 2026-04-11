@@ -6,8 +6,7 @@ export default function Hero() {
         The last social account<br />you'll ever need.
       </h1>
       <p class="text-body hero-subhead">
-        One account for all your apps. All your posts, likes, and connections in
-        one place. Yours to keep, wherever you go.
+        One account for all your apps. Yours to keep, wherever you go.
       </p>
       <div class="scroll-indicator" aria-hidden="true">
         <svg
