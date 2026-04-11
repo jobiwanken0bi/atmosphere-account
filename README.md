@@ -6,6 +6,12 @@ Marketing site for **Atmosphere Account** — built with [Fresh](https://fresh.d
 
 - [Deno](https://docs.deno.com/runtime/getting_started/installation) (v2+)
 
+After cloning, install dependencies (creates `node_modules/` from the lockfile):
+
+```sh
+deno install
+```
+
 ## Development
 
 ```sh
