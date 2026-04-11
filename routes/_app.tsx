@@ -31,16 +31,15 @@ const inlineScript = `
 
   var nav = document.getElementById('main-nav');
 
-  /* ---- Sky gradient: starts DAY, cycles day->sunset->night->sunrise->day ---- */
+  /* ---- Sky gradient: gentle day -> golden hour -> warm sunset -> back to day (never dark) ---- */
   var K = [
     {p:0,    c:['#e8f0fe','#c9d8f5','#a8c4f0','#c0d4f5','#ebe4f5']},
-    {p:0.12, c:['#e0e8f8','#c8d0e8','#b0c0e0','#c8c0d8','#e0d4e0']},
-    {p:0.22, c:['#d08058','#d88868','#e87838','#f09848','#f0c870']},
-    {p:0.32, c:['#301040','#4a1848','#882858','#c04860','#d87050']},
-    {p:0.45, c:['#060510','#0a0f20','#0f1830','#152038','#0a0f1a']},
-    {p:0.60, c:['#060510','#0a0f20','#0f1830','#152038','#0a0f1a']},
-    {p:0.72, c:['#1a0a2e','#381540','#703050','#b86060','#e0a070']},
-    {p:0.84, c:['#c08070','#d8a888','#e0c8b0','#e8dcd0','#f0e8e0']},
+    {p:0.15, c:['#eae0d4','#ddd0c2','#ccc0b0','#d8ccc0','#e8ddd0']},
+    {p:0.28, c:['#eabc96','#e0b090','#d49870','#deb090','#ead0b0']},
+    {p:0.42, c:['#dca090','#d49488','#c88878','#d09488','#dcb8a8']},
+    {p:0.58, c:['#dca090','#d49488','#c88878','#d09488','#dcb8a8']},
+    {p:0.72, c:['#eabc96','#e0b090','#d49870','#deb090','#ead0b0']},
+    {p:0.85, c:['#eae0d4','#ddd0c2','#ccc0b0','#d8ccc0','#e8ddd0']},
     {p:1,    c:['#e8f0fe','#c9d8f5','#a8c4f0','#c0d4f5','#ebe4f5']}
   ];
 
