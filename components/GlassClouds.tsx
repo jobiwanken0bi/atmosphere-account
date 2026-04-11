@@ -11,8 +11,6 @@ interface CloudProps {
   fillOpacity?: number;
   blurRadius?: number;
   flipX?: boolean;
-  /** When true, cloud is flipped on Y (applied on narrow viewports in scroll script) */
-  flipY?: boolean;
   parallaxSpeed?: number;
   /** Hide on narrow viewports — fewer clouds so the layer doesn’t feel crowded */
   hideOnMobile?: boolean;
@@ -29,7 +27,6 @@ function GlassCloud({
   fillOpacity = 0.2,
   blurRadius = 25,
   flipX = false,
-  flipY = false,
   parallaxSpeed = -0.05,
   hideOnMobile = false,
 }: CloudProps) {
@@ -43,7 +40,6 @@ function GlassCloud({
       class={`cloud-svg${hideOnMobile ? " cloud-svg--hide-sm" : ""}`}
       data-speed={parallaxSpeed}
       data-flip={flipX ? "1" : "0"}
-      data-flip-y={flipY ? "1" : "0"}
       width={width}
       height={height}
       viewBox={`0 0 ${vbW} ${vbH}`}
@@ -138,8 +134,7 @@ const clouds: CloudProps[] = [
       "M430.377 323.959C431.455 323.986 432.536 324 433.621 324C495.134 324 545 279.795 545 225.266C545 172.442 498.203 129.307 439.355 126.661C424.209 88.0793 382.821 60.3905 334.137 60.3905C326.999 60.3905 320.017 60.9858 313.253 62.1233C296.847 25.72 256.703 0 209.782 0C148.269 0 98.4028 44.2046 98.4028 98.7337C98.4028 108.487 99.9982 117.911 102.97 126.81C45.3852 130.62 0 173.245 0 225.266C0 279.795 49.8661 324 111.379 324C113.192 324 114.994 323.962 116.786 323.886V324H430.377V323.959Z",
     fillOpacity: 0.18,
     blurRadius: 25,
-    flipX: false,
-    flipY: true,
+    flipX: true,
     parallaxSpeed: -0.04,
     style: { position: "absolute", top: "3%", left: "-4%" },
   },
@@ -152,7 +147,6 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.15,
     blurRadius: 22,
     flipX: true,
-    flipY: true,
     parallaxSpeed: -0.07,
     hideOnMobile: true,
     style: { position: "absolute", top: "12%", right: "-6%" },
@@ -166,7 +160,6 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.14,
     blurRadius: 28,
     flipX: false,
-    flipY: false,
     parallaxSpeed: -0.02,
     style: { position: "absolute", top: "36%", left: "5%" },
   },
@@ -179,7 +172,6 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.2,
     blurRadius: 20,
     flipX: true,
-    flipY: true,
     parallaxSpeed: -0.1,
     hideOnMobile: true,
     style: { position: "absolute", top: "58%", right: "2%" },
@@ -193,7 +185,6 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.16,
     blurRadius: 24,
     flipX: true,
-    flipY: false,
     parallaxSpeed: -0.05,
     hideOnMobile: true,
     style: { position: "absolute", top: "76%", left: "-2%" },
@@ -209,8 +200,7 @@ const clouds: CloudProps[] = [
       "M430.377 323.959C431.455 323.986 432.536 324 433.621 324C495.134 324 545 279.795 545 225.266C545 172.442 498.203 129.307 439.355 126.661C424.209 88.0793 382.821 60.3905 334.137 60.3905C326.999 60.3905 320.017 60.9858 313.253 62.1233C296.847 25.72 256.703 0 209.782 0C148.269 0 98.4028 44.2046 98.4028 98.7337C98.4028 108.487 99.9982 117.911 102.97 126.81C45.3852 130.62 0 173.245 0 225.266C0 279.795 49.8661 324 111.379 324C113.192 324 114.994 323.962 116.786 323.886V324H430.377V323.959Z",
     fillOpacity: 0.19,
     blurRadius: 25,
-    flipX: false,
-    flipY: true,
+    flipX: true,
     parallaxSpeed: -0.13,
     style: { position: "absolute", top: "90%", right: "12%" },
   },

@@ -85,7 +85,7 @@ const inlineScript = `
   var svgs=document.querySelectorAll('.cloud-svg');
   var cData=[];
   svgs.forEach(function(el){
-    cData.push({el:el,speed:parseFloat(el.dataset.speed)||0,flip:el.dataset.flip==='1',flipY:el.dataset.flipY==='1'});
+    cData.push({el:el,speed:parseFloat(el.dataset.speed)||0,flip:el.dataset.flip==='1'});
   });
 
   /* ---- Main scroll update ---- */
@@ -169,15 +169,11 @@ const inlineScript = `
         raysEl.style.opacity='0';
       }
 
-    /* Cloud parallax — frozen at first-load position when static; Y-flip on mobile only */
-    var mobile=window.innerWidth<=768;
+    /* Cloud parallax — frozen at first-load position when static; horizontal flip via data-flip */
     for(var i=0;i<cData.length;i++){
       var d=cData[i];
       var ty=skyAnimated()?scrollY*d.speed:0;
-      var sx=d.flip?-1:1;
-      var sy=mobile&&d.flipY?-1:1;
-      var scaleStr=(sx!==1||sy!==1)?' scale('+sx+','+sy+')':'';
-      d.el.style.transform='translate3d(0,'+ty+'px,0)'+scaleStr;
+      d.el.style.transform='translate3d(0,'+ty+'px,0)'+(d.flip?' scaleX(-1)':'');
     }
 
     if(nav){
