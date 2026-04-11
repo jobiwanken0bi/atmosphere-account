@@ -18,7 +18,7 @@ export default function BlueskySection() {
         </div>
 
         <div class="provider-grid">
-          <div class="glass provider-card provider-card-featured">
+          <div class="glass provider-card">
             <div class="provider-card-badge font-mono">Most popular</div>
             <div class="provider-logo-row">
               <svg
