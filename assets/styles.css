@@ -101,10 +101,10 @@ a:hover {
   isolation: isolate;
 }
 
-/* Mobile: fewer clouds + slightly smaller layer (zoom avoids fighting per-SVG parallax transforms) */
+/* Mobile: fewer clouds + smaller layer (zoom avoids fighting per-SVG parallax transforms) */
 @media (max-width: 768px) {
   .cloud-layer {
-    zoom: 0.82;
+    zoom: 0.66;
   }
 
   .cloud-layer svg.cloud-svg--hide-sm {
@@ -118,7 +118,7 @@ a:hover {
 
 @media (max-width: 480px) {
   .cloud-layer {
-    zoom: 0.72;
+    zoom: 0.56;
   }
 }
 
