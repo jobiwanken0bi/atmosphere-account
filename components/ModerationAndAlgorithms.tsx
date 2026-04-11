@@ -88,8 +88,15 @@ export default function YourChoice() {
         <div class="your-choice-grid">
           {cards.map((c) => (
             <div key={c.title} class="glass feature-card">
-              <div class="mod-algo-icon" aria-hidden="true">{c.icon}</div>
-              <h3 class="text-subsection mb-1">{c.title}</h3>
+              <div class="feature-card-title-row">
+                <span
+                  class="mod-algo-icon mod-algo-icon--inline"
+                  aria-hidden="true"
+                >
+                  {c.icon}
+                </span>
+                <h3 class="text-subsection">{c.title}</h3>
+              </div>
               <p class="text-body-sm">{c.body}</p>
             </div>
           ))}

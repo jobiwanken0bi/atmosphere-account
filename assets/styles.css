@@ -657,16 +657,33 @@ h1, h2, h3, h4 {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
 }
 
+/* Icon + title on one row (matches provider card pattern) */
+.feature-card-title-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.feature-card-title-row .text-subsection {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
 .feature-icon {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 1rem;
-  border-radius: 14px;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  border-radius: 10px;
   background: rgba(42, 90, 168, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #254a9e;
+  flex-shrink: 0;
+  margin-top: 0.1em;
 }
 
 /* ================================
@@ -1241,9 +1258,20 @@ h1, h2, h3, h4 {
   gap: 0.5rem;
 }
 
-.mod-algo-icon {
+.mod-algo-icon--inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 0;
+  margin-top: 0.1em;
   color: #1f4f96;
-  margin-bottom: 0.25rem;
+}
+
+.mod-algo-icon--inline svg {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 /* ================================
@@ -1588,7 +1616,7 @@ body {
   outline-color: rgba(142, 200, 255, 0.55);
 }
 
-.dark-phase .mod-algo-icon {
+.dark-phase .mod-algo-icon--inline {
   color: #9ec8f0;
 }
 

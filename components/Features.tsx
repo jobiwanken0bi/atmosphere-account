@@ -2,8 +2,8 @@ function Icon({ children }: { children: any }) {
   return (
     <div class="feature-icon">
       <svg
-        width="24"
-        height="24"
+        width="20"
+        height="20"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -85,8 +85,10 @@ export default function Features() {
         <div class="feature-grid">
           {features.map((f) => (
             <div key={f.title} class="glass feature-card">
-              {f.icon}
-              <h3 class="text-subsection mb-1">{f.title}</h3>
+              <div class="feature-card-title-row">
+                {f.icon}
+                <h3 class="text-subsection">{f.title}</h3>
+              </div>
               <p class="text-body-sm">{f.description}</p>
             </div>
           ))}
