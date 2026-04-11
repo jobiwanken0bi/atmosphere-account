@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap");
 
 *,
 *::before,
@@ -19,7 +19,7 @@ html {
 body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   color: #0e1428;
   overflow-x: hidden;
   position: relative;
@@ -51,22 +51,34 @@ a:hover {
 
 .sky-bg {
   background:
-    radial-gradient(ellipse 120% 80% at 20% 10%, rgba(180, 210, 255, 0.6) 0%, transparent 50%),
-    radial-gradient(ellipse 100% 60% at 80% 20%, rgba(200, 180, 255, 0.4) 0%, transparent 50%),
-    radial-gradient(ellipse 80% 50% at 60% 80%, rgba(180, 220, 255, 0.3) 0%, transparent 50%),
+    radial-gradient(
+      ellipse 120% 80% at 20% 10%,
+      rgba(180, 210, 255, 0.6) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+    ellipse 100% 60% at 80% 20%,
+    rgba(200, 180, 255, 0.4) 0%,
+    transparent 50%
+  ),
+    radial-gradient(
+    ellipse 80% 50% at 60% 80%,
+    rgba(180, 220, 255, 0.3) 0%,
+    transparent 50%
+  ),
     linear-gradient(
-      180deg,
-      #e8f0fe 0%,
-      #dce6f8 8%,
-      #c9d8f5 18%,
-      #b8cff5 30%,
-      #a8c4f0 42%,
-      #c0d4f5 55%,
-      #d4e0f8 68%,
-      #e0e8fa 78%,
-      #ebe4f5 88%,
-      #f0e8f0 100%
-    );
+    180deg,
+    #e8f0fe 0%,
+    #dce6f8 8%,
+    #c9d8f5 18%,
+    #b8cff5 30%,
+    #a8c4f0 42%,
+    #c0d4f5 55%,
+    #d4e0f8 68%,
+    #e0e8fa 78%,
+    #ebe4f5 88%,
+    #f0e8f0 100%
+  );
   min-height: 100vh;
   position: relative;
 }
@@ -86,13 +98,15 @@ a:hover {
   pointer-events: none;
   z-index: 0;
   overflow: visible;
+  isolation: isolate;
 }
 
 .cloud-layer svg {
   position: absolute;
   display: block;
   overflow: visible;
-  will-change: transform;
+  /* Avoid will-change: transform — it worsens backdrop/compositing seams when transforms update every frame */
+  backface-visibility: hidden;
   transition: filter 0.8s ease;
 }
 
@@ -115,11 +129,11 @@ a:hover {
    ================================ */
 
 .font-mono {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
 
 h1, h2, h3, h4 {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-weight: 600;
   line-height: 1.2;
   color: #0e1428;
@@ -174,7 +188,11 @@ h1, h2, h3, h4 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: background 0.3s, backdrop-filter 0.3s;
+  transition:
+    background 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
+  backface-visibility: hidden;
 }
 
 .nav.scrolled {
@@ -196,11 +214,12 @@ h1, h2, h3, h4 {
 .nav-logo img {
   width: 32px;
   height: 32px;
-  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%) hue-rotate(195deg) brightness(95%);
+  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%)
+    hue-rotate(195deg) brightness(95%);
 }
 
 .nav-logo-text {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-weight: 600;
   font-size: 0.9rem;
   letter-spacing: -0.02em;
@@ -215,7 +234,7 @@ h1, h2, h3, h4 {
 .nav-btn {
   padding: 0.5rem 1.25rem;
   border-radius: 100px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-size: 0.85rem;
   font-weight: 500;
   text-decoration: none;
@@ -239,6 +258,7 @@ h1, h2, h3, h4 {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.72);
+  backface-visibility: hidden;
 }
 
 .nav-btn-glass:hover {
@@ -303,6 +323,7 @@ h1, h2, h3, h4 {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  backface-visibility: hidden;
 }
 
 .glass-strong {
@@ -314,6 +335,7 @@ h1, h2, h3, h4 {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  backface-visibility: hidden;
 }
 
 .glass-subtle {
@@ -325,6 +347,7 @@ h1, h2, h3, h4 {
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.045),
     inset 0 1px 0 rgba(255, 255, 255, 0.58);
+  backface-visibility: hidden;
 }
 
 /* ================================
@@ -400,9 +423,15 @@ h1, h2, h3, h4 {
 }
 
 @keyframes bounce {
-  0%, 20%, 50%, 80%, 100% { transform: translateX(-50%) translateY(0); }
-  40% { transform: translateX(-50%) translateY(-10px); }
-  60% { transform: translateX(-50%) translateY(-5px); }
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateX(-50%) translateY(0);
+  }
+  40% {
+    transform: translateX(-50%) translateY(-10px);
+  }
+  60% {
+    transform: translateX(-50%) translateY(-5px);
+  }
 }
 
 /* ================================
@@ -429,7 +458,8 @@ h1, h2, h3, h4 {
   width: 72px;
   height: 72px;
   z-index: 2;
-  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%) hue-rotate(195deg) brightness(95%);
+  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%)
+    hue-rotate(195deg) brightness(95%);
 }
 
 /* ================================
@@ -495,7 +525,7 @@ h1, h2, h3, h4 {
   padding: 0.5rem 1.25rem;
   border-radius: 100px;
   font-size: 0.9rem;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-weight: 500;
   background: rgba(42, 90, 168, 0.1);
   border: 1px solid rgba(42, 90, 168, 0.22);
@@ -555,7 +585,7 @@ h1, h2, h3, h4 {
   border-radius: 50%;
   background: rgba(42, 90, 168, 0.12);
   color: #254a9e;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-weight: 700;
   font-size: 1.25rem;
   margin-bottom: 1.25rem;
@@ -590,14 +620,20 @@ h1, h2, h3, h4 {
   padding: 0 1rem;
 }
 
-.flow-column-left { align-items: flex-end; }
-.flow-column-left .flow-column-label { text-align: right; }
-.flow-column-right { align-items: flex-start; }
+.flow-column-left {
+  align-items: flex-end;
+}
+.flow-column-left .flow-column-label {
+  text-align: right;
+}
+.flow-column-right {
+  align-items: flex-start;
+}
 
 .flow-node {
   padding: 0.6rem 1.25rem;
   border-radius: 100px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-size: 0.85rem;
   font-weight: 500;
   white-space: nowrap;
@@ -611,8 +647,14 @@ h1, h2, h3, h4 {
 }
 
 @keyframes flowFadeIn {
-  from { opacity: 0; transform: translateX(0); }
-  to   { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .flow-node-left {
@@ -624,13 +666,25 @@ h1, h2, h3, h4 {
 }
 
 @keyframes flowSlideLeft {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes flowSlideRight {
-  from { opacity: 0; transform: translateX(-20px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 /* Center hub */
@@ -660,7 +714,8 @@ h1, h2, h3, h4 {
 }
 
 .flow-hub-logo {
-  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%) hue-rotate(195deg) brightness(95%);
+  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%)
+    hue-rotate(195deg) brightness(95%);
 }
 
 .flow-hub-label {
@@ -684,13 +739,24 @@ h1, h2, h3, h4 {
   z-index: 1;
 }
 
-.flow-lines-left { right: 100%; margin-right: -0.5rem; }
-.flow-lines-right { left: 100%; margin-left: -0.5rem; }
+.flow-lines-left {
+  right: 100%;
+  margin-right: -0.5rem;
+}
+.flow-lines-right {
+  left: 100%;
+  margin-left: -0.5rem;
+}
 
 .flow-line {
   height: 2px;
   width: 100%;
-  background: linear-gradient(90deg, rgba(42, 90, 168, 0.14), rgba(42, 90, 168, 0.45), rgba(42, 90, 168, 0.14));
+  background: linear-gradient(
+    90deg,
+    rgba(42, 90, 168, 0.14),
+    rgba(42, 90, 168, 0.45),
+    rgba(42, 90, 168, 0.14)
+  );
   border-radius: 1px;
   animation: flowPulse 2.4s ease-in-out infinite;
 }
@@ -700,8 +766,14 @@ h1, h2, h3, h4 {
 }
 
 @keyframes flowPulse {
-  0%, 100% { opacity: 0.42; transform: scaleX(0.6); }
-  50%      { opacity: 1; transform: scaleX(1); }
+  0%, 100% {
+    opacity: 0.42;
+    transform: scaleX(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 
 /* Mobile: stack vertically */
@@ -726,7 +798,9 @@ h1, h2, h3, h4 {
     padding: 0.5rem 0;
   }
 
-  .flow-lines { display: none; }
+  .flow-lines {
+    display: none;
+  }
 }
 
 /* ================================
@@ -753,7 +827,7 @@ h1, h2, h3, h4 {
 }
 
 .app-card-name {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-weight: 600;
   font-size: 0.95rem;
   margin-bottom: 0.25rem;
@@ -781,7 +855,8 @@ h1, h2, h3, h4 {
   max-width: 360px;
   width: 100%;
   height: auto;
-  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%) hue-rotate(195deg) brightness(95%);
+  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%)
+    hue-rotate(195deg) brightness(95%);
 }
 
 .badge-downloads {
@@ -1033,24 +1108,61 @@ a.back-to-top:hover {
    Utility
    ================================ */
 
-.mb-1 { margin-bottom: 0.5rem; }
-.mb-2 { margin-bottom: 1rem; }
-.mb-3 { margin-bottom: 1.5rem; }
-.mb-4 { margin-bottom: 2rem; }
-.mt-2 { margin-top: 1rem; }
-.mt-3 { margin-top: 1.5rem; }
-.mt-4 { margin-top: 2rem; }
-.mx-auto { margin-left: auto; margin-right: auto; }
-.inline-block { display: inline-block; }
-.block { display: block; }
-.flex { display: flex; }
-.flex-col { flex-direction: column; }
-.items-center { align-items: center; }
-.justify-center { justify-content: center; }
-.gap-1 { gap: 0.5rem; }
-.gap-2 { gap: 1rem; }
-.gap-3 { gap: 1.5rem; }
-.w-full { width: 100%; }
+.mb-1 {
+  margin-bottom: 0.5rem;
+}
+.mb-2 {
+  margin-bottom: 1rem;
+}
+.mb-3 {
+  margin-bottom: 1.5rem;
+}
+.mb-4 {
+  margin-bottom: 2rem;
+}
+.mt-2 {
+  margin-top: 1rem;
+}
+.mt-3 {
+  margin-top: 1.5rem;
+}
+.mt-4 {
+  margin-top: 2rem;
+}
+.mx-auto {
+  margin-left: auto;
+  margin-right: auto;
+}
+.inline-block {
+  display: inline-block;
+}
+.block {
+  display: block;
+}
+.flex {
+  display: flex;
+}
+.flex-col {
+  flex-direction: column;
+}
+.items-center {
+  align-items: center;
+}
+.justify-center {
+  justify-content: center;
+}
+.gap-1 {
+  gap: 0.5rem;
+}
+.gap-2 {
+  gap: 1rem;
+}
+.gap-3 {
+  gap: 1.5rem;
+}
+.w-full {
+  width: 100%;
+}
 
 /* ================================
    Dark Phase (sunset / night)
@@ -1195,7 +1307,12 @@ body {
 }
 
 .dark-phase .flow-line {
-  background: linear-gradient(90deg, rgba(158, 200, 240, 0.1), rgba(158, 200, 240, 0.42), rgba(158, 200, 240, 0.1));
+  background: linear-gradient(
+    90deg,
+    rgba(158, 200, 240, 0.1),
+    rgba(158, 200, 240, 0.42),
+    rgba(158, 200, 240, 0.1)
+  );
 }
 
 .dark-phase .pillar-number {

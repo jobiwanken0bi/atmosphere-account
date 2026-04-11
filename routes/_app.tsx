@@ -60,9 +60,10 @@ const inlineScript = `
   /* ---- Sun glow + rays elements ---- */
   var layer=document.querySelector('.cloud-layer');
   var sunEl=document.createElement('div');
-  sunEl.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  sunEl.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;backface-visibility:hidden;transform:translateZ(0);';
   var raysEl=document.createElement('div');
-  raysEl.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;mix-blend-mode:screen;';
+  /* soft-light is less prone to full-viewport seam artifacts than screen while scrolling */
+  raysEl.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;mix-blend-mode:soft-light;backface-visibility:hidden;transform:translateZ(0);';
   if(layer){
     layer.parentNode.insertBefore(sunEl,layer);
     layer.parentNode.insertBefore(raysEl,layer);
@@ -159,7 +160,7 @@ const inlineScript = `
     for(var i=0;i<cData.length;i++){
       var d=cData[i];
       var ty=scrollY*d.speed;
-      d.el.style.transform='translateY('+ty+'px)'+(d.flip?' scaleX(-1)':'');
+      d.el.style.transform='translate3d(0,'+ty+'px,0)'+(d.flip?' scaleX(-1)':'');
     }
 
     if(nav){
