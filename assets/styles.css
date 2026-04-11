@@ -138,7 +138,8 @@ a:hover {
    Sun Glow / Rays (behind clouds)
    ================================ */
 
-#sun-glow, #sun-rays {
+#sun-glow,
+#sun-rays {
   position: fixed;
   top: 0;
   left: 0;
@@ -146,6 +147,98 @@ a:hover {
   height: 100%;
   pointer-events: none;
   z-index: 0;
+}
+
+/* Sky “static” mode is handled in JS (p=0, no cloud parallax) — clouds stay visible */
+
+.nav-protocol-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.nav-sky-switch-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+  padding: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(18, 26, 47, 0.55);
+}
+
+.nav-sky-switch-text {
+  line-height: 1;
+}
+
+.nav-sky-switch {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.nav-sky-switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.nav-sky-switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 100px;
+  background: rgba(18, 26, 47, 0.14);
+  transition: background 0.2s ease;
+  cursor: pointer;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.nav-sky-switch-input:focus-visible + .nav-sky-switch-track {
+  outline: 2px solid rgba(42, 90, 168, 0.45);
+  outline-offset: 2px;
+}
+
+.nav-sky-switch-input:checked + .nav-sky-switch-track {
+  background: rgba(42, 90, 168, 0.42);
+}
+
+.nav-sky-switch-track::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: transform 0.2s ease;
+}
+
+.nav-sky-switch-input:checked + .nav-sky-switch-track::after {
+  transform: translateX(16px);
+}
+
+@media (max-width: 480px) {
+  .nav-sky-switch-label {
+    font-size: 0.6rem;
+    gap: 0.3rem;
+  }
+
+  .nav-protocol-stack {
+    gap: 0.28rem;
+  }
 }
 
 /* ================================
@@ -254,7 +347,7 @@ h1, h2, h3, h4 {
 
 .nav-links {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
 }
 
@@ -1327,6 +1420,23 @@ body {
 .dark-phase .nav-btn-ghost:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.14);
+}
+
+.dark-phase .nav-sky-switch-label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.dark-phase .nav-sky-switch-track {
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.dark-phase .nav-sky-switch-input:checked + .nav-sky-switch-track {
+  background: rgba(158, 200, 240, 0.35);
+}
+
+.dark-phase .nav-sky-switch-track::after {
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .dark-phase .nav-coming-soon:hover::after,

@@ -30,6 +30,10 @@ const inlineScript = `
   document.querySelectorAll('lottie-player').forEach(function(el){ lottieIo.observe(el); });
 
   var nav = document.getElementById('main-nav');
+  var SKY_KEY = 'atmosphere-sky-effects';
+  function skyAnimated() {
+    return !document.documentElement.classList.contains('sky-static');
+  }
 
   /* ---- Sky gradient: gentle day -> golden hour -> warm sunset -> back to day (never dark) ---- */
   var K = [
@@ -66,8 +70,10 @@ const inlineScript = `
   /* ---- Sun glow + rays elements ---- */
   var layer=document.querySelector('.cloud-layer');
   var sunEl=document.createElement('div');
+  sunEl.id='sun-glow';
   sunEl.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;backface-visibility:hidden;transform:translateZ(0);';
   var raysEl=document.createElement('div');
+  raysEl.id='sun-rays';
   /* soft-light is less prone to full-viewport seam artifacts than screen while scrolling */
   raysEl.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;mix-blend-mode:soft-light;backface-visibility:hidden;transform:translateZ(0);';
   if(layer){
@@ -88,84 +94,85 @@ const inlineScript = `
     var scrollY=window.scrollY;
     var maxScroll=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
     var p=Math.min(1,Math.max(0,scrollY/maxScroll));
+    var pUse=skyAnimated()?p:0;
 
-    document.body.style.background=gradient(p);
+    document.body.style.background=gradient(pUse);
 
-    var lum=luminance(p);
+    var lum=luminance(pUse);
     document.body.classList.toggle('dark-phase',lum<0.45);
 
-    /* ---- Sun arc: noon at p=0, sunset right, midnight below, sunrise left ---- */
-    var ang=2*Math.PI*p;
-    var sunX=50+65*Math.sin(ang);
-    var sunY=40-58*Math.cos(ang);
+    /* ---- Sun arc: noon at p=0; when static, pUse stays 0 (first-load look) ---- */
+    var ang=2*Math.PI*pUse;
+      var sunX=50+65*Math.sin(ang);
+      var sunY=40-58*Math.cos(ang);
 
-    /* Visibility: 1 at highest point, fades toward horizon */
-    var vis=Math.max(0,Math.min(1,(52-sunY)/65));
+      /* Visibility: 1 at highest point, fades toward horizon */
+      var vis=Math.max(0,Math.min(1,(52-sunY)/65));
 
-    /* Color temperature: warm gold when low, bright yellow-white when high */
-    var ht=Math.max(0,Math.min(1,(25-sunY)/55));
-    var sr=255;
-    var sg=Math.round(185+ht*55);
-    var sb=Math.round(60+ht*140);
+      /* Color temperature: warm gold when low, bright yellow-white when high */
+      var ht=Math.max(0,Math.min(1,(25-sunY)/55));
+      var sr=255;
+      var sg=Math.round(185+ht*55);
+      var sb=Math.round(60+ht*140);
 
-    var op=vis*0.6;
-    var sz=50+vis*30;
+      var op=vis*0.6;
+      var sz=50+vis*30;
 
-    /* Primary glow: large warm radial from sun position */
-    if(vis>0.005){
-      sunEl.style.background=
-        'radial-gradient(ellipse '+sz+'% '+sz+'% at '+sunX+'% '+sunY+'%,'+
-          'rgba('+sr+','+sg+','+sb+','+op.toFixed(3)+') 0%,'+
-          'rgba('+sr+','+sg+','+sb+','+(op*0.45).toFixed(3)+') 20%,'+
-          'rgba('+sr+','+sg+','+sb+','+(op*0.15).toFixed(3)+') 45%,'+
-          'transparent 70%),'+
-        'radial-gradient(ellipse '+(sz*1.8)+'% '+(sz*1.8)+'% at '+sunX+'% '+sunY+'%,'+
-          'rgba('+sr+','+sg+','+sb+','+(op*0.1).toFixed(3)+') 0%,'+
-          'transparent 60%)';
+      /* Primary glow: large warm radial from sun position */
+      if(vis>0.005){
+        sunEl.style.background=
+          'radial-gradient(ellipse '+sz+'% '+sz+'% at '+sunX+'% '+sunY+'%,'+
+            'rgba('+sr+','+sg+','+sb+','+op.toFixed(3)+') 0%,'+
+            'rgba('+sr+','+sg+','+sb+','+(op*0.45).toFixed(3)+') 20%,'+
+            'rgba('+sr+','+sg+','+sb+','+(op*0.15).toFixed(3)+') 45%,'+
+            'transparent 70%),'+
+          'radial-gradient(ellipse '+(sz*1.8)+'% '+(sz*1.8)+'% at '+sunX+'% '+sunY+'%,'+
+            'rgba('+sr+','+sg+','+sb+','+(op*0.1).toFixed(3)+') 0%,'+
+            'transparent 60%)';
 
-      /* God rays: conic gradient beams radiating from sun */
-      var rayOp=vis*0.18;
-      var rayC='rgba('+sr+','+sg+','+sb+',';
-      raysEl.style.background=
-        'conic-gradient(from 0deg at '+sunX+'% '+sunY+'%,'+
-          rayC+rayOp.toFixed(3)+') 0deg,'+
-          'transparent 8deg,'+
-          'transparent 25deg,'+
-          rayC+(rayOp*0.7).toFixed(3)+') 30deg,'+
-          'transparent 38deg,'+
-          'transparent 60deg,'+
-          rayC+(rayOp*0.9).toFixed(3)+') 65deg,'+
-          'transparent 75deg,'+
-          'transparent 100deg,'+
-          rayC+(rayOp*0.6).toFixed(3)+') 105deg,'+
-          'transparent 115deg,'+
-          'transparent 140deg,'+
-          rayC+(rayOp*0.8).toFixed(3)+') 148deg,'+
-          'transparent 158deg,'+
-          'transparent 185deg,'+
-          rayC+(rayOp*0.5).toFixed(3)+') 190deg,'+
-          'transparent 200deg,'+
-          'transparent 225deg,'+
-          rayC+(rayOp*0.7).toFixed(3)+') 232deg,'+
-          'transparent 242deg,'+
-          'transparent 270deg,'+
-          rayC+(rayOp*0.6).toFixed(3)+') 278deg,'+
-          'transparent 288deg,'+
-          'transparent 315deg,'+
-          rayC+(rayOp*0.8).toFixed(3)+') 322deg,'+
-          'transparent 332deg,'+
-          'transparent 355deg,'+
-          rayC+(rayOp*0.4).toFixed(3)+') 360deg)';
-      raysEl.style.opacity=vis;
-    } else {
-      sunEl.style.background='none';
-      raysEl.style.opacity='0';
-    }
+        /* God rays: conic gradient beams radiating from sun */
+        var rayOp=vis*0.18;
+        var rayC='rgba('+sr+','+sg+','+sb+',';
+        raysEl.style.background=
+          'conic-gradient(from 0deg at '+sunX+'% '+sunY+'%,'+
+            rayC+rayOp.toFixed(3)+') 0deg,'+
+            'transparent 8deg,'+
+            'transparent 25deg,'+
+            rayC+(rayOp*0.7).toFixed(3)+') 30deg,'+
+            'transparent 38deg,'+
+            'transparent 60deg,'+
+            rayC+(rayOp*0.9).toFixed(3)+') 65deg,'+
+            'transparent 75deg,'+
+            'transparent 100deg,'+
+            rayC+(rayOp*0.6).toFixed(3)+') 105deg,'+
+            'transparent 115deg,'+
+            'transparent 140deg,'+
+            rayC+(rayOp*0.8).toFixed(3)+') 148deg,'+
+            'transparent 158deg,'+
+            'transparent 185deg,'+
+            rayC+(rayOp*0.5).toFixed(3)+') 190deg,'+
+            'transparent 200deg,'+
+            'transparent 225deg,'+
+            rayC+(rayOp*0.7).toFixed(3)+') 232deg,'+
+            'transparent 242deg,'+
+            'transparent 270deg,'+
+            rayC+(rayOp*0.6).toFixed(3)+') 278deg,'+
+            'transparent 288deg,'+
+            'transparent 315deg,'+
+            rayC+(rayOp*0.8).toFixed(3)+') 322deg,'+
+            'transparent 332deg,'+
+            'transparent 355deg,'+
+            rayC+(rayOp*0.4).toFixed(3)+') 360deg)';
+        raysEl.style.opacity=vis;
+      } else {
+        sunEl.style.background='none';
+        raysEl.style.opacity='0';
+      }
 
-    /* Cloud parallax + sun-lit highlight on each cloud */
+    /* Cloud parallax — frozen at first-load position when static */
     for(var i=0;i<cData.length;i++){
       var d=cData[i];
-      var ty=scrollY*d.speed;
+      var ty=skyAnimated()?scrollY*d.speed:0;
       d.el.style.transform='translate3d(0,'+ty+'px,0)'+(d.flip?' scaleX(-1)':'');
     }
 
@@ -174,6 +181,27 @@ const inlineScript = `
       else nav.classList.remove('scrolled');
     }
     ticking=false;
+  }
+
+  var toggleInput=document.getElementById('sky-effects-toggle');
+  if(toggleInput){
+    function syncSkyToggle(){
+      var on=skyAnimated();
+      toggleInput.checked=on;
+      toggleInput.setAttribute('aria-label',on?'Effects on. Turn off to keep colors and clouds fixed like the first screen.':'Effects off. Sky matches the first-load colors and cloud positions.');
+    }
+    toggleInput.addEventListener('change',function(){
+      if(toggleInput.checked){
+        document.documentElement.classList.remove('sky-static');
+        try{localStorage.setItem(SKY_KEY,'1');}catch(_){}
+      }else{
+        document.documentElement.classList.add('sky-static');
+        try{localStorage.setItem(SKY_KEY,'0');}catch(_){}
+      }
+      syncSkyToggle();
+      update();
+    });
+    syncSkyToggle();
   }
 
   window.addEventListener('scroll',function(){
@@ -212,6 +240,12 @@ export default define.page(function App({ Component }) {
         <meta name="twitter:image" content={socialImageUrl("/union.svg")} />
         <link rel="icon" type="image/svg+xml" href="/union.svg" />
         <link rel="apple-touch-icon" href="/union.svg" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{if(localStorage.getItem('atmosphere-sky-effects')==='0')document.documentElement.classList.add('sky-static');}catch(e){}})();",
+          }}
+        />
         <script
           src="https://unpkg.com/@lottiefiles/lottie-player@2.0.8/dist/lottie-player.js"
           defer
