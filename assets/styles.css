@@ -101,13 +101,16 @@ a:hover {
   isolation: isolate;
 }
 
-.cloud-layer svg {
+.cloud-layer svg.cloud-svg {
   position: absolute;
   display: block;
   overflow: visible;
   /* Avoid will-change: transform — it worsens backdrop/compositing seams when transforms update every frame */
   backface-visibility: hidden;
   transition: filter 0.8s ease;
+  /* Smoother curves when scaled (max-width: 100% on svg) + softer silhouette */
+  shape-rendering: geometricPrecision;
+  filter: drop-shadow(0 0 0.65px rgba(120, 200, 255, 0.45));
 }
 
 /* ================================

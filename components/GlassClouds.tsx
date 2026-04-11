@@ -44,12 +44,16 @@ function GlassCloud({
           d={path}
           fill="var(--cloud-fill, #79CFFF)"
           fill-opacity={fillOpacity}
+          shape-rendering="geometricPrecision"
         />
         <path
           d={path}
           stroke={`url(#grad_${id})`}
           stroke-width="4"
+          stroke-linejoin="round"
+          stroke-linecap="round"
           fill="none"
+          shape-rendering="geometricPrecision"
         />
       </g>
       <defs>
