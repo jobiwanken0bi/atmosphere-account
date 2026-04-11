@@ -6,9 +6,8 @@ import WhatIsAtmosphere from "../components/WhatIsAtmosphere.tsx";
 import OnePlace from "../components/OnePlace.tsx";
 import Features from "../components/Features.tsx";
 import BlueskySection from "../components/BlueskySection.tsx";
-import HowItWorks from "../components/HowItWorks.tsx";
 import CrossPollination from "../components/CrossPollination.tsx";
-import ModerationAndAlgorithms from "../components/ModerationAndAlgorithms.tsx";
+import YourChoice from "../components/ModerationAndAlgorithms.tsx";
 import SignInBadge from "../components/SignInBadge.tsx";
 import Footer from "../components/Footer.tsx";
 
@@ -23,9 +22,8 @@ export default define.page(function Home() {
         <OnePlace />
         <Features />
         <BlueskySection />
-        <HowItWorks />
         <CrossPollination />
-        <ModerationAndAlgorithms />
+        <YourChoice />
         <SignInBadge />
         <Footer />
       </div>

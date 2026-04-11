@@ -482,6 +482,21 @@ h1, h2, h3, h4 {
   }
 }
 
+/* Your account, your choice — three tiles in one row */
+.your-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 2rem;
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .your-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .feature-card {
   padding: 2rem;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
