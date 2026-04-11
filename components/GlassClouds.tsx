@@ -11,6 +11,8 @@ interface CloudProps {
   fillOpacity?: number;
   blurRadius?: number;
   flipX?: boolean;
+  /** When true, cloud is flipped on Y (applied on narrow viewports in scroll script) */
+  flipY?: boolean;
   parallaxSpeed?: number;
   /** Hide on narrow viewports — fewer clouds so the layer doesn’t feel crowded */
   hideOnMobile?: boolean;
@@ -27,6 +29,7 @@ function GlassCloud({
   fillOpacity = 0.2,
   blurRadius = 25,
   flipX = false,
+  flipY = false,
   parallaxSpeed = -0.05,
   hideOnMobile = false,
 }: CloudProps) {
@@ -40,6 +43,7 @@ function GlassCloud({
       class={`cloud-svg${hideOnMobile ? " cloud-svg--hide-sm" : ""}`}
       data-speed={parallaxSpeed}
       data-flip={flipX ? "1" : "0"}
+      data-flip-y={flipY ? "1" : "0"}
       width={width}
       height={height}
       viewBox={`0 0 ${vbW} ${vbH}`}
@@ -135,6 +139,7 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.18,
     blurRadius: 25,
     flipX: false,
+    flipY: true,
     parallaxSpeed: -0.04,
     style: { position: "absolute", top: "3%", left: "-4%" },
   },
@@ -147,6 +152,7 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.15,
     blurRadius: 22,
     flipX: true,
+    flipY: true,
     parallaxSpeed: -0.07,
     hideOnMobile: true,
     style: { position: "absolute", top: "12%", right: "-6%" },
@@ -160,6 +166,7 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.14,
     blurRadius: 28,
     flipX: false,
+    flipY: false,
     parallaxSpeed: -0.02,
     style: { position: "absolute", top: "36%", left: "5%" },
   },
@@ -172,6 +179,7 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.2,
     blurRadius: 20,
     flipX: true,
+    flipY: true,
     parallaxSpeed: -0.1,
     hideOnMobile: true,
     style: { position: "absolute", top: "58%", right: "2%" },
@@ -185,6 +193,7 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.16,
     blurRadius: 24,
     flipX: true,
+    flipY: false,
     parallaxSpeed: -0.05,
     hideOnMobile: true,
     style: { position: "absolute", top: "76%", left: "-2%" },
@@ -201,6 +210,7 @@ const clouds: CloudProps[] = [
     fillOpacity: 0.19,
     blurRadius: 25,
     flipX: false,
+    flipY: true,
     parallaxSpeed: -0.13,
     style: { position: "absolute", top: "90%", right: "12%" },
   },
