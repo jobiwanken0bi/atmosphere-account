@@ -1,0 +1,23 @@
+export default function WhatIsAtmosphere() {
+  return (
+    <section class="section reveal">
+      <div class="container-narrow text-center">
+        <h2 class="text-section">What is the Atmosphere?</h2>
+        <div class="divider" />
+        <div class="glass-strong" style={{ padding: "2.5rem 2rem", marginTop: "2rem" }}>
+          <p class="text-body">
+            The Atmosphere is a new open network of apps and services that all
+            work together. Think of it like an <strong>open social web</strong>.
+            Instead of every app being its own walled garden, Atmosphere apps
+            share a common foundation — so you only need{" "}
+            <strong>one account</strong> to use them all.
+          </p>
+          <p class="text-body mt-3">
+            No more creating a new account for every app. No more losing your
+            stuff when you switch. Sign in once, and you're home everywhere.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
