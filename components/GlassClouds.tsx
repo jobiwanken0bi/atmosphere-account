@@ -1,7 +1,11 @@
 interface CloudProps {
   id: string;
+  /** Display size (SVG width/height attributes) */
   width: number;
   height: number;
+  /** If set, viewBox uses this so path coordinates match the source asset while scaling down */
+  viewBoxWidth?: number;
+  viewBoxHeight?: number;
   style: Record<string, string | number>;
   path: string;
   fillOpacity?: number;
@@ -14,6 +18,8 @@ function GlassCloud({
   id,
   width,
   height,
+  viewBoxWidth,
+  viewBoxHeight,
   style,
   path,
   fillOpacity = 0.2,
@@ -21,6 +27,8 @@ function GlassCloud({
   flipX = false,
   parallaxSpeed = -0.05,
 }: CloudProps) {
+  const vbW = viewBoxWidth ?? width;
+  const vbH = viewBoxHeight ?? height;
   /* Padding: feGaussianBlur (stdDev 20) + stroke 4 need room past viewBox.
      (No foreignObject/backdrop-filter here — that combo with parallax transform caused GPU line artifacts.) */
   const pad = Math.max(Math.ceil(blurRadius * 3), 72);
@@ -31,7 +39,7 @@ function GlassCloud({
       data-flip={flipX ? "1" : "0"}
       width={width}
       height={height}
-      viewBox={`0 0 ${width} ${height}`}
+      viewBox={`0 0 ${vbW} ${vbH}`}
       overflow="visible"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -61,8 +69,8 @@ function GlassCloud({
           id={`filter_${id}`}
           x={-pad}
           y={-pad}
-          width={width + pad * 2}
-          height={height + pad * 2}
+          width={vbW + pad * 2}
+          height={vbH + pad * 2}
           filterUnits="userSpaceOnUse"
           color-interpolation-filters="sRGB"
         >
@@ -91,10 +99,10 @@ function GlassCloud({
         {/* Rim gradient: bottom stop must not hit opacity 0 or flat edges at max-Y lose stroke. */}
         <linearGradient
           id={`grad_${id}`}
-          x1={width / 2}
+          x1={vbW / 2}
           y1="0"
-          x2={width / 2}
-          y2={height}
+          x2={vbW / 2}
+          y2={vbH}
           gradientUnits="userSpaceOnUse"
         >
           <stop stop-color="var(--cloud-stroke-top, #D0FCFF)" />
@@ -177,13 +185,15 @@ const clouds: CloudProps[] = [
   },
   {
     id: "c6",
-    /* Path extends to y=213 and x=350; was 210×350 so bottom/right + stroke were clipped */
+    /* Same path as Glass cloud.svg / c1 — unedited Figma geometry; scaled via display size only */
     width: 356,
-    height: 218,
+    height: 211,
+    viewBoxWidth: 545,
+    viewBoxHeight: 324,
     path:
-      "M276 209.96C276.7 209.98 277.39 210 278.1 210C317.61 210 350 181.88 350 147.07C350 113.33 319.85 85.88 281.52 84.1C271.82 58.57 245.12 40 213.82 40C209.23 40 204.74 40.4 200.4 41.16C189.88 16.87 164.12 0 134.02 0C94.51 0 62.12 28.12 62.12 62.93C62.12 69.76 63.14 76.36 65.04 82.62C32.13 85.08 6 113.59 6 148.07C6 183.88 38.06 213 77.57 213L81.04 213H276V209.96Z",
+      "M430.377 323.959C431.455 323.986 432.536 324 433.621 324C495.134 324 545 279.795 545 225.266C545 172.442 498.203 129.307 439.355 126.661C424.209 88.0793 382.821 60.3905 334.137 60.3905C326.999 60.3905 320.017 60.9858 313.253 62.1233C296.847 25.72 256.703 0 209.782 0C148.269 0 98.4028 44.2046 98.4028 98.7337C98.4028 108.487 99.9982 117.911 102.97 126.81C45.3852 130.62 0 173.245 0 225.266C0 279.795 49.8661 324 111.379 324C113.192 324 114.994 323.962 116.786 323.886V324H430.377V323.959Z",
     fillOpacity: 0.19,
-    blurRadius: 22,
+    blurRadius: 25,
     flipX: false,
     parallaxSpeed: -0.13,
     style: { position: "absolute", top: "90%", right: "12%" },
