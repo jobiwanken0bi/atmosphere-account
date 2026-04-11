@@ -88,6 +88,7 @@ function GlassCloud({
           />
           <feBlend mode="normal" in2="shape" result="innerShadow" />
         </filter>
+        {/* Rim gradient: bottom stop must not hit opacity 0 or flat edges at max-Y lose stroke. */}
         <linearGradient
           id={`grad_${id}`}
           x1={width / 2}
@@ -98,9 +99,14 @@ function GlassCloud({
         >
           <stop stop-color="var(--cloud-stroke-top, #D0FCFF)" />
           <stop
+            offset="0.78"
+            stop-color="var(--cloud-stroke-bot, #E9FEFF)"
+            stop-opacity="0.55"
+          />
+          <stop
             offset="1"
             stop-color="var(--cloud-stroke-bot, #E9FEFF)"
-            stop-opacity="0"
+            stop-opacity="0.42"
           />
         </linearGradient>
       </defs>
