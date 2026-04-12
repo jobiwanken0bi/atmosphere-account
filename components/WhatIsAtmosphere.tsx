@@ -22,6 +22,14 @@ export default function WhatIsAtmosphere() {
             you switch. Sign in once, and you're home everywhere.
           </p>
         </div>
+        <p
+          class="text-body-sm text-center"
+          style={{ marginTop: "1.25rem", fontStyle: "italic", opacity: 0.78 }}
+        >
+          Of course, you can have <strong>multiple accounts</strong>{" "}
+          if you want — great for keeping different personas separate. Whatever
+          you choose, every account you own works across the entire Atmosphere.
+        </p>
       </div>
     </section>
   );
