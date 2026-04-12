@@ -3,7 +3,7 @@ export default function Nav() {
     <>
       <nav class="nav" id="main-nav">
         <a href="/" class="nav-logo">
-          <img src="/union.svg" alt="Atmosphere" width="32" height="32" />
+          <img src="/union.svg" alt="Atmosphere" width="26" height="26" />
           <span class="nav-logo-text">Atmosphere</span>
         </a>
         <div class="nav-links">

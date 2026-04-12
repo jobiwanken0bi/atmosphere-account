@@ -355,8 +355,8 @@ h1, h2, h3, h4 {
 }
 
 .nav-logo img {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%)
     hue-rotate(195deg) brightness(95%);
 }
@@ -657,11 +657,11 @@ h1, h2, h3, h4 {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
 }
 
-/* Icon + title on one row (matches provider card pattern) */
+/* Icon + title on one row — vertically center title with icon */
 .feature-card-title-row {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.65rem;
   margin-bottom: 0.75rem;
 }
@@ -683,7 +683,6 @@ h1, h2, h3, h4 {
   justify-content: center;
   color: #254a9e;
   flex-shrink: 0;
-  margin-top: 0.1em;
 }
 
 /* ================================
