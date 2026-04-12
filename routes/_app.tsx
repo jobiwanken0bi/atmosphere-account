@@ -233,14 +233,17 @@ export default define.page(function App({ Component }) {
           content="The last social account you'll ever need. One account for all your apps."
         />
         <meta property="og:type" content="website" />
-        <meta property="og:image" content={socialImageUrl("/union.svg")} />
-        <meta property="og:image:type" content="image/svg+xml" />
+        <meta property="og:image" content={socialImageUrl("/og-hero.png")} />
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
         <meta
           property="og:image:alt"
-          content="Atmosphere Account — logo"
+          content="Atmosphere Account — sky, glass clouds, and hero headline"
         />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:image" content={socialImageUrl("/union.svg")} />
+        <meta name="twitter:image" content={socialImageUrl("/og-hero.png")} />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/svg+xml" href="/union.svg" />
         <link rel="apple-touch-icon" href="/union.svg" />
         <script
