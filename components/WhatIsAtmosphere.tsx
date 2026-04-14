@@ -10,16 +10,20 @@ export default function WhatIsAtmosphere() {
         >
           <p class="text-body">
             The Atmosphere is a new open network of apps and services that all
-            work together. Think of it like an{" "}
-            <strong>open social web</strong>. Instead of every app being its own
-            walled garden, Atmosphere apps share a common foundation — so you
-            only need <strong>one account</strong> to use them all.
+            work together. Instead of every app being its own walled garden,
+            Atmosphere apps share a common foundation — so you only need{" "}
+            <strong>one account</strong> to use them all.
           </p>
           <p class="text-body mt-3">
             Your <strong>Atmosphere Account</strong>{" "}
             is your passport to this entire ecosystem. One account unlocks every
             app — no more creating new logins, no more losing your stuff when
             you switch. Sign in once, and you're home everywhere.
+          </p>
+          <p class="text-body mt-3">
+            The Atmosphere isn&apos;t owned or controlled by any single big-tech
+            company. This isn&apos;t just another &quot;Sign in with Google&quot;,
+            it&apos;s an <strong>open social web</strong>.
           </p>
         </div>
         <p

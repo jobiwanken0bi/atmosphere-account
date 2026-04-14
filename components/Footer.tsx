@@ -29,6 +29,7 @@ export default function Footer() {
           <span class="footer-coming-soon" title="Coming soon">
             Explore Apps
           </span>
+          <a href="/developer-resources">Developer resources</a>
         </div>
         <p class="footer-quote">
           "You never change things by fighting the existing reality. To change

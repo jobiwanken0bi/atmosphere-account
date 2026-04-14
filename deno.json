@@ -5,6 +5,7 @@
     "dev": "vite",
     "build": "vite build",
     "gen:images": "deno run -A --node-modules-dir=auto scripts/generate-static-images.ts",
+    "extract:lottie-assets": "deno run -A scripts/extract-lottie-assets.ts",
     "start": "deno serve -A _fresh/server.js",
     "update": "deno run -A -r jsr:@fresh/update ."
   },
