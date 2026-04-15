@@ -340,6 +340,17 @@ h1, h2, h3, h4 {
   pointer-events: auto;
 }
 
+/* Mobile: no sky effects toggle — JS keeps static sky; strip height removed for hero padding */
+@media (max-width: 768px) {
+  .nav-effects-bar {
+    display: none;
+  }
+
+  :root {
+    --nav-effects-strip: 0;
+  }
+}
+
 @media (max-width: 480px) {
   :root {
     --nav-bar-height: 4.35rem;

@@ -148,7 +148,6 @@ const clouds: CloudProps[] = [
     blurRadius: 22,
     flipX: true,
     parallaxSpeed: -0.07,
-    hideOnMobile: true,
     style: { position: "absolute", top: "12%", right: "-6%" },
   },
   {
@@ -173,7 +172,6 @@ const clouds: CloudProps[] = [
     blurRadius: 20,
     flipX: true,
     parallaxSpeed: -0.1,
-    hideOnMobile: true,
     style: { position: "absolute", top: "58%", right: "2%" },
   },
   {

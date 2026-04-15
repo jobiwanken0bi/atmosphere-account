@@ -25,12 +25,6 @@ const icons = {
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
     </Icon>
   ),
-  atSign: (
-    <Icon>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
-    </Icon>
-  ),
   blocks: (
     <Icon>
       <rect x="2" y="6" width="8" height="8" rx="1" />
@@ -45,21 +39,26 @@ const icons = {
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </Icon>
   ),
+  key: (
+    <Icon>
+      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+    </Icon>
+  ),
 };
 
 export default function Features() {
   const features = [
     {
       icon: icons.globe,
-      title: "Works everywhere",
-      description:
-        "Your Atmosphere account works on every Atmosphere app. One login, hundreds of apps.",
-    },
-    {
-      icon: icons.atSign,
       title: "Universal identity",
       description:
-        "Use the same @handle in every app. When someone mentions you, it works everywhere — one identity, recognized across the Atmosphere.",
+        "One login across Atmosphere apps, and the same @handle everywhere — so when someone mentions you, it’s the same you, recognized across the network.",
+    },
+    {
+      icon: icons.key,
+      title: "You own your account",
+      description:
+        "Your data isn’t trapped in any one app. Unlike traditional social accounts, where your profile and content belong to the platform, an Atmosphere account puts you in charge — you genuinely own your identity and your data.",
     },
     {
       icon: icons.blocks,

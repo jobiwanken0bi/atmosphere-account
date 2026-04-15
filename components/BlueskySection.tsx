@@ -10,8 +10,8 @@ export default function BlueskySection() {
             style={{ maxWidth: "640px", margin: "1rem auto 0" }}
           >
             Your Atmosphere account lives with a <strong>provider</strong>{" "}
-            — a service that stores your data and keeps it available across
-            every app. That provider might be an app you already use, or a host
+            — a service that stores your data in your personal data storage and
+            keeps it available across every app. That provider might be an app you already use, or a host
             that only holds accounts. You pick who hosts your account, and you
             can switch any time.
           </p>
@@ -88,7 +88,7 @@ export default function BlueskySection() {
               Independent providers are account hosts — they are not apps
               themselves, they only hold your account and data. A growing number
               of them offer Atmosphere accounts: some are community-run, some
-              focus on privacy.
+              focus on privacy or geographic location.
             </p>
           </div>
 

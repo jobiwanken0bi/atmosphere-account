@@ -184,12 +184,13 @@ const inlineScript = `
   }
 
   var toggleInput=document.getElementById('sky-effects-toggle');
+  function syncSkyToggle(){
+    if(!toggleInput)return;
+    var on=skyAnimated();
+    toggleInput.checked=on;
+    toggleInput.setAttribute('aria-label',on?'Effects on. Turn off to keep colors and clouds fixed like the first screen.':'Effects off. Sky matches the first-load colors and cloud positions.');
+  }
   if(toggleInput){
-    function syncSkyToggle(){
-      var on=skyAnimated();
-      toggleInput.checked=on;
-      toggleInput.setAttribute('aria-label',on?'Effects on. Turn off to keep colors and clouds fixed like the first screen.':'Effects off. Sky matches the first-load colors and cloud positions.');
-    }
     toggleInput.addEventListener('change',function(){
       if(toggleInput.checked){
         document.documentElement.classList.remove('sky-static');
@@ -201,16 +202,36 @@ const inlineScript = `
       syncSkyToggle();
       update();
     });
-    syncSkyToggle();
   }
+
+  function isMobileViewport(){
+    return typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 768px)').matches;
+  }
+  function applySkyForViewport(){
+    if(isMobileViewport()){
+      document.documentElement.classList.add('sky-static');
+    }else{
+      try{
+        if(localStorage.getItem(SKY_KEY)==='0')document.documentElement.classList.add('sky-static');
+        else document.documentElement.classList.remove('sky-static');
+      }catch(_){
+        document.documentElement.classList.remove('sky-static');
+      }
+    }
+    syncSkyToggle();
+    update();
+  }
+  var mqSky=window.matchMedia('(max-width: 768px)');
+  if(mqSky.addEventListener)mqSky.addEventListener('change',applySkyForViewport);
+  else if(mqSky.addListener)mqSky.addListener(applySkyForViewport);
+  applySkyForViewport();
 
   window.addEventListener('scroll',function(){
     if(!ticking){ticking=true;requestAnimationFrame(update);}
   },{passive:true});
   window.addEventListener('resize',function(){
     if(!ticking){ticking=true;requestAnimationFrame(update);}
-  },{passive:true});
-  update();
+  },  {passive:true});
 })();
 `;
 
@@ -249,7 +270,7 @@ export default define.page(function App({ Component }) {
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{if(localStorage.getItem('atmosphere-sky-effects')==='0')document.documentElement.classList.add('sky-static');}catch(e){}})();",
+              "(function(){try{var m=window.matchMedia&&window.matchMedia('(max-width: 768px)');if(m&&m.matches)document.documentElement.classList.add('sky-static');else if(localStorage.getItem('atmosphere-sky-effects')==='0')document.documentElement.classList.add('sky-static');}catch(e){}})();",
           }}
         />
         <script
