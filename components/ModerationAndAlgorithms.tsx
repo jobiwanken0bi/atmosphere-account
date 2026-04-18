@@ -1,4 +1,7 @@
+import { useT } from "../i18n/mod.ts";
+
 export default function YourChoice() {
+  const t = useT();
   const cards = [
     {
       icon: (
@@ -15,9 +18,7 @@ export default function YourChoice() {
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
         </svg>
       ),
-      title: "Moderation",
-      body:
-        "Subscribe to community-built moderation — labels, filters, and block lists made by the people who understand the problem best. Don't like an app's rules? Layer on your own, or switch apps entirely.",
+      ...t.yourChoice.cards.moderation,
     },
     {
       icon: (
@@ -42,9 +43,7 @@ export default function YourChoice() {
           <circle cx="20" cy="14" r="2" />
         </svg>
       ),
-      title: "Algorithms",
-      body:
-        "Feeds are open — anyone can build one. Switch between them like playlists: friends-only, indie art, slow news, or something deeply niche. No single algorithm quietly decides culture for everyone.",
+      ...t.yourChoice.cards.algorithms,
     },
     {
       icon: (
@@ -61,9 +60,7 @@ export default function YourChoice() {
           <path d="M6 12h12M6 7L3 12L6 17M18 7L21 12L18 17" />
         </svg>
       ),
-      title: "Portability",
-      body:
-        "Move between apps and providers while keeping your connections, posts, and followers — no more starting over. Creators can leave an app without losing their audience; your followers are yours, not rented from a platform.",
+      ...t.yourChoice.cards.portability,
     },
   ];
 
@@ -71,14 +68,13 @@ export default function YourChoice() {
     <section class="section reveal">
       <div class="container">
         <div class="text-center">
-          <h2 class="text-section">Your account, your choice.</h2>
+          <h2 class="text-section">{t.yourChoice.heading}</h2>
           <div class="divider" />
           <p
             class="text-body mt-2"
             style={{ maxWidth: "640px", margin: "1rem auto 0" }}
           >
-            No single company decides what you see, who you follow, or where you
-            go. Everything is yours to control.
+            {t.yourChoice.intro}
           </p>
         </div>
 
@@ -107,8 +103,7 @@ export default function YourChoice() {
             fontStyle: "italic",
           }}
         >
-          Account ownership, moderation, and algorithmic choice — the system is
-          locked open by design.
+          {t.yourChoice.footnote}
         </p>
       </div>
     </section>

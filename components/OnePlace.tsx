@@ -1,38 +1,26 @@
 import LottieSection from "./LottieSection.tsx";
+import { useT } from "../i18n/mod.ts";
 
 export default function OnePlace() {
-  const items = [
-    "Posts",
-    "Likes",
-    "Follows",
-    "Comments",
-    "Lists",
-    "Videos",
-    "Photos",
-    "Blogs",
-  ];
+  const t = useT();
 
   return (
     <section class="section-sm reveal">
       <div class="container-narrow text-center">
         <LottieSection />
-        <h2 class="text-section">Everything in one place.</h2>
+        <h2 class="text-section">{t.onePlace.heading}</h2>
         <div class="divider" />
-        <p class="text-body mt-2">
-          All your stuff — from every Atmosphere app you use — lives in your one
-          Atmosphere account. Sign in anywhere, pick up right where you left off.
-        </p>
+        <p class="text-body mt-2">{t.onePlace.body}</p>
         <p class="text-body-sm mt-3 hub-examples-label">
-          A few examples — there’s no fixed list. New apps bring new kinds of data,
-          all in one place.
+          {t.onePlace.examplesLabel}
         </p>
         <div class="hub-visual">
-          {items.map((item) => (
+          {t.onePlace.items.map((item) => (
             <span key={item} class="hub-tag">
               {item}
             </span>
           ))}
-          <span class="hub-tag hub-tag-more">…and many more</span>
+          <span class="hub-tag hub-tag-more">{t.onePlace.moreTag}</span>
         </div>
       </div>
     </section>

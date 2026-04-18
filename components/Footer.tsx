@@ -1,10 +1,14 @@
+import { useT } from "../i18n/mod.ts";
+import LocaleSwitcher from "./LocaleSwitcher.tsx";
+
 export default function Footer() {
+  const t = useT();
   return (
     <footer class="footer reveal">
       <div class="container text-center">
         <img
           src="/union.svg"
-          alt="Atmosphere"
+          alt={t.footer.logoAlt}
           width="40"
           height="40"
           class="footer-logo"
@@ -15,28 +19,21 @@ export default function Footer() {
               "brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%) hue-rotate(195deg) brightness(95%)",
           }}
         />
-        <p class="text-subsection mb-3">
-          Building a better internet, owned by the people.
-        </p>
+        <p class="text-subsection mb-3">{t.footer.tagline}</p>
         <div class="footer-links">
           <a
             href="https://atproto.com"
             target="_blank"
             rel="noopener noreferrer"
           >
-            AT Protocol
+            {t.footer.links.atProtocol}
           </a>
-          <span class="footer-coming-soon" title="Coming soon">
-            Explore Apps
+          <span class="footer-coming-soon" title={t.footer.links.exploreAppsTitle}>
+            {t.footer.links.exploreApps}
           </span>
-          <a href="/developer-resources">Developer resources</a>
+          <a href="/developer-resources">{t.footer.links.developerResources}</a>
         </div>
-        <p class="footer-quote">
-          "You never change things by fighting the existing reality. To change
-          something, build a new model that makes the existing model obsolete."
-          <br />
-          <span style={{ opacity: 0.75 }}>— Buckminster Fuller</span>
-        </p>
+        <p class="footer-quote">{t.footer.quote()}</p>
         <a href="#page-top" class="back-to-top mt-4">
           <svg
             width="18"
@@ -51,8 +48,9 @@ export default function Footer() {
           >
             <path d="M18 15l-6-6-6 6" />
           </svg>
-          Back to top
+          {t.footer.backToTop}
         </a>
+        <LocaleSwitcher />
       </div>
     </footer>
   );

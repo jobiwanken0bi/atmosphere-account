@@ -1,18 +1,18 @@
+import { useT } from "../i18n/mod.ts";
+
 export default function DeveloperResources() {
+  const t = useT();
   return (
     <>
       <section class="section-sm reveal">
         <div class="container-narrow text-center">
-          <h1 class="text-section">For developers.</h1>
+          <h1 class="text-section">{t.developerResources.heading}</h1>
           <div class="divider" />
-          <p class="text-body mt-2 mb-4">
-            Building an Atmosphere app? Let your users know they can sign in with
-            their Atmosphere account.
-          </p>
+          <p class="text-body mt-2 mb-4">{t.developerResources.intro}</p>
           <div class="badge-display">
             <img
               src="/sign-in-box.svg"
-              alt="Sign in with your Atmosphere Account"
+              alt={t.developerResources.badgeAlt}
             />
           </div>
           <div class="badge-downloads">
@@ -21,45 +21,39 @@ export default function DeveloperResources() {
               download="atmosphere-sign-in-badge.svg"
               class="badge-download-btn font-mono"
             >
-              Download badge (SVG)
+              {t.developerResources.downloadBadge}
             </a>
             <a
               href="/union.svg"
               download="atmosphere-logo.svg"
               class="badge-download-btn font-mono"
             >
-              Download logo (SVG)
+              {t.developerResources.downloadLogo}
             </a>
           </div>
-          <p class="text-body-sm mt-3">
-            Add this badge to your sign-in page to help users understand the
-            Atmosphere.
-          </p>
+          <p class="text-body-sm mt-3">{t.developerResources.badgeFootnote}</p>
         </div>
       </section>
 
       <section class="section-sm reveal">
         <div class="container-narrow text-center">
-          <h2 class="text-subsection">Homepage hero animation</h2>
+          <h2 class="text-subsection">{t.developerResources.lottieHeading}</h2>
           <div class="divider" />
-          <p class="text-body mt-2 mb-3">
-            The Lottie animation and the image assets embedded inside it (logos
-            and artwork used in the sequence).
-          </p>
+          <p class="text-body mt-2 mb-3">{t.developerResources.lottieIntro}</p>
           <div class="badge-downloads">
             <a
               href="/atmosphere.json"
               download="atmosphere-hero.lottie.json"
               class="badge-download-btn font-mono"
             >
-              Download Lottie (JSON)
+              {t.developerResources.downloadLottie}
             </a>
             <a
               href="/lottie-icons.zip"
               download="atmosphere-lottie-icons.zip"
               class="badge-download-btn font-mono"
             >
-              Download icons (ZIP)
+              {t.developerResources.downloadIcons}
             </a>
           </div>
         </div>

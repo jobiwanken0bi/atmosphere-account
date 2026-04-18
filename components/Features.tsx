@@ -1,3 +1,5 @@
+import { useT } from "../i18n/mod.ts";
+
 function Icon({ children }: { children: any }) {
   return (
     <div class="feature-icon">
@@ -47,38 +49,19 @@ const icons = {
 };
 
 export default function Features() {
+  const t = useT();
   const features = [
-    {
-      icon: icons.globe,
-      title: "Universal identity",
-      description:
-        "One login across Atmosphere apps, and the same @handle everywhere — so when someone mentions you, it’s the same you, recognized across the network.",
-    },
-    {
-      icon: icons.key,
-      title: "You own your account",
-      description:
-        "Your data isn’t trapped in any one app. Unlike traditional social accounts, where your profile and content belong to the platform, an Atmosphere account puts you in charge — you genuinely own your identity and your data.",
-    },
-    {
-      icon: icons.blocks,
-      title: "Anyone can build",
-      description:
-        "Developers can build new apps on the Atmosphere and tap into an existing network from day one.",
-    },
-    {
-      icon: icons.domain,
-      title: "Great for personal websites",
-      description:
-        "Your @handle can be your own domain. Your identity, your brand — no handle squatting.",
-    },
+    { icon: icons.globe, ...t.features.items.universalIdentity },
+    { icon: icons.key, ...t.features.items.ownAccount },
+    { icon: icons.blocks, ...t.features.items.anyoneBuilds },
+    { icon: icons.domain, ...t.features.items.personalSites },
   ];
 
   return (
     <section class="section reveal">
       <div class="container">
         <div class="text-center">
-          <h2 class="text-section">Built different.</h2>
+          <h2 class="text-section">{t.features.heading}</h2>
           <div class="divider" />
         </div>
         <div class="feature-grid">

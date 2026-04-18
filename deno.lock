@@ -5,6 +5,7 @@
     "jsr:@deno/loader@~0.3.10": "0.3.14",
     "jsr:@deno/loader@~0.3.2": "0.3.14",
     "jsr:@fresh/build-id@1": "1.0.1",
+    "jsr:@fresh/core@*": "2.2.2",
     "jsr:@fresh/core@2": "2.2.2",
     "jsr:@fresh/core@^2.2.0": "2.2.2",
     "jsr:@fresh/core@^2.2.2": "2.2.2",

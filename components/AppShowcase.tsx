@@ -1,27 +1,30 @@
+import { useT } from "../i18n/mod.ts";
+
 export default function AppShowcase() {
+  const t = useT();
   const categories = [
     {
-      name: "Microblogs",
+      name: t.appShowcase.categories.microblogs,
       apps: [
         { name: "Bluesky", url: "https://bsky.app" },
         { name: "Blacksky", url: "https://blacksky.app" },
       ],
     },
     {
-      name: "Video",
+      name: t.appShowcase.categories.video,
       apps: [
         { name: "Spark", url: "https://spark.blue" },
         { name: "Stream.place", url: "https://stream.place" },
       ],
     },
     {
-      name: "Photos",
+      name: t.appShowcase.categories.photos,
       apps: [
         { name: "Flashes", url: "https://flashes.blue" },
       ],
     },
     {
-      name: "Blogging",
+      name: t.appShowcase.categories.blogging,
       apps: [
         { name: "Leaflet", url: "https://leaflet.pub" },
         { name: "Offprint", url: "https://offprint.blog" },
@@ -29,7 +32,7 @@ export default function AppShowcase() {
       ],
     },
     {
-      name: "Events",
+      name: t.appShowcase.categories.events,
       apps: [
         { name: "Smoke Signal", url: "https://smokesignal.events" },
         { name: "Dandelion", url: "https://dandelion.events" },
@@ -37,20 +40,20 @@ export default function AppShowcase() {
       ],
     },
     {
-      name: "Music & Reviews",
+      name: t.appShowcase.categories.musicReviews,
       apps: [
         { name: "teal.fm", url: "https://teal.fm" },
         { name: "Popfeed", url: "https://popfeed.app" },
       ],
     },
     {
-      name: "Collections",
+      name: t.appShowcase.categories.collections,
       apps: [
         { name: "Semble", url: "https://semble.social" },
       ],
     },
     {
-      name: "Clients",
+      name: t.appShowcase.categories.clients,
       apps: [
         { name: "Flux", url: "https://flux.blue" },
         { name: "Skyscraper", url: "#" },
@@ -62,16 +65,20 @@ export default function AppShowcase() {
     <section class="section reveal">
       <div class="container">
         <div class="text-center">
-          <h2 class="text-section">Explore the Atmosphere.</h2>
+          <h2 class="text-section">{t.appShowcase.heading}</h2>
           <div class="divider" />
-          <p class="text-body mt-2" style={{ maxWidth: "600px", margin: "1rem auto 0" }}>
-            A growing ecosystem of apps — all accessible with your one
-            Atmosphere account.
+          <p
+            class="text-body mt-2"
+            style={{ maxWidth: "600px", margin: "1rem auto 0" }}
+          >
+            {t.appShowcase.intro}
           </p>
         </div>
         {categories.map((cat) => (
           <div key={cat.name} style={{ marginTop: "2.5rem" }}>
-            <h3 class="text-subsection mb-2" style={{ textAlign: "center" }}>{cat.name}</h3>
+            <h3 class="text-subsection mb-2" style={{ textAlign: "center" }}>
+              {cat.name}
+            </h3>
             <div class="app-grid" style={{ marginTop: "1rem" }}>
               {cat.apps.map((app) => (
                 <a
@@ -88,9 +95,7 @@ export default function AppShowcase() {
             </div>
           </div>
         ))}
-        <p class="text-body-sm text-center mt-4">
-          And many more being built every day.
-        </p>
+        <p class="text-body-sm text-center mt-4">{t.appShowcase.footnote}</p>
       </div>
     </section>
   );

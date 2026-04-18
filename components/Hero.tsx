@@ -1,13 +1,12 @@
+import { useT } from "../i18n/mod.ts";
+
 export default function Hero() {
+  const t = useT();
   return (
     <section class="hero">
-      <p class="hero-eyebrow font-mono">Atmosphere Account</p>
-      <h1 class="text-hero">
-        The last social account<br />you'll ever need.
-      </h1>
-      <p class="text-body hero-subhead">
-        One account for all your apps. Yours to keep, wherever you go.
-      </p>
+      <p class="hero-eyebrow font-mono">{t.hero.eyebrow}</p>
+      <h1 class="text-hero">{t.hero.headline()}</h1>
+      <p class="text-body hero-subhead">{t.hero.subhead}</p>
       <div class="scroll-indicator" aria-hidden="true">
         <svg
           width="24"

@@ -1,49 +1,39 @@
-export default function CrossPollination() {
-  const contentTypes = [
-    { label: "Blog posts", side: "left" },
-    { label: "Photos", side: "left" },
-    { label: "Music", side: "left" },
-    { label: "Videos", side: "left" },
-    { label: "Events", side: "left" },
-    { label: "Anything new", side: "left" },
-  ];
+import { useT } from "../i18n/mod.ts";
 
-  const destinations = [
-    { label: "Social feeds", side: "right" },
-    { label: "Galleries", side: "right" },
-    { label: "Profiles", side: "right" },
-    { label: "Players", side: "right" },
-    { label: "Calendars", side: "right" },
-    { label: "Apps not yet built", side: "right" },
-  ];
+export default function CrossPollination() {
+  const t = useT();
+  const contentTypes = t.crossPollination.contentTypes;
+  const destinations = t.crossPollination.destinations;
 
   return (
     <section class="section reveal">
       <div class="container">
         <div class="text-center">
-          <h2 class="text-section">Post once, show everywhere.</h2>
+          <h2 class="text-section">{t.crossPollination.heading}</h2>
           <div class="divider" />
           <p
             class="text-body mt-2"
             style={{ maxWidth: "640px", margin: "1rem auto 0" }}
           >
-            Your content flows freely across every app in the Atmosphere.
+            {t.crossPollination.intro}
           </p>
         </div>
 
         {/* Flow diagram */}
         <div class="flow-diagram">
           <div class="flow-column flow-column-left">
-            <div class="flow-column-label font-mono">You create</div>
-            {contentTypes.map((item, i) => (
+            <div class="flow-column-label font-mono">
+              {t.crossPollination.youCreate}
+            </div>
+            {contentTypes.map((label, i) => (
               <div
-                key={item.label}
+                key={label}
                 class={`flow-node flow-node-left glass-subtle ${
                   i === contentTypes.length - 1 ? "flow-node-open" : ""
                 }`}
                 style={{ animationDelay: `${i * 0.12}s` }}
               >
-                {item.label}
+                {label}
               </div>
             ))}
           </div>
@@ -52,13 +42,13 @@ export default function CrossPollination() {
             <div class="flow-hub glass">
               <img
                 src="/union.svg"
-                alt="Atmosphere"
+                alt={t.crossPollination.hubLogoAlt}
                 width="36"
                 height="36"
                 class="flow-hub-logo"
               />
               <span class="flow-hub-label font-mono">
-                Your Atmosphere Account
+                {t.crossPollination.hubLabel}
               </span>
             </div>
 
@@ -84,16 +74,18 @@ export default function CrossPollination() {
           </div>
 
           <div class="flow-column flow-column-right">
-            <div class="flow-column-label font-mono">It appears in</div>
-            {destinations.map((item, i) => (
+            <div class="flow-column-label font-mono">
+              {t.crossPollination.itAppearsIn}
+            </div>
+            {destinations.map((label, i) => (
               <div
-                key={item.label}
+                key={label}
                 class={`flow-node flow-node-right glass-subtle ${
                   i === destinations.length - 1 ? "flow-node-open" : ""
                 }`}
                 style={{ animationDelay: `${i * 0.12 + 0.3}s` }}
               >
-                {item.label}
+                {label}
               </div>
             ))}
           </div>
@@ -107,9 +99,7 @@ export default function CrossPollination() {
             fontStyle: "italic",
           }}
         >
-          These are just examples. The Atmosphere is open — any app can create
-          and surface any kind of content. The possibilities grow with every new
-          app that joins.
+          {t.crossPollination.footnote}
         </p>
       </div>
     </section>

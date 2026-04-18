@@ -1,4 +1,5 @@
 import { define } from "../utils.ts";
+import { getMessages, I18nProvider } from "../i18n/mod.ts";
 
 /** Open Graph / social crawlers prefer absolute image URLs. Set FRESH_PUBLIC_SITE_URL on Deno Deploy (e.g. https://atmosphereaccount.com). */
 function socialImageUrl(path: string): string {
@@ -184,11 +185,12 @@ const inlineScript = `
   }
 
   var toggleInput=document.getElementById('sky-effects-toggle');
+  var i18n=(window.__ATMOSPHERE_I18N__||{});
   function syncSkyToggle(){
     if(!toggleInput)return;
     var on=skyAnimated();
     toggleInput.checked=on;
-    toggleInput.setAttribute('aria-label',on?'Effects on. Turn off to keep colors and clouds fixed like the first screen.':'Effects off. Sky matches the first-load colors and cloud positions.');
+    toggleInput.setAttribute('aria-label',on?(i18n.effectsOn||''):(i18n.effectsOff||''));
   }
   if(toggleInput){
     toggleInput.addEventListener('change',function(){
@@ -235,33 +237,26 @@ const inlineScript = `
 })();
 `;
 
-export default define.page(function App({ Component }) {
+export default define.page(function App(ctx) {
+  const { Component, state } = ctx;
+  const locale = state.locale;
+  const t = getMessages(locale);
   return (
-    <html lang="en">
+    <html lang={locale}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>
-          Atmosphere Account — The last social account you'll ever need.
-        </title>
-        <meta
-          name="description"
-          content="Your Atmosphere account is your passport to a growing ecosystem of apps. One account, all your data, your choice."
-        />
-        <meta property="og:title" content="Atmosphere Account" />
-        <meta
-          property="og:description"
-          content="The last social account you'll ever need. One account for all your apps."
-        />
+        <title>{t.meta.title}</title>
+        <meta name="description" content={t.meta.description} />
+        <meta property="og:title" content={t.meta.ogTitle} />
+        <meta property="og:description" content={t.meta.ogDescription} />
+        <meta property="og:locale" content={locale} />
         <meta property="og:type" content="website" />
         <meta property="og:image" content={socialImageUrl("/og-hero.png")} />
         <meta property="og:image:type" content="image/png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta
-          property="og:image:alt"
-          content="Atmosphere Account — sky, glass clouds, and hero headline"
-        />
+        <meta property="og:image:alt" content={t.meta.ogImageAlt} />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:image" content={socialImageUrl("/og-hero.png")} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -279,7 +274,19 @@ export default define.page(function App({ Component }) {
         />
       </head>
       <body class="sky-bg">
-        <Component />
+        <I18nProvider locale={locale}>
+          <Component />
+        </I18nProvider>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.__ATMOSPHERE_I18N__=${
+              JSON.stringify({
+                effectsOn: t.nav.effectsOn,
+                effectsOff: t.nav.effectsOff,
+              })
+            };`,
+          }}
+        />
         <script dangerouslySetInnerHTML={{ __html: inlineScript }} />
       </body>
     </html>

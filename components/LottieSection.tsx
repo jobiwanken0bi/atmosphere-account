@@ -1,4 +1,7 @@
+import { useT } from "../i18n/mod.ts";
+
 export default function LottieSection() {
+  const t = useT();
   return (
     <div class="lottie-section">
       <div class="lottie-wrapper">
@@ -11,7 +14,7 @@ export default function LottieSection() {
         />
         <img
           src="/union.svg"
-          alt="Atmosphere logo"
+          alt={t.lottie.logoAlt}
           class="lottie-logo-overlay"
           width="72"
           height="72"
