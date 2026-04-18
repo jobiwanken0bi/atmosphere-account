@@ -1,5 +1,6 @@
 {
   "nodeModulesDir": "manual",
+  "license": "MIT",
   "tasks": {
     "check": "deno fmt --check . && deno lint . && deno check",
     "dev": "vite",

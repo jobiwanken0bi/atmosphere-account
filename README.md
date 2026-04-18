@@ -2,6 +2,10 @@
 
 Marketing site for **Atmosphere Account** — built with [Fresh](https://fresh.deno.dev/) and Deno.
 
+Open source under the [MIT License](./LICENSE). Contributions welcome — fork the
+repo on either [GitHub](https://github.com/jobiwanken0bi/atmosphere-account) or
+[tangled](https://tangled.sh/@joebasser.com/atmosphere-account) and open a PR.
+
 ## Prerequisites
 
 - [Deno](https://docs.deno.com/runtime/getting_started/installation) (v2+)
@@ -39,6 +43,15 @@ deno task start
 
 Adjust if your host uses different entrypoints.
 
+## Contributing
+
+PRs and forks welcome on either forge:
+
+- **GitHub:** https://github.com/jobiwanken0bi/atmosphere-account
+- **tangled:** https://tangled.sh/@joebasser.com/atmosphere-account
+
+Both forges mirror the same `main` branch.
+
 ## License
 
-Open source — see project maintainers for the chosen license.
+[MIT](./LICENSE) © Joseph Basser
