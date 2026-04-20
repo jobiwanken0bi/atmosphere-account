@@ -14,9 +14,7 @@ export interface ProfileRow {
   category: Category | string;
   subcategories: string[];
   website: string | null;
-  supportUrl: string | null;
-  bskyHandle: string | null;
-  atmosphereHandle: string | null;
+  bskyClient: string | null;
   tags: string[];
   avatarCid: string | null;
   avatarMime: string | null;
@@ -40,9 +38,7 @@ interface RawProfileRow {
   category: string;
   subcategories: string;
   website: string | null;
-  support_url: string | null;
-  bsky_handle: string | null;
-  atmosphere_handle: string | null;
+  bsky_client: string | null;
   tags: string;
   avatar_cid: string | null;
   avatar_mime: string | null;
@@ -74,9 +70,7 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     category: r.category,
     subcategories: safeJsonArray(r.subcategories),
     website: r.website,
-    supportUrl: r.support_url,
-    bskyHandle: r.bsky_handle,
-    atmosphereHandle: r.atmosphere_handle,
+    bskyClient: r.bsky_client,
     tags: safeJsonArray(r.tags),
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
@@ -103,9 +97,7 @@ export interface UpsertProfileInput {
   category: string;
   subcategories: string[];
   website?: string | null;
-  supportUrl?: string | null;
-  bskyHandle?: string | null;
-  atmosphereHandle?: string | null;
+  bskyClient?: string | null;
   tags: string[];
   avatarCid?: string | null;
   avatarMime?: string | null;
@@ -122,10 +114,10 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
       sql: `
         INSERT INTO profile (
           did, handle, name, description, category, subcategories,
-          website, support_url, bsky_handle, atmosphere_handle, tags,
+          website, bsky_client, tags,
           avatar_cid, avatar_mime, pds_url, record_cid, record_rev,
           created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
           name=excluded.name,
@@ -133,9 +125,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           category=excluded.category,
           subcategories=excluded.subcategories,
           website=excluded.website,
-          support_url=excluded.support_url,
-          bsky_handle=excluded.bsky_handle,
-          atmosphere_handle=excluded.atmosphere_handle,
+          bsky_client=excluded.bsky_client,
           tags=excluded.tags,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
@@ -153,9 +143,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.category,
         JSON.stringify(input.subcategories ?? []),
         input.website ?? null,
-        input.supportUrl ?? null,
-        input.bskyHandle ?? null,
-        input.atmosphereHandle ?? null,
+        input.bskyClient ?? null,
         JSON.stringify(input.tags ?? []),
         input.avatarCid ?? null,
         input.avatarMime ?? null,

@@ -331,9 +331,7 @@ const en = {
       "Powered by you — every entry is created and signed by the project's own Atmosphere account.",
     detail: {
       website: "Website",
-      support: "Support",
-      bsky: "Bluesky",
-      atmosphere: "Atmosphere profile",
+      openOn: "Open on",
       lastUpdated: "Last updated",
       hostedOn: "Hosted on",
       editProfile: "Edit this profile",
@@ -375,6 +373,7 @@ const en = {
 
   forms: {
     profile: {
+      handleLabel: "Signed in as",
       nameLabel: "Project name",
       namePlaceholder: "e.g. Bluesky",
       descriptionLabel: "Short description",
@@ -386,12 +385,9 @@ const en = {
       subcategoriesHint: "For apps. Pick up to a few.",
       websiteLabel: "Website",
       websitePlaceholder: "https://yourproject.com",
-      supportUrlLabel: "Support / contact URL",
-      supportUrlPlaceholder: "https://yourproject.com/support",
-      bskyHandleLabel: "Bluesky handle (optional)",
-      bskyHandlePlaceholder: "yourproject.bsky.social",
-      atmosphereHandleLabel: "Atmosphere handle (optional)",
-      atmosphereHandlePlaceholder: "yourproject.com",
+      bskyClientLabel: "Bluesky client",
+      bskyClientHint:
+        "Pick which client opens when visitors click the Bluesky button on your profile. Your handle works on all of them.",
       tagsLabel: "Tags (optional)",
       tagsHint: "Comma-separated, up to 10. Helps people find you in search.",
       tagsPlaceholder: "open-source, indie, federated",

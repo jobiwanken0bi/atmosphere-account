@@ -5,6 +5,11 @@ import {
   CATEGORIES,
   type Category,
 } from "../lib/lexicons.ts";
+import {
+  BSKY_CLIENTS,
+  bskyClientFaviconUrl,
+  DEFAULT_BSKY_CLIENT_ID,
+} from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
 
 interface ExistingProfile {
@@ -13,9 +18,7 @@ interface ExistingProfile {
   category: string;
   subcategories: string[];
   website: string | null;
-  supportUrl: string | null;
-  bskyHandle: string | null;
-  atmosphereHandle: string | null;
+  bskyClient: string | null;
   tags: string[];
   avatar: { ref: string; mime: string } | null;
 }
@@ -24,6 +27,9 @@ interface Props {
   did: string;
   handle: string;
   initial: ExistingProfile | null;
+  /** Direct image URL to show in the avatar slot before any registry record
+   *  exists (e.g. the user's PDS-hosted Bluesky avatar). */
+  initialAvatarUrl?: string | null;
 }
 
 interface BlobRefShape {
@@ -47,7 +53,9 @@ async function readFileAsBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-export default function CreateProfileForm({ did, handle, initial }: Props) {
+export default function CreateProfileForm(
+  { did, handle, initial, initialAvatarUrl }: Props,
+) {
   const t = useT();
   const tForm = t.forms.profile;
 
@@ -56,13 +64,17 @@ export default function CreateProfileForm({ did, handle, initial }: Props) {
   const category = useSignal<string>(initial?.category ?? "app");
   const subcategories = useSignal<string[]>(initial?.subcategories ?? []);
   const website = useSignal(initial?.website ?? "");
-  const supportUrl = useSignal(initial?.supportUrl ?? "");
-  const bskyHandle = useSignal(initial?.bskyHandle ?? handle);
-  const atmosphereHandle = useSignal(initial?.atmosphereHandle ?? handle);
+  const bskyClient = useSignal<string>(
+    initial?.bskyClient ?? DEFAULT_BSKY_CLIENT_ID,
+  );
   const tagsText = useSignal((initial?.tags ?? []).join(", "));
   const avatarKeep = useSignal<BlobRefShape | null>(null);
+  /** Preview URL precedence: locally-picked file blob > existing registry
+   *  record (cached proxy) > prefill source (Bluesky PDS getBlob) > none. */
   const avatarPreview = useSignal<string | null>(
-    initial?.avatar ? `/api/registry/avatar/${encodeURIComponent(did)}` : null,
+    initial?.avatar
+      ? `/api/registry/avatar/${encodeURIComponent(did)}`
+      : (initialAvatarUrl ?? null),
   );
   const avatarFile = useSignal<File | null>(null);
   const avatarRemoved = useSignal(false);
@@ -73,7 +85,6 @@ export default function CreateProfileForm({ did, handle, initial }: Props) {
     null,
   );
 
-  // Pull existing avatar BlobRef so we can echo it back unchanged.
   useEffect(() => {
     if (!initial?.avatar) return;
     avatarKeep.value = {
@@ -131,9 +142,7 @@ export default function CreateProfileForm({ did, handle, initial }: Props) {
         category: category.value,
         subcategories: subcategories.value,
         website: website.value.trim() || undefined,
-        supportUrl: supportUrl.value.trim() || undefined,
-        bskyHandle: bskyHandle.value.trim() || undefined,
-        atmosphereHandle: atmosphereHandle.value.trim() || undefined,
+        bskyClient: bskyClient.value || undefined,
         tags,
       };
       if (avatarFile.value) {
@@ -224,6 +233,11 @@ export default function CreateProfileForm({ did, handle, initial }: Props) {
         </div>
 
         <div class="profile-form-fields">
+          <div class="profile-form-handle-row">
+            <span class="profile-form-label">{tForm.handleLabel}</span>
+            <span class="profile-form-handle-value">@{handle}</span>
+          </div>
+
           <label class="profile-form-field">
             <span class="profile-form-label">
               {tForm.nameLabel} <em class="profile-form-required">*</em>
@@ -316,46 +330,41 @@ export default function CreateProfileForm({ did, handle, initial }: Props) {
             />
           </label>
 
-          <label class="profile-form-field">
-            <span class="profile-form-label">{tForm.supportUrlLabel}</span>
-            <input
-              type="url"
-              placeholder={tForm.supportUrlPlaceholder}
-              value={supportUrl.value}
-              onInput={(e) =>
-                supportUrl.value = (e.currentTarget as HTMLInputElement).value}
-              class="profile-form-input"
-            />
-          </label>
-
-          <div class="profile-form-row-2">
-            <label class="profile-form-field">
-              <span class="profile-form-label">{tForm.bskyHandleLabel}</span>
-              <input
-                type="text"
-                placeholder={tForm.bskyHandlePlaceholder}
-                value={bskyHandle.value}
-                onInput={(e) =>
-                  bskyHandle.value =
-                    (e.currentTarget as HTMLInputElement).value}
-                class="profile-form-input"
-              />
-            </label>
-            <label class="profile-form-field">
-              <span class="profile-form-label">
-                {tForm.atmosphereHandleLabel}
-              </span>
-              <input
-                type="text"
-                placeholder={tForm.atmosphereHandlePlaceholder}
-                value={atmosphereHandle.value}
-                onInput={(e) =>
-                  atmosphereHandle.value =
-                    (e.currentTarget as HTMLInputElement).value}
-                class="profile-form-input"
-              />
-            </label>
-          </div>
+          <fieldset class="profile-form-field">
+            <legend class="profile-form-label">{tForm.bskyClientLabel}</legend>
+            <p class="profile-form-hint">{tForm.bskyClientHint}</p>
+            <div class="bsky-client-list">
+              {BSKY_CLIENTS.map((c) => {
+                const selected = bskyClient.value === c.id;
+                return (
+                  <label
+                    key={c.id}
+                    class={`bsky-client-row ${selected ? "is-selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="bskyClient"
+                      value={c.id}
+                      checked={selected}
+                      onChange={() => bskyClient.value = c.id}
+                    />
+                    <img
+                      src={bskyClientFaviconUrl(c.domain)}
+                      alt=""
+                      class="bsky-client-icon"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <span class="bsky-client-meta">
+                      <span class="bsky-client-name">{c.name}</span>
+                      <span class="bsky-client-domain">{c.domain}</span>
+                    </span>
+                    <span class="bsky-client-radio" aria-hidden="true" />
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
           <label class="profile-form-field">
             <span class="profile-form-label">{tForm.tagsLabel}</span>

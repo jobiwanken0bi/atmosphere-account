@@ -22,9 +22,7 @@ interface ProfileFormPayload {
   category?: string;
   subcategories?: string[];
   website?: string;
-  supportUrl?: string;
-  bskyHandle?: string;
-  atmosphereHandle?: string;
+  bskyClient?: string;
   tags?: string[];
   /** Either keep an existing avatar (passed as the BlobRef) or upload new bytes */
   avatar?: {
@@ -99,9 +97,7 @@ export const handler = define.handlers({
       category: trimOrNull(body.category) ?? "",
       subcategories: asArray(body.subcategories),
       website: trimOrNull(body.website),
-      supportUrl: trimOrNull(body.supportUrl),
-      bskyHandle: trimOrNull(body.bskyHandle),
-      atmosphereHandle: trimOrNull(body.atmosphereHandle),
+      bskyClient: trimOrNull(body.bskyClient),
       tags: asArray(body.tags),
       avatar: avatar ?? undefined,
       createdAt: new Date().toISOString(),

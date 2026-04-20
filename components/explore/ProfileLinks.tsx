@@ -1,15 +1,9 @@
 import type { ProfileRow } from "../../lib/registry.ts";
+import { bskyClientFaviconUrl, getBskyClient } from "../../lib/bsky-clients.ts";
 import { useT } from "../../i18n/mod.ts";
 
 interface Props {
   profile: ProfileRow;
-}
-
-interface LinkRow {
-  href: string;
-  label: string;
-  value: string;
-  external?: boolean;
 }
 
 function trimUrlForDisplay(url: string): string {
@@ -23,56 +17,49 @@ function trimUrlForDisplay(url: string): string {
 
 export default function ProfileLinks({ profile }: Props) {
   const t = useT().explore.detail;
-  const links: LinkRow[] = [];
-  if (profile.website) {
-    links.push({
-      href: profile.website,
-      label: t.website,
-      value: trimUrlForDisplay(profile.website),
-      external: true,
-    });
-  }
-  if (profile.supportUrl) {
-    links.push({
-      href: profile.supportUrl,
-      label: t.support,
-      value: trimUrlForDisplay(profile.supportUrl),
-      external: true,
-    });
-  }
-  if (profile.bskyHandle) {
-    links.push({
-      href: `https://bsky.app/profile/${
-        encodeURIComponent(profile.bskyHandle)
-      }`,
-      label: t.bsky,
-      value: `@${profile.bskyHandle}`,
-      external: true,
-    });
-  }
-  if (profile.atmosphereHandle) {
-    links.push({
-      href: `https://${profile.atmosphereHandle}`,
-      label: t.atmosphere,
-      value: profile.atmosphereHandle,
-      external: true,
-    });
-  }
-  if (links.length === 0) return null;
+  const client = getBskyClient(profile.bskyClient);
+  const bskyHref = client.profileUrl(profile.handle);
+
   return (
-    <div class="profile-links">
-      {links.map((l) => (
+    <div class="profile-actions">
+      <a
+        class="profile-action profile-action--primary"
+        href={bskyHref}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <img
+          src={bskyClientFaviconUrl(client.domain)}
+          alt=""
+          class="profile-action-icon"
+          loading="lazy"
+          decoding="async"
+        />
+        <span class="profile-action-label">
+          <span class="profile-action-title">
+            {t.openOn} {client.name}
+          </span>
+          <span class="profile-action-sub">{client.domain}</span>
+        </span>
+      </a>
+      {profile.website && (
         <a
-          key={`${l.label}-${l.href}`}
-          href={l.href}
-          target={l.external ? "_blank" : undefined}
-          rel={l.external ? "noopener noreferrer" : undefined}
-          class="profile-link"
+          class="profile-action"
+          href={profile.website}
+          target="_blank"
+          rel="noopener noreferrer"
         >
-          <span class="profile-link-label">{l.label}</span>
-          <span class="profile-link-value">{l.value}</span>
+          <span class="profile-action-icon profile-action-icon--glyph">
+            ↗
+          </span>
+          <span class="profile-action-label">
+            <span class="profile-action-title">{t.website}</span>
+            <span class="profile-action-sub">
+              {trimUrlForDisplay(profile.website)}
+            </span>
+          </span>
         </a>
-      ))}
+      )}
     </div>
   );
 }

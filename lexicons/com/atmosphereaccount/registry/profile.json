@@ -54,18 +54,16 @@
             "format": "uri",
             "maxLength": 256
           },
-          "supportUrl": {
+          "bskyClient": {
             "type": "string",
-            "format": "uri",
-            "maxLength": 256
-          },
-          "bskyHandle": {
-            "type": "string",
-            "format": "handle"
-          },
-          "atmosphereHandle": {
-            "type": "string",
-            "format": "handle"
+            "knownValues": [
+              "bluesky",
+              "blacksky",
+              "anisota",
+              "deer",
+              "witchsky"
+            ],
+            "description": "Preferred Bluesky-compatible client to open when visitors click the project's Bluesky link. Identity (handle) is the same across all clients."
           },
           "tags": {
             "type": "array",

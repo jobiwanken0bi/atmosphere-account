@@ -2081,45 +2081,96 @@ body {
   color: rgba(255, 255, 255, 0.85);
 }
 
-.profile-links {
+/* ---- Profile detail call-to-action buttons (Bluesky + Website) ---- */
+.profile-actions {
   margin-top: 1.5rem;
   display: grid;
-  gap: 0.6rem;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
-.profile-link {
-  padding: 0.85rem 1rem;
-  border-radius: 14px;
+.profile-action {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.9rem 1.05rem;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.55);
   text-decoration: none;
   color: inherit;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
 }
-.profile-link:hover {
-  background: rgba(255, 255, 255, 0.78);
+.profile-action:hover {
+  background: rgba(255, 255, 255, 0.85);
   transform: translateY(-1px);
 }
-.profile-link-label {
+.profile-action--primary {
+  background: linear-gradient(
+    135deg,
+    rgba(42, 90, 168, 0.95),
+    rgba(60, 124, 220, 0.95)
+  );
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.profile-action--primary:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(42, 90, 168, 1),
+    rgba(72, 138, 232, 1)
+  );
+}
+.profile-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: #ffffff;
+  object-fit: contain;
+  padding: 2px;
+}
+.profile-action-icon--glyph {
+  background: rgba(18, 26, 47, 0.08);
+  color: rgba(18, 26, 47, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  padding: 0;
+}
+.profile-action-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.profile-action-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.profile-action-sub {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: rgba(18, 26, 47, 0.55);
-}
-.profile-link-value {
-  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
   word-break: break-word;
 }
-.dark-phase .profile-link {
+.dark-phase .profile-action {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.18);
 }
-.dark-phase .profile-link-label {
-  color: rgba(255, 255, 255, 0.55);
+.dark-phase .profile-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.dark-phase .profile-action--primary {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+.dark-phase .profile-action-icon--glyph {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .profile-footer {
@@ -2193,6 +2244,138 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
+}
+
+/* Read-only "Signed in as @handle" row */
+.profile-form-handle-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(18, 26, 47, 0.04);
+  border: 1px solid rgba(18, 26, 47, 0.06);
+}
+.profile-form-handle-value {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(18, 26, 47, 0.9);
+}
+.dark-phase .profile-form-handle-row {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .profile-form-handle-value {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* ---- Bluesky client picker (radio-card list, mimics native modal) ---- */
+.bsky-client-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding: 0.4rem;
+  border-radius: 16px;
+  background: rgba(18, 26, 47, 0.04);
+  border: 1px solid rgba(18, 26, 47, 0.06);
+}
+.dark-phase .bsky-client-list {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.bsky-client-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.bsky-client-row:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+.bsky-client-row.is-selected {
+  background: rgba(42, 90, 168, 0.08);
+  border-color: rgba(42, 90, 168, 0.35);
+}
+.dark-phase .bsky-client-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dark-phase .bsky-client-row.is-selected {
+  background: rgba(120, 170, 255, 0.12);
+  border-color: rgba(120, 170, 255, 0.5);
+}
+.bsky-client-row > input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.bsky-client-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: #ffffff;
+  object-fit: contain;
+  padding: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.bsky-client-meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.bsky-client-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: rgba(18, 26, 47, 0.95);
+}
+.bsky-client-row.is-selected .bsky-client-name {
+  color: rgba(42, 90, 168, 1);
+}
+.bsky-client-domain {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+  color: rgba(18, 26, 47, 0.55);
+}
+.dark-phase .bsky-client-name {
+  color: rgba(255, 255, 255, 0.95);
+}
+.dark-phase .bsky-client-row.is-selected .bsky-client-name {
+  color: rgba(160, 200, 255, 1);
+}
+.dark-phase .bsky-client-domain {
+  color: rgba(255, 255, 255, 0.55);
+}
+.bsky-client-radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(18, 26, 47, 0.25);
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.bsky-client-row.is-selected .bsky-client-radio {
+  border-color: rgba(42, 90, 168, 1);
+  background: rgba(42, 90, 168, 1);
+  box-shadow: inset 0 0 0 3px #ffffff;
+}
+.dark-phase .bsky-client-radio {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.dark-phase .bsky-client-row.is-selected .bsky-client-radio {
+  border-color: rgba(160, 200, 255, 1);
+  background: rgba(160, 200, 255, 1);
+  box-shadow: inset 0 0 0 3px rgba(20, 26, 50, 1);
 }
 .profile-form-field {
   display: flex;

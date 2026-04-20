@@ -53,9 +53,8 @@ export interface ProfileRecord {
   category: Category | string;
   subcategories?: string[];
   website?: string;
-  supportUrl?: string;
-  bskyHandle?: string;
-  atmosphereHandle?: string;
+  /** Preferred Bluesky client (bluesky | blacksky | anisota | deer | witchsky). */
+  bskyClient?: string;
   tags?: string[];
   createdAt: string;
 }
@@ -71,8 +70,8 @@ export interface FeaturedRecord {
   entries: FeaturedEntry[];
 }
 
-const HANDLE_RE =
-  /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
+import { BSKY_CLIENT_IDS } from "./bsky-clients.ts";
+
 const DID_RE = /^did:[a-z]+:[a-zA-Z0-9._:%-]+$/;
 
 function isStr(v: unknown, max?: number): v is string {
@@ -146,21 +145,15 @@ export function validateProfile(
   if (v.website !== undefined && !isUrl(v.website)) {
     return { ok: false, error: "website: must be http(s) URL" };
   }
-  if (v.supportUrl !== undefined && !isUrl(v.supportUrl)) {
-    return { ok: false, error: "supportUrl: must be http(s) URL" };
-  }
   if (
-    v.bskyHandle !== undefined &&
-    (!isStr(v.bskyHandle) || !HANDLE_RE.test(v.bskyHandle as string))
+    v.bskyClient !== undefined &&
+    (!isStr(v.bskyClient) ||
+      !(BSKY_CLIENT_IDS as readonly string[]).includes(v.bskyClient as string))
   ) {
-    return { ok: false, error: "bskyHandle: invalid handle" };
-  }
-  if (
-    v.atmosphereHandle !== undefined &&
-    (!isStr(v.atmosphereHandle) ||
-      !HANDLE_RE.test(v.atmosphereHandle as string))
-  ) {
-    return { ok: false, error: "atmosphereHandle: invalid handle" };
+    return {
+      ok: false,
+      error: `bskyClient: must be one of ${BSKY_CLIENT_IDS.join(", ")}`,
+    };
   }
   if (v.subcategories !== undefined) {
     if (!Array.isArray(v.subcategories) || v.subcategories.length > 10) {
@@ -196,9 +189,7 @@ export function validateProfile(
       category: v.category as string,
       subcategories: v.subcategories as string[] | undefined,
       website: v.website as string | undefined,
-      supportUrl: v.supportUrl as string | undefined,
-      bskyHandle: v.bskyHandle as string | undefined,
-      atmosphereHandle: v.atmosphereHandle as string | undefined,
+      bskyClient: v.bskyClient as string | undefined,
       tags: v.tags as string[] | undefined,
       createdAt: v.createdAt as string,
     },

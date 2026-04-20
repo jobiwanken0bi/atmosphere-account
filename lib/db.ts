@@ -73,9 +73,7 @@ const SCHEMA_STATEMENTS: string[] = [
     category TEXT NOT NULL,
     subcategories TEXT NOT NULL DEFAULT '[]',
     website TEXT,
-    support_url TEXT,
-    bsky_handle TEXT,
-    atmosphere_handle TEXT,
+    bsky_client TEXT,
     tags TEXT NOT NULL DEFAULT '[]',
     avatar_cid TEXT,
     avatar_mime TEXT,
@@ -139,6 +137,37 @@ const SCHEMA_STATEMENTS: string[] = [
   )`,
 ];
 
+/**
+ * Additive migrations applied after the base schema. SQLite has no
+ * `ADD COLUMN IF NOT EXISTS`, so we attempt the ALTER and swallow the
+ * "duplicate column" error. Drop columns are no-ops in SQLite (the
+ * unused legacy columns simply stay around, holding NULLs).
+ */
+async function applyAdditiveMigrations(
+  c: { execute: (s: string) => Promise<unknown> },
+): Promise<void> {
+  const additiveColumns: Array<{ table: string; column: string; ddl: string }> =
+    [
+      {
+        table: "profile",
+        column: "bsky_client",
+        ddl: "ALTER TABLE profile ADD COLUMN bsky_client TEXT",
+      },
+    ];
+  for (const m of additiveColumns) {
+    try {
+      await c.execute(m.ddl);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/duplicate column|already exists/i.test(msg)) continue;
+      console.warn(
+        `[db] additive migration failed (${m.table}.${m.column}):`,
+        msg,
+      );
+    }
+  }
+}
+
 export function migrate(): Promise<void> {
   if (_migrated) return Promise.resolve();
   if (_migrationPromise) return _migrationPromise;
@@ -147,6 +176,7 @@ export function migrate(): Promise<void> {
     for (const stmt of SCHEMA_STATEMENTS) {
       await c.execute(stmt);
     }
+    await applyAdditiveMigrations(c);
     _migrated = true;
   })();
   return _migrationPromise;

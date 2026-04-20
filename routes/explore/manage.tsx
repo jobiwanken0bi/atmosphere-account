@@ -21,6 +21,11 @@ export const handler = define.handlers({
     const t = getMessages(ctx.state.locale);
 
     let initial: Parameters<typeof CreateProfileForm>[0]["initial"] = null;
+    /** When showing a Bluesky-prefilled draft (no registry record yet), we
+     *  display the user's PDS-hosted avatar directly via getBlob. After the
+     *  registry record exists, the form switches to the cached
+     *  /api/registry/avatar/:did proxy. */
+    let initialAvatarUrl: string | null = null;
     const existing = await getProfileByDid(user.did).catch(() => null);
     if (existing) {
       initial = {
@@ -29,16 +34,13 @@ export const handler = define.handlers({
         category: existing.category,
         subcategories: existing.subcategories,
         website: existing.website,
-        supportUrl: existing.supportUrl,
-        bskyHandle: existing.bskyHandle,
-        atmosphereHandle: existing.atmosphereHandle,
+        bskyClient: existing.bskyClient,
         tags: existing.tags,
         avatar: existing.avatarCid && existing.avatarMime
           ? { ref: existing.avatarCid, mime: existing.avatarMime }
           : null,
       };
     } else {
-      // Pre-fill from app.bsky.actor.profile if no registry entry yet.
       const session = await loadSession(user.did);
       if (session) {
         const bsky = await getBskyProfile(session.pdsUrl, user.did).catch(() =>
@@ -51,9 +53,7 @@ export const handler = define.handlers({
             category: "app",
             subcategories: [],
             website: null,
-            supportUrl: null,
-            bskyHandle: user.handle,
-            atmosphereHandle: user.handle,
+            bskyClient: null,
             tags: [],
             avatar: bsky.avatar
               ? {
@@ -62,6 +62,17 @@ export const handler = define.handlers({
               }
               : null,
           };
+          if (bsky.avatar) {
+            const cid = bsky.avatar.ref.$link;
+            const u = new URL(
+              `${
+                session.pdsUrl.replace(/\/$/, "")
+              }/xrpc/com.atproto.sync.getBlob`,
+            );
+            u.searchParams.set("did", user.did);
+            u.searchParams.set("cid", cid);
+            initialAvatarUrl = u.toString();
+          }
         }
       }
     }
@@ -70,6 +81,7 @@ export const handler = define.handlers({
       <ManagePage
         user={user}
         initial={initial}
+        initialAvatarUrl={initialAvatarUrl}
         t={t}
       />,
     );
@@ -79,11 +91,14 @@ export const handler = define.handlers({
 interface ManagePageProps {
   user: { did: string; handle: string };
   initial: Parameters<typeof CreateProfileForm>[0]["initial"];
+  initialAvatarUrl: string | null;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
-function ManagePage({ user, initial, t }: ManagePageProps) {
+function ManagePage(
+  { user, initial, initialAvatarUrl, t }: ManagePageProps,
+) {
   const explore = t.explore;
   return (
     <div id="page-top">
@@ -114,6 +129,7 @@ function ManagePage({ user, initial, t }: ManagePageProps) {
                 did={user.did}
                 handle={user.handle}
                 initial={initial}
+                initialAvatarUrl={initialAvatarUrl}
               />
             </div>
           </div>
