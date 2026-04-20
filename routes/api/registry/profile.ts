@@ -15,6 +15,7 @@ import {
   uploadBlob,
 } from "../../../lib/pds.ts";
 import { type ProfileRecord, validateProfile } from "../../../lib/lexicons.ts";
+import { deleteProfile, upsertProfile } from "../../../lib/registry.ts";
 
 interface ProfileFormPayload {
   name?: string;
@@ -110,20 +111,61 @@ export const handler = define.handlers({
       });
     }
 
+    let result: Awaited<ReturnType<typeof putProfileRecord>>;
     try {
-      const result = await putProfileRecord(
+      result = await putProfileRecord(
         user.did,
         session.pdsUrl,
         validation.value,
-      );
-      return new Response(
-        JSON.stringify({ ok: true, uri: result.uri, cid: result.cid }),
-        { status: 200, headers: { "content-type": "application/json" } },
       );
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
       return new Response(`putRecord failed: ${m}`, { status: 502 });
     }
+
+    /**
+     * Index inline so the new entry appears in /explore the moment the
+     * user hits Publish, without depending on the Jetstream worker. The
+     * worker is still useful for picking up records authored outside
+     * this app (e.g. by other tooling), but it isn't on the critical
+     * path for the user-facing flow.
+     *
+     * Both the PDS write and this index write are idempotent (rkey is
+     * fixed at "self"; the SQL is ON CONFLICT DO UPDATE), so retrying a
+     * failed publish is always safe.
+     */
+    try {
+      await upsertProfile({
+        did: user.did,
+        handle: user.handle,
+        name: validation.value.name,
+        description: validation.value.description,
+        category: validation.value.category,
+        subcategories: validation.value.subcategories ?? [],
+        website: validation.value.website ?? null,
+        bskyClient: validation.value.bskyClient ?? null,
+        tags: validation.value.tags ?? [],
+        avatarCid: validation.value.avatar?.ref.$link ?? null,
+        avatarMime: validation.value.avatar?.mimeType ?? null,
+        pdsUrl: session.pdsUrl,
+        recordCid: result.cid,
+        recordRev: result.commit?.rev ?? result.cid,
+        createdAt: Date.parse(validation.value.createdAt) || Date.now(),
+      });
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      console.error("[registry] inline index after putRecord failed:", err);
+      return new Response(
+        `Profile saved to your PDS, but indexing it for Explore failed: ${m}. ` +
+          `Press Publish again to retry.`,
+        { status: 502 },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({ ok: true, uri: result.uri, cid: result.cid }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
   },
 
   async DELETE(ctx) {
@@ -135,13 +177,23 @@ export const handler = define.handlers({
 
     try {
       await deleteProfileRecord(user.did, session.pdsUrl);
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
       return new Response(`deleteRecord failed: ${m}`, { status: 502 });
     }
+
+    /** Mirror the delete in our local index so /explore stops listing it
+     *  immediately. As above, the Jetstream worker would eventually do
+     *  this too, but we don't want to wait. */
+    try {
+      await deleteProfile(user.did);
+    } catch (err) {
+      console.error("[registry] inline delete-from-index failed:", err);
+    }
+
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   },
 });
