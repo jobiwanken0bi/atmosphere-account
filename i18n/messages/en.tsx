@@ -20,8 +20,7 @@ const en = {
     ogTitle: "Atmosphere Account",
     ogDescription:
       "The last social account you'll ever need. One account for all your apps.",
-    ogImageAlt:
-      "Atmosphere Account — sky, glass clouds, and hero headline",
+    ogImageAlt: "Atmosphere Account — sky, glass clouds, and hero headline",
   },
 
   nav: {
@@ -134,9 +133,9 @@ const en = {
       <>
         Your Atmosphere account lives with a <strong>provider</strong>{" "}
         — a service that stores your data in your personal data storage and
-        keeps it available across every app. That provider might be an app
-        you already use, or a host that only holds accounts. You pick who
-        hosts your account, and you can switch any time.
+        keeps it available across every app. That provider might be an app you
+        already use, or a host that only holds accounts. You pick who hosts your
+        account, and you can switch any time.
       </>
     ),
     apps: {
@@ -145,10 +144,10 @@ const en = {
       body: (blueskyLink: ComponentChildren): VNode => (
         <>
           Apps such as Bluesky {blueskyLink}{" "}
-          are also account providers. When you sign up, they provide an
-          account for you and your data is hosted by them. Some apps are not
-          account providers: they are just apps, and you sign in with an
-          account hosted somewhere else.
+          are also account providers. When you sign up, they provide an account
+          for you and your data is hosted by them. Some apps are not account
+          providers: they are just apps, and you sign in with an account hosted
+          somewhere else.
         </>
       ),
       blueskyAriaLabel: "Bluesky website",
@@ -280,6 +279,138 @@ const en = {
     label: "Language",
     languageNames: {
       en: "English",
+    },
+  },
+
+  categories: {
+    app: "Apps",
+    accountProvider: "Account providers",
+    moderator: "Moderators",
+    infrastructure: "Infrastructure",
+    all: "All",
+  },
+
+  subcategories: {
+    microblog: "Microblogs",
+    photo: "Photos",
+    video: "Video",
+    blogging: "Blogging",
+    music: "Music",
+    events: "Events",
+    clients: "Clients",
+    tools: "Tools",
+    social: "Social",
+    reading: "Reading",
+    productivity: "Productivity",
+  },
+
+  badges: {
+    verified: "Verified",
+    official: "Official",
+  },
+
+  explore: {
+    metaTitle: "Explore — Atmosphere Account",
+    metaDescription:
+      "Discover apps, account providers, moderators, and infrastructure built for the Atmosphere.",
+    heroEyebrow: "Explore",
+    heroHeadline: "The Atmosphere, all in one place.",
+    heroSubhead:
+      "Apps, account providers, moderators, and infrastructure — built by the community, listed by the people who make them.",
+    searchPlaceholder: "Search apps, providers, moderators…",
+    searchSubmit: "Search",
+    submitYourProject: "Submit your project",
+    manageYourProfile: "Manage your profile",
+    featured: "Featured",
+    browseBy: "Browse by",
+    nothingHere: "Nothing here yet.",
+    nothingHereSubtle: "Be the first to add a project in this category.",
+    viewProfile: "View profile",
+    by: "by",
+    poweredByYou:
+      "Powered by you — every entry is created and signed by the project's own Atmosphere account.",
+    detail: {
+      website: "Website",
+      support: "Support",
+      bsky: "Bluesky",
+      atmosphere: "Atmosphere profile",
+      lastUpdated: "Last updated",
+      hostedOn: "Hosted on",
+      editProfile: "Edit this profile",
+      missingProfile: "We couldn't find a profile for that handle.",
+      backToExplore: "Back to Explore",
+      categoryLabel: "Category",
+      notFoundTitle: "404",
+      notFoundBody: "We couldn't find a profile for that handle.",
+    },
+    create: {
+      eyebrow: "Add to Explore",
+      headline: "Sign in with your project's Atmosphere account",
+      body:
+        "Anyone can list a project. Sign in with the account that controls the project — anyone with that account can publish or update the entry. Nothing else is written to your PDS.",
+      handlePlaceholder: "yourproject.com or you.bsky.social",
+      signIn: "Sign in",
+      configError:
+        "OAuth isn't configured on this deployment yet. Try again shortly.",
+      whyHandle:
+        "We resolve your handle to your atproto DID, then redirect you to your account's authorization server.",
+    },
+    manage: {
+      headline: "Your registry profile",
+      subhead:
+        "Your entry shows up across Explore. The form is pre-filled from your Bluesky profile if you have one — change anything you like.",
+      pulledFromBsky: "Pulled in from your Bluesky profile.",
+      saveButton: "Publish profile",
+      savingButton: "Publishing…",
+      savedToast: "Saved. It'll appear in the registry shortly.",
+      deleteButton: "Remove from Explore",
+      deletingButton: "Removing…",
+      deletedToast: "Removed.",
+      signOut: "Sign out",
+      signedInAs: "Signed in as",
+    },
+  },
+
+  forms: {
+    profile: {
+      nameLabel: "Project name",
+      namePlaceholder: "e.g. Bluesky",
+      descriptionLabel: "Short description",
+      descriptionPlaceholder: "What does it do? Who's it for?",
+      categoryLabel: "Category",
+      categoryHint:
+        "Pick the best fit. A project can be both an app and an account provider.",
+      subcategoriesLabel: "Subcategories (optional)",
+      subcategoriesHint: "For apps. Pick up to a few.",
+      websiteLabel: "Website",
+      websitePlaceholder: "https://yourproject.com",
+      supportUrlLabel: "Support / contact URL",
+      supportUrlPlaceholder: "https://yourproject.com/support",
+      bskyHandleLabel: "Bluesky handle (optional)",
+      bskyHandlePlaceholder: "yourproject.bsky.social",
+      atmosphereHandleLabel: "Atmosphere handle (optional)",
+      atmosphereHandlePlaceholder: "yourproject.com",
+      tagsLabel: "Tags (optional)",
+      tagsHint: "Comma-separated, up to 10. Helps people find you in search.",
+      tagsPlaceholder: "open-source, indie, federated",
+      avatarLabel: "Project icon",
+      avatarHint: "PNG, JPEG, or WebP. 1MB max. Square works best.",
+      avatarReplace: "Replace icon",
+      avatarRemove: "Remove icon",
+      requiredHint: "Required",
+      avatarTooLarge: "Avatar must be 1MB or smaller.",
+      confirmDelete: "Remove your project from Explore?",
+    },
+  },
+
+  oauth: {
+    errors: {
+      generic: "Something went wrong with the sign-in flow. Please try again.",
+      handleUnknown:
+        "We couldn't resolve that handle. Check the spelling and try again.",
+      asUnreachable:
+        "Your account's authorization server is unreachable right now.",
+      sessionExpired: "Your session has expired. Please sign in again.",
     },
   },
 } as const;

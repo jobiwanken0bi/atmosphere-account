@@ -1,6 +1,7 @@
+import type { ComponentChildren } from "preact";
 import { useT } from "../i18n/mod.ts";
 
-function Icon({ children }: { children: any }) {
+function Icon({ children }: { children: ComponentChildren }) {
   return (
     <div class="feature-icon">
       <svg

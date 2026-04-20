@@ -28,7 +28,10 @@ export default function Footer() {
           >
             {t.footer.links.atProtocol}
           </a>
-          <span class="footer-coming-soon" title={t.footer.links.exploreAppsTitle}>
+          <span
+            class="footer-coming-soon"
+            title={t.footer.links.exploreAppsTitle}
+          >
             {t.footer.links.exploreApps}
           </span>
           <a href="/developer-resources">{t.footer.links.developerResources}</a>

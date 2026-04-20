@@ -1,0 +1,86 @@
+{
+  "lexicon": 1,
+  "id": "com.atmosphereaccount.registry.profile",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A project's profile in the Atmosphere registry. Created by the project's own account on its PDS; one record per account.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["name", "description", "category", "createdAt"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "maxGraphemes": 60,
+            "description": "Display name for the project."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "maxGraphemes": 500,
+            "description": "Short description of the project."
+          },
+          "avatar": {
+            "type": "blob",
+            "accept": ["image/png", "image/jpeg", "image/webp"],
+            "maxSize": 1000000,
+            "description": "Project icon. Recommended 512x512 square."
+          },
+          "category": {
+            "type": "string",
+            "knownValues": [
+              "app",
+              "accountProvider",
+              "moderator",
+              "infrastructure"
+            ],
+            "description": "Top-level category in the registry."
+          },
+          "subcategories": {
+            "type": "array",
+            "maxLength": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "description": "Open-ended subcategory tags. For apps: microblog, photo, video, blogging, music, events, clients, tools, social, reading, productivity."
+          },
+          "website": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 256
+          },
+          "supportUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 256
+          },
+          "bskyHandle": {
+            "type": "string",
+            "format": "handle"
+          },
+          "atmosphereHandle": {
+            "type": "string",
+            "format": "handle"
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

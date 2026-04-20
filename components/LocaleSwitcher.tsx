@@ -8,10 +8,9 @@ import { SUPPORTED_LOCALES, useLocale, useT } from "../i18n/mod.ts";
  * to the page that submitted it.
  */
 export default function LocaleSwitcher({ returnTo }: { returnTo?: string }) {
-  if (SUPPORTED_LOCALES.length < 2) return null;
-
   const t = useT();
   const current = useLocale();
+  if (SUPPORTED_LOCALES.length < 2) return null;
   const names = t.localeSwitcher.languageNames as Record<string, string>;
 
   return (
@@ -23,7 +22,11 @@ export default function LocaleSwitcher({ returnTo }: { returnTo?: string }) {
     >
       <label class="locale-switcher-label">
         <span class="visually-hidden">{t.localeSwitcher.label}</span>
-        <select name="to" class="locale-switcher-select" aria-label={t.localeSwitcher.label}>
+        <select
+          name="to"
+          class="locale-switcher-select"
+          aria-label={t.localeSwitcher.label}
+        >
           {SUPPORTED_LOCALES.map((loc) => (
             <option key={loc} value={loc} selected={loc === current}>
               {names[loc] ?? loc}

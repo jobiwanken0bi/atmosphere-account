@@ -41,7 +41,9 @@ try {
 
 if (filenames.length > 0) {
   const zipFile = fromFileUrl(zipPath);
-  const inputPaths = filenames.map((name) => fromFileUrl(new URL(name, outDir)));
+  const inputPaths = filenames.map((name) =>
+    fromFileUrl(new URL(name, outDir))
+  );
   const { code, stderr } = await new Deno.Command("zip", {
     args: ["-j", "-q", zipFile, ...inputPaths],
   }).output();

@@ -6,15 +6,15 @@ export default function NavScroll() {
     if (!nav) return;
 
     const onScroll = () => {
-      if (window.scrollY > 40) {
+      if (globalThis.scrollY > 40) {
         nav.classList.add("scrolled");
       } else {
         nav.classList.remove("scrolled");
       }
     };
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    globalThis.addEventListener("scroll", onScroll, { passive: true });
+    return () => globalThis.removeEventListener("scroll", onScroll);
   }, []);
 
   return null;

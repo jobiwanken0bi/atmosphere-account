@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "preact/hooks";
 
+/** Custom element from @lottiefiles/lottie-player (loaded at runtime). */
+interface LottiePlayerElement extends HTMLElement {
+  play?: () => void;
+  pause?: () => void;
+}
+
 export default function LottieHero() {
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedRef = useRef(false);
@@ -14,7 +20,9 @@ export default function LottieHero() {
     script.onload = () => {
       if (!containerRef.current) return;
 
-      const player = document.createElement("lottie-player") as any;
+      const player = document.createElement(
+        "lottie-player",
+      ) as LottiePlayerElement;
       player.setAttribute("src", "/atmosphere.json");
       player.setAttribute("background", "transparent");
       player.setAttribute("loop", "");
@@ -44,7 +52,5 @@ export default function LottieHero() {
     document.head.appendChild(script);
   }, []);
 
-  return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
-  );
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }

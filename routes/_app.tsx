@@ -1,3 +1,4 @@
+// deno-lint-ignore-file react-no-danger -- inline boot / i18n bridge scripts in document
 import { define } from "../utils.ts";
 import { getMessages, I18nProvider } from "../i18n/mod.ts";
 

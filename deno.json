@@ -6,7 +6,10 @@
     "dev": "vite",
     "build": "vite build",
     "gen:images": "deno run -A --node-modules-dir=auto scripts/generate-static-images.ts",
+    "gen:oauth-key": "deno run scripts/generate-oauth-key.ts",
     "extract:lottie-assets": "deno run -A scripts/extract-lottie-assets.ts",
+    "indexer": "deno run -A worker/indexer.ts",
+    "publish:featured": "deno run -A scripts/publish-featured.ts",
     "start": "deno serve -A _fresh/server.js",
     "update": "deno run -A -r jsr:@fresh/update ."
   },
@@ -27,7 +30,8 @@
     "preact": "npm:preact@^10.27.2",
     "@preact/signals": "npm:@preact/signals@^2.5.0",
     "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.0.8",
-    "vite": "npm:vite@^7.1.3"
+    "vite": "npm:vite@^7.1.3",
+    "@libsql/client": "npm:@libsql/client@^0.15.0"
   },
   "compilerOptions": {
     "lib": [

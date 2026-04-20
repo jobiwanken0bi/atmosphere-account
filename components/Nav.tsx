@@ -10,12 +10,9 @@ export default function Nav() {
           <span class="nav-logo-text">{t.nav.brand}</span>
         </a>
         <div class="nav-links">
-          <span
-            class="nav-btn nav-btn-ghost nav-coming-soon"
-            title={t.nav.exploreComingSoon}
-          >
+          <a href="/explore" class="nav-btn nav-btn-ghost">
             {t.nav.explore}
-          </span>
+          </a>
           <a
             href="https://atproto.com"
             target="_blank"

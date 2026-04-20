@@ -1,0 +1,13 @@
+{
+  "$comment": "Curated featured directory for the Atmosphere registry. Edit this file (or pass a custom path to scripts/publish-featured.ts) and run `deno task publish:featured` to push the record to the Atmosphere account's PDS. Only the account whose DID matches ATMOSPHERE_DID may publish a meaningful record — the indexer rejects writes from any other account.",
+  "entries": [
+    {
+      "handle": "bsky.app",
+      "badges": ["official"]
+    },
+    {
+      "handle": "tangled.org",
+      "badges": ["verified"]
+    }
+  ]
+}

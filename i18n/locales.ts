@@ -65,7 +65,9 @@ function parseAcceptLanguage(header: string): string[] {
 }
 
 /** Read the locale cookie out of a `Cookie` header value. */
-export function readLocaleCookie(cookieHeader: string | null): string | undefined {
+export function readLocaleCookie(
+  cookieHeader: string | null,
+): string | undefined {
   if (!cookieHeader) return undefined;
   for (const part of cookieHeader.split(";")) {
     const [name, ...rest] = part.trim().split("=");
