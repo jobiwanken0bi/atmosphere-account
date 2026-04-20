@@ -29,7 +29,14 @@ export default define.page(function ExploreCreate(ctx) {
             <p class="text-body mt-2">{t.create.body}</p>
             <div
               class="glass"
-              style={{ padding: "1.75rem", marginTop: "2rem" }}
+              style={{
+                padding: "1.75rem",
+                marginTop: "2rem",
+                position: "relative",
+                /* Lift the form card above the footer so the handle preview dropdown,
+                   anchored inside this card, can paint over later page chrome. */
+                zIndex: 50,
+              }}
             >
               {isOAuthConfigured()
                 ? <SignInForm />
