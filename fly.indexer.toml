@@ -1,47 +1,35 @@
 # Fly.io config for the Atmosphere registry indexer worker.
 #
-# This is a *background* worker — no public ports, no HTTP listener.
-# It opens a single WebSocket to Bluesky's Jetstream, fans events to
-# the Turso registry DB, and persists its cursor.
+# Background-only worker: holds a long-lived outbound WebSocket to
+# Bluesky's Jetstream, fans events into the Turso registry DB, persists
+# its cursor. No public ports, no HTTP listener — that's intentional,
+# and is why there's no [http_service] block here (flyctl launch's
+# default template assumes a webserver).
 #
 # Deploy from the project root:
-#
-#   flyctl launch \
-#     --config fly.indexer.toml \
-#     --dockerfile worker.Dockerfile \
-#     --name atmosphere-registry-indexer \
-#     --region iad \
-#     --no-deploy --copy-config
-#
-#   flyctl secrets set --config fly.indexer.toml \
-#     TURSO_DATABASE_URL=libsql://...turso.io \
-#     TURSO_AUTH_TOKEN=eyJ... \
-#     ATMOSPHERE_DID=did:plc:...
-#
 #   flyctl deploy --config fly.indexer.toml --dockerfile worker.Dockerfile
-#
-# To watch it run:  flyctl logs --config fly.indexer.toml
+# Logs:
+#   flyctl logs --config fly.indexer.toml
+# Status:
+#   flyctl status --config fly.indexer.toml
 
-app = "atmosphere-registry-indexer"
-primary_region = "iad"
+app = 'atmosphere-registry-indexer'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "worker.Dockerfile"
-
-# Single always-on background process; no [http_service] block on
-# purpose — the indexer doesn't accept incoming connections.
-[processes]
-  worker = "deno run -A worker/indexer.ts"
-
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
-  processes = ["worker"]
-
-# Don't auto-stop: the indexer must hold a long-lived WebSocket to
-# Jetstream and persist a cursor. Keep exactly one machine running.
-[[restart]]
-  policy = "always"
+  dockerfile = 'worker.Dockerfile'
 
 [deploy]
-  strategy = "immediate"
+  strategy = 'immediate'
+
+# Single always-on background process.
+[processes]
+  worker = 'deno run -A worker/indexer.ts'
+
+[[restart]]
+  policy = 'always'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
+  processes = ['worker']
