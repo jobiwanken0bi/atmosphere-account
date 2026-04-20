@@ -2404,3 +2404,126 @@ body {
 .dark-phase .signin-form-hint {
   color: rgba(255, 255, 255, 0.55);
 }
+
+/* Hide the sky-effects toggle anywhere we explicitly disable effects (e.g. /explore). */
+body.explore-no-effects #nav-effects-bar {
+  display: none !important;
+}
+
+/* ---- Sign-in handle preview dropdown ---- */
+.signin-form-preview-wrap {
+  position: relative;
+  overflow: visible;
+  z-index: 1;
+}
+/* Uses shared .glass for frosted fill + border; only layout/typography here */
+.signin-form-preview {
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  right: 0;
+  padding: 0.45rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.92rem;
+  color: #0e1428;
+}
+.dark-phase .signin-form-preview {
+  color: #f3f5fb;
+}
+.signin-form-preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(52vh, 320px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.signin-form-preview-li {
+  margin: 0;
+  padding: 0;
+}
+.signin-form-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 12px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+.signin-form-preview-row:hover,
+.signin-form-preview-row:focus-visible {
+  background: rgba(42, 90, 168, 0.08);
+  outline: none;
+}
+.dark-phase .signin-form-preview-row:hover,
+.dark-phase .signin-form-preview-row:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+.signin-form-preview-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #c9d8f5 0%, #a8c4f0 100%);
+  flex-shrink: 0;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.signin-form-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.signin-form-preview-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.signin-form-preview-handle {
+  font-size: 0.8rem;
+  color: rgba(18, 26, 47, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dark-phase .signin-form-preview-handle {
+  color: rgba(255, 255, 255, 0.55);
+}
+.signin-form-preview-status {
+  padding: 0.55rem 0.7rem;
+  font-size: 0.85rem;
+  color: rgba(18, 26, 47, 0.65);
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.dark-phase .signin-form-preview-status {
+  color: rgba(255, 255, 255, 0.6);
+}
+.signin-form-preview-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(18, 26, 47, 0.25);
+  border-top-color: rgba(18, 26, 47, 0.65);
+  animation: signin-spin 0.7s linear infinite;
+}
+.dark-phase .signin-form-preview-spinner {
+  border-color: rgba(255, 255, 255, 0.25);
+  border-top-color: rgba(255, 255, 255, 0.7);
+}
+@keyframes signin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

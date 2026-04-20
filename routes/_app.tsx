@@ -210,7 +210,16 @@ const inlineScript = `
   function isMobileViewport(){
     return typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 768px)').matches;
   }
+  function effectsForciblyOff(){
+    return document.body && document.body.classList.contains('explore-no-effects');
+  }
   function applySkyForViewport(){
+    if(effectsForciblyOff()){
+      document.documentElement.classList.add('sky-static');
+      syncSkyToggle();
+      update();
+      return;
+    }
     if(isMobileViewport()){
       document.documentElement.classList.add('sky-static');
     }else{
@@ -239,11 +248,20 @@ const inlineScript = `
 `;
 
 export default define.page(function App(ctx) {
-  const { Component, state } = ctx;
+  const { Component, state, url } = ctx;
   const locale = state.locale;
   const t = getMessages(locale);
+  /**
+   * The dynamic sky / sun / cloud parallax is intentionally disabled on the
+   * explore section — it competes with content density there. We force-apply
+   * `sky-static` server-side and hide the user-facing toggle.
+   */
+  const effectsOff = url.pathname === "/explore" ||
+    url.pathname.startsWith("/explore/");
+  const htmlClass = effectsOff ? "sky-static" : undefined;
+  const bodyClass = effectsOff ? "sky-bg explore-no-effects" : "sky-bg";
   return (
-    <html lang={locale}>
+    <html lang={locale} class={htmlClass}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -274,7 +292,7 @@ export default define.page(function App(ctx) {
           defer
         />
       </head>
-      <body class="sky-bg">
+      <body class={bodyClass}>
         <I18nProvider locale={locale}>
           <Component />
         </I18nProvider>
