@@ -2124,13 +2124,12 @@ body {
   );
 }
 .profile-action-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   flex-shrink: 0;
-  background: #ffffff;
+  background: transparent;
   object-fit: contain;
-  padding: 2px;
 }
 .profile-action-icon--glyph {
   background: rgba(18, 26, 47, 0.08);
@@ -2201,6 +2200,74 @@ body {
 .profile-form {
   padding: 1.75rem;
   border-radius: 24px;
+}
+
+/* ---- Live / inactive status pill at the top of the form ---- */
+.profile-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  margin-bottom: 1.25rem;
+  border: 1px solid transparent;
+}
+.profile-status--live {
+  background: rgba(46, 160, 90, 0.1);
+  border-color: rgba(46, 160, 90, 0.3);
+  color: rgba(20, 90, 50, 1);
+}
+.profile-status--inactive {
+  background: rgba(120, 120, 130, 0.08);
+  border-color: rgba(18, 26, 47, 0.12);
+  color: rgba(60, 70, 90, 1);
+}
+.profile-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+.profile-status--live .profile-status-dot {
+  background: #2ea05a;
+  box-shadow: 0 0 0 4px rgba(46, 160, 90, 0.18);
+}
+.profile-status--inactive .profile-status-dot {
+  background: #9aa0ad;
+  box-shadow: 0 0 0 4px rgba(154, 160, 173, 0.18);
+}
+.profile-status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.profile-status-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.profile-status-sub {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+.dark-phase .profile-status--live {
+  background: rgba(80, 200, 130, 0.12);
+  border-color: rgba(80, 200, 130, 0.35);
+  color: rgba(180, 240, 200, 1);
+}
+.dark-phase .profile-status--inactive {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(220, 225, 235, 1);
+}
+.dark-phase .profile-status--live .profile-status-dot {
+  background: #4cd283;
+  box-shadow: 0 0 0 4px rgba(76, 210, 131, 0.2);
+}
+.dark-phase .profile-status--inactive .profile-status-dot {
+  background: #b1b6c1;
+  box-shadow: 0 0 0 4px rgba(177, 182, 193, 0.18);
 }
 .profile-form-row {
   display: grid;
@@ -2317,14 +2384,12 @@ body {
   pointer-events: none;
 }
 .bsky-client-icon {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   flex-shrink: 0;
-  background: #ffffff;
+  background: transparent;
   object-fit: contain;
-  padding: 4px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .bsky-client-meta {
   display: flex;

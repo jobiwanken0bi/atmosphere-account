@@ -5,11 +5,7 @@ import {
   CATEGORIES,
   type Category,
 } from "../lib/lexicons.ts";
-import {
-  BSKY_CLIENTS,
-  bskyClientFaviconUrl,
-  DEFAULT_BSKY_CLIENT_ID,
-} from "../lib/bsky-clients.ts";
+import { BSKY_CLIENTS, DEFAULT_BSKY_CLIENT_ID } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
 
 interface ExistingProfile {
@@ -30,6 +26,9 @@ interface Props {
   /** Direct image URL to show in the avatar slot before any registry record
    *  exists (e.g. the user's PDS-hosted Bluesky avatar). */
   initialAvatarUrl?: string | null;
+  /** Whether the registry currently has a published record for this user.
+   *  Drives the live/inactive status pill at the top of the form. */
+  initialPublished: boolean;
 }
 
 interface BlobRefShape {
@@ -54,10 +53,15 @@ async function readFileAsBase64(file: File): Promise<string> {
 }
 
 export default function CreateProfileForm(
-  { did, handle, initial, initialAvatarUrl }: Props,
+  { did, handle, initial, initialAvatarUrl, initialPublished }: Props,
 ) {
   const t = useT();
   const tForm = t.forms.profile;
+  const tManage = t.explore.manage;
+  /** Live registry status. Flips on save (-> true) and delete (-> false).
+   *  Drives the colored pill that tells the user whether their entry is
+   *  visible in /explore right now. */
+  const published = useSignal<boolean>(initialPublished);
 
   const name = useSignal(initial?.name ?? "");
   const description = useSignal(initial?.description ?? "");
@@ -165,7 +169,8 @@ export default function CreateProfileForm(
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
-      message.value = { kind: "ok", text: t.explore.manage.savedToast };
+      published.value = true;
+      message.value = { kind: "ok", text: tManage.savedToast };
     } catch (err) {
       message.value = {
         kind: "error",
@@ -183,7 +188,8 @@ export default function CreateProfileForm(
     try {
       const res = await fetch("/api/registry/profile", { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());
-      message.value = { kind: "ok", text: t.explore.manage.deletedToast };
+      published.value = false;
+      message.value = { kind: "ok", text: tManage.deletedToast };
     } catch (err) {
       message.value = {
         kind: "error",
@@ -196,6 +202,27 @@ export default function CreateProfileForm(
 
   return (
     <form class="profile-form glass" onSubmit={onSubmit}>
+      <div
+        class={`profile-status profile-status--${
+          published.value ? "live" : "inactive"
+        }`}
+        role="status"
+        aria-live="polite"
+      >
+        <span class="profile-status-dot" aria-hidden="true" />
+        <span class="profile-status-text">
+          <span class="profile-status-title">
+            {published.value
+              ? tManage.statusLiveTitle
+              : tManage.statusInactiveTitle}
+          </span>
+          <span class="profile-status-sub">
+            {published.value
+              ? tManage.statusLiveSub
+              : tManage.statusInactiveSub}
+          </span>
+        </span>
+      </div>
       <div class="profile-form-row">
         <div class="profile-form-avatar">
           {avatarPreview.value
@@ -349,7 +376,7 @@ export default function CreateProfileForm(
                       onChange={() => bskyClient.value = c.id}
                     />
                     <img
-                      src={bskyClientFaviconUrl(c.domain)}
+                      src={c.iconUrl}
                       alt=""
                       class="bsky-client-icon"
                       loading="lazy"
@@ -388,19 +415,19 @@ export default function CreateProfileForm(
           class="profile-form-button-primary"
         >
           {submitting.value
-            ? t.explore.manage.savingButton
-            : t.explore.manage.saveButton}
+            ? tManage.savingButton
+            : published.value
+            ? tManage.updateButton
+            : tManage.publishButton}
         </button>
-        {initial && (
+        {published.value && (
           <button
             type="button"
             disabled={deleting.value}
             onClick={onDelete}
             class="profile-form-button-danger"
           >
-            {deleting.value
-              ? t.explore.manage.deletingButton
-              : t.explore.manage.deleteButton}
+            {deleting.value ? tManage.deletingButton : tManage.deleteButton}
           </button>
         )}
         {message.value && (

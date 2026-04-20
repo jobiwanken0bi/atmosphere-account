@@ -82,6 +82,7 @@ export const handler = define.handlers({
         user={user}
         initial={initial}
         initialAvatarUrl={initialAvatarUrl}
+        initialPublished={!!existing}
         t={t}
       />,
     );
@@ -92,12 +93,13 @@ interface ManagePageProps {
   user: { did: string; handle: string };
   initial: Parameters<typeof CreateProfileForm>[0]["initial"];
   initialAvatarUrl: string | null;
+  initialPublished: boolean;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
 function ManagePage(
-  { user, initial, initialAvatarUrl, t }: ManagePageProps,
+  { user, initial, initialAvatarUrl, initialPublished, t }: ManagePageProps,
 ) {
   const explore = t.explore;
   return (
@@ -130,6 +132,7 @@ function ManagePage(
                 handle={user.handle}
                 initial={initial}
                 initialAvatarUrl={initialAvatarUrl}
+                initialPublished={initialPublished}
               />
             </div>
           </div>

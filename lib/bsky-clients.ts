@@ -19,8 +19,10 @@ export interface BskyClient {
   id: string;
   /** Display name shown to users. */
   name: string;
-  /** Bare hostname (used to derive favicon + profile URL). */
+  /** Bare hostname (used in UI subtitles + as the profile URL host). */
   domain: string;
+  /** Path under /static/clients/ for the rendered button icon. */
+  iconUrl: string;
   /** Returns the profile URL for a given handle on this client. */
   profileUrl: (handle: string) => string;
 }
@@ -33,30 +35,35 @@ export const BSKY_CLIENTS: BskyClient[] = [
     id: "bluesky",
     name: "Bluesky",
     domain: "bsky.app",
+    iconUrl: "/clients/bluesky.svg",
     profileUrl: profileUrlAt("bsky.app"),
   },
   {
     id: "blacksky",
     name: "Blacksky",
     domain: "blacksky.community",
+    iconUrl: "/clients/blacksky.svg",
     profileUrl: profileUrlAt("blacksky.community"),
   },
   {
     id: "anisota",
     name: "Anisota",
     domain: "anisota.net",
+    iconUrl: "/clients/anisota.svg",
     profileUrl: profileUrlAt("anisota.net"),
   },
   {
     id: "deer",
     name: "Deer Social",
     domain: "deer.social",
+    iconUrl: "/clients/deer.svg",
     profileUrl: profileUrlAt("deer.social"),
   },
   {
     id: "witchsky",
     name: "Witchsky",
     domain: "witchsky.app",
+    iconUrl: "/clients/witchsky.png",
     profileUrl: profileUrlAt("witchsky.app"),
   },
 ];
@@ -67,16 +74,4 @@ export const DEFAULT_BSKY_CLIENT_ID = "bluesky";
 
 export function getBskyClient(id: string | null | undefined): BskyClient {
   return BSKY_CLIENTS.find((c) => c.id === id) ?? BSKY_CLIENTS[0];
-}
-
-/**
- * URL for the client's favicon. We route through Google's S2 favicon
- * service so we never depend on each domain serving CORS-friendly
- * `/favicon.ico` and so we get a consistent rendered size. Cached
- * aggressively by Google's CDN.
- */
-export function bskyClientFaviconUrl(domain: string, size = 64): string {
-  return `https://www.google.com/s2/favicons?sz=${size}&domain=${
-    encodeURIComponent(domain)
-  }`;
 }

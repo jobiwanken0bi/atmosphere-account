@@ -1,5 +1,5 @@
 import type { ProfileRow } from "../../lib/registry.ts";
-import { bskyClientFaviconUrl, getBskyClient } from "../../lib/bsky-clients.ts";
+import { getBskyClient } from "../../lib/bsky-clients.ts";
 import { useT } from "../../i18n/mod.ts";
 
 interface Props {
@@ -29,7 +29,7 @@ export default function ProfileLinks({ profile }: Props) {
         rel="noopener noreferrer"
       >
         <img
-          src={bskyClientFaviconUrl(client.domain)}
+          src={client.iconUrl}
           alt=""
           class="profile-action-icon"
           loading="lazy"
