@@ -12,11 +12,47 @@ function safeGet(key: string): string | undefined {
   }
 }
 
-export const SITE_URL = safeGet("FRESH_PUBLIC_SITE_URL") ??
-  "https://atmosphereaccount.com";
+/** True when this process is running on hosted infrastructure
+ *  (Deno Deploy / Vercel / similar). Used to override misconfigured
+ *  local URLs that may have been pasted into hosted env panels. */
+const IS_HOSTED = !!(safeGet("DENO_DEPLOYMENT_ID") ??
+  safeGet("DENO_REGION") ??
+  safeGet("VERCEL"));
 
-export const IS_DEV = safeGet("DENO_ENV") !== "production" &&
-  safeGet("VERCEL_ENV") !== "production" &&
+const RAW_SITE_URL = safeGet("FRESH_PUBLIC_SITE_URL");
+
+/** atproto / RFC 8252 forbid `localhost` as a redirect host for confidential
+ *  clients (only loopback IPs like 127.0.0.1 are allowed, and even then only
+ *  in dev). If a hosted deployment ends up with a localhost-shaped SITE_URL,
+ *  ignore it and fall back to the canonical production origin so we don't
+ *  publish a broken client_id / redirect_uri. */
+function isLocalhostUrl(u: string | undefined): boolean {
+  if (!u) return false;
+  try {
+    const host = new URL(u).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+export const SITE_URL: string = (() => {
+  if (RAW_SITE_URL && !(IS_HOSTED && isLocalhostUrl(RAW_SITE_URL))) {
+    return RAW_SITE_URL;
+  }
+  if (IS_HOSTED && isLocalhostUrl(RAW_SITE_URL)) {
+    console.warn(
+      `[env] FRESH_PUBLIC_SITE_URL is set to ${RAW_SITE_URL} on a hosted ` +
+        `deployment. Ignoring and falling back to https://atmosphereaccount.com. ` +
+        `Update the env var in your hosting provider's dashboard to remove ` +
+        `this warning (and to support custom domains).`,
+    );
+  }
+  return "https://atmosphereaccount.com";
+})();
+
+export const IS_DEV = !IS_HOSTED &&
+  safeGet("DENO_ENV") !== "production" &&
   !SITE_URL.startsWith("https://atmosphereaccount.com");
 
 export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");

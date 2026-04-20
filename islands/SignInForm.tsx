@@ -39,6 +39,7 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
   const debounceRef = useRef<number | null>(null);
   const requestSeq = useRef(0);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   useEffect(() => {
     function onDocPointerDown(e: PointerEvent) {
@@ -105,10 +106,18 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
   const onSelectMatch = (m: PreviewMatch) => {
     handle.value = m.handle;
     showPreview.value = false;
+    submitting.value = true;
+    error.value = null;
+    /** Defer one tick so the controlled <input> reflects the new value
+     *  before the native form submission serialises it. */
+    setTimeout(() => {
+      formRef.current?.submit();
+    }, 0);
   };
 
   return (
     <form
+      ref={formRef}
       method="POST"
       action="/oauth/login"
       onSubmit={onSubmit}
