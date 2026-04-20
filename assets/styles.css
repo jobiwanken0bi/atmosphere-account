@@ -2128,8 +2128,10 @@ body {
   height: 32px;
   border-radius: 9px;
   flex-shrink: 0;
-  background: transparent;
+  background: #ffffff;
   object-fit: contain;
+  padding: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .profile-action-icon--glyph {
   background: rgba(18, 26, 47, 0.08);
@@ -2384,12 +2386,14 @@ body {
   pointer-events: none;
 }
 .bsky-client-icon {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   flex-shrink: 0;
-  background: transparent;
+  background: #ffffff;
   object-fit: contain;
+  padding: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .bsky-client-meta {
   display: flex;

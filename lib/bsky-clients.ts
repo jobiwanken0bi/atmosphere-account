@@ -21,7 +21,12 @@ export interface BskyClient {
   name: string;
   /** Bare hostname (used in UI subtitles + as the profile URL host). */
   domain: string;
-  /** Path under /static/clients/ for the rendered button icon. */
+  /**
+   * URL for the small button-icon. By default we route through Google's
+   * S2 favicon CDN so each client's real favicon comes through without
+   * us having to ship per-client artwork. A few entries (e.g. witchsky)
+   * override this with a locally-hosted asset.
+   */
   iconUrl: string;
   /** Returns the profile URL for a given handle on this client. */
   profileUrl: (handle: string) => string;
@@ -30,36 +35,45 @@ export interface BskyClient {
 const profileUrlAt = (host: string) => (handle: string): string =>
   `https://${host}/profile/${encodeURIComponent(handle)}`;
 
+const faviconFor = (domain: string, size = 64): string =>
+  `https://www.google.com/s2/favicons?sz=${size}&domain=${
+    encodeURIComponent(domain)
+  }`;
+
 export const BSKY_CLIENTS: BskyClient[] = [
   {
     id: "bluesky",
     name: "Bluesky",
     domain: "bsky.app",
-    iconUrl: "/clients/bluesky.svg",
+    iconUrl: faviconFor("bsky.app"),
     profileUrl: profileUrlAt("bsky.app"),
   },
   {
     id: "blacksky",
     name: "Blacksky",
     domain: "blacksky.community",
-    iconUrl: "/clients/blacksky.svg",
+    iconUrl: faviconFor("blacksky.community"),
     profileUrl: profileUrlAt("blacksky.community"),
   },
   {
     id: "anisota",
     name: "Anisota",
     domain: "anisota.net",
-    iconUrl: "/clients/anisota.svg",
+    iconUrl: faviconFor("anisota.net"),
     profileUrl: profileUrlAt("anisota.net"),
   },
   {
     id: "deer",
     name: "Deer Social",
     domain: "deer.social",
-    iconUrl: "/clients/deer.svg",
+    iconUrl: faviconFor("deer.social"),
     profileUrl: profileUrlAt("deer.social"),
   },
   {
+    /**
+     * Locally-hosted because witchsky.app's served favicon isn't a clean
+     * mark — the user supplied a higher-fidelity icon to use instead.
+     */
     id: "witchsky",
     name: "Witchsky",
     domain: "witchsky.app",
