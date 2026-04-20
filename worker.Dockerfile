@@ -18,9 +18,13 @@ COPY lib ./lib
 COPY lexicons ./lexicons
 COPY utils.ts ./utils.ts
 
-# Resolve and cache all transitive imports at build time so the container
-# starts cold quickly and doesn't try to pull from JSR/NPM at runtime.
-RUN deno cache worker/indexer.ts
+# `deno.json` declares `"nodeModulesDir": "manual"`, so Deno expects an
+# actual ./node_modules to exist when resolving npm: specifiers (e.g.
+# @libsql/client/web). `deno install` materializes node_modules from the
+# lockfile without running lifecycle scripts. We then `deno cache` the
+# entrypoint so all JSR/HTTPS imports are pre-fetched into the global
+# cache and the container can start fully offline.
+RUN deno install && deno cache worker/indexer.ts
 
 ENV DENO_ENV=production
 
