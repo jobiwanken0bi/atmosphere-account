@@ -44,12 +44,23 @@ async function main(): Promise<void> {
   const priv = enrich(privateJwk);
   const pub = enrich(publicJwk);
 
-  console.log("# Add the following to your environment (.env.local for dev,");
-  console.log("# Deno Deploy project secrets for production).");
+  console.log("# Add the following to your environment.");
+  console.log("# - For .env / .env.local: paste the lines below as-is.");
+  console.log(
+    "# - For Deno Deploy / Vercel project secrets: paste only the value",
+  );
+  console.log(
+    "#   to the right of '=' (the raw JSON object including the braces).",
+  );
   console.log("# DO NOT commit OAUTH_PRIVATE_JWK to source control.\n");
-  console.log(`OAUTH_PRIVATE_JWK='${JSON.stringify(priv)}'`);
-  console.log(`OAUTH_PUBLIC_JWK='${JSON.stringify(pub)}'`);
-  console.log(`OAUTH_KID='${kid}'`);
+  /** Print values WITHOUT shell quotes. The raw JSON has no whitespace
+   *  (JSON.stringify packs tightly) so it's a valid bare value for any
+   *  reasonable .env parser, and it removes any temptation to strip
+   *  surrounding quotes (which several users have accidentally done by
+   *  also stripping the leading `{` / trailing `}`). */
+  console.log(`OAUTH_PRIVATE_JWK=${JSON.stringify(priv)}`);
+  console.log(`OAUTH_PUBLIC_JWK=${JSON.stringify(pub)}`);
+  console.log(`OAUTH_KID=${kid}`);
   console.log();
   console.log(
     "# Optional: a 32+ byte random string for signing session cookies.",
@@ -57,7 +68,7 @@ async function main(): Promise<void> {
   const secret = bufToBase64Url(
     crypto.getRandomValues(new Uint8Array(32)).buffer,
   );
-  console.log(`SESSION_SECRET='${secret}'`);
+  console.log(`SESSION_SECRET=${secret}`);
 }
 
 if (import.meta.main) {

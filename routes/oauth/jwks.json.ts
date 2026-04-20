@@ -5,6 +5,7 @@
  */
 import { define } from "../../utils.ts";
 import { OAUTH_PUBLIC_JWK } from "../../lib/env.ts";
+import { parseJwkEnv } from "../../lib/jose.ts";
 
 export const handler = define.handlers({
   GET(): Response {
@@ -19,10 +20,12 @@ export const handler = define.handlers({
     }
     let key: unknown;
     try {
-      key = JSON.parse(OAUTH_PUBLIC_JWK);
-    } catch {
+      key = parseJwkEnv("OAUTH_PUBLIC_JWK", OAUTH_PUBLIC_JWK);
+    } catch (err) {
       return new Response(
-        JSON.stringify({ error: "OAUTH_PUBLIC_JWK is not valid JSON" }),
+        JSON.stringify({
+          error: err instanceof Error ? err.message : String(err),
+        }),
         { status: 500, headers: { "content-type": "application/json" } },
       );
     }

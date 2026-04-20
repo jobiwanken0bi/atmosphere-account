@@ -69,11 +69,56 @@ export function importEs256PublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
   );
 }
 
+/**
+ * Strip common wrapping artifacts that creep in when env values are
+ * pasted between shells, .env files, and provider UIs:
+ *   - leading/trailing whitespace
+ *   - matched surrounding single or double quotes
+ * Then validate the result looks like a JSON object before parsing.
+ *
+ * This catches the most common production foot-gun where a JWK env
+ * value loses its outer quotes (and sometimes its braces) during
+ * copy/paste, and replaces an opaque `JSON.parse` error with a clear,
+ * actionable one.
+ */
+export function parseJwkEnv(varName: string, raw: string): JsonWebKey {
+  let s = raw.trim();
+  if (
+    s.length >= 2 &&
+    ((s.startsWith("'") && s.endsWith("'")) ||
+      (s.startsWith('"') && s.endsWith('"')))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (!s.startsWith("{") || !s.endsWith("}")) {
+    const head = s.slice(0, 30);
+    const tail = s.slice(-30);
+    throw new Error(
+      `${varName} is not a valid JSON object. ` +
+        `Expected it to start with '{' and end with '}'. ` +
+        `Got length=${s.length}, starts with: ${JSON.stringify(head)}, ` +
+        `ends with: ${JSON.stringify(tail)}. ` +
+        `If you copied this from \`deno task gen:oauth-key\`, paste the ` +
+        `raw JSON object including the surrounding braces, with no extra ` +
+        `quotes around it.`,
+    );
+  }
+  try {
+    return JSON.parse(s) as JsonWebKey;
+  } catch (err) {
+    throw new Error(
+      `${varName} could not be parsed as JSON: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+}
+
 export function loadClientPrivateKey(
   privateJwkJson: string,
 ): Promise<CryptoKey> {
   if (!_privateKeyPromise) {
-    const jwk = JSON.parse(privateJwkJson) as JsonWebKey;
+    const jwk = parseJwkEnv("OAUTH_PRIVATE_JWK", privateJwkJson);
     _privateKeyPromise = importEs256PrivateKey(jwk);
   }
   return _privateKeyPromise;
