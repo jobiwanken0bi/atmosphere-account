@@ -356,8 +356,6 @@ const en = {
         "We resolve your handle to your atproto DID, then redirect you to your account's authorization server.",
       previewLoading: "Looking up account…",
       previewNotFound: "No account found for that handle.",
-      previewNeedFullHandle:
-        "Keep typing a full handle (for example name.bsky.social).",
     },
     manage: {
       headline: "Your registry profile",

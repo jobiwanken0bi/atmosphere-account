@@ -107,12 +107,6 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
     showPreview.value = false;
   };
 
-  const missMessage = () => {
-    const r = missReason.value;
-    if (r === "invalid_handle") return t.explore.create.previewNeedFullHandle;
-    return t.explore.create.previewNotFound;
-  };
-
   return (
     <form
       method="POST"
@@ -170,7 +164,7 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
                 )}
                 {!previewLoading.value && missReason.value !== null && (
                   <div class="signin-form-preview-status">
-                    <span>{missMessage()}</span>
+                    <span>{t.explore.create.previewNotFound}</span>
                   </div>
                 )}
                 {!previewLoading.value &&
