@@ -50,6 +50,10 @@ gets `node_modules` before Vite runs. `start` serves from `_fresh/server.js`.
 5. **Run command:** `deno task start` (or `deno serve -A _fresh/server.js` per
    `deno.json`).
 
+Remote Turso (`libsql://…`) uses `@libsql/client/web` so the deploy runtime does
+not need native `@libsql/*` platform binaries. Local `file:./local.db` still
+uses the full client when running `deno task dev`.
+
 Adjust if your host uses different entrypoints.
 
 ## Contributing

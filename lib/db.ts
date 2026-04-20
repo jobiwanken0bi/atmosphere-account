@@ -9,10 +9,17 @@
  *
  * If TURSO_DATABASE_URL is unset the client falls back to file:./local.db
  * so `deno task dev` works without configuration.
+ *
+ * **Deploy note:** The default `@libsql/client` entry pulls native bindings
+ * (`@libsql/linux-x64-gnu`, etc.) that break on Linux/serverless when the
+ * bundle was resolved for another OS. Remote Turso URLs use
+ * `@libsql/client/web` (HTTP only, no natives). Local `file:` URLs still
+ * use the full client in dev only.
  */
-import { type Client, createClient } from "@libsql/client";
+import type { Client } from "@libsql/client/web";
 
 let _client: Client | null = null;
+let _clientPromise: Promise<Client> | null = null;
 let _migrated = false;
 let _migrationPromise: Promise<void> | null = null;
 
@@ -24,12 +31,37 @@ function getEnv(key: string): string | undefined {
   }
 }
 
-export function db(): Client {
-  if (_client) return _client;
-  const url = getEnv("TURSO_DATABASE_URL") ?? "file:./local.db";
-  const authToken = getEnv("TURSO_AUTH_TOKEN");
-  _client = createClient({ url, authToken });
-  return _client;
+function resolveDbUrl(): string {
+  return getEnv("TURSO_DATABASE_URL") ?? "file:./local.db";
+}
+
+/**
+ * Production / `deno task start` must not load the native libsql binary; only
+ * the web client. Vite sets import.meta.env.DEV in dev; omitting env is
+ * treated as production (Deploy).
+ */
+function shouldLoadNativeFileClient(url: string): boolean {
+  if (!url.startsWith("file:")) return false;
+  return import.meta.env?.DEV === true;
+}
+
+function getClient(): Promise<Client> {
+  if (_client) return Promise.resolve(_client);
+  if (!_clientPromise) {
+    _clientPromise = (async () => {
+      const url = resolveDbUrl();
+      const authToken = getEnv("TURSO_AUTH_TOKEN");
+      if (shouldLoadNativeFileClient(url)) {
+        const { createClient } = await import("@libsql/client");
+        _client = createClient({ url, authToken }) as unknown as Client;
+        return _client;
+      }
+      const { createClient } = await import("@libsql/client/web");
+      _client = createClient({ url, authToken });
+      return _client;
+    })();
+  }
+  return _clientPromise;
 }
 
 const SCHEMA_STATEMENTS: string[] = [
@@ -111,7 +143,7 @@ export function migrate(): Promise<void> {
   if (_migrated) return Promise.resolve();
   if (_migrationPromise) return _migrationPromise;
   _migrationPromise = (async () => {
-    const c = db();
+    const c = await getClient();
     for (const stmt of SCHEMA_STATEMENTS) {
       await c.execute(stmt);
     }
@@ -123,5 +155,6 @@ export function migrate(): Promise<void> {
 /** Convenience: ensure schema is in place before running a callback. */
 export async function withDb<T>(fn: (c: Client) => Promise<T>): Promise<T> {
   await migrate();
-  return fn(db());
+  const c = await getClient();
+  return fn(c);
 }
