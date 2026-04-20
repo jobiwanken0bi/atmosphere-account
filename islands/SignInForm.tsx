@@ -170,54 +170,55 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
                 {!previewLoading.value &&
                   missReason.value === null &&
                   matches.value.length > 0 && (
-                  <ul class="signin-form-preview-list">
+                  <div class="signin-form-preview-list">
                     {matches.value.map((m) => (
-                      <li key={m.did} class="signin-form-preview-li">
-                        <button
-                          type="button"
-                          class="signin-form-preview-row"
-                          role="option"
-                          onClick={() =>
-                            onSelectMatch(m)}
-                        >
-                          {m.avatarUrl
+                      <button
+                        key={m.did}
+                        type="button"
+                        class="signin-form-preview-row"
+                        role="option"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          onSelectMatch(m);
+                        }}
+                      >
+                        {m.avatarUrl
+                          ? (
+                            <img
+                              class="signin-form-preview-avatar"
+                              src={m.avatarUrl}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          )
+                          : (
+                            <span
+                              class="signin-form-preview-avatar"
+                              aria-hidden="true"
+                            />
+                          )}
+                        <span class="signin-form-preview-meta">
+                          {m.displayName
                             ? (
-                              <img
-                                class="signin-form-preview-avatar"
-                                src={m.avatarUrl}
-                                alt=""
-                                loading="lazy"
-                                decoding="async"
-                              />
-                            )
-                            : (
-                              <span
-                                class="signin-form-preview-avatar"
-                                aria-hidden="true"
-                              />
-                            )}
-                          <span class="signin-form-preview-meta">
-                            {m.displayName
-                              ? (
-                                <>
-                                  <span class="signin-form-preview-name">
-                                    {m.displayName}
-                                  </span>
-                                  <span class="signin-form-preview-handle">
-                                    @{m.handle}
-                                  </span>
-                                </>
-                              )
-                              : (
+                              <>
                                 <span class="signin-form-preview-name">
+                                  {m.displayName}
+                                </span>
+                                <span class="signin-form-preview-handle">
                                   @{m.handle}
                                 </span>
-                              )}
-                          </span>
-                        </button>
-                      </li>
+                              </>
+                            )
+                            : (
+                              <span class="signin-form-preview-name">
+                                @{m.handle}
+                              </span>
+                            )}
+                        </span>
+                      </button>
                     ))}
-                  </ul>
+                  </div>
                 )}
                 {!previewLoading.value &&
                   missReason.value === null &&
