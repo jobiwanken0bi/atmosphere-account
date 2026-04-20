@@ -37,14 +37,16 @@ deno task build
 deno task start
 ```
 
-`start` serves the app from `_fresh/server.js` (created by `build`).
+`build` runs `deno install` then `vite build` so a clean clone (and Deno Deploy)
+gets `node_modules` before Vite runs. `start` serves from `_fresh/server.js`.
 
 ## Deploy (Deno Deploy)
 
 1. Push this repository to GitHub (or GitLab).
 2. In [Deno Deploy](https://dash.deno.com/), create a project from the repo.
 3. Set **Root directory** to the repository root (this folder).
-4. **Build step:** `deno task build`
+4. **Build step:** `deno task build` (installs npm deps, then runs Vite —
+   required on Deploy)
 5. **Run command:** `deno task start` (or `deno serve -A _fresh/server.js` per
    `deno.json`).
 
