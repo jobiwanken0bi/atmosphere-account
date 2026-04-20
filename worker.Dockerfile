@@ -4,7 +4,10 @@
 # folders (worker/, lib/, lexicons/) into the image. Fly's `flyctl deploy`
 # uses the directory containing the fly config as the context — so this
 # file lives at the project root, paired with fly.indexer.toml.
-FROM denoland/deno:2.1.4
+# Pinned to match the local Deno (2.7.x) that generated deno.lock — the
+# lockfile format moves forward with each minor and older runtimes
+# (e.g. 2.1.x) refuse to read newer versions.
+FROM denoland/deno:2.7.12
 
 WORKDIR /app
 
