@@ -306,10 +306,10 @@ const en = {
    */
   categories: {
     app: "App",
-    accountProvider: "Account provider",
+    accountProvider: "Account Provider",
     moderator: "Moderator",
     infrastructure: "Infrastructure",
-    developerTool: "Developer tool",
+    developerTool: "Developer Tool",
     all: "All",
   },
 
@@ -351,7 +351,7 @@ const en = {
     heroEyebrow: "Explore",
     heroHeadline: "The Atmosphere, all in one place.",
     heroSubhead:
-      "Apps, account providers, moderators, and infrastructure — built by the community, listed by the people who make them.",
+      "Apps and services in the Atmosphere — built by the community, listed by the people who make them.",
     searchPlaceholder: "Search apps, providers, moderators…",
     searchSubmit: "Search",
     submitYourProject: "Submit your project",
