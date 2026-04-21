@@ -1,9 +1,10 @@
 import { define } from "../../../utils.ts";
 import { CATEGORIES } from "../../../lib/lexicons.ts";
 import { searchProfiles } from "../../../lib/registry.ts";
+import { withRateLimit } from "../../../lib/rate-limit.ts";
 
 export const handler = define.handlers({
-  async GET(ctx) {
+  GET: withRateLimit(async (ctx) => {
     const url = ctx.url;
     const q = url.searchParams.get("q") ?? undefined;
     const categoryRaw = url.searchParams.get("category") ?? undefined;
@@ -28,5 +29,5 @@ export const handler = define.handlers({
         "cache-control": "public, max-age=10, s-maxage=30",
       },
     });
-  },
+  }),
 });

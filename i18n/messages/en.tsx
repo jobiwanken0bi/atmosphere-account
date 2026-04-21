@@ -286,6 +286,76 @@ const en = {
       "The Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
     downloadLottie: "Download Lottie (JSON)",
     downloadIcons: "Download icons (ZIP)",
+    api: {
+      heading: "Profile API",
+      intro:
+        "Pull registry profiles into your app — sign-in flows, discovery, info pages. All endpoints are public, JSON, and cached at the edge. Soft-rate-limited at ~60 requests per minute per IP.",
+      tabs: {
+        profile: "By handle / DID",
+        search: "Search",
+        featured: "Featured",
+      },
+      fields: {
+        profileId: "Handle or DID",
+        searchQuery: "Search query",
+        category: "Category",
+        anyCategory: "Any category",
+        subcategory: "Subcategory",
+        anySubcategory: "Any subcategory",
+        page: "Page",
+        pageSize: "Page size",
+        limit: "Limit",
+      },
+      placeholders: {
+        profileId: "alice.bsky.social  or  did:plc:…",
+        searchQuery: "e.g. photo",
+      },
+      fetch: "Send request",
+      fetching: "Sending…",
+      response: "Response",
+      copy: "Copy",
+      copied: "Copied",
+      errors: {
+        missingId: "Enter a handle or DID first.",
+      },
+      endpointsHeading: "Endpoints",
+      endpoints: {
+        profile: {
+          method: "GET",
+          path: "/api/registry/profile/:handleOrDid",
+          summary:
+            "Single profile by handle or DID. Returns the same shape as /explore/<handle>, plus a fully-qualified avatarUrl convenience field.",
+          cache: "public, max-age=30, s-maxage=120",
+        },
+        search: {
+          method: "GET",
+          path: "/api/registry/search",
+          summary:
+            "Paginated profile search. Filter by free-text query, category, and subcategory. Returns { profiles, total, page, pageSize }.",
+          params: "?q=&category=&subcategory=&page=1&pageSize=24",
+          cache: "public, max-age=10, s-maxage=30",
+        },
+        featured: {
+          method: "GET",
+          path: "/api/registry/featured",
+          summary:
+            "Curated featured list, ordered by position. Returns { profiles }.",
+          params: "?limit=12",
+          cache: "public, max-age=30, s-maxage=120",
+        },
+        avatar: {
+          method: "GET",
+          path: "/api/registry/avatar/:did",
+          summary:
+            "Avatar bytes for the given DID — proxied + cached from the user's PDS. Long cache headers; safe to use directly in <img src>.",
+          cache: "public, max-age=3600, s-maxage=86400",
+        },
+      },
+      schemaHeading: "Schema",
+      schemaBody:
+        "Profiles are AT Protocol records. The canonical schema is the lexicon below — use it to validate records, generate types, or browse the full field set.",
+      downloadLexicon: "Download lexicon (JSON)",
+    },
   },
 
   lottie: {

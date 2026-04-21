@@ -6,9 +6,10 @@
 import { define } from "../../../../utils.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import { fetchBlobPublic } from "../../../../lib/pds.ts";
+import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
 export const handler = define.handlers({
-  async GET(ctx) {
+  GET: withRateLimit(async (ctx) => {
     const did = decodeURIComponent(ctx.params.did);
     const profile = await getProfileByDid(did).catch(() => null);
     if (!profile || !profile.avatarCid) {
@@ -37,5 +38,5 @@ export const handler = define.handlers({
       console.warn("avatar proxy error:", err);
       return new Response("upstream error", { status: 502 });
     }
-  },
+  }),
 });
