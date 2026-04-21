@@ -2984,6 +2984,19 @@ body {
   cursor: pointer;
   display: inline-block;
 }
+/* Larger size variant used in the form action row so the secondary
+ * "View public profile" button matches the proportions of the primary
+ * Update / danger Remove buttons sitting next to it. Intentionally
+ * scoped so existing compact secondary buttons (modals, custom-link
+ * add, file picker label) keep their smaller look. */
+.profile-form-button-secondary--lg {
+  padding: 0.7rem 1.4rem;
+  font-size: inherit;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
 .profile-form-button-link {
   background: none;
   border: 0;

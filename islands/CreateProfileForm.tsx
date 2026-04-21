@@ -640,7 +640,7 @@ export default function CreateProfileForm(
         {published.value && publicProfileHandle && (
           <a
             href={`/explore/${encodeURIComponent(publicProfileHandle)}`}
-            class="profile-form-button-secondary"
+            class="profile-form-button-secondary profile-form-button-secondary--lg"
           >
             {tManage.viewPublicProfile}
           </a>
