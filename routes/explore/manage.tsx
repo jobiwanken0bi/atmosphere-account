@@ -159,6 +159,25 @@ function ManagePage(
                 initialPublished={initialPublished}
               />
             </div>
+
+            {/*
+              Only render the "view public profile" link once the profile
+              actually exists in the registry — there's nothing to view
+              until the user has hit Publish at least once. We use the
+              handle from the registry row so it stays correct even if
+              the user later changes their PDS handle.
+            */}
+            {initialPublished && publicProfileHandle && (
+              <div class="manage-view-public">
+                <a
+                  href={`/explore/${encodeURIComponent(publicProfileHandle)}`}
+                  class="profile-form-button-secondary manage-view-public-link"
+                >
+                  {explore.manage.viewPublicProfile}
+                  <span aria-hidden="true">→</span>
+                </a>
+              </div>
+            )}
           </div>
         </section>
         <Footer variant="compact" />

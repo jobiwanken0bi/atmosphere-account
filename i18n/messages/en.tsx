@@ -407,6 +407,7 @@ const en = {
         "Publish to add this profile to Explore. Nothing is shared until you do.",
       signOut: "Sign out",
       signedInAs: "Signed in as",
+      viewPublicProfile: "View public profile",
     },
   },
 
