@@ -60,7 +60,7 @@ export interface AtmosphereService {
 }
 
 /** Default Tangled domain for the user-profile URL pattern. */
-const TANGLED_DOMAIN = "tangled.sh";
+const TANGLED_DOMAIN = "tangled.org";
 /** Default Supper domain. */
 const SUPPER_DOMAIN = "supper.support";
 

@@ -68,7 +68,7 @@ export type FeaturedBadge = typeof FEATURED_BADGES[number];
  *
  *   bsky     — a Bluesky-style profile button. Requires `clientId`; URL is
  *              derived from clientId + the user's current handle.
- *   tangled  — a Tangled profile button. URL defaults to tangled.sh/@handle
+ *   tangled  — a Tangled profile button. URL defaults to tangled.org/<handle>
  *              but the user may override (`url`) to point at a project repo.
  *   supper   — a Supper (supper.support/@handle) button. URL is derived;
  *              `url` override is allowed.

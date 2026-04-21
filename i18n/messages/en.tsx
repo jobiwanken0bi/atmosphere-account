@@ -331,14 +331,14 @@ const en = {
           method: "GET",
           path: "/api/registry/profile/:handleOrDid",
           summary:
-            "Single profile by handle or DID. Returns the same shape as /explore/<handle>, plus a fully-qualified avatarUrl convenience field.",
+            "Single profile by handle or DID. Public fields only: identity, listing content, avatarUrl, optional iconUrl, verified boolean, and indexing metadata. Does not include moderation or verification workflow fields.",
           cache: "public, max-age=30, s-maxage=120",
         },
         search: {
           method: "GET",
           path: "/api/registry/search",
           summary:
-            "Paginated profile search. Filter by free-text query, category, and subcategory. Returns { profiles, total, page, pageSize }.",
+            "Paginated profile search. Filter by free-text query, category, and subcategory. Returns { profiles, total, page, pageSize } with the same public profile shape as the single-profile endpoint.",
           params: [
             { name: "q", desc: "Free-text search query." },
             {
@@ -363,7 +363,7 @@ const en = {
           method: "GET",
           path: "/api/registry/featured",
           summary:
-            "Curated featured list, ordered by position. Returns { profiles }.",
+            "Curated featured list, ordered by position. Returns { profiles } using the same public profile shape as the other read endpoints.",
           params: [
             {
               name: "limit",
@@ -390,7 +390,7 @@ const en = {
       },
       schemaHeading: "Schema",
       schemaBody:
-        "Profiles are AT Protocol records. The canonical schema is the lexicon below — use it to validate records, generate types, or browse the full field set.",
+        "Profiles originate as AT Protocol records; the lexicon below is the canonical on-repo schema. Public HTTP responses add derived fields (avatarUrl, iconUrl, verified) and omit AppView-only moderation and verification workflow data — use the live JSON from the playground as the reference for what the API returns.",
       downloadLexicon: "Download lexicon (JSON)",
     },
   },

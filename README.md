@@ -5,7 +5,7 @@ Marketing site for **Atmosphere Account** — built with
 
 Open source under the [MIT License](./LICENSE). Contributions welcome — fork the
 repo on either [GitHub](https://github.com/jobiwanken0bi/atmosphere-account) or
-[tangled](https://tangled.sh/@joebasser.com/atmosphere-account) and open a PR.
+[tangled](https://tangled.org/@joebasser.com/atmosphere-account) and open a PR.
 
 ## Prerequisites
 
@@ -61,7 +61,7 @@ Adjust if your host uses different entrypoints.
 PRs and forks welcome on either forge:
 
 - **GitHub:** https://github.com/jobiwanken0bi/atmosphere-account
-- **tangled:** https://tangled.sh/@joebasser.com/atmosphere-account
+- **tangled:** https://tangled.org/@joebasser.com/atmosphere-account
 
 Both forges mirror the same `main` branch.
 
