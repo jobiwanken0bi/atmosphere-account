@@ -18,16 +18,20 @@ COPY lib ./lib
 COPY lexicons ./lexicons
 COPY utils.ts ./utils.ts
 
-# `deno.json` declares `"nodeModulesDir": "manual"`, so Deno expects an
-# actual ./node_modules to exist when resolving npm: specifiers (e.g.
-# @libsql/client/web). `deno install` materializes node_modules from the
-# lockfile without running lifecycle scripts. We then `deno cache` the
-# entrypoint so all JSR/HTTPS imports are pre-fetched into the global
-# cache and the container can start fully offline.
-RUN deno install && deno cache worker/indexer.ts
+# `deno.json` declares `"nodeModulesDir": "manual"` (which assumes a
+# package.json + npm/pnpm install workflow). The indexer doesn't ship a
+# package.json — we lay down npm packages straight from deno.json's
+# `imports` map by passing `--node-modules-dir=auto` to every Deno
+# command. That overrides the project setting for the duration of the
+# command and lets Deno create + populate ./node_modules itself.
+#
+# Same flag at build time (cache) and runtime (run); without it at
+# runtime, Deno re-checks `nodeModulesDir: manual` and refuses to use
+# the node_modules we just created.
+RUN deno cache --node-modules-dir=auto worker/indexer.ts
 
 ENV DENO_ENV=production
 
 # -A grants the network/env/read perms the indexer needs (WebSocket to
 # Jetstream, HTTPS to PDSes, env vars for DB creds, file: DB in dev).
-CMD ["deno", "run", "-A", "worker/indexer.ts"]
+CMD ["deno", "run", "-A", "--node-modules-dir=auto", "worker/indexer.ts"]
