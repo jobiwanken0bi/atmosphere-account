@@ -8,6 +8,14 @@ import { getLicenseByDid, getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 
+/** Route the prefill avatar through our own proxy (which streams the
+ *  PDS blob with friendly content-type + cache headers) rather than
+ *  embedding the raw PDS getBlob URL into an <img>. Some PDS hosts
+ *  don't serve blobs cleanly to a browser <img> tag (content-type,
+ *  redirects, CORS quirks), but they all work fine for a server-to-
+ *  server fetch. */
+const ME_AVATAR_PROXY = "/api/me/avatar";
+
 export const handler = define.handlers({
   async GET(ctx) {
     const user = ctx.state.user;
@@ -73,15 +81,7 @@ export const handler = define.handlers({
             license: null,
           };
           if (bsky.avatar) {
-            const cid = bsky.avatar.ref.$link;
-            const u = new URL(
-              `${
-                session.pdsUrl.replace(/\/$/, "")
-              }/xrpc/com.atproto.sync.getBlob`,
-            );
-            u.searchParams.set("did", user.did);
-            u.searchParams.set("cid", cid);
-            initialAvatarUrl = u.toString();
+            initialAvatarUrl = ME_AVATAR_PROXY;
           }
         }
       }
