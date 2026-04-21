@@ -2297,10 +2297,6 @@ a.profile-hero {
   align-items: flex-start;
   gap: 1rem;
 }
-.manage-header-aside {
-  text-align: right;
-}
-
 .profile-form {
   padding: 1.75rem;
   border-radius: 24px;
@@ -2417,16 +2413,37 @@ a.profile-hero {
   gap: 1.1rem;
 }
 
-/* Read-only "Signed in as @handle" row */
+/* Full-width column for everything below name/description (categories,
+   links, icon, …). Sibling of `.profile-form-row`, so it spans the
+   whole card on desktop instead of being constrained to the
+   avatar+fields right-hand column. */
+.profile-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin-top: 1.5rem;
+}
+
+/* Read-only "Signed in as @handle" row, with the sign-out button
+   anchored to the right. The button uses formAction="/oauth/logout"
+   on submit so it doesn't break the parent profile form. */
 .profile-form-handle-row {
   display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   flex-wrap: wrap;
   padding: 0.6rem 0.85rem;
   border-radius: 12px;
   background: rgba(18, 26, 47, 0.04);
   border: 1px solid rgba(18, 26, 47, 0.06);
+}
+.profile-form-handle-info {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .profile-form-handle-value {
   font-family: "IBM Plex Mono", monospace;
@@ -2434,12 +2451,37 @@ a.profile-hero {
   font-weight: 600;
   color: rgba(18, 26, 47, 0.9);
 }
+.profile-form-handle-signout {
+  background: transparent;
+  border: 1px solid rgba(18, 26, 47, 0.18);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font: inherit;
+  font-size: 0.78rem;
+  color: rgba(18, 26, 47, 0.75);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.profile-form-handle-signout:hover {
+  background: rgba(18, 26, 47, 0.06);
+  border-color: rgba(18, 26, 47, 0.28);
+  color: rgba(18, 26, 47, 0.92);
+}
 .dark-phase .profile-form-handle-row {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.1);
 }
 .dark-phase .profile-form-handle-value {
   color: rgba(255, 255, 255, 0.95);
+}
+.dark-phase .profile-form-handle-signout {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.8);
+}
+.dark-phase .profile-form-handle-signout:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.98);
 }
 
 /* ---- Bluesky client picker (used inside the modal for multi-select) ---- */
@@ -2901,7 +2943,6 @@ a.profile-hero {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-top: 0.4rem;
 }
 .custom-link-row {
   display: grid;
@@ -2940,7 +2981,6 @@ a.profile-hero {
   color: rgba(254, 202, 202, 0.95);
 }
 .custom-link-add {
-  margin-top: 0.55rem;
   align-self: flex-start;
 }
 @media (max-width: 640px) {
@@ -3090,6 +3130,7 @@ a.profile-hero {
   display: flex;
   gap: 0.6rem;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   margin-top: 1.5rem;
 }

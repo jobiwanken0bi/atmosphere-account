@@ -172,16 +172,6 @@ function ManagePage(
                 <h1 class="text-section">{explore.manage.headline}</h1>
                 <p class="text-body mt-2">{explore.manage.subhead}</p>
               </div>
-              <div class="manage-header-aside">
-                <p class="text-body-sm">
-                  {explore.manage.signedInAs} <strong>@{user.handle}</strong>
-                </p>
-                <form method="POST" action="/oauth/logout" class="inline-form">
-                  <button type="submit" class="text-link-button">
-                    {explore.manage.signOut}
-                  </button>
-                </form>
-              </div>
             </div>
 
             {takedown && (

@@ -647,9 +647,28 @@ export default function CreateProfileForm(
         </div>
 
         <div class="profile-form-fields">
+          {
+            /*
+            Handle/sign-out lockup. The sign-out submit button uses
+            formAction/formMethod to override the parent profile form's
+            target — keeps the sign-out a real POST without nesting
+            forms (which HTML forbids).
+          */
+          }
           <div class="profile-form-handle-row">
-            <span class="profile-form-label">{tForm.handleLabel}</span>
-            <span class="profile-form-handle-value">@{handle}</span>
+            <div class="profile-form-handle-info">
+              <span class="profile-form-label">{tForm.handleLabel}</span>
+              <span class="profile-form-handle-value">@{handle}</span>
+            </div>
+            <button
+              type="submit"
+              formAction="/oauth/logout"
+              formMethod="POST"
+              formNoValidate
+              class="profile-form-handle-signout"
+            >
+              {tManage.signOut}
+            </button>
           </div>
 
           <label class="profile-form-field">
@@ -684,58 +703,69 @@ export default function CreateProfileForm(
               class="profile-form-input"
             />
           </label>
+        </div>
+      </div>
 
+      {
+        /*
+        Everything below name/description spans the full card width on
+        desktop instead of staying constrained to the avatar+fields
+        right column. Keeps long lists (Atmosphere services, custom
+        links, chips) from wrapping into narrow columns.
+      */
+      }
+      <div class="profile-form-stack">
+        <fieldset class="profile-form-field">
+          <legend class="profile-form-label">{tForm.categoryLabel}</legend>
+          <div class="profile-form-chips" role="group">
+            {CATEGORIES.map((c: Category) => {
+              const selected = categories.value.includes(c);
+              return (
+                <label
+                  key={c}
+                  class={`profile-form-chip ${selected ? "is-selected" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    name="categories"
+                    value={c}
+                    checked={selected}
+                    onChange={() => toggleCategory(c)}
+                  />
+                  <span>{t.categories[c]}</span>
+                </label>
+              );
+            })}
+          </div>
+          <p class="profile-form-hint">{tForm.categoryHint}</p>
+        </fieldset>
+
+        {showSubcategories && (
           <fieldset class="profile-form-field">
-            <legend class="profile-form-label">{tForm.categoryLabel}</legend>
-            <div class="profile-form-chips" role="group">
-              {CATEGORIES.map((c: Category) => {
-                const selected = categories.value.includes(c);
-                return (
-                  <label
-                    key={c}
-                    class={`profile-form-chip ${selected ? "is-selected" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      name="categories"
-                      value={c}
-                      checked={selected}
-                      onChange={() => toggleCategory(c)}
-                    />
-                    <span>{t.categories[c]}</span>
-                  </label>
-                );
-              })}
+            <legend class="profile-form-label">
+              {tForm.subcategoriesLabel}
+            </legend>
+            <div class="profile-form-chips">
+              {APP_SUBCATEGORIES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  class={`profile-form-chip ${
+                    subcategories.value.includes(s) ? "is-selected" : ""
+                  }`}
+                  onClick={() => toggleSub(s)}
+                >
+                  {t.subcategories[s]}
+                </button>
+              ))}
             </div>
-            <p class="profile-form-hint">{tForm.categoryHint}</p>
+            <p class="profile-form-hint">{tForm.subcategoriesHint}</p>
           </fieldset>
+        )}
 
-          {showSubcategories && (
-            <fieldset class="profile-form-field">
-              <legend class="profile-form-label">
-                {tForm.subcategoriesLabel}
-              </legend>
-              <div class="profile-form-chips">
-                {APP_SUBCATEGORIES.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    class={`profile-form-chip ${
-                      subcategories.value.includes(s) ? "is-selected" : ""
-                    }`}
-                    onClick={() => toggleSub(s)}
-                  >
-                    {t.subcategories[s]}
-                  </button>
-                ))}
-              </div>
-              <p class="profile-form-hint">{tForm.subcategoriesHint}</p>
-            </fieldset>
-          )}
-
-          {/* ---------------- Main Link ----------------------------- */}
-          {
-            /*
+        {/* ---------------- Main Link ----------------------------- */}
+        {
+          /*
             Required. Drives the listing card's link target on /explore
             (whole card becomes a button). Also surfaced as a small
             arrow on hover. We keep it directly above Atmosphere links
@@ -744,239 +774,238 @@ export default function CreateProfileForm(
             services) → optional secondary surfaces (Landing Page +
             custom).
           */
-          }
-          <label class="profile-form-field">
-            <span class="profile-form-label">
-              {tMainLink.sectionLabel}{" "}
-              <span class="profile-form-required">*</span>
-            </span>
-            <input
-              type="url"
-              class="profile-form-input"
-              placeholder={tMainLink.placeholder}
-              value={mainLink.value}
-              required
-              onInput={(e) =>
-                mainLink.value = (e.currentTarget as HTMLInputElement).value}
-            />
-          </label>
+        }
+        <label class="profile-form-field">
+          <span class="profile-form-label">
+            {tMainLink.sectionLabel}{" "}
+            <span class="profile-form-required">*</span>
+          </span>
+          <input
+            type="url"
+            class="profile-form-input"
+            placeholder={tMainLink.placeholder}
+            value={mainLink.value}
+            required
+            onInput={(e) =>
+              mainLink.value = (e.currentTarget as HTMLInputElement).value}
+          />
+        </label>
 
-          {/* ---------------- Atmosphere links ----------------------- */}
-          <fieldset class="profile-form-field">
-            <legend class="profile-form-label">{tAtmos.sectionLabel}</legend>
-            <p class="profile-form-hint">{tAtmos.sectionHint(handle)}</p>
+        {/* ---------------- Atmosphere links ----------------------- */}
+        <fieldset class="profile-form-field">
+          <legend class="profile-form-label">{tAtmos.sectionLabel}</legend>
+          <p class="profile-form-hint">{tAtmos.sectionHint(handle)}</p>
 
-            <div class="atmosphere-toggles">
-              {visibleAtmosphereServices().map((svc) =>
-                renderAtmosphereRow(svc, {
-                  bskyClientIds,
-                  bskyPickerOpen,
-                  tangledOn,
-                  tangledUrl,
-                  supperOn,
-                  supperUrl,
-                  urlOverrideOpen,
-                  tAtmos,
-                  handle,
-                })
-              )}
-            </div>
-          </fieldset>
+          <div class="atmosphere-toggles">
+            {visibleAtmosphereServices().map((svc) =>
+              renderAtmosphereRow(svc, {
+                bskyClientIds,
+                bskyPickerOpen,
+                tangledOn,
+                tangledUrl,
+                supperOn,
+                supperUrl,
+                urlOverrideOpen,
+                tAtmos,
+                handle,
+              })
+            )}
+          </div>
+        </fieldset>
 
-          {/* ---------------- Landing Page (optional) --------------- */}
-          {
-            /*
+        {/* ---------------- Landing Page (optional) --------------- */}
+        {
+          /*
             Optional secondary URL — a separate marketing/landing page
             distinct from the Main Link. Renders as the globe-icon
             button on /explore/<handle>. Stored as `kind: website` for
             backward compatibility with existing records.
           */
-          }
-          <label class="profile-form-field">
-            <span class="profile-form-label">{tLanding.sectionLabel}</span>
-            <input
-              type="url"
-              class="profile-form-input"
-              placeholder={tLanding.placeholder}
-              value={landingPage.value}
-              onInput={(e) =>
-                landingPage.value = (e.currentTarget as HTMLInputElement).value}
-            />
-            <p class="profile-form-hint">{tLanding.hint}</p>
-          </label>
+        }
+        <label class="profile-form-field">
+          <span class="profile-form-label">{tLanding.sectionLabel}</span>
+          <input
+            type="url"
+            class="profile-form-input"
+            placeholder={tLanding.placeholder}
+            value={landingPage.value}
+            onInput={(e) =>
+              landingPage.value = (e.currentTarget as HTMLInputElement).value}
+          />
+          <p class="profile-form-hint">{tLanding.hint}</p>
+        </label>
 
-          {/* ---------------- Custom links -------------------------- */}
-          <fieldset class="profile-form-field">
-            <legend class="profile-form-label">{tCustom.sectionLabel}</legend>
-            <div class="custom-link-list">
-              {customLinks.value.map((row, i) => (
-                <div class="custom-link-row" key={i}>
-                  <input
-                    type="text"
-                    class="profile-form-input custom-link-label"
-                    placeholder={tCustom.labelPlaceholder}
-                    value={row.label}
-                    maxLength={64}
-                    onInput={(e) =>
-                      updateCustomLink(i, {
-                        label: (e.currentTarget as HTMLInputElement).value,
-                      })}
-                  />
-                  <input
-                    type="url"
-                    class="profile-form-input custom-link-url"
-                    placeholder={tCustom.urlPlaceholder}
-                    value={row.url}
-                    onInput={(e) =>
-                      updateCustomLink(i, {
-                        url: (e.currentTarget as HTMLInputElement).value,
-                      })}
-                  />
-                  <button
-                    type="button"
-                    class="custom-link-remove"
-                    aria-label={tCustom.removeAriaLabel}
-                    onClick={() => removeCustomLink(i)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              class="profile-form-button-secondary custom-link-add"
-              onClick={addCustomLink}
-              disabled={customLinks.value.length >= 8}
-            >
-              + {tCustom.addButton}
-            </button>
-          </fieldset>
+        {/* ---------------- Custom links -------------------------- */}
+        <div class="profile-form-field">
+          <span class="profile-form-label">{tCustom.sectionLabel}</span>
+          <div class="custom-link-list">
+            {customLinks.value.map((row, i) => (
+              <div class="custom-link-row" key={i}>
+                <input
+                  type="text"
+                  class="profile-form-input custom-link-label"
+                  placeholder={tCustom.labelPlaceholder}
+                  value={row.label}
+                  maxLength={64}
+                  onInput={(e) =>
+                    updateCustomLink(i, {
+                      label: (e.currentTarget as HTMLInputElement).value,
+                    })}
+                />
+                <input
+                  type="url"
+                  class="profile-form-input custom-link-url"
+                  placeholder={tCustom.urlPlaceholder}
+                  value={row.url}
+                  onInput={(e) =>
+                    updateCustomLink(i, {
+                      url: (e.currentTarget as HTMLInputElement).value,
+                    })}
+                />
+                <button
+                  type="button"
+                  class="custom-link-remove"
+                  aria-label={tCustom.removeAriaLabel}
+                  onClick={() => removeCustomLink(i)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            class="profile-form-button-secondary custom-link-add"
+            onClick={addCustomLink}
+            disabled={customLinks.value.length >= 8}
+          >
+            + {tCustom.addButton}
+          </button>
+        </div>
 
-          {/* ---------------- Developer SVG icon -------------------- */}
-          {
-            /*
+        {/* ---------------- Developer SVG icon -------------------- */}
+        {
+          /*
             Vector mark exposed only via /api/registry/icon/:did, for
             developers building badges and app showcases. Not shown on
             the public Explore profile. Uploads are gated behind
             per-project verification — admin-granted only.
            */
-          }
-          <fieldset
-            class={`profile-form-field icon-section icon-section--${
-              iconAccessStatus.value ?? "locked"
+        }
+        <div
+          class={`profile-form-field icon-section icon-section--${
+            iconAccessStatus.value ?? "locked"
+          }`}
+        >
+          <span class="profile-form-label">{tIcon.sectionLabel}</span>
+
+          {/* ---- Gate banners (one of these renders per state) ---- */}
+          {iconAccessStatus.value === null && (
+            <div class="icon-gate-banner icon-gate-banner--locked">
+              <strong class="icon-gate-banner-title">
+                {tIcon.gate.lockedTitle}
+              </strong>
+              <span class="icon-gate-banner-body">
+                {tIcon.gate.lockedBody}
+              </span>
+              <button
+                type="button"
+                class="profile-form-button-secondary icon-gate-button"
+                onClick={() => {
+                  requestError.value = null;
+                  requestEmail.value = "";
+                  requestModalOpen.value = true;
+                }}
+                disabled={!published.value}
+                title={published.value
+                  ? undefined
+                  : tIcon.gate.requestDisabledHint}
+              >
+                {tIcon.gate.requestButton}
+              </button>
+              {!published.value && (
+                <span class="icon-gate-banner-hint">
+                  {tIcon.gate.requestDisabledHint}
+                </span>
+              )}
+            </div>
+          )}
+          {iconAccessStatus.value === "requested" && (
+            <div class="icon-gate-banner icon-gate-banner--pending">
+              <strong class="icon-gate-banner-title">
+                {tIcon.gate.pendingTitle}
+              </strong>
+              <span class="icon-gate-banner-body">
+                {tIcon.gate.pendingBody(
+                  iconAccessEmail.value ?? APPEAL_EMAIL,
+                )}
+              </span>
+            </div>
+          )}
+          {iconAccessStatus.value === "denied" && (
+            <div class="icon-gate-banner icon-gate-banner--denied">
+              <strong class="icon-gate-banner-title">
+                {tIcon.gate.deniedTitle}
+              </strong>
+              <span class="icon-gate-banner-body">
+                {tIcon.gate.deniedBody(APPEAL_EMAIL, iconAccessDeniedReason)}
+              </span>
+            </div>
+          )}
+          {iconAccessStatus.value === "granted" && (
+            <p class="profile-form-hint icon-gate-granted-hint">
+              {tIcon.gate.grantedHint}
+            </p>
+          )}
+
+          {/* ---- Uploader (greyed-out unless granted) ---- */}
+          <div
+            class={`profile-form-icon-row ${
+              iconUploadUnlocked ? "" : "is-locked"
             }`}
           >
-            <legend class="profile-form-label">{tIcon.sectionLabel}</legend>
-
-            {/* ---- Gate banners (one of these renders per state) ---- */}
-            {iconAccessStatus.value === null && (
-              <div class="icon-gate-banner icon-gate-banner--locked">
-                <strong class="icon-gate-banner-title">
-                  {tIcon.gate.lockedTitle}
-                </strong>
-                <span class="icon-gate-banner-body">
-                  {tIcon.gate.lockedBody}
-                </span>
+            <div class="profile-form-icon-preview" aria-hidden="true">
+              {iconPreviewUrl.value
+                ? (
+                  <img
+                    src={iconPreviewUrl.value}
+                    alt=""
+                    class="profile-form-icon-preview-img"
+                    onError={() => {
+                      iconPreviewUrl.value = null;
+                    }}
+                  />
+                )
+                : <span class="profile-form-icon-placeholder">SVG</span>}
+            </div>
+            <div class="profile-form-icon-actions">
+              <label
+                class={`profile-form-button-secondary ${
+                  iconUploadUnlocked ? "" : "is-disabled"
+                }`}
+                aria-disabled={!iconUploadUnlocked}
+              >
+                {iconPreviewUrl.value ? tIcon.replace : tIcon.upload}
+                <input
+                  type="file"
+                  accept="image/svg+xml"
+                  hidden
+                  disabled={!iconUploadUnlocked}
+                  onChange={onIconChange}
+                />
+              </label>
+              {iconPreviewUrl.value && iconUploadUnlocked && (
                 <button
                   type="button"
-                  class="profile-form-button-secondary icon-gate-button"
-                  onClick={() => {
-                    requestError.value = null;
-                    requestEmail.value = "";
-                    requestModalOpen.value = true;
-                  }}
-                  disabled={!published.value}
-                  title={published.value
-                    ? undefined
-                    : tIcon.gate.requestDisabledHint}
+                  class="profile-form-button-link"
+                  onClick={removeIcon}
                 >
-                  {tIcon.gate.requestButton}
+                  {tIcon.remove}
                 </button>
-                {!published.value && (
-                  <span class="icon-gate-banner-hint">
-                    {tIcon.gate.requestDisabledHint}
-                  </span>
-                )}
-              </div>
-            )}
-            {iconAccessStatus.value === "requested" && (
-              <div class="icon-gate-banner icon-gate-banner--pending">
-                <strong class="icon-gate-banner-title">
-                  {tIcon.gate.pendingTitle}
-                </strong>
-                <span class="icon-gate-banner-body">
-                  {tIcon.gate.pendingBody(
-                    iconAccessEmail.value ?? APPEAL_EMAIL,
-                  )}
-                </span>
-              </div>
-            )}
-            {iconAccessStatus.value === "denied" && (
-              <div class="icon-gate-banner icon-gate-banner--denied">
-                <strong class="icon-gate-banner-title">
-                  {tIcon.gate.deniedTitle}
-                </strong>
-                <span class="icon-gate-banner-body">
-                  {tIcon.gate.deniedBody(APPEAL_EMAIL, iconAccessDeniedReason)}
-                </span>
-              </div>
-            )}
-            {iconAccessStatus.value === "granted" && (
-              <p class="profile-form-hint icon-gate-granted-hint">
-                {tIcon.gate.grantedHint}
-              </p>
-            )}
-
-            {/* ---- Uploader (greyed-out unless granted) ---- */}
-            <div
-              class={`profile-form-icon-row ${
-                iconUploadUnlocked ? "" : "is-locked"
-              }`}
-            >
-              <div class="profile-form-icon-preview" aria-hidden="true">
-                {iconPreviewUrl.value
-                  ? (
-                    <img
-                      src={iconPreviewUrl.value}
-                      alt=""
-                      class="profile-form-icon-preview-img"
-                      onError={() => {
-                        iconPreviewUrl.value = null;
-                      }}
-                    />
-                  )
-                  : <span class="profile-form-icon-placeholder">SVG</span>}
-              </div>
-              <div class="profile-form-icon-actions">
-                <label
-                  class={`profile-form-button-secondary ${
-                    iconUploadUnlocked ? "" : "is-disabled"
-                  }`}
-                  aria-disabled={!iconUploadUnlocked}
-                >
-                  {iconPreviewUrl.value ? tIcon.replace : tIcon.upload}
-                  <input
-                    type="file"
-                    accept="image/svg+xml"
-                    hidden
-                    disabled={!iconUploadUnlocked}
-                    onChange={onIconChange}
-                  />
-                </label>
-                {iconPreviewUrl.value && iconUploadUnlocked && (
-                  <button
-                    type="button"
-                    class="profile-form-button-link"
-                    onClick={removeIcon}
-                  >
-                    {tIcon.remove}
-                  </button>
-                )}
-              </div>
+              )}
             </div>
-            <p class="profile-form-hint">{tIcon.hint}</p>
-          </fieldset>
+          </div>
+          <p class="profile-form-hint">{tIcon.hint}</p>
         </div>
       </div>
 
