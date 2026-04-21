@@ -163,6 +163,14 @@ const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS report_status_target ON report(status, target_did)`,
   `CREATE INDEX IF NOT EXISTS report_dedup ON report(target_did, reporter_ip_hash, reason, created_at)`,
+];
+
+/**
+ * Indexes that depend on additively-migrated columns. Created AFTER
+ * `applyAdditiveMigrations` so existing databases that pre-date the
+ * column have a chance to gain it before the index references it.
+ */
+const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   /**
    * Hot-path index for excluding taken-down profiles from public reads.
    * The vast majority of rows have NULL `takedown_status`, so a partial
@@ -272,6 +280,9 @@ export function migrate(): Promise<void> {
       await c.execute(stmt);
     }
     await applyAdditiveMigrations(c);
+    for (const stmt of POST_MIGRATION_INDEX_STATEMENTS) {
+      await c.execute(stmt);
+    }
     _migrated = true;
   })();
   return _migrationPromise;
