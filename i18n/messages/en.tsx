@@ -442,8 +442,20 @@ const en = {
         tangledDescription: "Social coding platform",
         supperDescription: "AT Protocol native support page",
         configureBskyLabel: "Configure Bluesky clients",
-        urlOverrideLabel: "Custom URL (optional)",
-        urlOverridePlaceholder: "https://…",
+        configureUrlLabel: "Configure URL",
+        usingDefault: "Using default URL",
+        usingOverride: "Using custom URL",
+      },
+      linkOverride: {
+        title: (service: string): string => `${service} URL`,
+        body: (service: string, defaultUrl: string): string =>
+          `By default, ${service} uses your handle (${defaultUrl}). ` +
+          `Override below to point at a specific page or repository instead.`,
+        inputLabel: "Custom URL",
+        placeholder: "https://…",
+        save: "Save",
+        cancel: "Cancel",
+        reset: "Reset to default",
       },
       bskyPicker: {
         title: "Bluesky clients",

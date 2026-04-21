@@ -8,11 +8,13 @@ import {
 } from "../lib/lexicons.ts";
 import {
   type AtmosphereService,
+  getAtmosphereService,
   visibleAtmosphereServices,
 } from "../lib/atmosphere-links.ts";
 import { BSKY_CLIENTS, getBskyClient } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
 import BskyClientPickerModal from "./BskyClientPickerModal.tsx";
+import LinkUrlOverrideModal from "./LinkUrlOverrideModal.tsx";
 
 interface ExistingProfile {
   name: string;
@@ -149,16 +151,30 @@ export default function CreateProfileForm(
   const supperOn = useSignal<boolean>(initialSplit.supperOn);
   const supperUrl = useSignal<string>(initialSplit.supperOverride);
 
+  /** Which simple-atmosphere row currently has its URL-override modal
+   *  open, if any. `null` = no modal open. */
+  const urlOverrideOpen = useSignal<"tangled" | "supper" | null>(null);
+
   const website = useSignal<string>(initialSplit.website);
   const customLinks = useSignal<CustomLinkRow[]>(initialSplit.custom);
 
   const avatarKeep = useSignal<BlobRefShape | null>(null);
-  /** Preview URL precedence: locally-picked file > existing registry
-   *  record (cached proxy) > prefill source (Bluesky PDS) > none. */
+  /**
+   * Preview URL precedence:
+   *   1. Locally-picked file (set in `onAvatarChange`).
+   *   2. An explicit `initialAvatarUrl` from the server — used by the
+   *      Bluesky-prefill path to point at the public bsky CDN; we
+   *      check this first because in the prefill case `initial.avatar`
+   *      is also set (so it can carry through the BlobRef on Save) but
+   *      the registry-side proxy doesn't have anything to serve yet.
+   *   3. Existing registry record → cached server proxy.
+   *   4. Empty placeholder.
+   */
   const avatarPreview = useSignal<string | null>(
-    initial?.avatar
-      ? `/api/registry/avatar/${encodeURIComponent(did)}`
-      : (initialAvatarUrl ?? null),
+    initialAvatarUrl ??
+      (initial?.avatar
+        ? `/api/registry/avatar/${encodeURIComponent(did)}`
+        : null),
   );
   const avatarFile = useSignal<File | null>(null);
   const avatarRemoved = useSignal(false);
@@ -518,7 +534,9 @@ export default function CreateProfileForm(
                   tangledUrl,
                   supperOn,
                   supperUrl,
+                  urlOverrideOpen,
                   tAtmos,
+                  handle,
                 })
               )}
             </div>
@@ -625,6 +643,30 @@ export default function CreateProfileForm(
         onConfirm={onBskyConfirm}
         onClose={() => (bskyPickerOpen.value = false)}
       />
+
+      {/* URL-override modal, shared by Tangled and Supper. Only one is
+          open at a time so we render a single instance and switch its
+          props on `urlOverrideOpen`. */}
+      {(() => {
+        const which = urlOverrideOpen.value;
+        const svc = which ? getAtmosphereService(which) : null;
+        if (!which || !svc) return null;
+        const sig = which === "tangled" ? tangledUrl : supperUrl;
+        return (
+          <LinkUrlOverrideModal
+            open
+            serviceName={svc.name}
+            defaultUrl={svc.defaultUrl(handle)}
+            value={sig.value}
+            onConfirm={(next) => {
+              sig.value = next;
+              urlOverrideOpen.value = null;
+            }}
+            onClose={() => (urlOverrideOpen.value = null)}
+            labels={t.forms.profile.linkOverride}
+          />
+        );
+      })()}
     </form>
   );
 }
@@ -638,7 +680,9 @@ interface AtmosphereRowCtx {
   tangledUrl: { value: string };
   supperOn: { value: boolean };
   supperUrl: { value: string };
+  urlOverrideOpen: { value: "tangled" | "supper" | null };
   tAtmos: ReturnType<typeof useT>["forms"]["profile"]["atmosphereLinks"];
+  handle: string;
 }
 
 function renderAtmosphereRow(svc: AtmosphereService, ctx: AtmosphereRowCtx) {
@@ -650,6 +694,7 @@ function renderAtmosphereRow(svc: AtmosphereService, ctx: AtmosphereRowCtx) {
         svc={svc}
         on={ctx.tangledOn}
         url={ctx.tangledUrl}
+        modalKey="tangled"
       />
     );
   }
@@ -660,6 +705,7 @@ function renderAtmosphereRow(svc: AtmosphereService, ctx: AtmosphereRowCtx) {
         svc={svc}
         on={ctx.supperOn}
         url={ctx.supperUrl}
+        modalKey="supper"
       />
     );
   }
@@ -761,9 +807,21 @@ interface SimpleRowProps {
   svc: AtmosphereService;
   on: { value: boolean };
   url: { value: string };
+  /** Identifier for the URL-override modal so the row can open it. */
+  modalKey: "tangled" | "supper";
 }
 
-function SimpleAtmosphereRow({ svc, on, url, ctx }: SimpleRowProps) {
+function SimpleAtmosphereRow(
+  { svc, on, url, ctx, modalKey }: SimpleRowProps,
+) {
+  /**
+   * The row is "using a custom URL" iff there's an override and it
+   * differs from the handle-derived default. We compare against the
+   * default to avoid showing the badge when the user typed in the
+   * exact default URL by hand.
+   */
+  const usingOverride = !!url.value && url.value !== svc.defaultUrl(ctx.handle);
+
   return (
     <div class={`atmosphere-row ${on.value ? "is-on" : ""}`}>
       <label class="atmosphere-row-toggle">
@@ -793,19 +851,20 @@ function SimpleAtmosphereRow({ svc, on, url, ctx }: SimpleRowProps) {
         </div>
         <div class="atmosphere-row-meta">
           <span class="atmosphere-row-name">{svc.name}</span>
-          <span class="atmosphere-row-desc">{svc.description}</span>
+          <span class="atmosphere-row-desc">
+            {usingOverride ? ctx.tAtmos.usingOverride : svc.description}
+          </span>
         </div>
       </div>
-      {svc.allowUrlOverride && on.value && (
-        <input
-          type="url"
-          class="profile-form-input atmosphere-row-url"
-          placeholder={ctx.tAtmos.urlOverridePlaceholder}
-          value={url.value}
-          onInput={(e) =>
-            (url.value = (e.currentTarget as HTMLInputElement).value)}
-          aria-label={ctx.tAtmos.urlOverrideLabel}
-        />
+      {svc.allowUrlOverride && (
+        <button
+          type="button"
+          class="atmosphere-row-gear"
+          onClick={() => (ctx.urlOverrideOpen.value = modalKey)}
+          aria-label={ctx.tAtmos.configureUrlLabel}
+        >
+          ⚙
+        </button>
       )}
     </div>
   );
