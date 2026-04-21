@@ -31,7 +31,9 @@ export const handler = define.handlers({
     const body = await ctx.req.json().catch(() => null) as
       | { reason?: unknown; notes?: unknown }
       | null;
-    const rawReason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    const rawReason = typeof body?.reason === "string"
+      ? body.reason.trim()
+      : "";
     if (!rawReason) return jsonError(400, "missing_reason");
     const reason = rawReason.slice(0, MAX_REASON_LEN);
     const notes = typeof body?.notes === "string"

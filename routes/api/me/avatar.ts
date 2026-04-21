@@ -36,8 +36,7 @@ export const handler = define.handlers({
         status: 302,
         headers: {
           location: `/api/registry/avatar/${encodeURIComponent(user.did)}`,
-          "cache-control":
-            "private, max-age=300, stale-while-revalidate=86400",
+          "cache-control": "private, max-age=300, stale-while-revalidate=86400",
         },
       });
     }

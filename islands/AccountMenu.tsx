@@ -39,11 +39,13 @@ export default function AccountMenu(
     );
   }
 
-  return <SignedInMenu
-    user={user}
-    avatarUrl={avatarUrl ?? null}
-    publicProfileHandle={publicProfileHandle ?? null}
-  />;
+  return (
+    <SignedInMenu
+      user={user}
+      avatarUrl={avatarUrl ?? null}
+      publicProfileHandle={publicProfileHandle ?? null}
+    />
+  );
 }
 
 interface SignedInMenuProps {

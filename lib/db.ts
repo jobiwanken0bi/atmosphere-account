@@ -82,6 +82,12 @@ const SCHEMA_STATEMENTS: string[] = [
     icon_reviewed_by TEXT,
     icon_reviewed_at INTEGER,
     icon_rejected_reason TEXT,
+    icon_access_status TEXT,
+    icon_access_email TEXT,
+    icon_access_requested_at INTEGER,
+    icon_access_reviewed_at INTEGER,
+    icon_access_reviewed_by TEXT,
+    icon_access_denied_reason TEXT,
     takedown_status TEXT,
     takedown_reason TEXT,
     takedown_by TEXT,
@@ -180,6 +186,11 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
    * `IS NULL` predicates. Plain index covers both directions.
    */
   `CREATE INDEX IF NOT EXISTS profile_takedown ON profile(takedown_status)`,
+  /**
+   * Hot-path index for the admin "Icon access requests" queue. Only a
+   * handful of rows are non-NULL at any time so the index stays cheap.
+   */
+  `CREATE INDEX IF NOT EXISTS profile_icon_access ON profile(icon_access_status)`,
 ];
 
 /**
@@ -241,6 +252,36 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "icon_rejected_reason",
         ddl: "ALTER TABLE profile ADD COLUMN icon_rejected_reason TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_access_status",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_access_status TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_access_email",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_access_email TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_access_requested_at",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_access_requested_at INTEGER",
+      },
+      {
+        table: "profile",
+        column: "icon_access_reviewed_at",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_access_reviewed_at INTEGER",
+      },
+      {
+        table: "profile",
+        column: "icon_access_reviewed_by",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_access_reviewed_by TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_access_denied_reason",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_access_denied_reason TEXT",
       },
       {
         table: "profile",

@@ -62,7 +62,9 @@ export const handler = define.handlers({
       avatarUrl: profile.avatarCid
         ? `${origin}/api/registry/avatar/${encodeURIComponent(profile.did)}`
         : null,
-      iconUrl: profile.iconCid && profile.iconStatus === "approved"
+      iconUrl: profile.iconCid &&
+          profile.iconStatus === "approved" &&
+          profile.iconAccessStatus === "granted"
         ? `${origin}/api/registry/icon/${encodeURIComponent(profile.did)}`
         : null,
     };

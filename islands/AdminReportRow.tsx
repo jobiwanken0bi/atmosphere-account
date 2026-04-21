@@ -72,7 +72,7 @@ export default function AdminReportRow(p: Props) {
    * sibling reports also disappear on the next page load).
    */
   const takedown = async () => {
-    const reason = window.prompt(p.copy.takedownPrompt, "");
+    const reason = globalThis.prompt(p.copy.takedownPrompt, "");
     if (!reason || !reason.trim()) return;
     status.value = { kind: "submitting" };
     try {

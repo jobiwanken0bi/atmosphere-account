@@ -28,9 +28,11 @@ export default function Nav({ account }: NavProps = {}) {
           <span class="nav-logo-text">{t.nav.brand}</span>
         </a>
         <div class="nav-links">
-          {/* Protocol moved to the footer — the top-right slot now
+          {
+            /* Protocol moved to the footer — the top-right slot now
             * belongs to Explore (the primary call to action) with the
-            * account button stacked beneath it via the rail below. */}
+            * account button stacked beneath it via the rail below. */
+          }
           <a href="/explore" class="nav-btn nav-btn-glass">
             {t.nav.explore}
           </a>

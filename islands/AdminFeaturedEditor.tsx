@@ -62,7 +62,9 @@ export default function AdminFeaturedEditor(
     return m;
   });
 
-  const featuredDids = useComputed(() => new Set(entries.value.map((e) => e.did)));
+  const featuredDids = useComputed(() =>
+    new Set(entries.value.map((e) => e.did))
+  );
 
   const filteredCandidates = useComputed(() => {
     const q = filter.value.trim().toLowerCase();
@@ -236,7 +238,8 @@ export default function AdminFeaturedEditor(
                       <button
                         type="button"
                         class="profile-form-button-secondary"
-                        onClick={() => add(c.did)}
+                        onClick={() =>
+                          add(c.did)}
                       >
                         {copy.add}
                       </button>

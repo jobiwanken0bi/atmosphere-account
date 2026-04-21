@@ -185,11 +185,35 @@ export const handler = define.handlers({
     }
 
     /**
-     * Developer-facing SVG icon. We sanitise the bytes before upload
-     * (strips <script>, on*, foreignObject, javascript: hrefs) so the
-     * blob persisted on the user's PDS is already clean — even if some
-     * other consumer fetches it directly without our serve-time CSP.
+     * Developer-facing SVG icon. Two gates:
+     *
+     *   1. Per-project verification (`icon_access_status === 'granted'`).
+     *      Uploads from unverified projects are refused outright. The
+     *      form enforces this client-side too, but the API is the source
+     *      of truth.
+     *   2. Server-side sanitiser (strips <script>, on*, foreignObject,
+     *      javascript: hrefs) before the bytes are persisted on the
+     *      user's PDS — even verified projects are sanitised every time.
+     *
+     * "Keeping" an existing icon (passing the BlobRef back unchanged)
+     * also requires verification — that handles the revoke→re-save case
+     * where we want the icon to be dropped automatically.
      */
+    const wantsIcon = !!(body.iconUpload?.dataBase64 || body.icon);
+    if (wantsIcon && existing?.iconAccessStatus !== "granted") {
+      return new Response(
+        JSON.stringify({
+          error: "icon_access_required",
+          detail:
+            "SVG icon uploads require admin verification. Request access from your profile page.",
+        }),
+        {
+          status: 403,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        },
+      );
+    }
+
     let icon = body.icon ?? undefined;
     if (body.iconUpload?.dataBase64) {
       const mime = body.iconUpload.mimeType;

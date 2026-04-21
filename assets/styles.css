@@ -2061,8 +2061,12 @@ a.profile-hero {
   border: 1px solid rgba(37, 74, 158, 0.2);
   color: #254a9e;
   box-shadow: 0 2px 6px rgba(48, 70, 128, 0.1);
-  transition: transform 0.18s ease, background 0.18s ease,
-    box-shadow 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
   pointer-events: none;
 }
 .profile-hero-button:hover .profile-hero-arrow,
@@ -4273,36 +4277,99 @@ body.explore-no-effects #nav-effects-bar {
   color: #ffaca6;
 }
 
-/* --- Inline icon-status banner on the manage form ---------------- */
-.icon-status-banner {
+/* --- Per-project SVG verification gate (manage form) ------------- */
+/**
+ * Banner that explains the current verification state above the SVG
+ * uploader. Color reflects state: neutral grey for locked, amber for
+ * pending review, soft red for denied, no banner for granted.
+ */
+.icon-gate-banner {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.65rem 0.85rem;
-  border-radius: 0.75rem;
-  font-size: 0.8rem;
-  margin: 0 0 0.75rem;
+  gap: 0.4rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border-radius: 0.85rem;
+  font-size: 0.82rem;
+  margin: 0 0 0.85rem;
+  line-height: 1.45;
 }
-.icon-status-banner strong {
-  font-size: 0.85rem;
+.icon-gate-banner-title {
+  font-size: 0.9rem;
+  font-weight: 700;
 }
-.icon-status-banner--pending {
+.icon-gate-banner-body {
+  display: block;
+}
+.icon-gate-banner-hint {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+.icon-gate-button {
+  margin-top: 0.25rem;
+  align-self: flex-start;
+}
+.icon-gate-banner--locked {
+  background: rgba(99, 113, 145, 0.1);
+  border: 1px solid rgba(99, 113, 145, 0.3);
+  color: rgba(38, 50, 78, 0.95);
+}
+.icon-gate-banner--pending {
   background: rgba(255, 197, 99, 0.15);
   border: 1px solid rgba(255, 197, 99, 0.4);
   color: #6c4500;
 }
-.icon-status-banner--rejected {
+.icon-gate-banner--denied {
   background: rgba(217, 104, 96, 0.12);
   border: 1px solid rgba(217, 104, 96, 0.4);
   color: #8a3a34;
 }
-.dark-phase .icon-status-banner--pending {
+.icon-gate-granted-hint {
+  color: rgba(11, 110, 79, 0.95);
+}
+.dark-phase .icon-gate-banner--locked {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+}
+.dark-phase .icon-gate-banner--pending {
   color: #ffd791;
   background: rgba(255, 197, 99, 0.1);
 }
-.dark-phase .icon-status-banner--rejected {
+.dark-phase .icon-gate-banner--denied {
   color: #ffb1ab;
   background: rgba(217, 104, 96, 0.12);
+}
+.dark-phase .icon-gate-granted-hint {
+  color: #8be0b3;
+}
+
+/**
+ * Greyed-out uploader when verification hasn't been granted. We keep
+ * the slot visible (so the user understands what they're requesting
+ * access to) but visibly inert.
+ */
+.profile-form-icon-row.is-locked {
+  opacity: 0.45;
+  pointer-events: none;
+  filter: saturate(0.5);
+}
+.profile-form-button-secondary.is-disabled,
+.profile-form-button-secondary.is-disabled:hover {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: transparent;
+}
+
+/* --- Verification request modal --------------------------------- */
+.icon-access-modal {
+  width: min(460px, 100%);
+}
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
 }
 
 /* ================================================================== *
@@ -4554,8 +4621,12 @@ body.explore-no-effects #nav-effects-bar {
 .admin-featured-status {
   font-size: 0.85rem;
 }
-.admin-featured-status--ok { color: #1f7a4e; }
-.admin-featured-status--error { color: #c25048; }
+.admin-featured-status--ok {
+  color: #1f7a4e;
+}
+.admin-featured-status--error {
+  color: #c25048;
+}
 .dark-phase .admin-featured-row {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.1);

@@ -53,7 +53,10 @@ function take(ip: string, now: number): boolean {
   } else {
     const elapsed = now - b.last;
     if (elapsed > 0) {
-      b.tokens = Math.min(CAPACITY, b.tokens + (elapsed / REFILL_MS) * CAPACITY);
+      b.tokens = Math.min(
+        CAPACITY,
+        b.tokens + (elapsed / REFILL_MS) * CAPACITY,
+      );
       b.last = now;
     }
   }

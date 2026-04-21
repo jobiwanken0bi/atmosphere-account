@@ -142,9 +142,7 @@ export default function RegistryApiPlayground() {
             type="button"
             role="tab"
             aria-selected={kind.value === k}
-            class={`api-playground-tab ${
-              kind.value === k ? "is-active" : ""
-            }`}
+            class={`api-playground-tab ${kind.value === k ? "is-active" : ""}`}
             onClick={() => (kind.value = k)}
           >
             {tApi.tabs[k]}
@@ -161,8 +159,10 @@ export default function RegistryApiPlayground() {
               class="api-playground-input"
               placeholder={tApi.placeholders.profileId}
               value={profileId.value}
-              onInput={(e) =>
-                (profileId.value = (e.currentTarget as HTMLInputElement).value)}
+              onInput={(
+                e,
+              ) => (profileId.value =
+                (e.currentTarget as HTMLInputElement).value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -176,15 +176,18 @@ export default function RegistryApiPlayground() {
         {kind.value === "search" && (
           <div class="api-playground-grid">
             <label class="api-playground-field">
-              <span class="api-playground-label">{tApi.fields.searchQuery}</span>
+              <span class="api-playground-label">
+                {tApi.fields.searchQuery}
+              </span>
               <input
                 type="text"
                 class="api-playground-input"
                 placeholder={tApi.placeholders.searchQuery}
                 value={searchQuery.value}
-                onInput={(e) =>
-                  (searchQuery.value =
-                    (e.currentTarget as HTMLInputElement).value)}
+                onInput={(
+                  e,
+                ) => (searchQuery.value =
+                  (e.currentTarget as HTMLInputElement).value)}
               />
             </label>
             <label class="api-playground-field">
@@ -192,9 +195,10 @@ export default function RegistryApiPlayground() {
               <select
                 class="api-playground-input"
                 value={searchCategory.value}
-                onChange={(e) =>
-                  (searchCategory.value =
-                    (e.currentTarget as HTMLSelectElement).value)}
+                onChange={(
+                  e,
+                ) => (searchCategory.value =
+                  (e.currentTarget as HTMLSelectElement).value)}
               >
                 <option value="">{tApi.fields.anyCategory}</option>
                 {CATEGORIES.map((c) => (
@@ -209,9 +213,10 @@ export default function RegistryApiPlayground() {
               <select
                 class="api-playground-input"
                 value={searchSubcategory.value}
-                onChange={(e) =>
-                  (searchSubcategory.value =
-                    (e.currentTarget as HTMLSelectElement).value)}
+                onChange={(
+                  e,
+                ) => (searchSubcategory.value =
+                  (e.currentTarget as HTMLSelectElement).value)}
               >
                 <option value="">{tApi.fields.anySubcategory}</option>
                 {APP_SUBCATEGORIES.map((s) => (
@@ -226,9 +231,10 @@ export default function RegistryApiPlayground() {
                 min={1}
                 class="api-playground-input"
                 value={searchPage.value}
-                onInput={(e) =>
-                  (searchPage.value =
-                    (e.currentTarget as HTMLInputElement).value)}
+                onInput={(
+                  e,
+                ) => (searchPage.value =
+                  (e.currentTarget as HTMLInputElement).value)}
               />
             </label>
             <label class="api-playground-field">
@@ -239,9 +245,10 @@ export default function RegistryApiPlayground() {
                 max={48}
                 class="api-playground-input"
                 value={searchPageSize.value}
-                onInput={(e) =>
-                  (searchPageSize.value =
-                    (e.currentTarget as HTMLInputElement).value)}
+                onInput={(
+                  e,
+                ) => (searchPageSize.value =
+                  (e.currentTarget as HTMLInputElement).value)}
               />
             </label>
           </div>
@@ -256,9 +263,10 @@ export default function RegistryApiPlayground() {
               max={48}
               class="api-playground-input"
               value={featuredLimit.value}
-              onInput={(e) =>
-                (featuredLimit.value =
-                  (e.currentTarget as HTMLInputElement).value)}
+              onInput={(
+                e,
+              ) => (featuredLimit.value =
+                (e.currentTarget as HTMLInputElement).value)}
             />
           </label>
         )}

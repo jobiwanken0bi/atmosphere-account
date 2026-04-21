@@ -81,8 +81,9 @@ export default function LinkUrlOverrideModal(
             class="profile-form-input"
             placeholder={labels.placeholder || defaultUrl}
             value={draft.value}
-            onInput={(e) =>
-              (draft.value = (e.currentTarget as HTMLInputElement).value)}
+            onInput={(
+              e,
+            ) => (draft.value = (e.currentTarget as HTMLInputElement).value)}
           />
         </label>
         <footer class="modal-footer">

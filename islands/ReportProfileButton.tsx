@@ -126,7 +126,10 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                     <strong>{copy.sentTitle}</strong>
                   </p>
                   <p class="modal-body-text">{copy.sentBody}</p>
-                  <div class="report-modal-actions" style={{ marginTop: "1rem" }}>
+                  <div
+                    class="report-modal-actions"
+                    style={{ marginTop: "1rem" }}
+                  >
                     <button
                       type="button"
                       class="profile-form-button-primary"
@@ -148,14 +151,18 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                           name="report-reason"
                           value={r}
                           checked={reason.value === r}
-                          onChange={() => reason.value = r}
+                          onChange={() =>
+                            reason.value = r}
                         />
                         {copy.reasons[r]}
                       </label>
                     ))}
                   </fieldset>
 
-                  <label class="report-modal-radio" style={{ display: "block" }}>
+                  <label
+                    class="report-modal-radio"
+                    style={{ display: "block" }}
+                  >
                     <span style={{ display: "block", marginBottom: "0.4rem" }}>
                       {copy.detailsLabel}
                     </span>
@@ -176,7 +183,10 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                     </p>
                   )}
 
-                  <div class="report-modal-actions" style={{ marginTop: "1rem" }}>
+                  <div
+                    class="report-modal-actions"
+                    style={{ marginTop: "1rem" }}
+                  >
                     <button
                       type="button"
                       class="profile-form-button-link"

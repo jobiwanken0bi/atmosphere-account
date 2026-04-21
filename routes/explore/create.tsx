@@ -21,10 +21,12 @@ export default define.page(function ExploreCreate(ctx) {
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        {/* user is null here (we redirect when signed in), so the menu
+        {
+          /* user is null here (we redirect when signed in), so the menu
          *  shows the "Sign in" entry — useful if someone lands on this
          *  page from a deep link and wants the same affordance as the
-         *  rest of the explore section. */}
+         *  rest of the explore section. */
+        }
         <Nav account={{ user: null }} />
         <section class="explore-create" style={{ paddingTop: "8rem" }}>
           <div class="container" style={{ maxWidth: "640px" }}>

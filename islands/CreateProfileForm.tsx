@@ -31,18 +31,31 @@ interface ExistingProfile {
   subcategories: string[];
   links: LinkEntry[];
   avatar: { ref: string; mime: string } | null;
-  /** Optional developer-facing SVG icon. `status` is the moderation
-   *  state from the registry index — drives the "Pending review" /
-   *  "Rejected" badge in the icon section. */
+  /** Optional developer-facing SVG icon. */
   icon:
     | {
       ref: string;
       mime: string;
-      status?: "pending" | "approved" | "rejected" | null;
-      rejectedReason?: string | null;
     }
     | null;
+  /**
+   * Per-project verification gate for the SVG icon uploader. Drives the
+   * locked / pending / denied / granted UX in the icon section.
+   *   - `null`      → never requested; show "Request Verification"
+   *   - `requested` → in admin queue; show pending state
+   *   - `granted`   → uploader unlocked
+   *   - `denied`    → admin denied; show appeal email; locked
+   */
+  iconAccessStatus: "requested" | "granted" | "denied" | null;
+  iconAccessEmail: string | null;
+  iconAccessDeniedReason: string | null;
 }
+
+/**
+ * Email address surfaced in the denial banner so users know how to
+ * appeal. Centralised here because it appears in user-facing copy.
+ */
+const APPEAL_EMAIL = "contact@atmosphereaccount.com";
 
 interface Props {
   did: string;
@@ -181,7 +194,8 @@ export default function CreateProfileForm(
   const promoteLegacyWebsite = !initial?.mainLink &&
     !!initialSplit.legacyWebsite;
   const mainLink = useSignal<string>(
-    initial?.mainLink ?? (promoteLegacyWebsite ? initialSplit.legacyWebsite : ""),
+    initial?.mainLink ??
+      (promoteLegacyWebsite ? initialSplit.legacyWebsite : ""),
   );
   const categories = useSignal<string[]>(
     initial?.categories?.length ? initial.categories : ["app"],
@@ -242,8 +256,10 @@ export default function CreateProfileForm(
   /**
    * SVG icons get a separate slot from the main avatar — the avatar is
    * for the public profile, the icon is a vector mark exposed only via
-   * the developer API. We store the keep/upload/remove state in the
-   * same shape as avatar for consistency on Save.
+   * the developer API. The uploader is gated behind per-project
+   * verification (`iconAccessStatus === 'granted'`) — the gate is the
+   * source of truth client-side AND server-side; the API rejects
+   * uploads from unverified projects too.
    */
   const iconKeep = useSignal<BlobRefShape | null>(null);
   const iconPreviewUrl = useSignal<string | null>(
@@ -251,6 +267,26 @@ export default function CreateProfileForm(
   );
   const iconFile = useSignal<File | null>(null);
   const iconRemoved = useSignal(false);
+
+  /**
+   * Live access status. Starts from the value the server rendered, then
+   * flips to `requested` when the user submits the request modal so the
+   * UI updates without a page reload.
+   */
+  const iconAccessStatus = useSignal<
+    "requested" | "granted" | "denied" | null
+  >(initial?.iconAccessStatus ?? null);
+  const iconAccessEmail = useSignal<string | null>(
+    initial?.iconAccessEmail ?? null,
+  );
+  const iconAccessDeniedReason = initial?.iconAccessDeniedReason ?? null;
+  const iconUploadUnlocked = iconAccessStatus.value === "granted";
+
+  /* ---------------- Verification request modal signals ----------------- */
+  const requestModalOpen = useSignal(false);
+  const requestEmail = useSignal("");
+  const requestSubmitting = useSignal(false);
+  const requestError = useSignal<string | null>(null);
 
   const submitting = useSignal(false);
   const deleting = useSignal(false);
@@ -366,6 +402,41 @@ export default function CreateProfileForm(
     iconKeep.value = null;
     iconRemoved.value = true;
     iconPreviewUrl.value = null;
+  };
+
+  /**
+   * Submit the verification request to the server. We optimistically
+   * update `iconAccessStatus` to `requested` so the gate UI flips
+   * immediately on success without a reload.
+   */
+  const submitVerificationRequest = async (event: Event) => {
+    event.preventDefault();
+    if (requestSubmitting.value) return;
+    const email = requestEmail.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      requestError.value = tIcon.requestModal.invalidEmail;
+      return;
+    }
+    requestSubmitting.value = true;
+    requestError.value = null;
+    try {
+      const r = await fetch("/api/registry/icon-access/request", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(text || `HTTP ${r.status}`);
+      }
+      iconAccessStatus.value = "requested";
+      iconAccessEmail.value = email;
+      requestModalOpen.value = false;
+    } catch (err) {
+      requestError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+      requestSubmitting.value = false;
+    }
   };
 
   /**
@@ -663,7 +734,8 @@ export default function CreateProfileForm(
           )}
 
           {/* ---------------- Main Link ----------------------------- */}
-          {/*
+          {
+            /*
             Required. Drives the listing card's link target on /explore
             (whole card becomes a button). Also surfaced as a small
             arrow on hover. We keep it directly above Atmosphere links
@@ -671,7 +743,8 @@ export default function CreateProfileForm(
             the card goes (Main Link) → who runs the project (Atmosphere
             services) → optional secondary surfaces (Landing Page +
             custom).
-          */}
+          */
+          }
           <label class="profile-form-field">
             <span class="profile-form-label">
               {tMainLink.sectionLabel}{" "}
@@ -711,12 +784,14 @@ export default function CreateProfileForm(
           </fieldset>
 
           {/* ---------------- Landing Page (optional) --------------- */}
-          {/*
+          {
+            /*
             Optional secondary URL — a separate marketing/landing page
             distinct from the Main Link. Renders as the globe-icon
             button on /explore/<handle>. Stored as `kind: website` for
             backward compatibility with existing records.
-          */}
+          */
+          }
           <label class="profile-form-field">
             <span class="profile-form-label">{tLanding.sectionLabel}</span>
             <input
@@ -725,8 +800,7 @@ export default function CreateProfileForm(
               placeholder={tLanding.placeholder}
               value={landingPage.value}
               onInput={(e) =>
-                landingPage.value =
-                  (e.currentTarget as HTMLInputElement).value}
+                landingPage.value = (e.currentTarget as HTMLInputElement).value}
             />
             <p class="profile-form-hint">{tLanding.hint}</p>
           </label>
@@ -784,38 +858,82 @@ export default function CreateProfileForm(
             /*
             Vector mark exposed only via /api/registry/icon/:did, for
             developers building badges and app showcases. Not shown on
-            the public Explore profile. Kept visually lightweight so it
-            doesn't compete with the main avatar slot above.
+            the public Explore profile. Uploads are gated behind
+            per-project verification — admin-granted only.
            */
           }
-          <fieldset class="profile-form-field">
+          <fieldset
+            class={`profile-form-field icon-section icon-section--${
+              iconAccessStatus.value ?? "locked"
+            }`}
+          >
             <legend class="profile-form-label">{tIcon.sectionLabel}</legend>
-            {/**
-             * Surface the moderation state for the *currently saved*
-             * icon so the user knows whether the developer API is
-             * actually serving it. We only show a badge when the user
-             * hasn't queued a replacement (otherwise the badge would
-             * lie until the next save).
-             */}
-            {!iconFile.value && !iconRemoved.value && initial?.icon &&
-              initial.icon.status === "pending" && (
-              <div class="icon-status-banner icon-status-banner--pending">
-                <strong>{tIcon.statusPendingTitle}</strong>
-                <span>{tIcon.statusPendingBody}</span>
+
+            {/* ---- Gate banners (one of these renders per state) ---- */}
+            {iconAccessStatus.value === null && (
+              <div class="icon-gate-banner icon-gate-banner--locked">
+                <strong class="icon-gate-banner-title">
+                  {tIcon.gate.lockedTitle}
+                </strong>
+                <span class="icon-gate-banner-body">
+                  {tIcon.gate.lockedBody}
+                </span>
+                <button
+                  type="button"
+                  class="profile-form-button-secondary icon-gate-button"
+                  onClick={() => {
+                    requestError.value = null;
+                    requestEmail.value = "";
+                    requestModalOpen.value = true;
+                  }}
+                  disabled={!published.value}
+                  title={published.value
+                    ? undefined
+                    : tIcon.gate.requestDisabledHint}
+                >
+                  {tIcon.gate.requestButton}
+                </button>
+                {!published.value && (
+                  <span class="icon-gate-banner-hint">
+                    {tIcon.gate.requestDisabledHint}
+                  </span>
+                )}
               </div>
             )}
-            {!iconFile.value && !iconRemoved.value && initial?.icon &&
-              initial.icon.status === "rejected" && (
-              <div class="icon-status-banner icon-status-banner--rejected">
-                <strong>{tIcon.statusRejectedTitle}</strong>
-                <span>
-                  {tIcon.statusRejectedBody(
-                    initial.icon.rejectedReason ?? "(no reason given)",
+            {iconAccessStatus.value === "requested" && (
+              <div class="icon-gate-banner icon-gate-banner--pending">
+                <strong class="icon-gate-banner-title">
+                  {tIcon.gate.pendingTitle}
+                </strong>
+                <span class="icon-gate-banner-body">
+                  {tIcon.gate.pendingBody(
+                    iconAccessEmail.value ?? APPEAL_EMAIL,
                   )}
                 </span>
               </div>
             )}
-            <div class="profile-form-icon-row">
+            {iconAccessStatus.value === "denied" && (
+              <div class="icon-gate-banner icon-gate-banner--denied">
+                <strong class="icon-gate-banner-title">
+                  {tIcon.gate.deniedTitle}
+                </strong>
+                <span class="icon-gate-banner-body">
+                  {tIcon.gate.deniedBody(APPEAL_EMAIL, iconAccessDeniedReason)}
+                </span>
+              </div>
+            )}
+            {iconAccessStatus.value === "granted" && (
+              <p class="profile-form-hint icon-gate-granted-hint">
+                {tIcon.gate.grantedHint}
+              </p>
+            )}
+
+            {/* ---- Uploader (greyed-out unless granted) ---- */}
+            <div
+              class={`profile-form-icon-row ${
+                iconUploadUnlocked ? "" : "is-locked"
+              }`}
+            >
               <div class="profile-form-icon-preview" aria-hidden="true">
                 {iconPreviewUrl.value
                   ? (
@@ -831,16 +949,22 @@ export default function CreateProfileForm(
                   : <span class="profile-form-icon-placeholder">SVG</span>}
               </div>
               <div class="profile-form-icon-actions">
-                <label class="profile-form-button-secondary">
+                <label
+                  class={`profile-form-button-secondary ${
+                    iconUploadUnlocked ? "" : "is-disabled"
+                  }`}
+                  aria-disabled={!iconUploadUnlocked}
+                >
                   {iconPreviewUrl.value ? tIcon.replace : tIcon.upload}
                   <input
                     type="file"
                     accept="image/svg+xml"
                     hidden
+                    disabled={!iconUploadUnlocked}
                     onChange={onIconChange}
                   />
                 </label>
-                {iconPreviewUrl.value && (
+                {iconPreviewUrl.value && iconUploadUnlocked && (
                   <button
                     type="button"
                     class="profile-form-button-link"
@@ -906,6 +1030,72 @@ export default function CreateProfileForm(
           </span>
         )}
       </div>
+
+      {/* ---------------- Verification request modal ---------------- */}
+      {requestModalOpen.value && (
+        <div
+          class="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="icon-access-request-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              requestModalOpen.value = false;
+            }
+          }}
+        >
+          <div class="modal-card glass icon-access-modal">
+            <h2 id="icon-access-request-title" class="text-card">
+              {tIcon.requestModal.title}
+            </h2>
+            <p class="text-body mt-2">{tIcon.requestModal.body}</p>
+            <form onSubmit={submitVerificationRequest} class="mt-4">
+              <label class="profile-form-field">
+                <span class="profile-form-label">
+                  {tIcon.requestModal.emailLabel}{" "}
+                  <span class="profile-form-required">*</span>
+                </span>
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  maxLength={320}
+                  placeholder={tIcon.requestModal.emailPlaceholder}
+                  value={requestEmail.value}
+                  onInput={(e) =>
+                    requestEmail.value =
+                      (e.currentTarget as HTMLInputElement).value}
+                  class="profile-form-input"
+                />
+              </label>
+              {requestError.value && (
+                <p class="profile-form-status profile-form-status--error mt-3">
+                  {tIcon.requestModal.errorPrefix}: {requestError.value}
+                </p>
+              )}
+              <div class="modal-actions mt-4">
+                <button
+                  type="submit"
+                  class="profile-form-button-primary"
+                  disabled={requestSubmitting.value}
+                >
+                  {requestSubmitting.value
+                    ? tIcon.requestModal.submitting
+                    : tIcon.requestModal.submit}
+                </button>
+                <button
+                  type="button"
+                  class="profile-form-button-link"
+                  onClick={() => (requestModalOpen.value = false)}
+                  disabled={requestSubmitting.value}
+                >
+                  {tIcon.requestModal.cancel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <BskyClientPickerModal
         open={bskyPickerOpen.value}

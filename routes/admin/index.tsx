@@ -9,22 +9,22 @@ import Footer from "../../components/Footer.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import type { Locale } from "../../i18n/mod.ts";
 import {
-  countPendingIcons,
+  countPendingIconAccess,
   countTakenDownProfiles,
 } from "../../lib/registry.ts";
 import { countOpenReports } from "../../lib/reports.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const [pendingIcons, openReports, takenDown] = await Promise.all([
-      countPendingIcons().catch(() => 0),
+    const [iconAccessRequests, openReports, takenDown] = await Promise.all([
+      countPendingIconAccess().catch(() => 0),
       countOpenReports().catch(() => 0),
       countTakenDownProfiles().catch(() => 0),
     ]);
     return ctx.render(
       <AdminHome
         user={ctx.state.user!}
-        pendingIcons={pendingIcons}
+        iconAccessRequests={iconAccessRequests}
         openReports={openReports}
         takenDown={takenDown}
         locale={ctx.state.locale}
@@ -35,14 +35,14 @@ export const handler = define.handlers({
 
 interface AdminHomeProps {
   user: { did: string; handle: string };
-  pendingIcons: number;
+  iconAccessRequests: number;
   openReports: number;
   takenDown: number;
   locale: Locale;
 }
 
 function AdminHome(
-  { user, pendingIcons, openReports, takenDown, locale }: AdminHomeProps,
+  { user, iconAccessRequests, openReports, takenDown, locale }: AdminHomeProps,
 ) {
   const t = getMessages(locale).admin;
   return (
@@ -64,10 +64,10 @@ function AdminHome(
             </header>
 
             <div class="admin-grid">
-              <a href="/admin/icons" class="admin-card">
-                <p class="admin-card-count">{pendingIcons}</p>
-                <h2 class="admin-card-title">{t.overview.iconsTitle}</h2>
-                <p class="admin-card-body">{t.overview.iconsBody}</p>
+              <a href="/admin/icon-access" class="admin-card">
+                <p class="admin-card-count">{iconAccessRequests}</p>
+                <h2 class="admin-card-title">{t.overview.iconAccessTitle}</h2>
+                <p class="admin-card-body">{t.overview.iconAccessBody}</p>
               </a>
               <a href="/admin/reports" class="admin-card">
                 <p class="admin-card-count">{openReports}</p>

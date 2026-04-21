@@ -63,10 +63,11 @@ export const handler = define.handlers({
           ? {
             ref: existing.iconCid,
             mime: existing.iconMime,
-            status: existing.iconStatus,
-            rejectedReason: existing.iconRejectedReason,
           }
           : null,
+        iconAccessStatus: existing.iconAccessStatus,
+        iconAccessEmail: existing.iconAccessEmail,
+        iconAccessDeniedReason: existing.iconAccessDeniedReason,
       };
     } else {
       const session = await loadSession(user.did);
@@ -89,6 +90,9 @@ export const handler = define.handlers({
               }
               : null,
             icon: null,
+            iconAccessStatus: null,
+            iconAccessEmail: null,
+            iconAccessDeniedReason: null,
           };
           if (bsky.avatar) {
             initialAvatarUrl = bskyCdnAvatarUrl(

@@ -1,5 +1,8 @@
 import type { ProfileRow } from "../../lib/registry.ts";
-import { resolveLink, type ResolvedIconKind } from "../../lib/atmosphere-links.ts";
+import {
+  type ResolvedIconKind,
+  resolveLink,
+} from "../../lib/atmosphere-links.ts";
 import { useT } from "../../i18n/mod.ts";
 import BskyIcon from "../icons/BskyIcon.tsx";
 import TangledIcon from "../icons/TangledIcon.tsx";
@@ -36,7 +39,9 @@ export default function ProfileLinks({ profile }: Props) {
     <div class="profile-actions">
       {resolved.map((r, i) => (
         <a
-          class={i === 0 ? "profile-action profile-action--primary" : "profile-action"}
+          class={i === 0
+            ? "profile-action profile-action--primary"
+            : "profile-action"}
           href={r.href}
           target="_blank"
           rel="noopener noreferrer"

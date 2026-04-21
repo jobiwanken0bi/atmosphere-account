@@ -31,9 +31,7 @@ export const handler = define.handlers({
     return ctx.render(
       <ProfileDetailPage
         profile={profile}
-        signedInUser={user
-          ? { did: user.did, handle: user.handle }
-          : null}
+        signedInUser={user ? { did: user.did, handle: user.handle } : null}
         ownerHandle={ownerProfile?.handle ?? null}
         locale={ctx.state.locale}
       />,

@@ -39,11 +39,11 @@ export default function Footer({ variant = "default" }: FooterProps = {}) {
           >
             {t.footer.links.atProtocol}
           </a>
-          {/* Hide on the explore section — visitors are already there,
-            * so the link would just point at the page they're on. */}
-          {!compact && (
-            <a href="/explore">{t.footer.links.exploreApps}</a>
-          )}
+          {
+            /* Hide on the explore section — visitors are already there,
+            * so the link would just point at the page they're on. */
+          }
+          {!compact && <a href="/explore">{t.footer.links.exploreApps}</a>}
           <a href="/developer-resources">{t.footer.links.developerResources}</a>
         </div>
         {!compact && <p class="footer-quote">{t.footer.quote()}</p>}

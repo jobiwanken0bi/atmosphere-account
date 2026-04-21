@@ -608,12 +608,45 @@ const en = {
         remove: "Remove SVG",
         invalidType: "Icon must be an SVG (image/svg+xml).",
         tooLarge: "Icon must be 200KB or smaller.",
-        statusPendingTitle: "Pending review",
-        statusPendingBody:
-          "Your icon is on your PDS but won't appear in the developer API until an admin approves it.",
-        statusRejectedTitle: "Rejected",
-        statusRejectedBody: (reason: string): string =>
-          `An admin rejected this icon. Reason: ${reason}. Replace it below to resubmit.`,
+        gate: {
+          /** Gate state when the project hasn't requested verification yet. */
+          lockedTitle: "SVG Upload requires verification",
+          lockedBody:
+            "Per-project verification keeps malicious SVGs out of the developer API. Submit a request and an admin will review your project.",
+          requestButton: "Request Verification",
+          /** Disabled-button text shown before the user has published their profile. */
+          requestDisabledHint:
+            "Publish your profile first, then come back here to request verification.",
+          /** Gate state while a request is sitting in the admin queue. */
+          pendingTitle: "Verification request pending",
+          pendingBody: (email: string): string =>
+            `An admin will review your request and reply to ${email}.`,
+          /** Gate state after admin denial. */
+          deniedTitle: "Verification denied",
+          deniedBody: (appealEmail: string, reason: string | null): string =>
+            reason
+              ? `An admin denied your verification request. Reason: ${reason}. To appeal, email ${appealEmail}.`
+              : `An admin denied your verification request. To appeal, email ${appealEmail}.`,
+          /** Gate state after admin grant — uploader unlocked. */
+          grantedHint:
+            "Your project is verified — SVG uploads are unlocked. Files are still sanitised on upload.",
+        },
+        /** Modal that collects a contact email for the verification request. */
+        requestModal: {
+          title: "Request SVG icon verification",
+          body:
+            "An admin will review your project and reply by email. We only use this address for this verification thread.",
+          emailLabel: "Contact email",
+          emailPlaceholder: "you@example.com",
+          submit: "Submit request",
+          cancel: "Cancel",
+          submitting: "Submitting…",
+          successTitle: "Request submitted",
+          successBody: "An admin will review your project and reply by email.",
+          invalidEmail: "Enter a valid email address.",
+          /** Generic failure surface — server text appended after. */
+          errorPrefix: "Couldn't submit request",
+        },
       },
     },
   },
@@ -628,10 +661,10 @@ const en = {
     overview: {
       headline: "Admin",
       subhead:
-        "Approve developer icons, triage reports, and curate the featured rail.",
-      iconsTitle: "Pending icons",
-      iconsBody:
-        "Developer-facing SVGs awaiting approval before they're served via the public API.",
+        "Verify projects for SVG uploads, triage reports, and curate the featured rail.",
+      iconAccessTitle: "Icon access requests",
+      iconAccessBody:
+        "Projects requesting permission to upload an SVG icon for the developer API.",
       reportsTitle: "Open reports",
       reportsBody: "User-submitted reports against profiles in Explore.",
       featuredTitle: "Featured",
@@ -646,20 +679,25 @@ const en = {
       approved: "Approved",
       rejected: "Rejected",
     },
-    icons: {
-      headline: "Pending developer icons",
+    iconAccess: {
+      headline: "Icon access requests",
       subhead:
-        "Each icon was uploaded to the project's PDS and sanitised, but won't be served via /api/registry/icon/:did until you approve it.",
-      empty: "Nothing in the queue. Check back later.",
-      approve: "Approve",
-      reject: "Reject",
-      confirmReject: "Reject this icon. Tell the project owner why:",
-      rejectReasonPlaceholder:
-        "e.g. unrelated to the project, low quality, contains text",
-      submitReject: "Submit rejection",
-      cancel: "Cancel",
-      markedApproved: "Approved",
-      markedRejected: "Rejected",
+        "Projects asking for permission to upload an SVG icon. Granting unlocks /api/registry/icon/:did and the developer API's `iconUrl`. Per-icon sanitisation still runs server-side. Denying (or revoking) hides any existing icon immediately.",
+      pendingHeading: "Pending requests",
+      grantedHeading: "Currently verified",
+      emptyPending: "No requests in the queue.",
+      emptyGranted: "No projects are verified yet.",
+      grant: "Grant",
+      deny: "Deny",
+      revoke: "Revoke",
+      denyPrompt:
+        "Optional: tell the project owner why you're denying / revoking. Press OK with the field empty to deny without a reason.",
+      markedGranted: "Granted",
+      markedDenied: "Denied",
+      requestedAtLabel: "Requested",
+      grantedAtLabel: "Granted",
+      emailLabel: "Contact email",
+      viewProfile: "View profile",
     },
     reports: {
       headline: "Open reports",

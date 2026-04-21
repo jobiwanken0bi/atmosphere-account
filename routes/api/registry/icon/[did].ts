@@ -32,14 +32,20 @@ export const handler = define.handlers({
     if (!profile || !profile.iconCid) {
       return new Response("not found", { status: 404 });
     }
-    /** Refuse to serve until an admin has approved this icon. The blob
-     *  itself is on the user's PDS regardless — we just gate our proxy +
-     *  iconUrl emission, which is what developer-facing API consumers
-     *  rely on. The owner is allowed to see their own pending/rejected
-     *  icon so the manage-page preview keeps working. */
-    if (profile.iconStatus !== "approved") {
-      const owner = ctx.state.user?.did === did;
-      if (!owner) return new Response("not found", { status: 404 });
+    /** Refuse to serve unless the project is verified AND the icon has
+     *  been auto-approved on upload. The blob itself is on the user's
+     *  PDS regardless — we just gate our proxy + iconUrl emission,
+     *  which is what developer-facing API consumers rely on. The owner
+     *  is allowed to see their own icon (any status) so the manage-page
+     *  preview keeps working through pending / denied transitions. */
+    const owner = ctx.state.user?.did === did;
+    if (!owner) {
+      if (profile.iconAccessStatus !== "granted") {
+        return new Response("not found", { status: 404 });
+      }
+      if (profile.iconStatus !== "approved") {
+        return new Response("not found", { status: 404 });
+      }
     }
     try {
       const upstream = await fetchBlobPublic(

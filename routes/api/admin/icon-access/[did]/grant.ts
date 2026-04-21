@@ -1,14 +1,14 @@
 /**
- * Admin: approve a pending SVG icon for a project.
+ * Admin: grant SVG-icon upload access to a project.
  *
- *   POST /api/admin/icons/:did/approve
+ *   POST /api/admin/icon-access/:did/grant
  *
- * On success, /api/registry/icon/:did starts serving the bytes and
- * /api/registry/profile/:id begins emitting `iconUrl` for the project.
+ * Idempotent — re-granting a project that's already granted just
+ * refreshes the reviewer/timestamp.
  */
 import { define } from "../../../../../utils.ts";
 import { requireAdminApi } from "../../../../../lib/admin.ts";
-import { approveIcon } from "../../../../../lib/registry.ts";
+import { grantIconAccess } from "../../../../../lib/registry.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -16,14 +16,13 @@ export const handler = define.handlers({
     if (!gate.ok) return gate.response;
 
     const did = decodeURIComponent(ctx.params.did);
-    if (!did.startsWith("did:")) {
-      return jsonError(400, "invalid_did");
-    }
+    if (!did.startsWith("did:")) return jsonError(400, "invalid_did");
+
     try {
-      await approveIcon(did, gate.did);
+      await grantIconAccess(did, gate.did);
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "approve_failed", m);
+      return jsonError(500, "grant_failed", m);
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
