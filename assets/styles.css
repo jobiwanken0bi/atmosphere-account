@@ -2576,6 +2576,95 @@ body {
   color: rgba(255, 255, 255, 0.6);
 }
 
+/**
+ * Smaller variant of the field label used inside compound fieldsets
+ * (links editor row, license sub-fields). Matches the hint typography
+ * so nested fields don't compete with the parent legend.
+ */
+.profile-form-label--small {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: rgba(18, 26, 47, 0.7);
+}
+.dark-phase .profile-form-label--small {
+  color: rgba(255, 255, 255, 0.75);
+}
+.profile-form-empty {
+  font-size: 0.85rem;
+  color: rgba(18, 26, 47, 0.55);
+  font-style: italic;
+  margin: 0.25rem 0 0.5rem;
+}
+.dark-phase .profile-form-empty {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/**
+ * Links editor: each row is a 3-column grid (kind | url | label) with a
+ * trailing "Remove" link. On narrow screens the grid collapses to a
+ * single column so the inputs stay usable on phones.
+ */
+.link-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.4rem;
+}
+.link-editor-row {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 2fr) minmax(0, 1.5fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+  padding: 0.55rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(18, 26, 47, 0.12);
+  background: rgba(255, 255, 255, 0.4);
+}
+.dark-phase .link-editor-row {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.link-editor-kind,
+.link-editor-url,
+.link-editor-label {
+  min-width: 0;
+}
+.link-editor-remove {
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+.link-editor-add {
+  margin-top: 0.6rem;
+  align-self: flex-start;
+}
+@media (max-width: 640px) {
+  .link-editor-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+  .link-editor-remove {
+    justify-self: flex-end;
+  }
+}
+
+/**
+ * License section sits inside the same fields column as the rest of the
+ * form. The faint inset background visually groups its sub-fields without
+ * adding a heavy border that would clash with the glass card.
+ */
+.profile-form-license {
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.32);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+}
+.dark-phase .profile-form-license {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
 .profile-form-chips {
   display: flex;
   gap: 0.4rem;
@@ -2740,6 +2829,9 @@ body.explore-no-effects #nav-effects-bar {
 .signin-form-preview-wrap {
   position: relative;
   overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 /* Dropdown floats above page chrome (nav z-index 101). */
 .signin-form-preview {

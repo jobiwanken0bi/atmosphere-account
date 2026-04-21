@@ -4,7 +4,7 @@
  */
 import type { InValue } from "@libsql/client";
 import { withDb } from "./db.ts";
-import type { FeaturedBadge } from "./lexicons.ts";
+import type { FeaturedBadge, LinkEntry } from "./lexicons.ts";
 
 export interface ProfileRow {
   did: string;
@@ -15,9 +15,8 @@ export interface ProfileRow {
    *  primary category used for sort/grouping in lists. */
   categories: string[];
   subcategories: string[];
-  website: string | null;
-  repoUrl: string | null;
-  openSource: boolean;
+  /** Outbound links (website, repo, donate, …) in author-defined order. */
+  links: LinkEntry[];
   bskyClient: string | null;
   avatarCid: string | null;
   avatarMime: string | null;
@@ -31,6 +30,14 @@ export interface ProfileRow {
     badges: FeaturedBadge[] | string[];
     position: number;
   };
+  /** Populated when joined with the license table. Absent = no license
+   *  record published. */
+  license?: {
+    type: string;
+    spdxId: string | null;
+    licenseUrl: string | null;
+    notes: string | null;
+  };
 }
 
 interface RawProfileRow {
@@ -40,9 +47,7 @@ interface RawProfileRow {
   description: string;
   categories: string;
   subcategories: string;
-  website: string | null;
-  repo_url: string | null;
-  open_source: number | null;
+  links: string | null;
   bsky_client: string | null;
   avatar_cid: string | null;
   avatar_mime: string | null;
@@ -53,6 +58,10 @@ interface RawProfileRow {
   indexed_at: number;
   featured_badges?: string | null;
   featured_position?: number | null;
+  license_type?: string | null;
+  license_spdx_id?: string | null;
+  license_url?: string | null;
+  license_notes?: string | null;
 }
 
 function safeJsonArray(text: string | null | undefined): string[] {
@@ -60,6 +69,26 @@ function safeJsonArray(text: string | null | undefined): string[] {
   try {
     const v = JSON.parse(text);
     return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function safeJsonLinks(text: string | null | undefined): LinkEntry[] {
+  if (!text) return [];
+  try {
+    const v = JSON.parse(text);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((x): x is { kind: unknown; url: unknown; label?: unknown } =>
+        !!x && typeof x === "object"
+      )
+      .filter((x) => typeof x.kind === "string" && typeof x.url === "string")
+      .map((x) => {
+        const e: LinkEntry = { kind: x.kind as string, url: x.url as string };
+        if (typeof x.label === "string" && x.label) e.label = x.label;
+        return e;
+      });
   } catch {
     return [];
   }
@@ -73,9 +102,7 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     description: r.description,
     categories: safeJsonArray(r.categories),
     subcategories: safeJsonArray(r.subcategories),
-    website: r.website,
-    repoUrl: r.repo_url,
-    openSource: Number(r.open_source ?? 0) === 1,
+    links: safeJsonLinks(r.links),
     bskyClient: r.bsky_client,
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
@@ -91,6 +118,14 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
       position: Number(r.featured_position ?? 0),
     };
   }
+  if (r.license_type) {
+    out.license = {
+      type: r.license_type,
+      spdxId: r.license_spdx_id ?? null,
+      licenseUrl: r.license_url ?? null,
+      notes: r.license_notes ?? null,
+    };
+  }
   return out;
 }
 
@@ -102,9 +137,7 @@ export interface UpsertProfileInput {
   /** Required: 1-4 known category strings. The first is the primary. */
   categories: string[];
   subcategories: string[];
-  website?: string | null;
-  repoUrl?: string | null;
-  openSource?: boolean | null;
+  links?: LinkEntry[] | null;
   bskyClient?: string | null;
   avatarCid?: string | null;
   avatarMime?: string | null;
@@ -138,20 +171,17 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
     await c.execute({
       sql: `
         INSERT INTO profile (
-          did, handle, name, description, categories, subcategories,
-          website, repo_url, open_source, bsky_client,
-          avatar_cid, avatar_mime, pds_url, record_cid, record_rev,
-          created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          did, handle, name, description, categories, subcategories, links,
+          bsky_client, avatar_cid, avatar_mime, pds_url, record_cid,
+          record_rev, created_at, indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
           name=excluded.name,
           description=excluded.description,
           categories=excluded.categories,
           subcategories=excluded.subcategories,
-          website=excluded.website,
-          repo_url=excluded.repo_url,
-          open_source=excluded.open_source,
+          links=excluded.links,
           bsky_client=excluded.bsky_client,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
@@ -168,9 +198,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.description,
         JSON.stringify(cats),
         JSON.stringify(input.subcategories ?? []),
-        input.website ?? null,
-        input.repoUrl ?? null,
-        input.openSource ? 1 : 0,
+        JSON.stringify(input.links ?? []),
         input.bskyClient ?? null,
         input.avatarCid ?? null,
         input.avatarMime ?? null,
@@ -186,14 +214,24 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
 
 export async function deleteProfile(did: string): Promise<void> {
   await withDb(async (c) => {
+    // License is paired with the profile from the user's POV; cleaning it
+    // up here keeps the index from carrying orphan rows after a removal.
+    await c.execute({ sql: `DELETE FROM license WHERE did = ?`, args: [did] });
     await c.execute({ sql: `DELETE FROM profile WHERE did = ?`, args: [did] });
   });
 }
 
 const SELECT_PROFILE = `
-  SELECT p.*, f.badges AS featured_badges, f.position AS featured_position
+  SELECT p.*,
+    f.badges AS featured_badges,
+    f.position AS featured_position,
+    l.type AS license_type,
+    l.spdx_id AS license_spdx_id,
+    l.license_url AS license_url,
+    l.notes AS license_notes
   FROM profile p
   LEFT JOIN featured f ON f.did = p.did
+  LEFT JOIN license l ON l.did = p.did
 `;
 
 export async function getProfileByDid(did: string): Promise<ProfileRow | null> {
@@ -334,6 +372,120 @@ export async function replaceFeatured(
     }
   });
 }
+
+/* -------------------------------------------------------------------------- *
+ * License (com.atmosphereaccount.registry.license/self)                      *
+ * -------------------------------------------------------------------------- */
+
+export interface LicenseRow {
+  did: string;
+  type: string;
+  spdxId: string | null;
+  licenseUrl: string | null;
+  notes: string | null;
+  pdsUrl: string;
+  recordCid: string;
+  recordRev: string;
+  createdAt: number;
+  indexedAt: number;
+}
+
+interface RawLicenseRow {
+  did: string;
+  type: string;
+  spdx_id: string | null;
+  license_url: string | null;
+  notes: string | null;
+  pds_url: string;
+  record_cid: string;
+  record_rev: string;
+  created_at: number;
+  indexed_at: number;
+}
+
+function rowToLicense(r: RawLicenseRow): LicenseRow {
+  return {
+    did: r.did,
+    type: r.type,
+    spdxId: r.spdx_id,
+    licenseUrl: r.license_url,
+    notes: r.notes,
+    pdsUrl: r.pds_url,
+    recordCid: r.record_cid,
+    recordRev: r.record_rev,
+    createdAt: Number(r.created_at),
+    indexedAt: Number(r.indexed_at),
+  };
+}
+
+export interface UpsertLicenseInput {
+  did: string;
+  type: string;
+  spdxId?: string | null;
+  licenseUrl?: string | null;
+  notes?: string | null;
+  pdsUrl: string;
+  recordCid: string;
+  recordRev: string;
+  createdAt: number;
+}
+
+export async function upsertLicense(input: UpsertLicenseInput): Promise<void> {
+  const now = Date.now();
+  await withDb(async (c) => {
+    await c.execute({
+      sql: `
+        INSERT INTO license (
+          did, type, spdx_id, license_url, notes,
+          pds_url, record_cid, record_rev, created_at, indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(did) DO UPDATE SET
+          type=excluded.type,
+          spdx_id=excluded.spdx_id,
+          license_url=excluded.license_url,
+          notes=excluded.notes,
+          pds_url=excluded.pds_url,
+          record_cid=excluded.record_cid,
+          record_rev=excluded.record_rev,
+          created_at=excluded.created_at,
+          indexed_at=excluded.indexed_at
+      `,
+      args: [
+        input.did,
+        input.type,
+        input.spdxId ?? null,
+        input.licenseUrl ?? null,
+        input.notes ?? null,
+        input.pdsUrl,
+        input.recordCid,
+        input.recordRev,
+        input.createdAt,
+        now,
+      ],
+    });
+  });
+}
+
+export async function deleteLicense(did: string): Promise<void> {
+  await withDb(async (c) => {
+    await c.execute({ sql: `DELETE FROM license WHERE did = ?`, args: [did] });
+  });
+}
+
+export async function getLicenseByDid(did: string): Promise<LicenseRow | null> {
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `SELECT * FROM license WHERE did = ? LIMIT 1`,
+      args: [did],
+    });
+    if (r.rows.length === 0) return null;
+    return rowToLicense(r.rows[0] as unknown as RawLicenseRow);
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Jetstream cursor                                                            *
+ * -------------------------------------------------------------------------- */
 
 export async function getJetstreamCursor(): Promise<number | null> {
   return await withDb(async (c) => {

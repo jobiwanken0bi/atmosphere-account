@@ -1,7 +1,8 @@
 /**
- * Auto-detected source-repo hosts. A project's profile carries a single
- * `repoUrl`; we pick the right icon + label based on the URL host so the
- * UI stays simple (no extra picker the way Bluesky-clients have one).
+ * Auto-detected source-repo hosts. A project's profile can publish any
+ * number of `links` entries with kind="repo"; we pick the right icon +
+ * label based on the URL host so the UI stays simple (no extra picker
+ * the way Bluesky-clients have one).
  *
  * Currently recognised:
  *   - GitHub  (github.com)
@@ -11,9 +12,8 @@
  * Anything else falls back to a generic "code" host with the website-style
  * arrow glyph so the button still works for self-hosted Forgejo/Gitea/etc.
  *
- * Single source of truth used by:
- *   - the public profile detail page (components/explore/ProfileLinks.tsx)
- *   - the create / manage form helper text (forms.profile.repoUrlHint)
+ * Used by `lib/link-kinds.ts` when resolving a `repo`-kind link entry
+ * into render-ready data for components/explore/ProfileLinks.tsx.
  */
 
 export type RepoHostId = "github" | "tangled" | "other";

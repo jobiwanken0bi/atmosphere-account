@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A project's profile in the Atmosphere registry. Created by the project's own account on its PDS; one record per account.",
+      "description": "A project's profile in the Atmosphere registry. Created by the project's own account on its PDS; one record per account. Kept intentionally minimal — anything that could plausibly stand on its own (license, reviews, age ratings, etc.) is published as a sibling record under com.atmosphereaccount.registry.* so this lexicon can stay stable.",
       "key": "literal:self",
       "record": {
         "type": "object",
@@ -40,10 +40,11 @@
                 "app",
                 "accountProvider",
                 "moderator",
-                "infrastructure"
+                "infrastructure",
+                "developerTool"
               ]
             },
-            "description": "All categories that apply to the project. A project can be both an app and an account provider, etc. The first item is treated as the primary category for sort/grouping."
+            "description": "All categories that apply to the project. A project can be both an app and an account provider, etc. The first item is treated as the primary category for sort/grouping. New values can be added to knownValues over time without breaking existing records."
           },
           "subcategories": {
             "type": "array",
@@ -54,20 +55,14 @@
             },
             "description": "Open-ended subcategory tags. For apps: microblog, photo, video, blogging, music, events, clients, tools, social, reading, productivity."
           },
-          "website": {
-            "type": "string",
-            "format": "uri",
-            "maxLength": 256
-          },
-          "repoUrl": {
-            "type": "string",
-            "format": "uri",
-            "maxLength": 256,
-            "description": "Source repository URL. Tangled and GitHub URLs render with the matching icon on the public profile."
-          },
-          "openSource": {
-            "type": "boolean",
-            "description": "True if the project is open source. Adds an \"Open source\" badge on the public profile."
+          "links": {
+            "type": "array",
+            "maxLength": 12,
+            "items": {
+              "type": "ref",
+              "ref": "#linkEntry"
+            },
+            "description": "Outbound links shown on the public profile (website, source repo, donate, docs, fediverse, chat, etc.). Order is preserved; the first \"website\" is treated as the primary."
           },
           "bskyClient": {
             "type": "string",
@@ -84,6 +79,37 @@
             "type": "string",
             "format": "datetime"
           }
+        }
+      }
+    },
+    "linkEntry": {
+      "type": "object",
+      "required": ["kind", "url"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "knownValues": [
+            "website",
+            "repo",
+            "donate",
+            "docs",
+            "mastodon",
+            "matrix",
+            "discord",
+            "contact",
+            "other"
+          ],
+          "description": "Link kind. Drives the icon/label shown on the profile. \"other\" falls back to a generic glyph and uses `label` for the title."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Optional override label. Required when kind=\"other\"; defaults to the kind's display name otherwise."
         }
       }
     }

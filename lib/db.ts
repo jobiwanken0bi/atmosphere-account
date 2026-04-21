@@ -72,9 +72,7 @@ const SCHEMA_STATEMENTS: string[] = [
     description TEXT NOT NULL,
     categories TEXT NOT NULL DEFAULT '[]',
     subcategories TEXT NOT NULL DEFAULT '[]',
-    website TEXT,
-    repo_url TEXT,
-    open_source INTEGER NOT NULL DEFAULT 0,
+    links TEXT NOT NULL DEFAULT '[]',
     bsky_client TEXT,
     avatar_cid TEXT,
     avatar_mime TEXT,
@@ -102,6 +100,23 @@ const SCHEMA_STATEMENTS: string[] = [
     INSERT INTO profile_fts(rowid, name, description)
     VALUES (new.rowid, new.name, new.description);
   END`,
+  // License is its own record on the project's PDS (com.atmosphereaccount
+  // .registry.license/self), joined to profile by DID. Splitting it out
+  // keeps the profile lexicon small and lets us extend license metadata
+  // (or add other sibling records like reviews / age ratings) without
+  // touching the profile schema.
+  `CREATE TABLE IF NOT EXISTS license (
+    did TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    spdx_id TEXT,
+    license_url TEXT,
+    notes TEXT,
+    pds_url TEXT NOT NULL,
+    record_cid TEXT NOT NULL,
+    record_rev TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    indexed_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS featured (
     did TEXT PRIMARY KEY,
     badges TEXT NOT NULL DEFAULT '[]',
@@ -141,9 +156,10 @@ const SCHEMA_STATEMENTS: string[] = [
  * Additive migrations applied after the base schema. SQLite has no
  * `ADD COLUMN IF NOT EXISTS`, so we attempt the ALTER and swallow the
  * "duplicate column" error. SQLite makes column drops painful, so legacy
- * columns we no longer use (e.g. the old single-value `category`, `tags`)
- * are just left around and ignored — running `scripts/wipe-registry.ts`
- * recreates the table cleanly when desired.
+ * columns we no longer use (e.g. the old single-value `category`, `tags`,
+ * the pre-`links[]` `website`/`repo_url`/`open_source`) are just left
+ * around and ignored — running `scripts/wipe-registry.ts` recreates the
+ * table cleanly when desired.
  */
 async function applyAdditiveMigrations(
   c: { execute: (s: string) => Promise<unknown> },
@@ -163,14 +179,8 @@ async function applyAdditiveMigrations(
       },
       {
         table: "profile",
-        column: "repo_url",
-        ddl: "ALTER TABLE profile ADD COLUMN repo_url TEXT",
-      },
-      {
-        table: "profile",
-        column: "open_source",
-        ddl:
-          "ALTER TABLE profile ADD COLUMN open_source INTEGER NOT NULL DEFAULT 0",
+        column: "links",
+        ddl: "ALTER TABLE profile ADD COLUMN links TEXT NOT NULL DEFAULT '[]'",
       },
     ];
   for (const m of additiveColumns) {

@@ -309,6 +309,7 @@ const en = {
     accountProvider: "Account provider",
     moderator: "Moderator",
     infrastructure: "Infrastructure",
+    developerTool: "Developer tool",
     all: "All",
   },
 
@@ -329,6 +330,33 @@ const en = {
   badges: {
     verified: "Verified",
     official: "Official",
+  },
+
+  /**
+   * Display labels for `LinkEntry.kind`. The "repoOnPrefix" / "repoGeneric"
+   * pair are used when a link kind is "repo" — the resolver appends the
+   * detected host name ("Source on GitHub") or falls back to the generic
+   * label when the host can't be identified.
+   */
+  linkKinds: {
+    website: "Website",
+    repo: "Source repository",
+    repoOnPrefix: "Source on",
+    repoGeneric: "Source code",
+    donate: "Donate",
+    docs: "Documentation",
+    mastodon: "Mastodon",
+    matrix: "Matrix",
+    discord: "Discord",
+    contact: "Contact",
+    other: "Link",
+  },
+
+  /** Public-facing labels for `LicenseRecord.type`. */
+  licenseTypes: {
+    openSource: "Open source",
+    sourceAvailable: "Source available",
+    proprietary: "Proprietary",
   },
 
   explore: {
@@ -352,11 +380,7 @@ const en = {
     poweredByYou:
       "Powered by you — every entry is created and signed by the project's own Atmosphere account.",
     detail: {
-      website: "Website",
       openOn: "Open on",
-      sourceOn: "Source on",
-      sourceCode: "Source code",
-      openSourceBadge: "Open source",
       lastUpdated: "Last updated",
       hostedOn: "Hosted on",
       editProfile: "Edit this profile",
@@ -365,6 +389,12 @@ const en = {
       categoryLabel: "Category",
       notFoundTitle: "404",
       notFoundBody: "We couldn't find a profile for that handle.",
+      /** Compact badge on cards/hero. Spelled out for the public profile. */
+      openSourceBadge: "Open source",
+      /** License section on the public profile. */
+      license: {
+        viewLicense: "View license",
+      },
     },
     create: {
       eyebrow: "Add to Explore",
@@ -413,15 +443,6 @@ const en = {
         "Pick all that apply. A project can be both an app and an account provider.",
       subcategoriesLabel: "Subcategories (optional)",
       subcategoriesHint: "For apps. Pick up to a few.",
-      websiteLabel: "Website",
-      websitePlaceholder: "https://yourproject.com",
-      repoUrlLabel: "Source repository (optional)",
-      repoUrlHint:
-        "Tangled or GitHub URL — we'll show a button on your profile with the matching icon.",
-      repoUrlPlaceholder: "https://github.com/yourorg/yourproject",
-      openSourceLabel: "This project is open source",
-      openSourceHint:
-        "Adds a small \"Open source\" badge to your profile so visitors know.",
       bskyClientLabel: "Bluesky client",
       bskyClientHint:
         "Pick which client opens when visitors click the Bluesky button on your profile. Your handle works on all of them.",
@@ -433,6 +454,34 @@ const en = {
       avatarTooLarge: "Avatar must be 1MB or smaller.",
       confirmDelete: "Remove your project from Explore?",
       categoryRequired: "Pick at least one category.",
+      links: {
+        sectionLabel: "Links",
+        sectionHint:
+          "Website, source repo, donate, docs, chat — anything you want on your profile. Drag to reorder later.",
+        addButton: "Add link",
+        removeButton: "Remove",
+        kindLabel: "Type",
+        urlLabel: "URL",
+        urlPlaceholder: "https://…",
+        labelLabel: "Label",
+        labelPlaceholderOther: "What is this? (e.g. Press kit)",
+        labelHelp: 'Optional override. Required for "Other".',
+        emptyHint: 'No links yet. Click "Add link" to add your website, repo, or anything else.',
+      },
+      license: {
+        sectionLabel: "License",
+        sectionHint:
+          "Tell visitors how the project is licensed. Stored as a separate record on your PDS.",
+        typeLabel: "License type",
+        typeNone: "Don't say (no license info shown)",
+        spdxLabel: "SPDX identifier (optional)",
+        spdxHint: 'For example: "MIT", "Apache-2.0", "AGPL-3.0", "BUSL-1.1".',
+        spdxPlaceholder: "MIT",
+        urlLabel: "License URL (optional)",
+        urlPlaceholder: "https://github.com/yourorg/yourproject/blob/main/LICENSE",
+        notesLabel: "Notes (optional)",
+        notesPlaceholder: 'e.g. "Server is AGPL-3.0; mobile clients are MIT"',
+      },
     },
   },
 

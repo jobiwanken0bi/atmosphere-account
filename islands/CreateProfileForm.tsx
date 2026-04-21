@@ -4,9 +4,19 @@ import {
   APP_SUBCATEGORIES,
   CATEGORIES,
   type Category,
+  LICENSE_TYPES,
+  type LinkEntry,
 } from "../lib/lexicons.ts";
+import { LINK_KIND_ORDER } from "../lib/link-kinds.ts";
 import { BSKY_CLIENTS, DEFAULT_BSKY_CLIENT_ID } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
+
+interface ExistingLicense {
+  type: string;
+  spdxId: string | null;
+  licenseUrl: string | null;
+  notes: string | null;
+}
 
 interface ExistingProfile {
   name: string;
@@ -15,11 +25,11 @@ interface ExistingProfile {
    *  first item is the primary, used for sort/grouping in lists. */
   categories: string[];
   subcategories: string[];
-  website: string | null;
-  repoUrl: string | null;
-  openSource: boolean;
+  links: LinkEntry[];
   bskyClient: string | null;
   avatar: { ref: string; mime: string } | null;
+  /** Joined license record, if the user has published one. */
+  license: ExistingLicense | null;
 }
 
 interface Props {
@@ -60,6 +70,8 @@ export default function CreateProfileForm(
 ) {
   const t = useT();
   const tForm = t.forms.profile;
+  const tLink = t.linkKinds;
+  const tLicense = t.licenseTypes as Record<string, string>;
   const tManage = t.explore.manage;
   /** Live registry status. Flips on save (-> true) and delete (-> false).
    *  Drives the colored pill that tells the user whether their entry is
@@ -74,12 +86,22 @@ export default function CreateProfileForm(
     initial?.categories?.length ? initial.categories : ["app"],
   );
   const subcategories = useSignal<string[]>(initial?.subcategories ?? []);
-  const website = useSignal(initial?.website ?? "");
-  const repoUrl = useSignal(initial?.repoUrl ?? "");
-  const openSource = useSignal<boolean>(initial?.openSource ?? false);
+  /** Local-only signal: signals don't deep-track array element mutations,
+   *  so each edit replaces the entire array. */
+  const links = useSignal<LinkEntry[]>(initial?.links ?? []);
   const bskyClient = useSignal<string>(
     initial?.bskyClient ?? DEFAULT_BSKY_CLIENT_ID,
   );
+  /**
+   * License state. `licenseType === ""` means "don't publish a license
+   * record" — the form sends `license: null` in that case so the API
+   * deletes any existing record.
+   */
+  const licenseType = useSignal<string>(initial?.license?.type ?? "");
+  const licenseSpdx = useSignal<string>(initial?.license?.spdxId ?? "");
+  const licenseUrl = useSignal<string>(initial?.license?.licenseUrl ?? "");
+  const licenseNotes = useSignal<string>(initial?.license?.notes ?? "");
+
   const avatarKeep = useSignal<BlobRefShape | null>(null);
   /** Preview URL precedence: locally-picked file blob > existing registry
    *  record (cached proxy) > prefill source (Bluesky PDS getBlob) > none. */
@@ -138,6 +160,20 @@ export default function CreateProfileForm(
    */
   const showSubcategories = categories.value.includes("app");
 
+  /* ---------- Links editor helpers --------------------------------------- */
+  const addLink = (kind: string = "website") => {
+    if (links.value.length >= 12) return;
+    links.value = [...links.value, { kind, url: "", label: "" }];
+  };
+  const removeLink = (index: number) => {
+    links.value = links.value.filter((_, i) => i !== index);
+  };
+  const updateLink = (index: number, patch: Partial<LinkEntry>) => {
+    links.value = links.value.map((entry, i) =>
+      i === index ? { ...entry, ...patch } : entry
+    );
+  };
+
   const onAvatarChange = (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -170,14 +206,29 @@ export default function CreateProfileForm(
     message.value = null;
 
     try {
+      // Sanitise links: drop empty rows; require URL on every kept row;
+      // for kind="other", require a label. Mirroring the validator means
+      // the user gets fast client-side feedback.
+      const cleanedLinks: LinkEntry[] = [];
+      for (const l of links.value) {
+        const url = (l.url ?? "").trim();
+        if (!url) continue;
+        const kind = (l.kind ?? "").trim() || "other";
+        const label = (l.label ?? "").trim();
+        if (kind === "other" && !label) {
+          throw new Error(`Add a label for the "${tLink.other}" link or remove it.`);
+        }
+        const entry: LinkEntry = { kind, url };
+        if (label) entry.label = label;
+        cleanedLinks.push(entry);
+      }
+
       const payload: Record<string, unknown> = {
         name: name.value.trim(),
         description: description.value.trim(),
         categories: categories.value,
         subcategories: showSubcategories ? subcategories.value : [],
-        website: website.value.trim() || undefined,
-        repoUrl: repoUrl.value.trim() || undefined,
-        openSource: openSource.value,
+        links: cleanedLinks,
         bskyClient: bskyClient.value || undefined,
       };
       if (avatarFile.value) {
@@ -191,6 +242,19 @@ export default function CreateProfileForm(
         payload.avatar = null;
       }
 
+      // License sub-record. Empty type = "don't publish" → null tells the
+      // API to delete any existing license record so the badge goes away.
+      if (licenseType.value) {
+        payload.license = {
+          type: licenseType.value,
+          spdxId: licenseSpdx.value.trim() || undefined,
+          licenseUrl: licenseUrl.value.trim() || undefined,
+          notes: licenseNotes.value.trim() || undefined,
+        };
+      } else {
+        payload.license = null;
+      }
+
       const res = await fetch("/api/registry/profile", {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -200,8 +264,13 @@ export default function CreateProfileForm(
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
+      const json = await res.json().catch(() => ({})) as {
+        licenseWarning?: string | null;
+      };
       published.value = true;
-      message.value = { kind: "ok", text: tManage.savedToast };
+      message.value = json.licenseWarning
+        ? { kind: "error", text: json.licenseWarning }
+        : { kind: "ok", text: tManage.savedToast };
     } catch (err) {
       message.value = {
         kind: "error",
@@ -379,47 +448,148 @@ export default function CreateProfileForm(
             </fieldset>
           )}
 
-          <label class="profile-form-field">
-            <span class="profile-form-label">{tForm.websiteLabel}</span>
-            <input
-              type="url"
-              placeholder={tForm.websitePlaceholder}
-              value={website.value}
-              onInput={(e) =>
-                website.value = (e.currentTarget as HTMLInputElement).value}
-              class="profile-form-input"
-            />
-          </label>
+          {/* ---------------- Links editor ----------------------------- */}
+          <fieldset class="profile-form-field">
+            <legend class="profile-form-label">{tForm.links.sectionLabel}</legend>
+            <p class="profile-form-hint">{tForm.links.sectionHint}</p>
+            {links.value.length === 0 && (
+              <p class="profile-form-empty">{tForm.links.emptyHint}</p>
+            )}
+            <div class="link-editor-list">
+              {links.value.map((entry, i) => (
+                <div class="link-editor-row" key={i}>
+                  <select
+                    class="profile-form-input link-editor-kind"
+                    value={entry.kind}
+                    onChange={(e) =>
+                      updateLink(i, {
+                        kind: (e.currentTarget as HTMLSelectElement).value,
+                      })}
+                    aria-label={tForm.links.kindLabel}
+                  >
+                    {LINK_KIND_ORDER.map((k) => (
+                      <option value={k} key={k}>
+                        {tLink[k] ?? k}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="url"
+                    class="profile-form-input link-editor-url"
+                    placeholder={tForm.links.urlPlaceholder}
+                    value={entry.url}
+                    onInput={(e) =>
+                      updateLink(i, {
+                        url: (e.currentTarget as HTMLInputElement).value,
+                      })}
+                    aria-label={tForm.links.urlLabel}
+                  />
+                  <input
+                    type="text"
+                    class="profile-form-input link-editor-label"
+                    placeholder={entry.kind === "other"
+                      ? tForm.links.labelPlaceholderOther
+                      : tForm.links.labelLabel}
+                    value={entry.label ?? ""}
+                    maxLength={64}
+                    onInput={(e) =>
+                      updateLink(i, {
+                        label: (e.currentTarget as HTMLInputElement).value,
+                      })}
+                    aria-label={tForm.links.labelLabel}
+                  />
+                  <button
+                    type="button"
+                    class="profile-form-button-link link-editor-remove"
+                    onClick={() => removeLink(i)}
+                  >
+                    {tForm.links.removeButton}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              class="profile-form-button-secondary link-editor-add"
+              onClick={() => addLink("website")}
+              disabled={links.value.length >= 12}
+            >
+              + {tForm.links.addButton}
+            </button>
+          </fieldset>
 
-          <label class="profile-form-field">
-            <span class="profile-form-label">{tForm.repoUrlLabel}</span>
-            <input
-              type="url"
-              placeholder={tForm.repoUrlPlaceholder}
-              value={repoUrl.value}
-              onInput={(e) =>
-                repoUrl.value = (e.currentTarget as HTMLInputElement).value}
-              class="profile-form-input"
-            />
-            <p class="profile-form-hint">{tForm.repoUrlHint}</p>
-          </label>
+          {/* ---------------- License section ------------------------- */}
+          <fieldset class="profile-form-field profile-form-license">
+            <legend class="profile-form-label">{tForm.license.sectionLabel}</legend>
+            <p class="profile-form-hint">{tForm.license.sectionHint}</p>
+            <label class="profile-form-field">
+              <span class="profile-form-label profile-form-label--small">
+                {tForm.license.typeLabel}
+              </span>
+              <select
+                class="profile-form-input"
+                value={licenseType.value}
+                onChange={(e) =>
+                  licenseType.value =
+                    (e.currentTarget as HTMLSelectElement).value}
+              >
+                <option value="">{tForm.license.typeNone}</option>
+                {LICENSE_TYPES.map((lt) => (
+                  <option value={lt} key={lt}>{tLicense[lt] ?? lt}</option>
+                ))}
+              </select>
+            </label>
 
-          <label class="profile-form-toggle">
-            <input
-              type="checkbox"
-              checked={openSource.value}
-              onChange={(e) =>
-                openSource.value = (e.currentTarget as HTMLInputElement).checked}
-            />
-            <span class="profile-form-toggle-body">
-              <span class="profile-form-toggle-label">
-                {tForm.openSourceLabel}
-              </span>
-              <span class="profile-form-toggle-hint">
-                {tForm.openSourceHint}
-              </span>
-            </span>
-          </label>
+            {licenseType.value && (
+              <>
+                <label class="profile-form-field">
+                  <span class="profile-form-label profile-form-label--small">
+                    {tForm.license.spdxLabel}
+                  </span>
+                  <input
+                    type="text"
+                    class="profile-form-input"
+                    placeholder={tForm.license.spdxPlaceholder}
+                    maxLength={64}
+                    value={licenseSpdx.value}
+                    onInput={(e) =>
+                      licenseSpdx.value =
+                        (e.currentTarget as HTMLInputElement).value}
+                  />
+                  <p class="profile-form-hint">{tForm.license.spdxHint}</p>
+                </label>
+                <label class="profile-form-field">
+                  <span class="profile-form-label profile-form-label--small">
+                    {tForm.license.urlLabel}
+                  </span>
+                  <input
+                    type="url"
+                    class="profile-form-input"
+                    placeholder={tForm.license.urlPlaceholder}
+                    value={licenseUrl.value}
+                    onInput={(e) =>
+                      licenseUrl.value =
+                        (e.currentTarget as HTMLInputElement).value}
+                  />
+                </label>
+                <label class="profile-form-field">
+                  <span class="profile-form-label profile-form-label--small">
+                    {tForm.license.notesLabel}
+                  </span>
+                  <input
+                    type="text"
+                    class="profile-form-input"
+                    placeholder={tForm.license.notesPlaceholder}
+                    maxLength={280}
+                    value={licenseNotes.value}
+                    onInput={(e) =>
+                      licenseNotes.value =
+                        (e.currentTarget as HTMLInputElement).value}
+                  />
+                </label>
+              </>
+            )}
+          </fieldset>
 
           <fieldset class="profile-form-field">
             <legend class="profile-form-label">{tForm.bskyClientLabel}</legend>

@@ -1,0 +1,46 @@
+{
+  "lexicon": 1,
+  "id": "com.atmosphereaccount.registry.license",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "License / source-availability declaration for a project in the Atmosphere registry. Intentionally separate from the profile record so the profile stays focused on identity/branding and so this can be extended (e.g. third-party attestations) without touching the profile lexicon. One record per project, on the project's own PDS.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["type", "createdAt"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "knownValues": [
+              "openSource",
+              "sourceAvailable",
+              "proprietary"
+            ],
+            "description": "Distribution model. \"openSource\" = OSI-style FOSS (free to fork/redistribute). \"sourceAvailable\" = code is public but not freely redistributable (e.g. BSL, SSPL, FUSL). \"proprietary\" = closed source / commercial."
+          },
+          "spdxId": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "SPDX license identifier when applicable (e.g. \"MIT\", \"Apache-2.0\", \"AGPL-3.0\", \"BUSL-1.1\"). Optional, but encouraged for openSource and sourceAvailable."
+          },
+          "licenseUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 256,
+            "description": "Direct link to the project's LICENSE file or license page."
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 280,
+            "description": "Optional free-form note (e.g. \"server is AGPL-3.0; mobile clients are MIT\")."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

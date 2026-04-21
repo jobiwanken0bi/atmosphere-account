@@ -4,7 +4,7 @@ import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import CreateProfileForm from "../../islands/CreateProfileForm.tsx";
 import { getMessages } from "../../i18n/mod.ts";
-import { getProfileByDid } from "../../lib/registry.ts";
+import { getLicenseByDid, getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 
@@ -26,19 +26,28 @@ export const handler = define.handlers({
      *  registry record exists, the form switches to the cached
      *  /api/registry/avatar/:did proxy. */
     let initialAvatarUrl: string | null = null;
-    const existing = await getProfileByDid(user.did).catch(() => null);
+    const [existing, license] = await Promise.all([
+      getProfileByDid(user.did).catch(() => null),
+      getLicenseByDid(user.did).catch(() => null),
+    ]);
     if (existing) {
       initial = {
         name: existing.name,
         description: existing.description,
         categories: existing.categories,
         subcategories: existing.subcategories,
-        website: existing.website,
-        repoUrl: existing.repoUrl,
-        openSource: existing.openSource,
+        links: existing.links,
         bskyClient: existing.bskyClient,
         avatar: existing.avatarCid && existing.avatarMime
           ? { ref: existing.avatarCid, mime: existing.avatarMime }
+          : null,
+        license: license
+          ? {
+            type: license.type,
+            spdxId: license.spdxId,
+            licenseUrl: license.licenseUrl,
+            notes: license.notes,
+          }
           : null,
       };
     } else {
@@ -53,9 +62,7 @@ export const handler = define.handlers({
             description: bsky.description ?? "",
             categories: ["app"],
             subcategories: [],
-            website: null,
-            repoUrl: null,
-            openSource: false,
+            links: [],
             bskyClient: null,
             avatar: bsky.avatar
               ? {
@@ -63,6 +70,7 @@ export const handler = define.handlers({
                 mime: bsky.avatar.mimeType,
               }
               : null,
+            license: null,
           };
           if (bsky.avatar) {
             const cid = bsky.avatar.ref.$link;

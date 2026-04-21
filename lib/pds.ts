@@ -68,16 +68,28 @@ export async function deleteProfileRecord(
   did: string,
   pdsUrl: string,
 ): Promise<void> {
+  await deleteRecord(did, pdsUrl, PROFILE_NSID, "self");
+}
+
+/**
+ * Generic deleteRecord helper for any collection in the user's repo.
+ * Returns silently on 404 so callers can call it unconditionally to
+ * "make sure this record doesn't exist" (e.g. when toggling off a
+ * sibling record like the license). Other failures throw.
+ */
+export async function deleteRecord(
+  did: string,
+  pdsUrl: string,
+  collection: string,
+  rkey: string,
+): Promise<void> {
   const url = `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.deleteRecord`;
   const res = await authedFetch(did, url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      repo: did,
-      collection: PROFILE_NSID,
-      rkey: "self",
-    }),
+    body: JSON.stringify({ repo: did, collection, rkey }),
   });
+  if (res.status === 404) return;
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`deleteRecord failed: HTTP ${res.status}: ${text}`);

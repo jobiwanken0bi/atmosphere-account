@@ -2,7 +2,7 @@
  * Atmosphere registry indexer.
  *
  * Long-running Deno process that subscribes to Bluesky's Jetstream WebSocket
- * filtered to our two registry collections, fetches the authoritative record
+ * filtered to our registry collections, fetches the authoritative record
  * from each author's PDS, validates it, and upserts (or deletes) the row in
  * the Turso registry DB. Cursor is persisted in the DB so the worker can
  * resume after restarts.
@@ -14,15 +14,19 @@
  */
 import {
   FEATURED_NSID,
+  LICENSE_NSID,
   PROFILE_NSID,
   validateFeatured,
+  validateLicense,
   validateProfile,
 } from "../lib/lexicons.ts";
 import {
+  deleteLicense,
   deleteProfile,
   getJetstreamCursor,
   replaceFeatured,
   setJetstreamCursor,
+  upsertLicense,
   upsertProfile,
 } from "../lib/registry.ts";
 import { findPdsEndpoint, resolveDidDocument } from "../lib/identity.ts";
@@ -45,7 +49,7 @@ interface JetstreamEvent {
   commit?: JetstreamCommit;
 }
 
-const COLLECTIONS = [PROFILE_NSID, FEATURED_NSID];
+const COLLECTIONS = [PROFILE_NSID, FEATURED_NSID, LICENSE_NSID];
 const RECONNECT_DELAY_MS = 5_000;
 const CURSOR_PERSIST_INTERVAL_MS = 5_000;
 
@@ -112,9 +116,7 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     description: r.description,
     categories: r.categories,
     subcategories: r.subcategories ?? [],
-    website: r.website ?? null,
-    repoUrl: r.repoUrl ?? null,
-    openSource: r.openSource ?? false,
+    links: r.links ?? [],
     bskyClient: r.bskyClient ?? null,
     avatarCid: r.avatar?.ref.$link ?? null,
     avatarMime: r.avatar?.mimeType ?? null,
@@ -124,6 +126,47 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
   });
   console.log(`[indexer] upsert profile ${handle} (${event.did})`);
+}
+
+async function handleLicenseEvent(event: JetstreamEvent): Promise<void> {
+  const commit = event.commit;
+  if (!commit) return;
+
+  if (commit.operation === "delete") {
+    await deleteLicense(event.did);
+    return;
+  }
+
+  const pdsUrl = await resolvePdsForDid(event.did);
+  const fetched = await getRecordPublic(
+    pdsUrl,
+    event.did,
+    LICENSE_NSID,
+    "self",
+  );
+  if (!fetched) return;
+
+  const validation = validateLicense(fetched.value);
+  if (!validation.ok || !validation.value) {
+    console.warn(
+      `[indexer] invalid license from ${event.did}: ${validation.error}`,
+    );
+    return;
+  }
+  const r = validation.value;
+
+  await upsertLicense({
+    did: event.did,
+    type: r.type,
+    spdxId: r.spdxId ?? null,
+    licenseUrl: r.licenseUrl ?? null,
+    notes: r.notes ?? null,
+    pdsUrl,
+    recordCid: fetched.cid,
+    recordRev: commit.rev,
+    createdAt: Date.parse(r.createdAt) || Date.now(),
+  });
+  console.log(`[indexer] upsert license ${event.did} (${r.type})`);
 }
 
 async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
@@ -179,6 +222,8 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
       await handleProfileEvent(event);
     } else if (collection === FEATURED_NSID) {
       await handleFeaturedEvent(event);
+    } else if (collection === LICENSE_NSID) {
+      await handleLicenseEvent(event);
     }
   } catch (err) {
     console.error(`[indexer] handler error for ${collection}:`, err);

@@ -34,6 +34,7 @@ const dropStatements = [
   `DROP INDEX IF EXISTS profile_category`,
   `DROP TABLE IF EXISTS profile`,
   `DROP TABLE IF EXISTS featured`,
+  `DROP TABLE IF EXISTS license`,
   // Reset the Jetstream cursor too so the indexer replays everything from
   // scratch on next start (which is what you want after wiping the index).
   `DROP TABLE IF EXISTS jetstream_cursor`,

@@ -51,7 +51,7 @@ export default function ProfileHero({ profile }: Props) {
               {tCat[c] ?? c}
             </span>
           ))}
-          {profile.openSource && (
+          {profile.license?.type === "openSource" && (
             <span class="profile-card-sub profile-card-sub--oss">
               {t.explore.detail.openSourceBadge}
             </span>
