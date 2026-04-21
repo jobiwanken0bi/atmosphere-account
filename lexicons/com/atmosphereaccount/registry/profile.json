@@ -53,7 +53,7 @@
               "type": "string",
               "maxLength": 32
             },
-            "description": "Open-ended subcategory tags. For apps: microblog, photo, video, blogging, music, events, clients, tools, social, reading, productivity."
+            "description": "Open-ended subcategory tags. For apps: microblog, photo, video, blogging, music, events, clients, tools, social, reading, productivity, research, science, reviews, gaming, community, food, location, liveStreaming, niche, content, art."
           },
           "links": {
             "type": "array",

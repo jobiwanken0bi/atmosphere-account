@@ -36,6 +36,17 @@ export const APP_SUBCATEGORIES = [
   "social",
   "reading",
   "productivity",
+  "research",
+  "science",
+  "reviews",
+  "gaming",
+  "community",
+  "food",
+  "location",
+  "liveStreaming",
+  "niche",
+  "content",
+  "art",
 ] as const;
 export type AppSubcategory = typeof APP_SUBCATEGORIES[number];
 

@@ -420,6 +420,17 @@ const en = {
     social: "Social",
     reading: "Reading",
     productivity: "Productivity",
+    research: "Research",
+    science: "Science",
+    reviews: "Reviews",
+    gaming: "Gaming",
+    community: "Community",
+    food: "Food",
+    location: "Location",
+    liveStreaming: "Live-Streaming",
+    niche: "Niche",
+    content: "Content",
+    art: "Art",
   },
 
   badges: {
