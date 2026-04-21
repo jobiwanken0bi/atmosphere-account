@@ -367,7 +367,7 @@ const en = {
     detail: {
       openOn: "Open on",
       lastUpdated: "Last updated",
-      hostedOn: "Hosted on",
+      hostedOn: "Account Provider",
       editProfile: "Edit this profile",
       missingProfile: "We couldn't find a profile for that handle.",
       backToExplore: "Back to Explore",

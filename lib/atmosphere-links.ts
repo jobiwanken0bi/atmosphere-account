@@ -132,10 +132,24 @@ export interface LinkKindLabels {
   custom: string;
 }
 
+/**
+ * A semantic icon "kind" — when set, `ProfileLinks.tsx` renders the
+ * matching inline-SVG component (which inherits the site's blue via
+ * currentColor) instead of falling back to the favicon `iconUrl`.
+ *
+ *   - `bsky`      — inline Bluesky butterfly (only for the canonical
+ *                   bluesky client; alt clients keep their favicon)
+ *   - `tangled`   — inline Tangled "dolly" mark
+ *   - `website`   — inline globe
+ */
+export type ResolvedIconKind = "bsky" | "tangled" | "website";
+
 export interface ResolvedLink {
   /** Display title for the button. */
   title: string;
-  /** Subtitle (host + path of the URL). */
+  /** Subtitle (host + path of the URL). Buttons opt out of rendering
+   *  this in `ProfileLinks` for atmosphere kinds + website; it's
+   *  preserved here for callers that may want it. */
   subtitle: string;
   /** Icon URL, when available. */
   iconUrl: string | null;
@@ -143,6 +157,8 @@ export interface ResolvedLink {
   glyph: string;
   /** The final href the user navigates to. */
   href: string;
+  /** Branded inline-SVG to use instead of `iconUrl`. */
+  iconKind?: ResolvedIconKind;
 }
 
 function trimUrlForDisplay(url: string): string {
@@ -181,6 +197,10 @@ export function resolveLink(
       iconUrl: client.iconUrl,
       glyph: "B",
       href,
+      // Only the canonical Bluesky client gets the branded inline SVG;
+      // alt clients (Blacksky, Witchsky, etc.) keep their favicons so
+      // users can tell them apart at a glance.
+      iconKind: client.id === "bluesky" ? "bsky" : undefined,
     };
   }
 
@@ -193,6 +213,7 @@ export function resolveLink(
       iconUrl: svc.iconUrl,
       glyph: svc.name.slice(0, 1),
       href,
+      iconKind: kind === "tangled" ? "tangled" : undefined,
     };
   }
 
@@ -204,6 +225,7 @@ export function resolveLink(
       iconUrl: null,
       glyph: "↗",
       href: entry.url,
+      iconKind: "website",
     };
   }
 

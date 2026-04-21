@@ -2146,6 +2146,25 @@ body {
   font-size: 1rem;
   padding: 0;
 }
+/* Wrapper for inline-SVG branded icons (Bluesky / Tangled / Website
+ * globe). Tints the SVG to the site's primary blue via currentColor.
+ * On the primary CTA we invert to white so the icon stays legible
+ * against the blue gradient background. */
+.profile-action-icon--brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #254a9e;
+  padding: 5px;
+}
+.profile-action-icon-svg {
+  width: 100%;
+  height: 100%;
+}
+.profile-action--primary .profile-action-icon--brand {
+  color: #1d3a78;
+  background: #ffffff;
+}
 .profile-action-label {
   display: flex;
   flex-direction: column;
@@ -2155,13 +2174,6 @@ body {
 .profile-action-title {
   font-weight: 600;
   font-size: 0.95rem;
-}
-.profile-action-sub {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
-  opacity: 0.75;
-  word-break: break-word;
 }
 .dark-phase .profile-action {
   background: rgba(255, 255, 255, 0.1);

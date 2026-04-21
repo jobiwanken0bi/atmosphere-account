@@ -11,6 +11,7 @@ import {
   getProfileByHandle,
   type ProfileRow,
 } from "../../lib/registry.ts";
+import { accountProviderName } from "../../lib/account-providers.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -67,13 +68,10 @@ function ProfileDetailPage(
     publicProfileHandle: ownerHandle,
   };
   const lastUpdated = new Date(profile.indexedAt).toISOString().slice(0, 10);
-  const pdsHost = (() => {
-    try {
-      return new URL(profile.pdsUrl).host;
-    } catch {
-      return profile.pdsUrl;
-    }
-  })();
+  /** PDS hosts are usually per-shard (e.g. shimeji.us-east.host.bsky.network)
+   *  which isn't useful in UI. Collapse known umbrella PDSes to their
+   *  brand name (Bluesky, etc.) and fall back to the bare host. */
+  const providerName = accountProviderName(profile.pdsUrl);
   return (
     <div id="page-top">
       <GlassClouds />
@@ -104,7 +102,7 @@ function ProfileDetailPage(
                 {t.detail.lastUpdated}: <strong>{lastUpdated}</strong>
               </span>
               <span>
-                {t.detail.hostedOn}: <strong>{pdsHost}</strong>
+                {t.detail.hostedOn}: <strong>{providerName}</strong>
               </span>
             </div>
           </div>

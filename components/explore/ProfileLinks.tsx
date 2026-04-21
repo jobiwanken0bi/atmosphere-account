@@ -1,6 +1,9 @@
 import type { ProfileRow } from "../../lib/registry.ts";
-import { resolveLink } from "../../lib/atmosphere-links.ts";
+import { resolveLink, type ResolvedIconKind } from "../../lib/atmosphere-links.ts";
 import { useT } from "../../i18n/mod.ts";
+import BskyIcon from "../icons/BskyIcon.tsx";
+import TangledIcon from "../icons/TangledIcon.tsx";
+import WebsiteIcon from "../icons/WebsiteIcon.tsx";
 
 interface Props {
   profile: ProfileRow;
@@ -9,12 +12,15 @@ interface Props {
 /**
  * Renders the public profile's action buttons. We iterate `profile.links`
  * in author-defined order and resolve each entry to a render-ready
- * bundle via `resolveLink` (which knows about atmosphere kinds, custom
- * websites, etc.). The handle is passed in so atmosphere kinds can
- * derive their default URL from it.
+ * bundle via `resolveLink`. The resolver tags each link with an
+ * optional `iconKind` so we can render the on-brand inline SVG (which
+ * inherits the site's blue via currentColor) for known services, while
+ * still falling back to favicons / glyphs for everything else.
  *
- * Buttons are visually consistent — the first one in the list naturally
- * becomes the "primary" CTA via the `:first-child` selector in CSS.
+ * URL subtitles are intentionally hidden for atmosphere services and
+ * the website button — the title alone is enough; the URL is a
+ * destination, not metadata. Custom links keep their subtitle so the
+ * user knows where they're going.
  */
 export default function ProfileLinks({ profile }: Props) {
   const t = useT();
@@ -36,27 +42,60 @@ export default function ProfileLinks({ profile }: Props) {
           rel="noopener noreferrer"
           key={`${r.href}-${i}`}
         >
-          {r.iconUrl
-            ? (
-              <img
-                src={r.iconUrl}
-                alt=""
-                class="profile-action-icon"
-                loading="lazy"
-                decoding="async"
-              />
-            )
-            : (
-              <span class="profile-action-icon profile-action-icon--glyph">
-                {r.glyph}
-              </span>
-            )}
+          {renderIcon(r.iconKind, r.iconUrl, r.glyph)}
           <span class="profile-action-label">
             <span class="profile-action-title">{r.title}</span>
-            <span class="profile-action-sub">{r.subtitle}</span>
           </span>
         </a>
       ))}
     </div>
+  );
+}
+
+/**
+ * Pick the right icon renderer in priority order:
+ *   1. branded inline SVG (matches site palette via currentColor)
+ *   2. external favicon URL (e.g. alt Bluesky clients)
+ *   3. text glyph fallback
+ */
+function renderIcon(
+  iconKind: ResolvedIconKind | undefined,
+  iconUrl: string | null,
+  glyph: string,
+) {
+  if (iconKind === "bsky") {
+    return (
+      <span class="profile-action-icon profile-action-icon--brand">
+        <BskyIcon class="profile-action-icon-svg" />
+      </span>
+    );
+  }
+  if (iconKind === "tangled") {
+    return (
+      <span class="profile-action-icon profile-action-icon--brand">
+        <TangledIcon class="profile-action-icon-svg" />
+      </span>
+    );
+  }
+  if (iconKind === "website") {
+    return (
+      <span class="profile-action-icon profile-action-icon--brand">
+        <WebsiteIcon class="profile-action-icon-svg" />
+      </span>
+    );
+  }
+  if (iconUrl) {
+    return (
+      <img
+        src={iconUrl}
+        alt=""
+        class="profile-action-icon"
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
+  return (
+    <span class="profile-action-icon profile-action-icon--glyph">{glyph}</span>
   );
 }
