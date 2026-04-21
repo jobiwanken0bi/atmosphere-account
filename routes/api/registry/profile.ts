@@ -1,52 +1,32 @@
 /**
  * Authenticated registry profile mutations. The session must hold a
- * valid OAuth session for the authoring DID; we then write the record(s)
- * directly to the user's PDS via DPoP-bound XRPC and mirror them into
- * the local index. The Jetstream-fed indexer picks up the same writes
- * shortly after for any other consumers of the registry.
+ * valid OAuth session for the authoring DID; we then write the profile
+ * record directly to the user's PDS via DPoP-bound XRPC and mirror it
+ * into the local index. The Jetstream-fed indexer picks up the same
+ * write shortly after for any other consumers of the registry.
  *
- *   PUT     /api/registry/profile   (create/update profile + license)
- *   DELETE  /api/registry/profile   (delete both records)
- *
- * Note: the request body carries an optional `license` sub-object which
- * is published as a sibling `com.atmosphereaccount.registry.license`
- * record. Splitting it out keeps the profile lexicon minimal — the form
- * still presents both as a single Save action for UX simplicity.
+ *   PUT     /api/registry/profile   (create/update profile)
+ *   DELETE  /api/registry/profile   (delete profile)
  */
 import { define } from "../../../utils.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import {
   deleteProfileRecord,
-  deleteRecord,
   putProfileRecord,
-  putRecord,
   uploadBlob,
 } from "../../../lib/pds.ts";
 import {
-  LICENSE_NSID,
-  type LicenseRecord,
+  ATMOSPHERE_LINK_KINDS,
   type LinkEntry,
   type ProfileRecord,
-  validateLicense,
   validateProfile,
 } from "../../../lib/lexicons.ts";
-import {
-  deleteLicense,
-  deleteProfile,
-  upsertLicense,
-  upsertProfile,
-} from "../../../lib/registry.ts";
-
-interface LicensePayload {
-  type?: string;
-  spdxId?: string;
-  licenseUrl?: string;
-  notes?: string;
-}
+import { deleteProfile, upsertProfile } from "../../../lib/registry.ts";
 
 interface LinkPayload {
   kind?: string;
   url?: string;
+  clientId?: string;
   label?: string;
 }
 
@@ -57,7 +37,6 @@ interface ProfileFormPayload {
   categories?: string[];
   subcategories?: string[];
   links?: LinkPayload[];
-  bskyClient?: string;
   /** Either keep an existing avatar (passed as the BlobRef) or upload new bytes */
   avatar?: {
     $type: "blob";
@@ -66,11 +45,6 @@ interface ProfileFormPayload {
     size: number;
   } | null;
   avatarUpload?: { dataBase64: string; mimeType: string };
-  /**
-   * Optional license sub-record. `null` means "remove any existing license
-   * record"; `undefined` means "leave it alone".
-   */
-  license?: LicensePayload | null;
 }
 
 function trimOrNull(s: unknown): string | undefined {
@@ -87,21 +61,38 @@ function asArray(v: unknown): string[] {
     .map((x) => x.trim().slice(0, 32));
 }
 
+/**
+ * Coerce the form's `links` payload into the lexicon shape. We do
+ * minimal cleanup here (trim + drop entries that don't carry the
+ * fields they need); deeper validation happens in `validateProfile`.
+ */
 function normalizeLinksPayload(input: unknown): LinkEntry[] {
   if (!Array.isArray(input)) return [];
-  const seen = new Set<string>();
   const out: LinkEntry[] = [];
   for (const raw of input) {
     if (!raw || typeof raw !== "object") continue;
     const e = raw as LinkPayload;
     const kind = trimOrNull(e.kind);
+    if (!kind) continue;
+
+    const entry: LinkEntry = { kind };
     const url = trimOrNull(e.url);
-    if (!kind || !url) continue;
-    if (seen.has(url)) continue;
-    seen.add(url);
-    const entry: LinkEntry = { kind, url };
+    if (url) entry.url = url;
+    const clientId = trimOrNull(e.clientId);
+    if (clientId) entry.clientId = clientId;
     const label = trimOrNull(e.label);
     if (label) entry.label = label;
+
+    // Skip entries that obviously can't render: non-atmosphere kinds
+    // need a url; bsky needs a clientId. The lexicon validator below
+    // will surface cleaner errors for malformed entries that slip
+    // through, but dropping the no-op ones here keeps "Save" idempotent
+    // when the form hasn't filled a row in yet.
+    const isAtmosphere =
+      (ATMOSPHERE_LINK_KINDS as readonly string[]).includes(kind);
+    if (!isAtmosphere && !entry.url) continue;
+    if (kind === "bsky" && !entry.clientId) continue;
+
     out.push(entry);
   }
   return out;
@@ -177,7 +168,6 @@ export const handler = define.handlers({
       categories: normalizedCategories,
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
-      bskyClient: trimOrNull(body.bskyClient),
       avatar: avatar ?? undefined,
       createdAt: new Date().toISOString(),
     };
@@ -203,14 +193,9 @@ export const handler = define.handlers({
 
     /**
      * Index inline so the new entry appears in /explore the moment the
-     * user hits Publish, without depending on the Jetstream worker. The
-     * worker is still useful for picking up records authored outside
-     * this app (e.g. by other tooling), but it isn't on the critical
-     * path for the user-facing flow.
-     *
-     * Both the PDS write and this index write are idempotent (rkey is
-     * fixed at "self"; the SQL is ON CONFLICT DO UPDATE), so retrying a
-     * failed publish is always safe.
+     * user hits Publish, without depending on the Jetstream worker.
+     * Both the PDS write and this index write are idempotent so retrying
+     * a failed publish is always safe.
      */
     try {
       await upsertProfile({
@@ -221,7 +206,6 @@ export const handler = define.handlers({
         categories: validation.value.categories,
         subcategories: validation.value.subcategories ?? [],
         links: validation.value.links ?? [],
-        bskyClient: validation.value.bskyClient ?? null,
         avatarCid: validation.value.avatar?.ref.$link ?? null,
         avatarMime: validation.value.avatar?.mimeType ?? null,
         pdsUrl: session.pdsUrl,
@@ -239,70 +223,11 @@ export const handler = define.handlers({
       );
     }
 
-    /**
-     * Optional license sub-record handling. The form sends:
-     *   - `license: undefined`  → leave any existing record alone
-     *   - `license: null`       → delete any existing record
-     *   - `license: { ... }`    → upsert
-     *
-     * Failures here are treated as soft errors: the profile is already
-     * saved, so we still return 200 but include a warning the form can
-     * surface.
-     */
-    let licenseWarning: string | null = null;
-    if (body.license === null) {
-      try {
-        await deleteRecord(user.did, session.pdsUrl, LICENSE_NSID, "self");
-        await deleteLicense(user.did);
-      } catch (err) {
-        licenseWarning = err instanceof Error ? err.message : String(err);
-        console.error("[registry] license delete failed:", err);
-      }
-    } else if (body.license && typeof body.license === "object") {
-      const lp = body.license;
-      const licenseDraft: LicenseRecord = {
-        type: trimOrNull(lp.type) ?? "",
-        spdxId: trimOrNull(lp.spdxId),
-        licenseUrl: trimOrNull(lp.licenseUrl),
-        notes: trimOrNull(lp.notes),
-        createdAt: new Date().toISOString(),
-      };
-      const lv = validateLicense(licenseDraft);
-      if (!lv.ok || !lv.value) {
-        licenseWarning = `Profile saved, but license rejected: ${lv.error}`;
-      } else {
-        try {
-          const lr = await putRecord(
-            user.did,
-            session.pdsUrl,
-            LICENSE_NSID,
-            "self",
-            lv.value as unknown as Record<string, unknown>,
-          );
-          await upsertLicense({
-            did: user.did,
-            type: lv.value.type,
-            spdxId: lv.value.spdxId ?? null,
-            licenseUrl: lv.value.licenseUrl ?? null,
-            notes: lv.value.notes ?? null,
-            pdsUrl: session.pdsUrl,
-            recordCid: lr.cid,
-            recordRev: lr.commit?.rev ?? lr.cid,
-            createdAt: Date.parse(lv.value.createdAt) || Date.now(),
-          });
-        } catch (err) {
-          licenseWarning = err instanceof Error ? err.message : String(err);
-          console.error("[registry] license upsert failed:", err);
-        }
-      }
-    }
-
     return new Response(
       JSON.stringify({
         ok: true,
         uri: result.uri,
         cid: result.cid,
-        licenseWarning,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
@@ -321,19 +246,10 @@ export const handler = define.handlers({
       const m = err instanceof Error ? err.message : String(err);
       return new Response(`deleteRecord failed: ${m}`, { status: 502 });
     }
-    // Removing from Explore implies removing the paired license record
-    // too — there's no orphaned-license UX, and the user can re-add
-    // both by republishing.
-    try {
-      await deleteRecord(user.did, session.pdsUrl, LICENSE_NSID, "self");
-    } catch (err) {
-      console.warn("[registry] license deleteRecord (best effort) failed:", err);
-    }
 
-    /** Mirror the deletes in our local index so /explore stops listing it
-     *  immediately. As above, the Jetstream worker would eventually do
-     *  this too, but we don't want to wait. `deleteProfile` cascades to
-     *  the license row. */
+    /** Mirror the delete in our local index so /explore stops listing it
+     *  immediately. The Jetstream worker would eventually do this too,
+     *  but we don't want to wait. */
     try {
       await deleteProfile(user.did);
     } catch (err) {

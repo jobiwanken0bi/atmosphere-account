@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A project's profile in the Atmosphere registry. Created by the project's own account on its PDS; one record per account. Kept intentionally minimal — anything that could plausibly stand on its own (license, reviews, age ratings, etc.) is published as a sibling record under com.atmosphereaccount.registry.* so this lexicon can stay stable.",
+      "description": "A project's profile in the Atmosphere registry. Created by the project's own account on its PDS; one record per account. Kept intentionally minimal so future additions (reviews, age ratings, donations metadata, etc.) live in sibling com.atmosphereaccount.registry.* records.",
       "key": "literal:self",
       "record": {
         "type": "object",
@@ -62,18 +62,7 @@
               "type": "ref",
               "ref": "#linkEntry"
             },
-            "description": "Outbound links shown on the public profile (website, source repo, donate, docs, fediverse, chat, etc.). Order is preserved; the first \"website\" is treated as the primary."
-          },
-          "bskyClient": {
-            "type": "string",
-            "knownValues": [
-              "bluesky",
-              "blacksky",
-              "anisota",
-              "deer",
-              "witchsky"
-            ],
-            "description": "Preferred Bluesky-compatible client to open when visitors click the project's Bluesky link. Identity (handle) is the same across all clients."
+            "description": "Outbound buttons shown on the public profile. Atmosphere links (kind = bsky / tangled / supper) derive their URL from the project's current handle by default; a `url` override is allowed for tangled / supper when the canonical destination differs from the handle. Custom link kinds (kind = website / other) always carry their `url`."
           },
           "createdAt": {
             "type": "string",
@@ -84,32 +73,34 @@
     },
     "linkEntry": {
       "type": "object",
-      "required": ["kind", "url"],
+      "required": ["kind"],
       "properties": {
         "kind": {
           "type": "string",
           "knownValues": [
+            "bsky",
+            "tangled",
+            "supper",
             "website",
-            "repo",
-            "donate",
-            "docs",
-            "mastodon",
-            "matrix",
-            "discord",
-            "contact",
             "other"
           ],
-          "description": "Link kind. Drives the icon/label shown on the profile. \"other\" falls back to a generic glyph and uses `label` for the title."
+          "description": "Link kind. Drives the icon/label and how `url` / `clientId` are resolved at render time. New atmosphere services can be added to knownValues without breaking older records."
         },
         "url": {
           "type": "string",
           "format": "uri",
-          "maxLength": 512
+          "maxLength": 512,
+          "description": "Optional for atmosphere kinds (bsky derives URL from clientId+handle; tangled/supper default to the canonical handle URL but accept an override). Required for `website` and `other`."
+        },
+        "clientId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Required when kind=\"bsky\". Picks which Bluesky-compatible web client should host the link (bluesky, blacksky, deer, …)."
         },
         "label": {
           "type": "string",
           "maxLength": 64,
-          "description": "Optional override label. Required when kind=\"other\"; defaults to the kind's display name otherwise."
+          "description": "Required when kind=\"other\". Used as the visible button title for custom links."
         }
       }
     }

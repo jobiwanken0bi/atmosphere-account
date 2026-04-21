@@ -333,30 +333,15 @@ const en = {
   },
 
   /**
-   * Display labels for `LinkEntry.kind`. The "repoOnPrefix" / "repoGeneric"
-   * pair are used when a link kind is "repo" — the resolver appends the
-   * detected host name ("Source on GitHub") or falls back to the generic
-   * label when the host can't be identified.
+   * Display labels used by `lib/atmosphere-links.ts#resolveLink` when
+   * an entry doesn't carry its own label.
    */
   linkKinds: {
+    bsky: "Bluesky",
+    tangled: "Tangled",
+    supper: "Supper",
     website: "Website",
-    repo: "Source repository",
-    repoOnPrefix: "Source on",
-    repoGeneric: "Source code",
-    donate: "Donate",
-    docs: "Documentation",
-    mastodon: "Mastodon",
-    matrix: "Matrix",
-    discord: "Discord",
-    contact: "Contact",
-    other: "Link",
-  },
-
-  /** Public-facing labels for `LicenseRecord.type`. */
-  licenseTypes: {
-    openSource: "Open source",
-    sourceAvailable: "Source available",
-    proprietary: "Proprietary",
+    custom: "Link",
   },
 
   explore: {
@@ -389,12 +374,6 @@ const en = {
       categoryLabel: "Category",
       notFoundTitle: "404",
       notFoundBody: "We couldn't find a profile for that handle.",
-      /** Compact badge on cards/hero. Spelled out for the public profile. */
-      openSourceBadge: "Open source",
-      /** License section on the public profile. */
-      license: {
-        viewLicense: "View license",
-      },
     },
     create: {
       eyebrow: "Add to Explore",
@@ -443,9 +422,6 @@ const en = {
         "Pick all that apply. A project can be both an app and an account provider.",
       subcategoriesLabel: "Subcategories (optional)",
       subcategoriesHint: "For apps. Pick up to a few.",
-      bskyClientLabel: "Bluesky client",
-      bskyClientHint:
-        "Pick which client opens when visitors click the Bluesky button on your profile. Your handle works on all of them.",
       avatarLabel: "Project icon",
       avatarHint: "PNG, JPEG, or WebP. 1MB max. Square works best.",
       avatarReplace: "Replace icon",
@@ -454,33 +430,40 @@ const en = {
       avatarTooLarge: "Avatar must be 1MB or smaller.",
       confirmDelete: "Remove your project from Explore?",
       categoryRequired: "Pick at least one category.",
-      links: {
-        sectionLabel: "Links",
-        sectionHint:
-          "Website, source repo, donate, docs, chat — anything you want on your profile. Drag to reorder later.",
-        addButton: "Add link",
-        removeButton: "Remove",
-        kindLabel: "Type",
-        urlLabel: "URL",
-        urlPlaceholder: "https://…",
-        labelLabel: "Label",
-        labelPlaceholderOther: "What is this? (e.g. Press kit)",
-        labelHelp: 'Optional override. Required for "Other".',
-        emptyHint: 'No links yet. Click "Add link" to add your website, repo, or anything else.',
+      atmosphereLinks: {
+        sectionLabel: "Atmosphere links",
+        sectionHint: (handle: string): VNode => (
+          <>
+            Toggle which services to show on your page. Links are generated
+            from your handle <strong>@{handle}</strong>.
+          </>
+        ),
+        bskyDescription: "Decentralised social network",
+        tangledDescription: "Social coding platform",
+        supperDescription: "AT Protocol native support page",
+        configureBskyLabel: "Configure Bluesky clients",
+        urlOverrideLabel: "Custom URL (optional)",
+        urlOverridePlaceholder: "https://…",
       },
-      license: {
-        sectionLabel: "License",
-        sectionHint:
-          "Tell visitors how the project is licensed. Stored as a separate record on your PDS.",
-        typeLabel: "License type",
-        typeNone: "Don't say (no license info shown)",
-        spdxLabel: "SPDX identifier (optional)",
-        spdxHint: 'For example: "MIT", "Apache-2.0", "AGPL-3.0", "BUSL-1.1".',
-        spdxPlaceholder: "MIT",
-        urlLabel: "License URL (optional)",
-        urlPlaceholder: "https://github.com/yourorg/yourproject/blob/main/LICENSE",
-        notesLabel: "Notes (optional)",
-        notesPlaceholder: 'e.g. "Server is AGPL-3.0; mobile clients are MIT"',
+      bskyPicker: {
+        title: "Bluesky clients",
+        body:
+          "Pick the client(s) that open when visitors click the Bluesky button on your profile. Your handle works on all of them — you can show more than one.",
+        empty:
+          "Pick at least one client to keep the Bluesky toggle enabled.",
+        done: "Done",
+        cancel: "Cancel",
+      },
+      website: {
+        sectionLabel: "Website",
+        placeholder: "https://yoursite.com",
+      },
+      customLinks: {
+        sectionLabel: "Custom links",
+        addButton: "Add custom link",
+        labelPlaceholder: "Label",
+        urlPlaceholder: "https://…",
+        removeAriaLabel: "Remove link",
       },
     },
   },

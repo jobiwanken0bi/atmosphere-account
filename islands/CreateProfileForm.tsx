@@ -4,19 +4,15 @@ import {
   APP_SUBCATEGORIES,
   CATEGORIES,
   type Category,
-  LICENSE_TYPES,
   type LinkEntry,
 } from "../lib/lexicons.ts";
-import { LINK_KIND_ORDER } from "../lib/link-kinds.ts";
-import { BSKY_CLIENTS, DEFAULT_BSKY_CLIENT_ID } from "../lib/bsky-clients.ts";
+import {
+  type AtmosphereService,
+  visibleAtmosphereServices,
+} from "../lib/atmosphere-links.ts";
+import { BSKY_CLIENTS, getBskyClient } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
-
-interface ExistingLicense {
-  type: string;
-  spdxId: string | null;
-  licenseUrl: string | null;
-  notes: string | null;
-}
+import BskyClientPickerModal from "./BskyClientPickerModal.tsx";
 
 interface ExistingProfile {
   name: string;
@@ -26,10 +22,7 @@ interface ExistingProfile {
   categories: string[];
   subcategories: string[];
   links: LinkEntry[];
-  bskyClient: string | null;
   avatar: { ref: string; mime: string } | null;
-  /** Joined license record, if the user has published one. */
-  license: ExistingLicense | null;
 }
 
 interface Props {
@@ -65,46 +58,103 @@ async function readFileAsBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
+interface CustomLinkRow {
+  label: string;
+  url: string;
+}
+
+/** Collapse the saved `LinkEntry[]` into the form's working state. */
+function splitInitialLinks(links: LinkEntry[]): {
+  bskyClientIds: string[];
+  tangledOverride: string;
+  tangledOn: boolean;
+  supperOverride: string;
+  supperOn: boolean;
+  website: string;
+  custom: CustomLinkRow[];
+} {
+  const bskyClientIds: string[] = [];
+  let tangledOverride = "";
+  let tangledOn = false;
+  let supperOverride = "";
+  let supperOn = false;
+  let website = "";
+  const custom: CustomLinkRow[] = [];
+
+  for (const e of links) {
+    switch (e.kind) {
+      case "bsky":
+        if (e.clientId) bskyClientIds.push(e.clientId);
+        break;
+      case "tangled":
+        tangledOn = true;
+        if (e.url) tangledOverride = e.url;
+        break;
+      case "supper":
+        supperOn = true;
+        if (e.url) supperOverride = e.url;
+        break;
+      case "website":
+        if (e.url) website = e.url;
+        break;
+      case "other":
+        if (e.url) custom.push({ label: e.label ?? "", url: e.url });
+        break;
+    }
+  }
+  return {
+    bskyClientIds,
+    tangledOverride,
+    tangledOn,
+    supperOverride,
+    supperOn,
+    website,
+    custom,
+  };
+}
+
 export default function CreateProfileForm(
   { did, handle, initial, initialAvatarUrl, initialPublished }: Props,
 ) {
   const t = useT();
   const tForm = t.forms.profile;
-  const tLink = t.linkKinds;
-  const tLicense = t.licenseTypes as Record<string, string>;
+  const tAtmos = tForm.atmosphereLinks;
+  const tCustom = tForm.customLinks;
+  const tWebsite = tForm.website;
   const tManage = t.explore.manage;
-  /** Live registry status. Flips on save (-> true) and delete (-> false).
-   *  Drives the colored pill that tells the user whether their entry is
-   *  visible in /explore right now. */
+  /** Live registry status. Flips on save (-> true) and delete (-> false). */
   const published = useSignal<boolean>(initialPublished);
+
+  const initialSplit = splitInitialLinks(initial?.links ?? []);
 
   const name = useSignal(initial?.name ?? "");
   const description = useSignal(initial?.description ?? "");
-  // categories is the source of truth — the lexicon requires it to be a
-  // non-empty array. The first item is treated as the primary category.
   const categories = useSignal<string[]>(
     initial?.categories?.length ? initial.categories : ["app"],
   );
   const subcategories = useSignal<string[]>(initial?.subcategories ?? []);
-  /** Local-only signal: signals don't deep-track array element mutations,
-   *  so each edit replaces the entire array. */
-  const links = useSignal<LinkEntry[]>(initial?.links ?? []);
-  const bskyClient = useSignal<string>(
-    initial?.bskyClient ?? DEFAULT_BSKY_CLIENT_ID,
-  );
+
+  /* ---------------- Atmosphere link signals ----------------------------- */
   /**
-   * License state. `licenseType === ""` means "don't publish a license
-   * record" — the form sends `license: null` in that case so the API
-   * deletes any existing record.
+   * Bluesky toggle is "on" iff there's at least one selected client. The
+   * gear opens the modal where users add/remove clients; the row's icon
+   * stack mirrors the selection.
    */
-  const licenseType = useSignal<string>(initial?.license?.type ?? "");
-  const licenseSpdx = useSignal<string>(initial?.license?.spdxId ?? "");
-  const licenseUrl = useSignal<string>(initial?.license?.licenseUrl ?? "");
-  const licenseNotes = useSignal<string>(initial?.license?.notes ?? "");
+  const bskyClientIds = useSignal<string[]>(initialSplit.bskyClientIds);
+  const bskyPickerOpen = useSignal<boolean>(false);
+
+  const tangledOn = useSignal<boolean>(initialSplit.tangledOn);
+  const tangledUrl = useSignal<string>(initialSplit.tangledOverride);
+
+  const supperOn = useSignal<boolean>(initialSplit.supperOn);
+  const supperUrl = useSignal<string>(initialSplit.supperOverride);
+
+  const website = useSignal<string>(initialSplit.website);
+  const customLinks = useSignal<CustomLinkRow[]>(initialSplit.custom);
 
   const avatarKeep = useSignal<BlobRefShape | null>(null);
-  /** Preview URL precedence: locally-picked file blob > existing registry
-   *  record (cached proxy) > prefill source (Bluesky PDS getBlob) > none. */
+  /** Preview URL precedence: locally-picked file > existing registry
+   *  record (cached proxy) > prefill source (Bluesky PDS) > none. */
   const avatarPreview = useSignal<string | null>(
     initial?.avatar
       ? `/api/registry/avatar/${encodeURIComponent(did)}`
@@ -142,8 +192,6 @@ export default function CreateProfileForm(
   const toggleCategory = (key: string) => {
     const current = categories.value;
     if (current.includes(key)) {
-      // Don't let the user unselect their last remaining category — at
-      // least one is required by the lexicon.
       if (current.length <= 1) return;
       categories.value = current.filter((k) => k !== key);
     } else {
@@ -152,26 +200,26 @@ export default function CreateProfileForm(
     }
   };
 
-  /**
-   * `app` is the only category with subcategories defined right now. If
-   * the user deselects `app`, hide the subcategory chips by clearing the
-   * underlying selection (kept as an effect-like helper so the form's
-   * payload doesn't carry stale subcategories on submit).
-   */
   const showSubcategories = categories.value.includes("app");
 
-  /* ---------- Links editor helpers --------------------------------------- */
-  const addLink = (kind: string = "website") => {
-    if (links.value.length >= 12) return;
-    links.value = [...links.value, { kind, url: "", label: "" }];
+  /* ---------------- Custom link helpers --------------------------------- */
+  const addCustomLink = () => {
+    if (customLinks.value.length >= 8) return;
+    customLinks.value = [...customLinks.value, { label: "", url: "" }];
   };
-  const removeLink = (index: number) => {
-    links.value = links.value.filter((_, i) => i !== index);
+  const removeCustomLink = (i: number) => {
+    customLinks.value = customLinks.value.filter((_, idx) => idx !== i);
   };
-  const updateLink = (index: number, patch: Partial<LinkEntry>) => {
-    links.value = links.value.map((entry, i) =>
-      i === index ? { ...entry, ...patch } : entry
+  const updateCustomLink = (i: number, patch: Partial<CustomLinkRow>) => {
+    customLinks.value = customLinks.value.map((row, idx) =>
+      idx === i ? { ...row, ...patch } : row
     );
+  };
+
+  /* ---------------- Atmosphere helpers ---------------------------------- */
+  const onBskyConfirm = (ids: string[]) => {
+    bskyClientIds.value = ids;
+    bskyPickerOpen.value = false;
   };
 
   const onAvatarChange = (event: Event) => {
@@ -195,6 +243,41 @@ export default function CreateProfileForm(
     avatarPreview.value = null;
   };
 
+  /**
+   * Reduce the form's working state into the lexicon-shaped LinkEntry[]
+   * we send to the API. Order matters — we put atmosphere links first
+   * (in service order, with the user's chosen primary bsky client at the
+   * head), then website, then custom links in display order.
+   */
+  const buildLinksPayload = (): LinkEntry[] => {
+    const out: LinkEntry[] = [];
+
+    for (const id of bskyClientIds.value) {
+      out.push({ kind: "bsky", clientId: id });
+    }
+    if (tangledOn.value) {
+      const entry: LinkEntry = { kind: "tangled" };
+      const u = tangledUrl.value.trim();
+      if (u) entry.url = u;
+      out.push(entry);
+    }
+    if (supperOn.value) {
+      const entry: LinkEntry = { kind: "supper" };
+      const u = supperUrl.value.trim();
+      if (u) entry.url = u;
+      out.push(entry);
+    }
+    const w = website.value.trim();
+    if (w) out.push({ kind: "website", url: w });
+    for (const row of customLinks.value) {
+      const url = row.url.trim();
+      const label = row.label.trim();
+      if (!url || !label) continue;
+      out.push({ kind: "other", url, label });
+    }
+    return out;
+  };
+
   const onSubmit = async (event: Event) => {
     event.preventDefault();
     if (submitting.value) return;
@@ -206,22 +289,7 @@ export default function CreateProfileForm(
     message.value = null;
 
     try {
-      // Sanitise links: drop empty rows; require URL on every kept row;
-      // for kind="other", require a label. Mirroring the validator means
-      // the user gets fast client-side feedback.
-      const cleanedLinks: LinkEntry[] = [];
-      for (const l of links.value) {
-        const url = (l.url ?? "").trim();
-        if (!url) continue;
-        const kind = (l.kind ?? "").trim() || "other";
-        const label = (l.label ?? "").trim();
-        if (kind === "other" && !label) {
-          throw new Error(`Add a label for the "${tLink.other}" link or remove it.`);
-        }
-        const entry: LinkEntry = { kind, url };
-        if (label) entry.label = label;
-        cleanedLinks.push(entry);
-      }
+      const cleanedLinks = buildLinksPayload();
 
       const payload: Record<string, unknown> = {
         name: name.value.trim(),
@@ -229,7 +297,6 @@ export default function CreateProfileForm(
         categories: categories.value,
         subcategories: showSubcategories ? subcategories.value : [],
         links: cleanedLinks,
-        bskyClient: bskyClient.value || undefined,
       };
       if (avatarFile.value) {
         payload.avatarUpload = {
@@ -242,19 +309,6 @@ export default function CreateProfileForm(
         payload.avatar = null;
       }
 
-      // License sub-record. Empty type = "don't publish" → null tells the
-      // API to delete any existing license record so the badge goes away.
-      if (licenseType.value) {
-        payload.license = {
-          type: licenseType.value,
-          spdxId: licenseSpdx.value.trim() || undefined,
-          licenseUrl: licenseUrl.value.trim() || undefined,
-          notes: licenseNotes.value.trim() || undefined,
-        };
-      } else {
-        payload.license = null;
-      }
-
       const res = await fetch("/api/registry/profile", {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -264,13 +318,8 @@ export default function CreateProfileForm(
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
-      const json = await res.json().catch(() => ({})) as {
-        licenseWarning?: string | null;
-      };
       published.value = true;
-      message.value = json.licenseWarning
-        ? { kind: "error", text: json.licenseWarning }
-        : { kind: "ok", text: tManage.savedToast };
+      message.value = { kind: "ok", text: tManage.savedToast };
     } catch (err) {
       message.value = {
         kind: "error",
@@ -323,6 +372,7 @@ export default function CreateProfileForm(
           </span>
         </span>
       </div>
+
       <div class="profile-form-row">
         <div class="profile-form-avatar">
           {avatarPreview.value
@@ -448,183 +498,85 @@ export default function CreateProfileForm(
             </fieldset>
           )}
 
-          {/* ---------------- Links editor ----------------------------- */}
+          {/* ---------------- Atmosphere links ----------------------- */}
           <fieldset class="profile-form-field">
-            <legend class="profile-form-label">{tForm.links.sectionLabel}</legend>
-            <p class="profile-form-hint">{tForm.links.sectionHint}</p>
-            {links.value.length === 0 && (
-              <p class="profile-form-empty">{tForm.links.emptyHint}</p>
-            )}
-            <div class="link-editor-list">
-              {links.value.map((entry, i) => (
-                <div class="link-editor-row" key={i}>
-                  <select
-                    class="profile-form-input link-editor-kind"
-                    value={entry.kind}
-                    onChange={(e) =>
-                      updateLink(i, {
-                        kind: (e.currentTarget as HTMLSelectElement).value,
-                      })}
-                    aria-label={tForm.links.kindLabel}
-                  >
-                    {LINK_KIND_ORDER.map((k) => (
-                      <option value={k} key={k}>
-                        {tLink[k] ?? k}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="url"
-                    class="profile-form-input link-editor-url"
-                    placeholder={tForm.links.urlPlaceholder}
-                    value={entry.url}
-                    onInput={(e) =>
-                      updateLink(i, {
-                        url: (e.currentTarget as HTMLInputElement).value,
-                      })}
-                    aria-label={tForm.links.urlLabel}
-                  />
+            <legend class="profile-form-label">{tAtmos.sectionLabel}</legend>
+            <p class="profile-form-hint">{tAtmos.sectionHint(handle)}</p>
+
+            <div class="atmosphere-toggles">
+              {visibleAtmosphereServices().map((svc) =>
+                renderAtmosphereRow(svc, {
+                  bskyClientIds,
+                  bskyPickerOpen,
+                  tangledOn,
+                  tangledUrl,
+                  supperOn,
+                  supperUrl,
+                  tAtmos,
+                })
+              )}
+            </div>
+          </fieldset>
+
+          {/* ---------------- Website ------------------------------- */}
+          <label class="profile-form-field">
+            <span class="profile-form-label">{tWebsite.sectionLabel}</span>
+            <input
+              type="url"
+              class="profile-form-input"
+              placeholder={tWebsite.placeholder}
+              value={website.value}
+              onInput={(e) =>
+                website.value = (e.currentTarget as HTMLInputElement).value}
+            />
+          </label>
+
+          {/* ---------------- Custom links -------------------------- */}
+          <fieldset class="profile-form-field">
+            <legend class="profile-form-label">{tCustom.sectionLabel}</legend>
+            <div class="custom-link-list">
+              {customLinks.value.map((row, i) => (
+                <div class="custom-link-row" key={i}>
                   <input
                     type="text"
-                    class="profile-form-input link-editor-label"
-                    placeholder={entry.kind === "other"
-                      ? tForm.links.labelPlaceholderOther
-                      : tForm.links.labelLabel}
-                    value={entry.label ?? ""}
+                    class="profile-form-input custom-link-label"
+                    placeholder={tCustom.labelPlaceholder}
+                    value={row.label}
                     maxLength={64}
                     onInput={(e) =>
-                      updateLink(i, {
+                      updateCustomLink(i, {
                         label: (e.currentTarget as HTMLInputElement).value,
                       })}
-                    aria-label={tForm.links.labelLabel}
+                  />
+                  <input
+                    type="url"
+                    class="profile-form-input custom-link-url"
+                    placeholder={tCustom.urlPlaceholder}
+                    value={row.url}
+                    onInput={(e) =>
+                      updateCustomLink(i, {
+                        url: (e.currentTarget as HTMLInputElement).value,
+                      })}
                   />
                   <button
                     type="button"
-                    class="profile-form-button-link link-editor-remove"
-                    onClick={() => removeLink(i)}
+                    class="custom-link-remove"
+                    aria-label={tCustom.removeAriaLabel}
+                    onClick={() => removeCustomLink(i)}
                   >
-                    {tForm.links.removeButton}
+                    ×
                   </button>
                 </div>
               ))}
             </div>
             <button
               type="button"
-              class="profile-form-button-secondary link-editor-add"
-              onClick={() => addLink("website")}
-              disabled={links.value.length >= 12}
+              class="profile-form-button-secondary custom-link-add"
+              onClick={addCustomLink}
+              disabled={customLinks.value.length >= 8}
             >
-              + {tForm.links.addButton}
+              + {tCustom.addButton}
             </button>
-          </fieldset>
-
-          {/* ---------------- License section ------------------------- */}
-          <fieldset class="profile-form-field profile-form-license">
-            <legend class="profile-form-label">{tForm.license.sectionLabel}</legend>
-            <p class="profile-form-hint">{tForm.license.sectionHint}</p>
-            <label class="profile-form-field">
-              <span class="profile-form-label profile-form-label--small">
-                {tForm.license.typeLabel}
-              </span>
-              <select
-                class="profile-form-input"
-                value={licenseType.value}
-                onChange={(e) =>
-                  licenseType.value =
-                    (e.currentTarget as HTMLSelectElement).value}
-              >
-                <option value="">{tForm.license.typeNone}</option>
-                {LICENSE_TYPES.map((lt) => (
-                  <option value={lt} key={lt}>{tLicense[lt] ?? lt}</option>
-                ))}
-              </select>
-            </label>
-
-            {licenseType.value && (
-              <>
-                <label class="profile-form-field">
-                  <span class="profile-form-label profile-form-label--small">
-                    {tForm.license.spdxLabel}
-                  </span>
-                  <input
-                    type="text"
-                    class="profile-form-input"
-                    placeholder={tForm.license.spdxPlaceholder}
-                    maxLength={64}
-                    value={licenseSpdx.value}
-                    onInput={(e) =>
-                      licenseSpdx.value =
-                        (e.currentTarget as HTMLInputElement).value}
-                  />
-                  <p class="profile-form-hint">{tForm.license.spdxHint}</p>
-                </label>
-                <label class="profile-form-field">
-                  <span class="profile-form-label profile-form-label--small">
-                    {tForm.license.urlLabel}
-                  </span>
-                  <input
-                    type="url"
-                    class="profile-form-input"
-                    placeholder={tForm.license.urlPlaceholder}
-                    value={licenseUrl.value}
-                    onInput={(e) =>
-                      licenseUrl.value =
-                        (e.currentTarget as HTMLInputElement).value}
-                  />
-                </label>
-                <label class="profile-form-field">
-                  <span class="profile-form-label profile-form-label--small">
-                    {tForm.license.notesLabel}
-                  </span>
-                  <input
-                    type="text"
-                    class="profile-form-input"
-                    placeholder={tForm.license.notesPlaceholder}
-                    maxLength={280}
-                    value={licenseNotes.value}
-                    onInput={(e) =>
-                      licenseNotes.value =
-                        (e.currentTarget as HTMLInputElement).value}
-                  />
-                </label>
-              </>
-            )}
-          </fieldset>
-
-          <fieldset class="profile-form-field">
-            <legend class="profile-form-label">{tForm.bskyClientLabel}</legend>
-            <p class="profile-form-hint">{tForm.bskyClientHint}</p>
-            <div class="bsky-client-list">
-              {BSKY_CLIENTS.map((c) => {
-                const selected = bskyClient.value === c.id;
-                return (
-                  <label
-                    key={c.id}
-                    class={`bsky-client-row ${selected ? "is-selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name="bskyClient"
-                      value={c.id}
-                      checked={selected}
-                      onChange={() => bskyClient.value = c.id}
-                    />
-                    <img
-                      src={c.iconUrl}
-                      alt=""
-                      class="bsky-client-icon"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <span class="bsky-client-meta">
-                      <span class="bsky-client-name">{c.name}</span>
-                      <span class="bsky-client-domain">{c.domain}</span>
-                    </span>
-                    <span class="bsky-client-radio" aria-hidden="true" />
-                  </label>
-                );
-              })}
-            </div>
           </fieldset>
         </div>
       </div>
@@ -660,6 +612,195 @@ export default function CreateProfileForm(
           </span>
         )}
       </div>
+
+      <BskyClientPickerModal
+        open={bskyPickerOpen.value}
+        selected={bskyClientIds.value}
+        onConfirm={onBskyConfirm}
+        onClose={() => (bskyPickerOpen.value = false)}
+      />
     </form>
+  );
+}
+
+/* ----------------------- Atmosphere row renderer ------------------------ */
+
+interface AtmosphereRowCtx {
+  bskyClientIds: { value: string[] };
+  bskyPickerOpen: { value: boolean };
+  tangledOn: { value: boolean };
+  tangledUrl: { value: string };
+  supperOn: { value: boolean };
+  supperUrl: { value: string };
+  tAtmos: ReturnType<typeof useT>["forms"]["profile"]["atmosphereLinks"];
+}
+
+function renderAtmosphereRow(svc: AtmosphereService, ctx: AtmosphereRowCtx) {
+  if (svc.id === "bsky") return <BskyAtmosphereRow ctx={ctx} svc={svc} />;
+  if (svc.id === "tangled") {
+    return (
+      <SimpleAtmosphereRow
+        ctx={ctx}
+        svc={svc}
+        on={ctx.tangledOn}
+        url={ctx.tangledUrl}
+      />
+    );
+  }
+  if (svc.id === "supper") {
+    return (
+      <SimpleAtmosphereRow
+        ctx={ctx}
+        svc={svc}
+        on={ctx.supperOn}
+        url={ctx.supperUrl}
+      />
+    );
+  }
+  return null;
+}
+
+interface BskyRowProps {
+  ctx: AtmosphereRowCtx;
+  svc: AtmosphereService;
+}
+
+function BskyAtmosphereRow({ ctx, svc }: BskyRowProps) {
+  const ids = ctx.bskyClientIds.value;
+  const isOn = ids.length > 0;
+  const primaryClient = isOn ? getBskyClient(ids[0]) : null;
+  const stack = ids.slice(0, 4);
+
+  return (
+    <div class={`atmosphere-row ${isOn ? "is-on" : ""}`}>
+      <label class="atmosphere-row-toggle">
+        <input
+          type="checkbox"
+          checked={isOn}
+          onChange={(e) => {
+            const next = (e.currentTarget as HTMLInputElement).checked;
+            if (next) {
+              if (ctx.bskyClientIds.value.length === 0) {
+                ctx.bskyPickerOpen.value = true;
+              }
+            } else {
+              ctx.bskyClientIds.value = [];
+            }
+          }}
+        />
+        <span class="atmosphere-toggle-track" aria-hidden="true">
+          <span class="atmosphere-toggle-thumb" />
+        </span>
+      </label>
+      <div class="atmosphere-row-body">
+        <div class="atmosphere-row-icon">
+          {ids.length > 1
+            ? (
+              <span class="atmosphere-icon-stack">
+                {stack.map((id, i) => {
+                  const c = getBskyClient(id);
+                  return (
+                    <img
+                      key={id}
+                      src={c.iconUrl}
+                      alt=""
+                      class="atmosphere-icon-stack-item"
+                      style={{
+                        zIndex: stack.length - i,
+                        marginLeft: i === 0 ? 0 : "-10px",
+                      }}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  );
+                })}
+              </span>
+            )
+            : (
+              <img
+                src={primaryClient?.iconUrl ?? svc.iconUrl ?? ""}
+                alt=""
+                class="atmosphere-icon"
+                loading="lazy"
+                decoding="async"
+              />
+            )}
+        </div>
+        <div class="atmosphere-row-meta">
+          <span class="atmosphere-row-name">
+            {primaryClient?.name ?? svc.name}
+          </span>
+          <span class="atmosphere-row-desc">
+            {ids.length > 1
+              ? `${BSKY_CLIENTS.find((c) => c.id === ids[0])?.name ?? svc.name}` +
+                ` + ${ids.length - 1} more`
+              : svc.description}
+          </span>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="atmosphere-row-gear"
+        onClick={() => (ctx.bskyPickerOpen.value = true)}
+        aria-label={ctx.tAtmos.configureBskyLabel}
+      >
+        ⚙
+      </button>
+    </div>
+  );
+}
+
+interface SimpleRowProps {
+  ctx: AtmosphereRowCtx;
+  svc: AtmosphereService;
+  on: { value: boolean };
+  url: { value: string };
+}
+
+function SimpleAtmosphereRow({ svc, on, url, ctx }: SimpleRowProps) {
+  return (
+    <div class={`atmosphere-row ${on.value ? "is-on" : ""}`}>
+      <label class="atmosphere-row-toggle">
+        <input
+          type="checkbox"
+          checked={on.value}
+          onChange={(e) =>
+            (on.value = (e.currentTarget as HTMLInputElement).checked)}
+        />
+        <span class="atmosphere-toggle-track" aria-hidden="true">
+          <span class="atmosphere-toggle-thumb" />
+        </span>
+      </label>
+      <div class="atmosphere-row-body">
+        <div class="atmosphere-row-icon">
+          {svc.iconUrl
+            ? (
+              <img
+                src={svc.iconUrl}
+                alt=""
+                class="atmosphere-icon"
+                loading="lazy"
+                decoding="async"
+              />
+            )
+            : <span class="atmosphere-icon-glyph">{svc.name.slice(0, 1)}</span>}
+        </div>
+        <div class="atmosphere-row-meta">
+          <span class="atmosphere-row-name">{svc.name}</span>
+          <span class="atmosphere-row-desc">{svc.description}</span>
+        </div>
+      </div>
+      {svc.allowUrlOverride && on.value && (
+        <input
+          type="url"
+          class="profile-form-input atmosphere-row-url"
+          placeholder={ctx.tAtmos.urlOverridePlaceholder}
+          value={url.value}
+          onInput={(e) =>
+            (url.value = (e.currentTarget as HTMLInputElement).value)}
+          aria-label={ctx.tAtmos.urlOverrideLabel}
+        />
+      )}
+    </div>
   );
 }

@@ -73,7 +73,6 @@ const SCHEMA_STATEMENTS: string[] = [
     categories TEXT NOT NULL DEFAULT '[]',
     subcategories TEXT NOT NULL DEFAULT '[]',
     links TEXT NOT NULL DEFAULT '[]',
-    bsky_client TEXT,
     avatar_cid TEXT,
     avatar_mime TEXT,
     pds_url TEXT NOT NULL,
@@ -100,23 +99,6 @@ const SCHEMA_STATEMENTS: string[] = [
     INSERT INTO profile_fts(rowid, name, description)
     VALUES (new.rowid, new.name, new.description);
   END`,
-  // License is its own record on the project's PDS (com.atmosphereaccount
-  // .registry.license/self), joined to profile by DID. Splitting it out
-  // keeps the profile lexicon small and lets us extend license metadata
-  // (or add other sibling records like reviews / age ratings) without
-  // touching the profile schema.
-  `CREATE TABLE IF NOT EXISTS license (
-    did TEXT PRIMARY KEY,
-    type TEXT NOT NULL,
-    spdx_id TEXT,
-    license_url TEXT,
-    notes TEXT,
-    pds_url TEXT NOT NULL,
-    record_cid TEXT NOT NULL,
-    record_rev TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    indexed_at INTEGER NOT NULL
-  )`,
   `CREATE TABLE IF NOT EXISTS featured (
     did TEXT PRIMARY KEY,
     badges TEXT NOT NULL DEFAULT '[]',
@@ -157,20 +139,15 @@ const SCHEMA_STATEMENTS: string[] = [
  * `ADD COLUMN IF NOT EXISTS`, so we attempt the ALTER and swallow the
  * "duplicate column" error. SQLite makes column drops painful, so legacy
  * columns we no longer use (e.g. the old single-value `category`, `tags`,
- * the pre-`links[]` `website`/`repo_url`/`open_source`) are just left
- * around and ignored — running `scripts/wipe-registry.ts` recreates the
- * table cleanly when desired.
+ * the pre-`links[]` `website`/`repo_url`/`open_source`, `bsky_client`)
+ * are just left around and ignored — running `scripts/wipe-registry.ts`
+ * recreates the table cleanly when desired.
  */
 async function applyAdditiveMigrations(
   c: { execute: (s: string) => Promise<unknown> },
 ): Promise<void> {
   const additiveColumns: Array<{ table: string; column: string; ddl: string }> =
     [
-      {
-        table: "profile",
-        column: "bsky_client",
-        ddl: "ALTER TABLE profile ADD COLUMN bsky_client TEXT",
-      },
       {
         table: "profile",
         column: "categories",

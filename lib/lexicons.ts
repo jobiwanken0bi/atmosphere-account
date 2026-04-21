@@ -9,12 +9,10 @@
 
 export const PROFILE_NSID = "com.atmosphereaccount.registry.profile";
 export const FEATURED_NSID = "com.atmosphereaccount.registry.featured";
-export const LICENSE_NSID = "com.atmosphereaccount.registry.license";
 
 export const REGISTRY_NSIDS = [
   PROFILE_NSID,
   FEATURED_NSID,
-  LICENSE_NSID,
 ] as const;
 
 export const CATEGORIES = [
@@ -46,35 +44,45 @@ export type FeaturedBadge = typeof FEATURED_BADGES[number];
 
 /**
  * Recognised link kinds. The lexicon stores `kind` as an open string with
- * `knownValues`, so adding new kinds later is a non-breaking change — old
- * records with unknown kinds just render with the "other" fallback icon.
+ * `knownValues`, so adding more atmosphere services or custom kinds later
+ * is a non-breaking change.
+ *
+ *   bsky     — a Bluesky-style profile button. Requires `clientId`; URL is
+ *              derived from clientId + the user's current handle.
+ *   tangled  — a Tangled profile button. URL defaults to tangled.sh/@handle
+ *              but the user may override (`url`) to point at a project repo.
+ *   supper   — a Supper (supper.support/@handle) button. URL is derived;
+ *              `url` override is allowed.
+ *   website  — a plain external website button. Requires `url`.
+ *   other    — a custom button with a user-provided `label` + `url`.
  */
 export const LINK_KINDS = [
+  "bsky",
+  "tangled",
+  "supper",
   "website",
-  "repo",
-  "donate",
-  "docs",
-  "mastodon",
-  "matrix",
-  "discord",
-  "contact",
   "other",
 ] as const;
 export type LinkKind = typeof LINK_KINDS[number];
 
+/**
+ * Atmosphere kinds derive their URL from the user's handle. They may
+ * still carry an explicit `url` override (tangled / supper). `bsky`
+ * additionally requires `clientId` to pick which web client to send
+ * visitors to.
+ */
+export const ATMOSPHERE_LINK_KINDS = ["bsky", "tangled", "supper"] as const;
+export type AtmosphereLinkKind = typeof ATMOSPHERE_LINK_KINDS[number];
+
 export interface LinkEntry {
   kind: string;
-  url: string;
-  /** Optional display override; required for kind="other". */
+  /** Required for kind="website" / "other"; optional for atmosphere kinds. */
+  url?: string;
+  /** Required for kind="bsky". Identifies the Bluesky-compatible client. */
+  clientId?: string;
+  /** Required for kind="other"; ignored for atmosphere kinds. */
   label?: string;
 }
-
-export const LICENSE_TYPES = [
-  "openSource",
-  "sourceAvailable",
-  "proprietary",
-] as const;
-export type LicenseType = typeof LICENSE_TYPES[number];
 
 export interface BlobRef {
   $type: "blob";
@@ -92,19 +100,8 @@ export interface ProfileRecord {
    *  primary category used for sort/grouping in lists. */
   categories: string[];
   subcategories?: string[];
-  /** Outbound links shown on the public profile (website, repo, donate, …). */
+  /** Outbound buttons shown on the public profile. */
   links?: LinkEntry[];
-  /** Preferred Bluesky client (bluesky | blacksky | anisota | deer | witchsky). */
-  bskyClient?: string;
-  createdAt: string;
-}
-
-export interface LicenseRecord {
-  $type?: typeof LICENSE_NSID;
-  type: string;
-  spdxId?: string;
-  licenseUrl?: string;
-  notes?: string;
   createdAt: string;
 }
 
@@ -118,8 +115,6 @@ export interface FeaturedRecord {
   $type?: typeof FEATURED_NSID;
   entries: FeaturedEntry[];
 }
-
-import { BSKY_CLIENT_IDS } from "./bsky-clients.ts";
 
 const DID_RE = /^did:[a-z]+:[a-zA-Z0-9._:%-]+$/;
 
@@ -157,10 +152,16 @@ export interface ValidationResult<T> {
 }
 
 /**
- * Normalise + validate a links[] array. Drops empties, dedupes by URL,
- * caps at 12 to match the lexicon, and enforces the "other requires
- * label" rule. Unknown kinds are accepted (lexicon `knownValues` is a
- * hint, not a constraint).
+ * Normalise + validate a links[] array.
+ *   - Drops obviously empty entries.
+ *   - Caps at 12 to match the lexicon.
+ *   - Enforces per-kind constraints: clientId required for "bsky",
+ *     url required for "website" / "other" / unknown kinds, label
+ *     required for "other".
+ *   - Dedupes bsky entries by clientId; dedupes URL-bearing entries
+ *     by URL. Atmosphere kinds without a URL are kept as-is (their
+ *     identity is `kind` for tangled/supper, or `kind+clientId` for
+ *     bsky).
  */
 function normalizeLinks(input: unknown): {
   ok: true;
@@ -171,38 +172,85 @@ function normalizeLinks(input: unknown): {
     return { ok: false, error: "links: must be an array" };
   }
   if (input.length > 12) return { ok: false, error: "links: at most 12" };
-  const seen = new Set<string>();
+
+  const seenUrls = new Set<string>();
+  const seenBskyClients = new Set<string>();
+  const seenAtmosphereKinds = new Set<string>(); // tangled / supper without url
   const out: LinkEntry[] = [];
+
   for (const raw of input) {
     if (!raw || typeof raw !== "object") {
       return { ok: false, error: "links: items must be objects" };
     }
     const e = raw as Record<string, unknown>;
+
     if (!isStr(e.kind, 32)) {
       return { ok: false, error: "links[].kind: string required" };
     }
-    if (!isUrl(e.url)) {
-      return { ok: false, error: "links[].url: must be http(s) URL" };
+    const kind = (e.kind as string).trim();
+    if (!kind) {
+      return { ok: false, error: "links[].kind: non-empty string required" };
     }
-    const url = (e.url as string).trim();
-    if (seen.has(url)) continue;
-    seen.add(url);
-    const entry: LinkEntry = { kind: e.kind as string, url };
-    if (e.label !== undefined) {
+
+    const entry: LinkEntry = { kind };
+
+    // url: required for website/other (and unknown kinds); optional for
+    // atmosphere kinds.
+    const isAtmosphere = (ATMOSPHERE_LINK_KINDS as readonly string[])
+      .includes(kind);
+    if (e.url !== undefined && e.url !== null && e.url !== "") {
+      if (!isUrl(e.url)) {
+        return { ok: false, error: `links[].url (${kind}): must be http(s) URL` };
+      }
+      entry.url = (e.url as string).trim();
+    } else if (!isAtmosphere) {
+      return {
+        ok: false,
+        error: `links[]: kind="${kind}" requires a url`,
+      };
+    }
+
+    // clientId: required for bsky, ignored otherwise.
+    if (kind === "bsky") {
+      if (!isStr(e.clientId, 64) || !(e.clientId as string).trim()) {
+        return {
+          ok: false,
+          error: 'links[]: kind="bsky" requires clientId',
+        };
+      }
+      entry.clientId = (e.clientId as string).trim();
+    }
+
+    // label: required for other, optional otherwise.
+    if (e.label !== undefined && e.label !== null && e.label !== "") {
       if (!isStr(e.label, 64)) {
         return { ok: false, error: "links[].label: string <=64" };
       }
-      const label = (e.label as string).trim();
-      if (label) entry.label = label;
+      entry.label = (e.label as string).trim();
     }
-    if (entry.kind === "other" && !entry.label) {
+    if (kind === "other" && !entry.label) {
       return {
         ok: false,
         error: 'links[]: kind="other" requires a label',
       };
     }
+
+    // Dedupe.
+    if (kind === "bsky") {
+      const key = `bsky:${entry.clientId}`;
+      if (seenBskyClients.has(key)) continue;
+      seenBskyClients.add(key);
+    } else if (entry.url) {
+      if (seenUrls.has(entry.url)) continue;
+      seenUrls.add(entry.url);
+    } else if (isAtmosphere) {
+      if (seenAtmosphereKinds.has(kind)) continue;
+      seenAtmosphereKinds.add(kind);
+    }
+
     out.push(entry);
   }
+
   return { ok: true, value: out };
 }
 
@@ -260,16 +308,6 @@ export function validateProfile(
   }
   const linksRes = normalizeLinks(v.links);
   if (!linksRes.ok) return { ok: false, error: linksRes.error };
-  if (
-    v.bskyClient !== undefined &&
-    (!isStr(v.bskyClient) ||
-      !(BSKY_CLIENT_IDS as readonly string[]).includes(v.bskyClient as string))
-  ) {
-    return {
-      ok: false,
-      error: `bskyClient: must be one of ${BSKY_CLIENT_IDS.join(", ")}`,
-    };
-  }
   if (v.subcategories !== undefined) {
     if (!Array.isArray(v.subcategories) || v.subcategories.length > 10) {
       return { ok: false, error: "subcategories: array of <=10 strings" };
@@ -294,48 +332,6 @@ export function validateProfile(
       categories: normalizedCategories,
       subcategories: v.subcategories as string[] | undefined,
       links: linksRes.value.length > 0 ? linksRes.value : undefined,
-      bskyClient: v.bskyClient as string | undefined,
-      createdAt: v.createdAt as string,
-    },
-  };
-}
-
-export function validateLicense(
-  input: unknown,
-): ValidationResult<LicenseRecord> {
-  if (!input || typeof input !== "object") {
-    return { ok: false, error: "record must be an object" };
-  }
-  const v = input as Record<string, unknown>;
-  if (
-    !isStr(v.type) ||
-    !(LICENSE_TYPES as readonly string[]).includes(v.type as string)
-  ) {
-    return {
-      ok: false,
-      error: `type: must be one of ${LICENSE_TYPES.join(", ")}`,
-    };
-  }
-  if (!isStr(v.createdAt)) {
-    return { ok: false, error: "createdAt required (ISO 8601)" };
-  }
-  if (v.spdxId !== undefined && !isStr(v.spdxId, 64)) {
-    return { ok: false, error: "spdxId: string <=64" };
-  }
-  if (v.licenseUrl !== undefined && !isUrl(v.licenseUrl)) {
-    return { ok: false, error: "licenseUrl: must be http(s) URL" };
-  }
-  if (v.notes !== undefined && !isStr(v.notes, 280)) {
-    return { ok: false, error: "notes: string <=280" };
-  }
-  return {
-    ok: true,
-    value: {
-      $type: LICENSE_NSID,
-      type: v.type as string,
-      spdxId: v.spdxId as string | undefined,
-      licenseUrl: v.licenseUrl as string | undefined,
-      notes: v.notes as string | undefined,
       createdAt: v.createdAt as string,
     },
   };
@@ -400,7 +396,6 @@ export async function loadLexiconJson(nsid: string): Promise<unknown | null> {
   const fileMap: Record<string, string> = {
     [PROFILE_NSID]: "profile.json",
     [FEATURED_NSID]: "featured.json",
-    [LICENSE_NSID]: "license.json",
   };
   const filename = fileMap[nsid];
   const url = new URL(

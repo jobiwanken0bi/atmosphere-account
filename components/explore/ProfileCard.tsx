@@ -55,11 +55,6 @@ export default function ProfileCard({ profile }: Props) {
               {tCat[c] ?? c}
             </span>
           ))}
-          {profile.license?.type === "openSource" && (
-            <span class="profile-card-sub profile-card-sub--oss">
-              {t.explore.detail.openSourceBadge}
-            </span>
-          )}
           {profile.subcategories.slice(0, 2).map((s) => {
             const sub = (t.subcategories as Record<string, string>)[s] ?? s;
             return (

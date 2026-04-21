@@ -15,9 +15,8 @@ export interface ProfileRow {
    *  primary category used for sort/grouping in lists. */
   categories: string[];
   subcategories: string[];
-  /** Outbound links (website, repo, donate, …) in author-defined order. */
+  /** Outbound links (atmosphere services, website, custom) in author-defined order. */
   links: LinkEntry[];
-  bskyClient: string | null;
   avatarCid: string | null;
   avatarMime: string | null;
   pdsUrl: string;
@@ -30,14 +29,6 @@ export interface ProfileRow {
     badges: FeaturedBadge[] | string[];
     position: number;
   };
-  /** Populated when joined with the license table. Absent = no license
-   *  record published. */
-  license?: {
-    type: string;
-    spdxId: string | null;
-    licenseUrl: string | null;
-    notes: string | null;
-  };
 }
 
 interface RawProfileRow {
@@ -48,7 +39,6 @@ interface RawProfileRow {
   categories: string;
   subcategories: string;
   links: string | null;
-  bsky_client: string | null;
   avatar_cid: string | null;
   avatar_mime: string | null;
   pds_url: string;
@@ -58,10 +48,6 @@ interface RawProfileRow {
   indexed_at: number;
   featured_badges?: string | null;
   featured_position?: number | null;
-  license_type?: string | null;
-  license_spdx_id?: string | null;
-  license_url?: string | null;
-  license_notes?: string | null;
 }
 
 function safeJsonArray(text: string | null | undefined): string[] {
@@ -80,12 +66,16 @@ function safeJsonLinks(text: string | null | undefined): LinkEntry[] {
     const v = JSON.parse(text);
     if (!Array.isArray(v)) return [];
     return v
-      .filter((x): x is { kind: unknown; url: unknown; label?: unknown } =>
+      .filter((x): x is Record<string, unknown> =>
         !!x && typeof x === "object"
       )
-      .filter((x) => typeof x.kind === "string" && typeof x.url === "string")
+      .filter((x) => typeof x.kind === "string")
       .map((x) => {
-        const e: LinkEntry = { kind: x.kind as string, url: x.url as string };
+        const e: LinkEntry = { kind: x.kind as string };
+        if (typeof x.url === "string" && x.url) e.url = x.url;
+        if (typeof x.clientId === "string" && x.clientId) {
+          e.clientId = x.clientId;
+        }
         if (typeof x.label === "string" && x.label) e.label = x.label;
         return e;
       });
@@ -103,7 +93,6 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     categories: safeJsonArray(r.categories),
     subcategories: safeJsonArray(r.subcategories),
     links: safeJsonLinks(r.links),
-    bskyClient: r.bsky_client,
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
     pdsUrl: r.pds_url,
@@ -118,14 +107,6 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
       position: Number(r.featured_position ?? 0),
     };
   }
-  if (r.license_type) {
-    out.license = {
-      type: r.license_type,
-      spdxId: r.license_spdx_id ?? null,
-      licenseUrl: r.license_url ?? null,
-      notes: r.license_notes ?? null,
-    };
-  }
   return out;
 }
 
@@ -138,7 +119,6 @@ export interface UpsertProfileInput {
   categories: string[];
   subcategories: string[];
   links?: LinkEntry[] | null;
-  bskyClient?: string | null;
   avatarCid?: string | null;
   avatarMime?: string | null;
   pdsUrl: string;
@@ -172,9 +152,9 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
       sql: `
         INSERT INTO profile (
           did, handle, name, description, categories, subcategories, links,
-          bsky_client, avatar_cid, avatar_mime, pds_url, record_cid,
+          avatar_cid, avatar_mime, pds_url, record_cid,
           record_rev, created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
           name=excluded.name,
@@ -182,7 +162,6 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           categories=excluded.categories,
           subcategories=excluded.subcategories,
           links=excluded.links,
-          bsky_client=excluded.bsky_client,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
           pds_url=excluded.pds_url,
@@ -199,7 +178,6 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         JSON.stringify(cats),
         JSON.stringify(input.subcategories ?? []),
         JSON.stringify(input.links ?? []),
-        input.bskyClient ?? null,
         input.avatarCid ?? null,
         input.avatarMime ?? null,
         input.pdsUrl,
@@ -214,9 +192,6 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
 
 export async function deleteProfile(did: string): Promise<void> {
   await withDb(async (c) => {
-    // License is paired with the profile from the user's POV; cleaning it
-    // up here keeps the index from carrying orphan rows after a removal.
-    await c.execute({ sql: `DELETE FROM license WHERE did = ?`, args: [did] });
     await c.execute({ sql: `DELETE FROM profile WHERE did = ?`, args: [did] });
   });
 }
@@ -224,14 +199,9 @@ export async function deleteProfile(did: string): Promise<void> {
 const SELECT_PROFILE = `
   SELECT p.*,
     f.badges AS featured_badges,
-    f.position AS featured_position,
-    l.type AS license_type,
-    l.spdx_id AS license_spdx_id,
-    l.license_url AS license_url,
-    l.notes AS license_notes
+    f.position AS featured_position
   FROM profile p
   LEFT JOIN featured f ON f.did = p.did
-  LEFT JOIN license l ON l.did = p.did
 `;
 
 export async function getProfileByDid(did: string): Promise<ProfileRow | null> {
@@ -370,116 +340,6 @@ export async function replaceFeatured(
         args: [e.did, JSON.stringify(e.badges ?? []), e.position, now],
       });
     }
-  });
-}
-
-/* -------------------------------------------------------------------------- *
- * License (com.atmosphereaccount.registry.license/self)                      *
- * -------------------------------------------------------------------------- */
-
-export interface LicenseRow {
-  did: string;
-  type: string;
-  spdxId: string | null;
-  licenseUrl: string | null;
-  notes: string | null;
-  pdsUrl: string;
-  recordCid: string;
-  recordRev: string;
-  createdAt: number;
-  indexedAt: number;
-}
-
-interface RawLicenseRow {
-  did: string;
-  type: string;
-  spdx_id: string | null;
-  license_url: string | null;
-  notes: string | null;
-  pds_url: string;
-  record_cid: string;
-  record_rev: string;
-  created_at: number;
-  indexed_at: number;
-}
-
-function rowToLicense(r: RawLicenseRow): LicenseRow {
-  return {
-    did: r.did,
-    type: r.type,
-    spdxId: r.spdx_id,
-    licenseUrl: r.license_url,
-    notes: r.notes,
-    pdsUrl: r.pds_url,
-    recordCid: r.record_cid,
-    recordRev: r.record_rev,
-    createdAt: Number(r.created_at),
-    indexedAt: Number(r.indexed_at),
-  };
-}
-
-export interface UpsertLicenseInput {
-  did: string;
-  type: string;
-  spdxId?: string | null;
-  licenseUrl?: string | null;
-  notes?: string | null;
-  pdsUrl: string;
-  recordCid: string;
-  recordRev: string;
-  createdAt: number;
-}
-
-export async function upsertLicense(input: UpsertLicenseInput): Promise<void> {
-  const now = Date.now();
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `
-        INSERT INTO license (
-          did, type, spdx_id, license_url, notes,
-          pds_url, record_cid, record_rev, created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(did) DO UPDATE SET
-          type=excluded.type,
-          spdx_id=excluded.spdx_id,
-          license_url=excluded.license_url,
-          notes=excluded.notes,
-          pds_url=excluded.pds_url,
-          record_cid=excluded.record_cid,
-          record_rev=excluded.record_rev,
-          created_at=excluded.created_at,
-          indexed_at=excluded.indexed_at
-      `,
-      args: [
-        input.did,
-        input.type,
-        input.spdxId ?? null,
-        input.licenseUrl ?? null,
-        input.notes ?? null,
-        input.pdsUrl,
-        input.recordCid,
-        input.recordRev,
-        input.createdAt,
-        now,
-      ],
-    });
-  });
-}
-
-export async function deleteLicense(did: string): Promise<void> {
-  await withDb(async (c) => {
-    await c.execute({ sql: `DELETE FROM license WHERE did = ?`, args: [did] });
-  });
-}
-
-export async function getLicenseByDid(did: string): Promise<LicenseRow | null> {
-  return await withDb(async (c) => {
-    const r = await c.execute({
-      sql: `SELECT * FROM license WHERE did = ? LIMIT 1`,
-      args: [did],
-    });
-    if (r.rows.length === 0) return null;
-    return rowToLicense(r.rows[0] as unknown as RawLicenseRow);
   });
 }
 
