@@ -43,7 +43,11 @@ export const handler = define.handlers({
      *  registry record exists, the form switches to the cached
      *  /api/registry/avatar/:did proxy. */
     let initialAvatarUrl: string | null = null;
-    const existing = await getProfileByDid(user.did).catch(() => null);
+    /** Owner-aware lookup: include taken-down rows so the form can
+     *  surface a "Your profile has been taken down" banner with the
+     *  admin reason instead of pretending no profile exists. */
+    const existing = await getProfileByDid(user.did, { includeTakenDown: true })
+      .catch(() => null);
     if (existing) {
       initial = {
         name: existing.name,
@@ -55,7 +59,12 @@ export const handler = define.handlers({
           ? { ref: existing.avatarCid, mime: existing.avatarMime }
           : null,
         icon: existing.iconCid && existing.iconMime
-          ? { ref: existing.iconCid, mime: existing.iconMime }
+          ? {
+            ref: existing.iconCid,
+            mime: existing.iconMime,
+            status: existing.iconStatus,
+            rejectedReason: existing.iconRejectedReason,
+          }
           : null,
       };
     } else {
@@ -90,13 +99,25 @@ export const handler = define.handlers({
       }
     }
 
+    /** Surface profile-level takedowns to the owner so they understand
+     *  why edits won't publish. The PUT endpoint also returns 403 in
+     *  this state, but a banner is much friendlier than a thrown
+     *  error after Publish. */
+    const takedown = existing?.takedownStatus === "taken_down"
+      ? {
+        reason: existing.takedownReason ?? "",
+        at: existing.takedownAt,
+      }
+      : null;
+
     return ctx.render(
       <ManagePage
         user={user}
         initial={initial}
         initialAvatarUrl={initialAvatarUrl}
-        initialPublished={!!existing}
-        publicProfileHandle={existing?.handle ?? null}
+        initialPublished={!!existing && !takedown}
+        publicProfileHandle={takedown ? null : existing?.handle ?? null}
+        takedown={takedown}
         t={t}
       />,
     );
@@ -109,6 +130,7 @@ interface ManagePageProps {
   initialAvatarUrl: string | null;
   initialPublished: boolean;
   publicProfileHandle: string | null;
+  takedown: { reason: string; at: number | null } | null;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
@@ -120,10 +142,12 @@ function ManagePage(
     initialAvatarUrl,
     initialPublished,
     publicProfileHandle,
+    takedown,
     t,
   }: ManagePageProps,
 ) {
   const explore = t.explore;
+  const takedownCopy = t.manageTakedown;
   return (
     <div id="page-top">
       <GlassClouds />
@@ -153,6 +177,20 @@ function ManagePage(
                 </form>
               </div>
             </div>
+
+            {takedown && (
+              <div class="manage-takedown-banner" role="alert">
+                <strong class="manage-takedown-banner-title">
+                  {takedownCopy.title}
+                </strong>
+                <p class="manage-takedown-banner-body">
+                  {takedownCopy.body}
+                </p>
+                <p class="manage-takedown-banner-reason">
+                  <strong>{takedownCopy.reasonLabel}:</strong> {takedown.reason}
+                </p>
+              </div>
+            )}
 
             <div style={{ marginTop: "2.5rem" }}>
               <CreateProfileForm

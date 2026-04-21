@@ -3991,3 +3991,582 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .api-endpoint-param-name {
   color: #cfdfff;
 }
+
+/* ================================================================== *
+ * Admin dashboard + moderation UI
+ * ================================================================== */
+
+.admin-section {
+  padding: 7rem 0 4rem;
+}
+.admin-header {
+  margin-bottom: 2rem;
+}
+.admin-header h1 {
+  margin: 0;
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+.admin-card {
+  display: block;
+  padding: 1.25rem 1.4rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.admin-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(8, 14, 31, 0.08);
+}
+.admin-card-count {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1;
+}
+.admin-card-title {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.admin-card-body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(18, 26, 47, 0.65);
+}
+.dark-phase .admin-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .admin-card-body {
+  color: rgba(255, 255, 255, 0.7);
+}
+.admin-empty {
+  margin-top: 2rem;
+  font-style: italic;
+  color: rgba(18, 26, 47, 0.55);
+}
+.dark-phase .admin-empty {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* --- Pending icon review rows ------------------------------------- */
+.admin-icon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.admin-icon-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  gap: 1.2rem;
+  align-items: center;
+  padding: 1rem 1.2rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+}
+.admin-icon-row--done {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  opacity: 0.65;
+}
+.admin-icon-row-preview {
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.admin-icon-row-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 8px;
+}
+.admin-icon-row-meta {
+  min-width: 0;
+}
+.admin-icon-row-name {
+  margin: 0;
+  font-size: 1rem;
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.admin-icon-row-handle {
+  color: rgba(18, 26, 47, 0.55);
+  font-size: 0.85rem;
+}
+.admin-icon-row-did {
+  margin: 0.25rem 0;
+  font-size: 0.75rem;
+  color: rgba(18, 26, 47, 0.55);
+  word-break: break-all;
+}
+.admin-icon-row-uploaded {
+  margin: 0;
+  font-size: 0.75rem;
+  color: rgba(18, 26, 47, 0.55);
+}
+.admin-icon-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+  min-width: 200px;
+}
+.admin-icon-reject {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 280px;
+  max-width: 100%;
+}
+.admin-icon-reject-label {
+  font-size: 0.8rem;
+  color: rgba(18, 26, 47, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.admin-icon-reject-input {
+  width: 100%;
+  border: 1px solid rgba(18, 26, 47, 0.15);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.95);
+  resize: vertical;
+}
+.admin-icon-reject-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.admin-icon-row-error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #c25048;
+}
+.dark-phase .admin-icon-row {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .admin-icon-row-handle,
+.dark-phase .admin-icon-row-did,
+.dark-phase .admin-icon-row-uploaded {
+  color: rgba(255, 255, 255, 0.6);
+}
+.dark-phase .admin-icon-row-preview {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .admin-icon-reject-input {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* --- Status pills ------------------------------------------------- */
+.admin-status-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.admin-status-badge--pending {
+  background: rgba(255, 197, 99, 0.2);
+  color: #8a5a00;
+}
+.admin-status-badge--approved {
+  background: rgba(70, 196, 142, 0.2);
+  color: #1f7a4e;
+}
+.admin-status-badge--rejected {
+  background: rgba(217, 104, 96, 0.2);
+  color: #b1453d;
+}
+.dark-phase .admin-status-badge--pending {
+  color: #ffd791;
+}
+.dark-phase .admin-status-badge--approved {
+  color: #8be0b3;
+}
+.dark-phase .admin-status-badge--rejected {
+  color: #ffaca6;
+}
+
+/* --- Inline icon-status banner on the manage form ---------------- */
+.icon-status-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.75rem;
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+.icon-status-banner strong {
+  font-size: 0.85rem;
+}
+.icon-status-banner--pending {
+  background: rgba(255, 197, 99, 0.15);
+  border: 1px solid rgba(255, 197, 99, 0.4);
+  color: #6c4500;
+}
+.icon-status-banner--rejected {
+  background: rgba(217, 104, 96, 0.12);
+  border: 1px solid rgba(217, 104, 96, 0.4);
+  color: #8a3a34;
+}
+.dark-phase .icon-status-banner--pending {
+  color: #ffd791;
+  background: rgba(255, 197, 99, 0.1);
+}
+.dark-phase .icon-status-banner--rejected {
+  color: #ffb1ab;
+  background: rgba(217, 104, 96, 0.12);
+}
+
+/* ================================================================== *
+ * Reports — admin queue + user-facing button/modal
+ * ================================================================== */
+
+.admin-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.admin-report-row {
+  padding: 1rem 1.2rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.admin-report-row--done {
+  opacity: 0.55;
+}
+.admin-report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.2rem;
+  font-size: 0.8rem;
+  color: rgba(18, 26, 47, 0.7);
+}
+.admin-report-meta strong {
+  color: rgba(18, 26, 47, 0.95);
+}
+.admin-report-details {
+  margin: 0;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+.admin-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.admin-report-notes-input {
+  flex: 1 1 200px;
+  border: 1px solid rgba(18, 26, 47, 0.15);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.95);
+}
+.dark-phase .admin-report-row {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .admin-report-meta {
+  color: rgba(255, 255, 255, 0.65);
+}
+.dark-phase .admin-report-meta strong {
+  color: rgba(255, 255, 255, 0.95);
+}
+.dark-phase .admin-report-notes-input {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* User-facing report button (under the profile hero) */
+.profile-report-row {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+.profile-report-button {
+  background: transparent;
+  border: 1px solid rgba(18, 26, 47, 0.18);
+  color: rgba(18, 26, 47, 0.65);
+  border-radius: 999px;
+  padding: 0.45rem 0.95rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.profile-report-button:hover {
+  color: #c25048;
+  border-color: rgba(217, 104, 96, 0.5);
+}
+.dark-phase .profile-report-button {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* Modal-internal styles for the report dialog */
+.report-modal-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border: 0;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+.report-modal-fieldset legend {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+.report-modal-radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.report-modal-textarea {
+  width: 100%;
+  border: 1px solid rgba(18, 26, 47, 0.15);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.95);
+  resize: vertical;
+  min-height: 4.5rem;
+}
+.dark-phase .report-modal-textarea {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.report-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.report-modal-status {
+  font-size: 0.8rem;
+  margin: 0.5rem 0;
+}
+.report-modal-status--ok {
+  color: #1f7a4e;
+}
+.report-modal-status--error {
+  color: #c25048;
+}
+
+/* ================================================================== *
+ * Featured curation
+ * ================================================================== */
+
+.admin-featured-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+@media (max-width: 760px) {
+  .admin-featured-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.admin-featured-column h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+.admin-featured-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.admin-featured-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+}
+.admin-featured-row strong {
+  font-size: 0.9rem;
+}
+.admin-featured-handle {
+  color: rgba(18, 26, 47, 0.55);
+  font-size: 0.78rem;
+  margin-left: 0.4rem;
+}
+.admin-featured-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+.admin-featured-icon-button {
+  background: transparent;
+  border: 1px solid rgba(18, 26, 47, 0.15);
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: rgba(18, 26, 47, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.admin-featured-icon-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.admin-featured-badges {
+  display: flex;
+  gap: 0.25rem;
+}
+.admin-featured-badge-toggle {
+  background: transparent;
+  border: 1px solid rgba(18, 26, 47, 0.15);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+  color: rgba(18, 26, 47, 0.65);
+}
+.admin-featured-badge-toggle--on {
+  background: rgba(70, 196, 142, 0.18);
+  border-color: rgba(70, 196, 142, 0.5);
+  color: #1f7a4e;
+}
+.admin-featured-filter {
+  width: 100%;
+  border: 1px solid rgba(18, 26, 47, 0.15);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.95);
+  margin-bottom: 0.75rem;
+}
+.admin-featured-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+.admin-featured-status {
+  font-size: 0.85rem;
+}
+.admin-featured-status--ok { color: #1f7a4e; }
+.admin-featured-status--error { color: #c25048; }
+.dark-phase .admin-featured-row {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .admin-featured-handle {
+  color: rgba(255, 255, 255, 0.55);
+}
+.dark-phase .admin-featured-icon-button {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.7);
+}
+.dark-phase .admin-featured-badge-toggle {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.65);
+}
+.dark-phase .admin-featured-filter {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ================================================================== *
+ * Takedowns
+ * ================================================================== */
+
+.admin-report-takedown-button {
+  background: rgba(194, 80, 72, 0.12);
+  border: 1px solid rgba(194, 80, 72, 0.4);
+  color: #c25048;
+  border-radius: 6px;
+  padding: 0.4rem 0.85rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.admin-report-takedown-button:hover:not(:disabled) {
+  background: rgba(194, 80, 72, 0.2);
+}
+.admin-report-takedown-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dark-phase .admin-report-takedown-button {
+  background: rgba(255, 110, 100, 0.15);
+  border-color: rgba(255, 110, 100, 0.45);
+  color: #ff9b94;
+}
+
+.manage-takedown-banner {
+  margin-top: 1.5rem;
+  padding: 1rem 1.1rem;
+  border-radius: 0.75rem;
+  background: rgba(194, 80, 72, 0.08);
+  border: 1px solid rgba(194, 80, 72, 0.35);
+  color: #7a2a24;
+}
+.manage-takedown-banner-title {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 0.4rem;
+}
+.manage-takedown-banner-body {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.manage-takedown-banner-reason {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.dark-phase .manage-takedown-banner {
+  background: rgba(255, 110, 100, 0.1);
+  border-color: rgba(255, 110, 100, 0.4);
+  color: #ffb6b0;
+}

@@ -21,7 +21,11 @@ import {
   type ProfileRecord,
   validateProfile,
 } from "../../../lib/lexicons.ts";
-import { deleteProfile, upsertProfile } from "../../../lib/registry.ts";
+import {
+  deleteProfile,
+  getProfileByDid,
+  upsertProfile,
+} from "../../../lib/registry.ts";
 import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 
 const ICON_MAX_BYTES = 200_000;
@@ -131,6 +135,26 @@ export const handler = define.handlers({
       return new Response("OAuth session expired, please sign in again", {
         status: 401,
       });
+    }
+
+    /**
+     * Refuse to publish updates while the profile is taken down. The
+     * upsert below would also preserve the takedown via the SQL CASE
+     * branch, but that means the user would see a confusing "Saved!"
+     * for a record we still won't serve. Surface a clear 403 instead.
+     * The user can still DELETE the record from their PDS — that path
+     * removes the row and clears the takedown along with it (so a
+     * later republish would face the report queue afresh, which is
+     * fine).
+     */
+    const existing = await getProfileByDid(user.did, { includeTakenDown: true })
+      .catch(() => null);
+    if (existing?.takedownStatus === "taken_down") {
+      return new Response(
+        "This profile has been taken down by an Atmosphere admin. " +
+          "You can delete it from your PDS, but you can't update it.",
+        { status: 403 },
+      );
     }
 
     const body = await ctx.req.json().catch(() => null) as

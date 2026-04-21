@@ -4,6 +4,7 @@ import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import ProfileHero from "../../components/explore/ProfileHero.tsx";
 import ProfileLinks from "../../components/explore/ProfileLinks.tsx";
+import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import type { Locale } from "../../i18n/mod.ts";
 import {
@@ -51,7 +52,8 @@ interface DetailProps {
 function ProfileDetailPage(
   { profile, signedInUser, ownerHandle, locale }: DetailProps,
 ) {
-  const t = getMessages(locale).explore;
+  const messages = getMessages(locale);
+  const t = messages.explore;
   if (!profile) {
     return (
       <NotFound
@@ -95,6 +97,29 @@ function ProfileDetailPage(
                   {t.detail.editProfile}
                 </a>
               </p>
+            )}
+
+            {!isOwner && (
+              <ReportProfileButton
+                targetId={profile.handle}
+                signedIn={!!signedInUser}
+                copy={{
+                  button: messages.report.button,
+                  modalTitle: messages.report.modalTitle,
+                  modalBody: messages.report.modalBody,
+                  reasonLabel: messages.report.reasonLabel,
+                  detailsLabel: messages.report.detailsLabel,
+                  detailsPlaceholder: messages.report.detailsPlaceholder,
+                  submit: messages.report.submit,
+                  submitting: messages.report.submitting,
+                  cancel: messages.report.cancel,
+                  sentTitle: messages.report.sentTitle,
+                  sentBody: messages.report.sentBody,
+                  duplicate: messages.report.duplicate,
+                  error: messages.report.error,
+                  reasons: messages.report.reasons,
+                }}
+              />
             )}
 
             <div class="profile-footer">

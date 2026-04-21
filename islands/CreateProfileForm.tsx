@@ -25,8 +25,17 @@ interface ExistingProfile {
   subcategories: string[];
   links: LinkEntry[];
   avatar: { ref: string; mime: string } | null;
-  /** Optional developer-facing SVG icon. */
-  icon: { ref: string; mime: string } | null;
+  /** Optional developer-facing SVG icon. `status` is the moderation
+   *  state from the registry index — drives the "Pending review" /
+   *  "Rejected" badge in the icon section. */
+  icon:
+    | {
+      ref: string;
+      mime: string;
+      status?: "pending" | "approved" | "rejected" | null;
+      rejectedReason?: string | null;
+    }
+    | null;
 }
 
 interface Props {
@@ -688,6 +697,31 @@ export default function CreateProfileForm(
           }
           <fieldset class="profile-form-field">
             <legend class="profile-form-label">{tIcon.sectionLabel}</legend>
+            {/**
+             * Surface the moderation state for the *currently saved*
+             * icon so the user knows whether the developer API is
+             * actually serving it. We only show a badge when the user
+             * hasn't queued a replacement (otherwise the badge would
+             * lie until the next save).
+             */}
+            {!iconFile.value && !iconRemoved.value && initial?.icon &&
+              initial.icon.status === "pending" && (
+              <div class="icon-status-banner icon-status-banner--pending">
+                <strong>{tIcon.statusPendingTitle}</strong>
+                <span>{tIcon.statusPendingBody}</span>
+              </div>
+            )}
+            {!iconFile.value && !iconRemoved.value && initial?.icon &&
+              initial.icon.status === "rejected" && (
+              <div class="icon-status-banner icon-status-banner--rejected">
+                <strong>{tIcon.statusRejectedTitle}</strong>
+                <span>
+                  {tIcon.statusRejectedBody(
+                    initial.icon.rejectedReason ?? "(no reason given)",
+                  )}
+                </span>
+              </div>
+            )}
             <div class="profile-form-icon-row">
               <div class="profile-form-icon-preview" aria-hidden="true">
                 {iconPreviewUrl.value

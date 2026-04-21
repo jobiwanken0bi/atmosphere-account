@@ -6,6 +6,28 @@ import type { InValue } from "@libsql/client";
 import { withDb } from "./db.ts";
 import type { FeaturedBadge, LinkEntry } from "./lexicons.ts";
 
+/**
+ * Approval state of the developer-facing SVG icon.
+ *
+ *   - `pending`  — uploaded but not yet reviewed; not served publicly.
+ *   - `approved` — visible via /api/registry/icon/:did + iconUrl.
+ *   - `rejected` — admin rejected; reason kept in `iconRejectedReason`.
+ *
+ * `null` means the profile has no icon at all.
+ */
+export type IconStatus = "pending" | "approved" | "rejected";
+
+/**
+ * Moderation state for the *whole profile*. Distinct from icon status —
+ * a takedown removes the profile from public reads (search, /explore,
+ * /api/registry/*) regardless of icon state. The user's PDS record is
+ * untouched; only this AppView refuses to serve it.
+ *
+ *   - `null`         — live and visible.
+ *   - `taken_down`   — admin removed it; reason in `takedownReason`.
+ */
+export type TakedownStatus = "taken_down";
+
 export interface ProfileRow {
   did: string;
   handle: string;
@@ -19,9 +41,19 @@ export interface ProfileRow {
   links: LinkEntry[];
   avatarCid: string | null;
   avatarMime: string | null;
-  /** Optional developer-facing SVG icon. Not rendered on public profile. */
+  /** Optional developer-facing SVG icon. Not rendered on public profile.
+   *  Approval state lives in `iconStatus`. */
   iconCid: string | null;
   iconMime: string | null;
+  iconStatus: IconStatus | null;
+  iconReviewedBy: string | null;
+  iconReviewedAt: number | null;
+  iconRejectedReason: string | null;
+  /** Profile-level takedown state. `null` means live. */
+  takedownStatus: TakedownStatus | null;
+  takedownReason: string | null;
+  takedownBy: string | null;
+  takedownAt: number | null;
   pdsUrl: string;
   recordCid: string;
   recordRev: string;
@@ -46,6 +78,14 @@ interface RawProfileRow {
   avatar_mime: string | null;
   icon_cid: string | null;
   icon_mime: string | null;
+  icon_status: string | null;
+  icon_reviewed_by: string | null;
+  icon_reviewed_at: number | null;
+  icon_rejected_reason: string | null;
+  takedown_status: string | null;
+  takedown_reason: string | null;
+  takedown_by: string | null;
+  takedown_at: number | null;
   pds_url: string;
   record_cid: string;
   record_rev: string;
@@ -87,6 +127,15 @@ function safeJsonLinks(text: string | null | undefined): LinkEntry[] {
   }
 }
 
+function normalizeIconStatus(v: string | null): IconStatus | null {
+  if (v === "pending" || v === "approved" || v === "rejected") return v;
+  return null;
+}
+
+function normalizeTakedownStatus(v: string | null): TakedownStatus | null {
+  return v === "taken_down" ? "taken_down" : null;
+}
+
 function rowToProfile(r: RawProfileRow): ProfileRow {
   const out: ProfileRow = {
     did: r.did,
@@ -100,6 +149,16 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     avatarMime: r.avatar_mime,
     iconCid: r.icon_cid,
     iconMime: r.icon_mime,
+    iconStatus: normalizeIconStatus(r.icon_status),
+    iconReviewedBy: r.icon_reviewed_by,
+    iconReviewedAt: r.icon_reviewed_at != null
+      ? Number(r.icon_reviewed_at)
+      : null,
+    iconRejectedReason: r.icon_rejected_reason,
+    takedownStatus: normalizeTakedownStatus(r.takedown_status),
+    takedownReason: r.takedown_reason,
+    takedownBy: r.takedown_by,
+    takedownAt: r.takedown_at != null ? Number(r.takedown_at) : null,
     pdsUrl: r.pds_url,
     recordCid: r.record_cid,
     recordRev: r.record_rev,
@@ -154,14 +213,23 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
   if (cats.length === 0) {
     throw new Error("upsertProfile: categories[] is required and non-empty");
   }
+  /**
+   * Initial icon_status for the INSERT branch (and for new icons on
+   * existing rows): `pending` if there's an icon, NULL otherwise.
+   * The ON CONFLICT branch below uses CASE statements to preserve any
+   * existing approval state when the CID hasn't changed.
+   */
+  const initialIconStatus = input.iconCid ? "pending" : null;
   await withDb(async (c) => {
     await c.execute({
       sql: `
         INSERT INTO profile (
           did, handle, name, description, categories, subcategories, links,
-          avatar_cid, avatar_mime, icon_cid, icon_mime, pds_url, record_cid,
-          record_rev, created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          avatar_cid, avatar_mime, icon_cid, icon_mime, icon_status,
+          icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
+          takedown_status, takedown_reason, takedown_by, takedown_at,
+          pds_url, record_cid, record_rev, created_at, indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
           name=excluded.name,
@@ -173,6 +241,37 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           avatar_mime=excluded.avatar_mime,
           icon_cid=excluded.icon_cid,
           icon_mime=excluded.icon_mime,
+          icon_status = CASE
+            WHEN excluded.icon_cid IS NULL THEN NULL
+            WHEN profile.icon_cid IS NOT NULL AND profile.icon_cid = excluded.icon_cid THEN profile.icon_status
+            ELSE 'pending'
+          END,
+          icon_reviewed_by = CASE
+            WHEN excluded.icon_cid IS NULL THEN NULL
+            WHEN profile.icon_cid IS NOT NULL AND profile.icon_cid = excluded.icon_cid THEN profile.icon_reviewed_by
+            ELSE NULL
+          END,
+          icon_reviewed_at = CASE
+            WHEN excluded.icon_cid IS NULL THEN NULL
+            WHEN profile.icon_cid IS NOT NULL AND profile.icon_cid = excluded.icon_cid THEN profile.icon_reviewed_at
+            ELSE NULL
+          END,
+          icon_rejected_reason = CASE
+            WHEN excluded.icon_cid IS NULL THEN NULL
+            WHEN profile.icon_cid IS NOT NULL AND profile.icon_cid = excluded.icon_cid THEN profile.icon_rejected_reason
+            ELSE NULL
+          END,
+          /**
+           * Takedown columns are admin-only state and must survive any
+           * firehose-driven re-upsert. We never overwrite them from the
+           * INSERT branch's NULLs — they're only ever cleared explicitly
+           * by restoreProfile() (or by the user deleting their record,
+           * which DELETEs the row entirely).
+           */
+          takedown_status = profile.takedown_status,
+          takedown_reason = profile.takedown_reason,
+          takedown_by = profile.takedown_by,
+          takedown_at = profile.takedown_at,
           pds_url=excluded.pds_url,
           record_cid=excluded.record_cid,
           record_rev=excluded.record_rev,
@@ -191,6 +290,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.avatarMime ?? null,
         input.iconCid ?? null,
         input.iconMime ?? null,
+        initialIconStatus,
         input.pdsUrl,
         input.recordCid,
         input.recordRev,
@@ -201,9 +301,194 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
   });
 }
 
+/* -------------------------------------------------------------------------- *
+ * Icon moderation                                                            *
+ * -------------------------------------------------------------------------- */
+
+export interface PendingIconRow {
+  did: string;
+  handle: string;
+  name: string;
+  iconCid: string;
+  iconMime: string;
+  indexedAt: number;
+}
+
+/** Profiles awaiting SVG icon approval, oldest first (FIFO review queue). */
+export async function listPendingIcons(): Promise<PendingIconRow[]> {
+  return await withDb(async (c) => {
+    const r = await c.execute(`
+      SELECT did, handle, name, icon_cid, icon_mime, indexed_at
+      FROM profile
+      WHERE icon_status = 'pending' AND icon_cid IS NOT NULL
+      ORDER BY indexed_at ASC
+    `);
+    return r.rows.map((row) => {
+      const x = row as unknown as {
+        did: string;
+        handle: string;
+        name: string;
+        icon_cid: string;
+        icon_mime: string;
+        indexed_at: number;
+      };
+      return {
+        did: x.did,
+        handle: x.handle,
+        name: x.name,
+        iconCid: x.icon_cid,
+        iconMime: x.icon_mime,
+        indexedAt: Number(x.indexed_at),
+      };
+    });
+  });
+}
+
+export async function countPendingIcons(): Promise<number> {
+  return await withDb(async (c) => {
+    const r = await c.execute(
+      `SELECT COUNT(*) AS n FROM profile WHERE icon_status = 'pending' AND icon_cid IS NOT NULL`,
+    );
+    return Number((r.rows[0] as Record<string, unknown>).n ?? 0);
+  });
+}
+
+export async function approveIcon(
+  did: string,
+  reviewer: string,
+): Promise<void> {
+  await withDb(async (c) => {
+    await c.execute({
+      sql: `
+        UPDATE profile SET
+          icon_status = 'approved',
+          icon_reviewed_by = ?,
+          icon_reviewed_at = ?,
+          icon_rejected_reason = NULL
+        WHERE did = ? AND icon_cid IS NOT NULL
+      `,
+      args: [reviewer, Date.now(), did],
+    });
+  });
+}
+
+export async function rejectIcon(
+  did: string,
+  reviewer: string,
+  reason: string,
+): Promise<void> {
+  await withDb(async (c) => {
+    await c.execute({
+      sql: `
+        UPDATE profile SET
+          icon_status = 'rejected',
+          icon_reviewed_by = ?,
+          icon_reviewed_at = ?,
+          icon_rejected_reason = ?
+        WHERE did = ? AND icon_cid IS NOT NULL
+      `,
+      args: [reviewer, Date.now(), reason.slice(0, 500), did],
+    });
+  });
+}
+
 export async function deleteProfile(did: string): Promise<void> {
   await withDb(async (c) => {
     await c.execute({ sql: `DELETE FROM profile WHERE did = ?`, args: [did] });
+  });
+}
+
+/* -------------------------------------------------------------------------- *
+ * Profile-level moderation (takedowns)                                        *
+ * -------------------------------------------------------------------------- */
+
+export interface TakenDownProfileRow {
+  did: string;
+  handle: string;
+  name: string;
+  takedownReason: string;
+  takedownBy: string;
+  takedownAt: number;
+}
+
+/**
+ * Mark a profile as taken down. The row stays in the DB (so the
+ * indexer can preserve the takedown across firehose updates), but
+ * default-filtered read paths exclude it. Idempotent — re-applying
+ * just refreshes the reason/by/at fields.
+ */
+export async function takedownProfile(
+  did: string,
+  reason: string,
+  by: string,
+): Promise<void> {
+  await withDb(async (c) => {
+    await c.execute({
+      sql: `
+        UPDATE profile SET
+          takedown_status = 'taken_down',
+          takedown_reason = ?,
+          takedown_by = ?,
+          takedown_at = ?
+        WHERE did = ?
+      `,
+      args: [reason.slice(0, 500), by, Date.now(), did],
+    });
+  });
+}
+
+/** Reverse a takedown — clears all four columns. */
+export async function restoreProfile(did: string): Promise<void> {
+  await withDb(async (c) => {
+    await c.execute({
+      sql: `
+        UPDATE profile SET
+          takedown_status = NULL,
+          takedown_reason = NULL,
+          takedown_by = NULL,
+          takedown_at = NULL
+        WHERE did = ?
+      `,
+      args: [did],
+    });
+  });
+}
+
+export async function listTakenDownProfiles(): Promise<TakenDownProfileRow[]> {
+  return await withDb(async (c) => {
+    const r = await c.execute(`
+      SELECT did, handle, name, takedown_reason, takedown_by, takedown_at
+      FROM profile
+      WHERE takedown_status = 'taken_down'
+      ORDER BY takedown_at DESC
+    `);
+    return r.rows.map((row) => {
+      const x = row as unknown as {
+        did: string;
+        handle: string;
+        name: string;
+        takedown_reason: string | null;
+        takedown_by: string | null;
+        takedown_at: number | null;
+      };
+      return {
+        did: x.did,
+        handle: x.handle,
+        name: x.name,
+        takedownReason: x.takedown_reason ?? "",
+        takedownBy: x.takedown_by ?? "",
+        takedownAt: x.takedown_at != null ? Number(x.takedown_at) : 0,
+      };
+    });
+  });
+}
+
+export async function countTakenDownProfiles(): Promise<number> {
+  return await withDb(async (c) => {
+    const r = await c.execute(
+      `SELECT COUNT(*) AS n FROM profile WHERE takedown_status = 'taken_down'`,
+    );
+    return Number((r.rows[0] as Record<string, unknown>).n ?? 0);
   });
 }
 
@@ -215,10 +500,25 @@ const SELECT_PROFILE = `
   LEFT JOIN featured f ON f.did = p.did
 `;
 
-export async function getProfileByDid(did: string): Promise<ProfileRow | null> {
+/**
+ * Public read paths default to hiding taken-down profiles. Pass
+ * `includeTakenDown: true` from owner-aware UI (e.g. /explore/manage)
+ * and admin tooling that needs to inspect or restore the row.
+ */
+export interface ProfileLookupOptions {
+  includeTakenDown?: boolean;
+}
+
+export async function getProfileByDid(
+  did: string,
+  opts: ProfileLookupOptions = {},
+): Promise<ProfileRow | null> {
+  const where = opts.includeTakenDown
+    ? `WHERE p.did = ?`
+    : `WHERE p.did = ? AND p.takedown_status IS NULL`;
   return await withDb(async (c) => {
     const r = await c.execute({
-      sql: `${SELECT_PROFILE} WHERE p.did = ? LIMIT 1`,
+      sql: `${SELECT_PROFILE} ${where} LIMIT 1`,
       args: [did],
     });
     if (r.rows.length === 0) return null;
@@ -228,10 +528,14 @@ export async function getProfileByDid(did: string): Promise<ProfileRow | null> {
 
 export async function getProfileByHandle(
   handle: string,
+  opts: ProfileLookupOptions = {},
 ): Promise<ProfileRow | null> {
+  const where = opts.includeTakenDown
+    ? `WHERE p.handle = ?`
+    : `WHERE p.handle = ? AND p.takedown_status IS NULL`;
   return await withDb(async (c) => {
     const r = await c.execute({
-      sql: `${SELECT_PROFILE} WHERE p.handle = ? LIMIT 1`,
+      sql: `${SELECT_PROFILE} ${where} LIMIT 1`,
       args: [handle],
     });
     if (r.rows.length === 0) return null;
@@ -261,7 +565,13 @@ export async function searchProfiles(
   const pageSize = Math.min(48, Math.max(1, opts.pageSize ?? 24));
   const offset = (page - 1) * pageSize;
 
-  const where: string[] = [];
+  /**
+   * Default-exclude taken-down profiles. There is no opt-in path for
+   * search because surfacing taken-down rows in /explore would defeat
+   * the purpose of the takedown; admin tooling reads via
+   * `listTakenDownProfiles` instead.
+   */
+  const where: string[] = ["p.takedown_status IS NULL"];
   const args: InValue[] = [];
 
   if (opts.query && opts.query.trim()) {
@@ -284,7 +594,7 @@ export async function searchProfiles(
     args.push(opts.subcategory);
   }
 
-  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const whereClause = `WHERE ${where.join(" AND ")}`;
 
   return await withDb(async (c) => {
     const countRes = await c.execute({
@@ -317,12 +627,38 @@ export async function searchProfiles(
   });
 }
 
+/**
+ * Lightweight projection of every profile in the registry, used by
+ * admin curation UIs (featured picker, etc.). Skips JSON fields that
+ * the picker doesn't need so the payload stays small even with
+ * hundreds of entries.
+ */
+export interface ProfilePickerRow {
+  did: string;
+  handle: string;
+  name: string;
+}
+
+export async function listAllProfilesForPicker(): Promise<ProfilePickerRow[]> {
+  return await withDb(async (c) => {
+    const r = await c.execute(
+      `SELECT did, handle, name FROM profile
+       WHERE takedown_status IS NULL
+       ORDER BY handle ASC`,
+    );
+    return r.rows.map((row) => {
+      const x = row as unknown as { did: string; handle: string; name: string };
+      return { did: x.did, handle: x.handle, name: x.name };
+    });
+  });
+}
+
 export async function listFeaturedProfiles(limit = 12): Promise<ProfileRow[]> {
   return await withDb(async (c) => {
     const r = await c.execute({
       sql: `
         ${SELECT_PROFILE}
-        WHERE f.did IS NOT NULL
+        WHERE f.did IS NOT NULL AND p.takedown_status IS NULL
         ORDER BY COALESCE(f.position, 999999) ASC, p.indexed_at DESC
         LIMIT ?
       `,

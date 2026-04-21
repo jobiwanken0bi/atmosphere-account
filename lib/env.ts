@@ -64,6 +64,27 @@ export const SESSION_SECRET = safeGet("SESSION_SECRET") ??
 
 export const ATMOSPHERE_DID = safeGet("ATMOSPHERE_DID");
 
+/**
+ * Comma-separated list of DIDs allowed to access /admin and the
+ * /api/admin/* endpoints. The signed-in OAuth session DID must match
+ * one of these for admin middleware to let the request through. If
+ * unset, /admin is effectively unreachable (good default for forks).
+ */
+export const ADMIN_DIDS: string[] = (safeGet("ADMIN_DIDS") ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter((s) => s.length > 0);
+
+/**
+ * Server-side secret used to hash reporter IPs before storing them.
+ * The hashes are used for 24h dedup + soft rate-limit only — they
+ * never leave the server. Falls back to `SESSION_SECRET` so deployments
+ * still get *some* salt instead of an empty key, but operators should
+ * set a dedicated value so rotating one secret doesn't break the
+ * other.
+ */
+export const REPORT_IP_SECRET = safeGet("REPORT_IP_SECRET") ?? SESSION_SECRET;
+
 export const TURSO_DATABASE_URL = safeGet("TURSO_DATABASE_URL");
 export const TURSO_AUTH_TOKEN = safeGet("TURSO_AUTH_TOKEN");
 

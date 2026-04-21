@@ -32,6 +32,15 @@ export const handler = define.handlers({
     if (!profile || !profile.iconCid) {
       return new Response("not found", { status: 404 });
     }
+    /** Refuse to serve until an admin has approved this icon. The blob
+     *  itself is on the user's PDS regardless — we just gate our proxy +
+     *  iconUrl emission, which is what developer-facing API consumers
+     *  rely on. The owner is allowed to see their own pending/rejected
+     *  icon so the manage-page preview keeps working. */
+    if (profile.iconStatus !== "approved") {
+      const owner = ctx.state.user?.did === did;
+      if (!owner) return new Response("not found", { status: 404 });
+    }
     try {
       const upstream = await fetchBlobPublic(
         profile.pdsUrl,
@@ -52,9 +61,13 @@ export const handler = define.handlers({
         "content-disposition",
         'inline; filename="atmosphere-icon.svg"',
       );
+      // Owner-only previews of unapproved icons must not enter shared
+      // caches; only the public approved path gets the long s-maxage.
       headers.set(
         "cache-control",
-        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
+        profile.iconStatus === "approved"
+          ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
+          : "private, max-age=60",
       );
       headers.set("etag", profile.iconCid);
       return new Response(upstream.body, { status: 200, headers });

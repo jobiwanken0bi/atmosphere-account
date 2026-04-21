@@ -77,6 +77,14 @@ const SCHEMA_STATEMENTS: string[] = [
     avatar_mime TEXT,
     icon_cid TEXT,
     icon_mime TEXT,
+    icon_status TEXT,
+    icon_reviewed_by TEXT,
+    icon_reviewed_at INTEGER,
+    icon_rejected_reason TEXT,
+    takedown_status TEXT,
+    takedown_reason TEXT,
+    takedown_by TEXT,
+    takedown_at INTEGER,
     pds_url TEXT NOT NULL,
     record_cid TEXT NOT NULL,
     record_rev TEXT NOT NULL,
@@ -134,6 +142,35 @@ const SCHEMA_STATEMENTS: string[] = [
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   )`,
+  /**
+   * User reports against profiles. Anonymous reports carry a hashed IP
+   * for dedup + rate-limit; signed-in reports also record the
+   * reporter's DID. Admin actions write `status`, `admin_notes`,
+   * `resolved_at`, `resolved_by`.
+   */
+  `CREATE TABLE IF NOT EXISTS report (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_did TEXT NOT NULL,
+    reporter_did TEXT,
+    reporter_ip_hash TEXT,
+    reason TEXT NOT NULL,
+    details TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    admin_notes TEXT,
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER,
+    resolved_by TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS report_status_target ON report(status, target_did)`,
+  `CREATE INDEX IF NOT EXISTS report_dedup ON report(target_did, reporter_ip_hash, reason, created_at)`,
+  /**
+   * Hot-path index for excluding taken-down profiles from public reads.
+   * The vast majority of rows have NULL `takedown_status`, so a partial
+   * index would be ideal; SQLite supports `WHERE` on indexes only via
+   * CREATE INDEX … WHERE, but the planner won't always pick it for
+   * `IS NULL` predicates. Plain index covers both directions.
+   */
+  `CREATE INDEX IF NOT EXISTS profile_takedown ON profile(takedown_status)`,
 ];
 
 /**
@@ -170,6 +207,46 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "icon_mime",
         ddl: "ALTER TABLE profile ADD COLUMN icon_mime TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_status",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_status TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_reviewed_by",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_reviewed_by TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_reviewed_at",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_reviewed_at INTEGER",
+      },
+      {
+        table: "profile",
+        column: "icon_rejected_reason",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_rejected_reason TEXT",
+      },
+      {
+        table: "profile",
+        column: "takedown_status",
+        ddl: "ALTER TABLE profile ADD COLUMN takedown_status TEXT",
+      },
+      {
+        table: "profile",
+        column: "takedown_reason",
+        ddl: "ALTER TABLE profile ADD COLUMN takedown_reason TEXT",
+      },
+      {
+        table: "profile",
+        column: "takedown_by",
+        ddl: "ALTER TABLE profile ADD COLUMN takedown_by TEXT",
+      },
+      {
+        table: "profile",
+        column: "takedown_at",
+        ddl: "ALTER TABLE profile ADD COLUMN takedown_at INTEGER",
       },
     ];
   for (const m of additiveColumns) {

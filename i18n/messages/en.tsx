@@ -599,7 +599,161 @@ const en = {
         remove: "Remove SVG",
         invalidType: "Icon must be an SVG (image/svg+xml).",
         tooLarge: "Icon must be 200KB or smaller.",
+        statusPendingTitle: "Pending review",
+        statusPendingBody:
+          "Your icon is on your PDS but won't appear in the developer API until an admin approves it.",
+        statusRejectedTitle: "Rejected",
+        statusRejectedBody: (reason: string): string =>
+          `An admin rejected this icon. Reason: ${reason}. Replace it below to resubmit.`,
       },
+    },
+  },
+
+  /**
+   * Lightweight in-app moderation/curation dashboard. Routes are
+   * gated by `ADMIN_DIDS` so non-admin users never see this copy.
+   */
+  admin: {
+    backToOverview: "Back to admin overview",
+    errorPrefix: "Error",
+    overview: {
+      headline: "Admin",
+      subhead:
+        "Approve developer icons, triage reports, and curate the featured rail.",
+      iconsTitle: "Pending icons",
+      iconsBody:
+        "Developer-facing SVGs awaiting approval before they're served via the public API.",
+      reportsTitle: "Open reports",
+      reportsBody: "User-submitted reports against profiles in Explore.",
+      featuredTitle: "Featured",
+      featuredBody:
+        "Curate the projects that appear in the featured rail at the top of Explore.",
+      takedownsTitle: "Taken down",
+      takedownsBody:
+        "Profiles removed from Explore. Restorable at any time — the user's PDS record is untouched.",
+    },
+    statusBadge: {
+      pending: "Pending review",
+      approved: "Approved",
+      rejected: "Rejected",
+    },
+    icons: {
+      headline: "Pending developer icons",
+      subhead:
+        "Each icon was uploaded to the project's PDS and sanitised, but won't be served via /api/registry/icon/:did until you approve it.",
+      empty: "Nothing in the queue. Check back later.",
+      approve: "Approve",
+      reject: "Reject",
+      confirmReject: "Reject this icon. Tell the project owner why:",
+      rejectReasonPlaceholder:
+        "e.g. unrelated to the project, low quality, contains text",
+      submitReject: "Submit rejection",
+      cancel: "Cancel",
+      markedApproved: "Approved",
+      markedRejected: "Rejected",
+    },
+    reports: {
+      headline: "Open reports",
+      subhead:
+        "Reports submitted against Explore profiles. Mark actioned or dismiss to close the report; take down to remove the profile from Explore (auto-resolves all other reports against it).",
+      empty: "No open reports.",
+      action: "Mark actioned",
+      dismiss: "Dismiss",
+      takedown: "Take down profile",
+      takedownPrompt:
+        "Take this profile down. Why? (saved with the takedown record)",
+      takedownDoneLabel: "Taken down",
+      actionedLabel: "Actioned",
+      dismissedLabel: "Dismissed",
+      noteLabel: "Notes (optional)",
+      notePlaceholder: "What did you do?",
+      reasonLabel: "Reason",
+      reporterLabel: "Reporter",
+      anonymousReporter: "Anonymous",
+      detailsLabel: "Details",
+      submittedAt: "Submitted",
+      reasons: {
+        not_a_project: "Not a project",
+        harmful: "Harmful or hateful",
+        impersonation: "Impersonation",
+        spam: "Spam",
+        other: "Other",
+      },
+    },
+    takedowns: {
+      headline: "Taken-down profiles",
+      subhead:
+        "Profiles currently hidden from Explore and the public registry API. Restore returns them to /explore immediately. The user's PDS record is never touched.",
+      empty: "No profiles are currently taken down.",
+      reasonLabel: "Reason",
+      byLabel: "Taken down by",
+      atLabel: "Taken down on",
+      restore: "Restore",
+      confirmRestore:
+        "Restore this profile? It will reappear in Explore immediately.",
+      restored: "Restored",
+    },
+    featured: {
+      headline: "Curate featured",
+      subhead:
+        "Pick the projects that appear in the featured rail. Drag to reorder. Save & publish writes the canonical record on the Atmosphere account's PDS.",
+      saveAndPublish: "Save & publish",
+      saving: "Publishing…",
+      saved: "Published.",
+      filterPlaceholder: "Filter by name, handle, or DID…",
+      featuredHeading: "Featured (in order)",
+      candidatesHeading: "All projects",
+      empty: "No projects in the registry yet.",
+      moveUp: "Move up",
+      moveDown: "Move down",
+      remove: "Remove",
+      add: "Feature",
+      badgesLabel: "Badges",
+      badgeVerified: "Verified",
+      badgeOfficial: "Official",
+    },
+  },
+
+  /**
+   * Banner shown on /explore/manage when the owner's profile has been
+   * taken down by an admin. Explains the state and surfaces the
+   * recorded reason; the Publish button below also returns 403 from
+   * the API so the user gets a consistent message either way.
+   */
+  manageTakedown: {
+    title: "Your profile has been removed from Explore",
+    body:
+      "An Atmosphere admin took your profile down. Updates won't be published until it's restored. The record on your PDS is untouched — you can delete it from your PDS at any time.",
+    reasonLabel: "Reason given",
+  },
+
+  /**
+   * User-facing report flow on /explore/<handle>. The button mounts
+   * the modal; modal handles submission to /api/registry/profile/:id/report.
+   */
+  report: {
+    button: "Report profile",
+    buttonShort: "Report",
+    modalTitle: "Report this profile",
+    modalBody:
+      "Send a report to the Atmosphere admins. Reports are anonymous unless you're signed in.",
+    reasonLabel: "What's wrong?",
+    detailsLabel: "Add details (optional)",
+    detailsPlaceholder: "Anything we should know?",
+    submit: "Send report",
+    submitting: "Sending…",
+    cancel: "Cancel",
+    sentTitle: "Report sent",
+    sentBody: "Thanks. An admin will review it shortly.",
+    duplicate:
+      "You've already submitted this report recently. We'll review the existing one.",
+    error: "Couldn't send the report. Please try again.",
+    reasons: {
+      not_a_project: "Not a real project",
+      harmful: "Harmful or hateful content",
+      impersonation: "Impersonating someone",
+      spam: "Spam",
+      other: "Other",
     },
   },
 
