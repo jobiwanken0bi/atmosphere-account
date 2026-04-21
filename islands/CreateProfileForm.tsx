@@ -11,11 +11,14 @@ import { useT } from "../i18n/mod.ts";
 interface ExistingProfile {
   name: string;
   description: string;
-  category: string;
+  /** All categories that apply to the project (always non-empty). The
+   *  first item is the primary, used for sort/grouping in lists. */
+  categories: string[];
   subcategories: string[];
   website: string | null;
+  repoUrl: string | null;
+  openSource: boolean;
   bskyClient: string | null;
-  tags: string[];
   avatar: { ref: string; mime: string } | null;
 }
 
@@ -65,13 +68,18 @@ export default function CreateProfileForm(
 
   const name = useSignal(initial?.name ?? "");
   const description = useSignal(initial?.description ?? "");
-  const category = useSignal<string>(initial?.category ?? "app");
+  // categories is the source of truth — the lexicon requires it to be a
+  // non-empty array. The first item is treated as the primary category.
+  const categories = useSignal<string[]>(
+    initial?.categories?.length ? initial.categories : ["app"],
+  );
   const subcategories = useSignal<string[]>(initial?.subcategories ?? []);
   const website = useSignal(initial?.website ?? "");
+  const repoUrl = useSignal(initial?.repoUrl ?? "");
+  const openSource = useSignal<boolean>(initial?.openSource ?? false);
   const bskyClient = useSignal<string>(
     initial?.bskyClient ?? DEFAULT_BSKY_CLIENT_ID,
   );
-  const tagsText = useSignal((initial?.tags ?? []).join(", "));
   const avatarKeep = useSignal<BlobRefShape | null>(null);
   /** Preview URL precedence: locally-picked file blob > existing registry
    *  record (cached proxy) > prefill source (Bluesky PDS getBlob) > none. */
@@ -109,6 +117,27 @@ export default function CreateProfileForm(
     }
   };
 
+  const toggleCategory = (key: string) => {
+    const current = categories.value;
+    if (current.includes(key)) {
+      // Don't let the user unselect their last remaining category — at
+      // least one is required by the lexicon.
+      if (current.length <= 1) return;
+      categories.value = current.filter((k) => k !== key);
+    } else {
+      if (current.length >= 4) return;
+      categories.value = [...current, key];
+    }
+  };
+
+  /**
+   * `app` is the only category with subcategories defined right now. If
+   * the user deselects `app`, hide the subcategory chips by clearing the
+   * underlying selection (kept as an effect-like helper so the form's
+   * payload doesn't carry stale subcategories on submit).
+   */
+  const showSubcategories = categories.value.includes("app");
+
   const onAvatarChange = (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -133,21 +162,23 @@ export default function CreateProfileForm(
   const onSubmit = async (event: Event) => {
     event.preventDefault();
     if (submitting.value) return;
+    if (categories.value.length === 0) {
+      message.value = { kind: "error", text: tForm.categoryRequired };
+      return;
+    }
     submitting.value = true;
     message.value = null;
 
     try {
-      const tags = tagsText.value.split(",").map((s) => s.trim()).filter(
-        Boolean,
-      ).slice(0, 10);
       const payload: Record<string, unknown> = {
         name: name.value.trim(),
         description: description.value.trim(),
-        category: category.value,
-        subcategories: subcategories.value,
+        categories: categories.value,
+        subcategories: showSubcategories ? subcategories.value : [],
         website: website.value.trim() || undefined,
+        repoUrl: repoUrl.value.trim() || undefined,
+        openSource: openSource.value,
         bskyClient: bskyClient.value || undefined,
-        tags,
       };
       if (avatarFile.value) {
         payload.avatarUpload = {
@@ -300,29 +331,32 @@ export default function CreateProfileForm(
 
           <fieldset class="profile-form-field">
             <legend class="profile-form-label">{tForm.categoryLabel}</legend>
-            <div class="profile-form-chips">
-              {CATEGORIES.map((c: Category) => (
-                <label
-                  key={c}
-                  class={`profile-form-chip ${
-                    category.value === c ? "is-selected" : ""
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="category"
-                    value={c}
-                    checked={category.value === c}
-                    onChange={() => category.value = c}
-                  />
-                  <span>{t.categories[c]}</span>
-                </label>
-              ))}
+            <div class="profile-form-chips" role="group">
+              {CATEGORIES.map((c: Category) => {
+                const selected = categories.value.includes(c);
+                return (
+                  <label
+                    key={c}
+                    class={`profile-form-chip ${
+                      selected ? "is-selected" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      name="categories"
+                      value={c}
+                      checked={selected}
+                      onChange={() => toggleCategory(c)}
+                    />
+                    <span>{t.categories[c]}</span>
+                  </label>
+                );
+              })}
             </div>
             <p class="profile-form-hint">{tForm.categoryHint}</p>
           </fieldset>
 
-          {category.value === "app" && (
+          {showSubcategories && (
             <fieldset class="profile-form-field">
               <legend class="profile-form-label">
                 {tForm.subcategoriesLabel}
@@ -355,6 +389,36 @@ export default function CreateProfileForm(
                 website.value = (e.currentTarget as HTMLInputElement).value}
               class="profile-form-input"
             />
+          </label>
+
+          <label class="profile-form-field">
+            <span class="profile-form-label">{tForm.repoUrlLabel}</span>
+            <input
+              type="url"
+              placeholder={tForm.repoUrlPlaceholder}
+              value={repoUrl.value}
+              onInput={(e) =>
+                repoUrl.value = (e.currentTarget as HTMLInputElement).value}
+              class="profile-form-input"
+            />
+            <p class="profile-form-hint">{tForm.repoUrlHint}</p>
+          </label>
+
+          <label class="profile-form-toggle">
+            <input
+              type="checkbox"
+              checked={openSource.value}
+              onChange={(e) =>
+                openSource.value = (e.currentTarget as HTMLInputElement).checked}
+            />
+            <span class="profile-form-toggle-body">
+              <span class="profile-form-toggle-label">
+                {tForm.openSourceLabel}
+              </span>
+              <span class="profile-form-toggle-hint">
+                {tForm.openSourceHint}
+              </span>
+            </span>
           </label>
 
           <fieldset class="profile-form-field">
@@ -392,19 +456,6 @@ export default function CreateProfileForm(
               })}
             </div>
           </fieldset>
-
-          <label class="profile-form-field">
-            <span class="profile-form-label">{tForm.tagsLabel}</span>
-            <input
-              type="text"
-              placeholder={tForm.tagsPlaceholder}
-              value={tagsText.value}
-              onInput={(e) =>
-                tagsText.value = (e.currentTarget as HTMLInputElement).value}
-              class="profile-form-input"
-            />
-            <p class="profile-form-hint">{tForm.tagsHint}</p>
-          </label>
         </div>
       </div>
 

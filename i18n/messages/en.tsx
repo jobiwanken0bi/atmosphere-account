@@ -34,6 +34,16 @@ const en = {
       "Effects on. Turn off to keep colors and clouds fixed like the first screen.",
     effectsOff:
       "Effects off. Sky matches the first-load colors and cloud positions.",
+    account: {
+      menuLabel: "Account menu",
+      signedInAs: "Signed in as",
+      signIn: "Sign in",
+      signInHint: "Sign in with your Atmosphere account to publish a profile.",
+      manageProfile: "Manage profile",
+      viewProfile: "View profile",
+      signOut: "Sign out",
+      avatarAlt: "Account",
+    },
   },
 
   hero: {
@@ -218,6 +228,13 @@ const en = {
       "Account ownership, moderation, and algorithmic choice — the system is locked open by design.",
   },
 
+  homeCta: {
+    headline: "See what's been built.",
+    body:
+      "Browse apps, account providers, moderators, and infrastructure — all built on the same open foundation.",
+    button: "Explore Apps",
+  },
+
   footer: {
     logoAlt: "Atmosphere",
     tagline: "Building a better internet, owned by the people.",
@@ -282,10 +299,15 @@ const en = {
     },
   },
 
+  /**
+   * Category labels are intentionally singular — they tag *one* project
+   * ("App", "Account provider", etc.). The Explore tabs use the same
+   * labels for consistency; "All" stays as the catch-all entry.
+   */
   categories: {
-    app: "Apps",
-    accountProvider: "Account providers",
-    moderator: "Moderators",
+    app: "App",
+    accountProvider: "Account provider",
+    moderator: "Moderator",
     infrastructure: "Infrastructure",
     all: "All",
   },
@@ -332,6 +354,9 @@ const en = {
     detail: {
       website: "Website",
       openOn: "Open on",
+      sourceOn: "Source on",
+      sourceCode: "Source code",
+      openSourceBadge: "Open source",
       lastUpdated: "Last updated",
       hostedOn: "Hosted on",
       editProfile: "Edit this profile",
@@ -346,12 +371,11 @@ const en = {
       headline: "Sign in with your project's Atmosphere account",
       body:
         "Anyone can list a project. Sign in with the account that controls the project — anyone with that account can publish or update the entry. Nothing else is written to your PDS.",
-      handlePlaceholder: "yourproject.com or you.bsky.social",
+      signInLabel: "Sign in with your Atmosphere handle",
+      handlePlaceholder: "yourproject.com",
       signIn: "Sign in",
       configError:
         "OAuth isn't configured on this deployment yet. Try again shortly.",
-      whyHandle:
-        "We resolve your handle to your atproto DID, then redirect you to your account's authorization server.",
       previewLoading: "Looking up account…",
       previewNotFound: "No account found for that handle.",
     },
@@ -384,19 +408,23 @@ const en = {
       namePlaceholder: "e.g. Bluesky",
       descriptionLabel: "Short description",
       descriptionPlaceholder: "What does it do? Who's it for?",
-      categoryLabel: "Category",
+      categoryLabel: "Categories",
       categoryHint:
-        "Pick the best fit. A project can be both an app and an account provider.",
+        "Pick all that apply. A project can be both an app and an account provider.",
       subcategoriesLabel: "Subcategories (optional)",
       subcategoriesHint: "For apps. Pick up to a few.",
       websiteLabel: "Website",
       websitePlaceholder: "https://yourproject.com",
+      repoUrlLabel: "Source repository (optional)",
+      repoUrlHint:
+        "Tangled or GitHub URL — we'll show a button on your profile with the matching icon.",
+      repoUrlPlaceholder: "https://github.com/yourorg/yourproject",
+      openSourceLabel: "This project is open source",
+      openSourceHint:
+        "Adds a small \"Open source\" badge to your profile so visitors know.",
       bskyClientLabel: "Bluesky client",
       bskyClientHint:
         "Pick which client opens when visitors click the Bluesky button on your profile. Your handle works on all of them.",
-      tagsLabel: "Tags (optional)",
-      tagsHint: "Comma-separated, up to 10. Helps people find you in search.",
-      tagsPlaceholder: "open-source, indie, federated",
       avatarLabel: "Project icon",
       avatarHint: "PNG, JPEG, or WebP. 1MB max. Square works best.",
       avatarReplace: "Replace icon",
@@ -404,6 +432,7 @@ const en = {
       requiredHint: "Required",
       avatarTooLarge: "Avatar must be 1MB or smaller.",
       confirmDelete: "Remove your project from Explore?",
+      categoryRequired: "Pick at least one category.",
     },
   },
 

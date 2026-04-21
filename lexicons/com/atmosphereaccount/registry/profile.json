@@ -8,7 +8,7 @@
       "key": "literal:self",
       "record": {
         "type": "object",
-        "required": ["name", "description", "category", "createdAt"],
+        "required": ["name", "description", "categories", "createdAt"],
         "properties": {
           "name": {
             "type": "string",
@@ -30,15 +30,20 @@
             "maxSize": 1000000,
             "description": "Project icon. Recommended 512x512 square."
           },
-          "category": {
-            "type": "string",
-            "knownValues": [
-              "app",
-              "accountProvider",
-              "moderator",
-              "infrastructure"
-            ],
-            "description": "Top-level category in the registry."
+          "categories": {
+            "type": "array",
+            "minLength": 1,
+            "maxLength": 4,
+            "items": {
+              "type": "string",
+              "knownValues": [
+                "app",
+                "accountProvider",
+                "moderator",
+                "infrastructure"
+              ]
+            },
+            "description": "All categories that apply to the project. A project can be both an app and an account provider, etc. The first item is treated as the primary category for sort/grouping."
           },
           "subcategories": {
             "type": "array",
@@ -54,6 +59,16 @@
             "format": "uri",
             "maxLength": 256
           },
+          "repoUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 256,
+            "description": "Source repository URL. Tangled and GitHub URLs render with the matching icon on the public profile."
+          },
+          "openSource": {
+            "type": "boolean",
+            "description": "True if the project is open source. Adds an \"Open source\" badge on the public profile."
+          },
           "bskyClient": {
             "type": "string",
             "knownValues": [
@@ -64,14 +79,6 @@
               "witchsky"
             ],
             "description": "Preferred Bluesky-compatible client to open when visitors click the project's Bluesky link. Identity (handle) is the same across all clients."
-          },
-          "tags": {
-            "type": "array",
-            "maxLength": 10,
-            "items": {
-              "type": "string",
-              "maxLength": 32
-            }
           },
           "createdAt": {
             "type": "string",

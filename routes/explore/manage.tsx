@@ -31,11 +31,12 @@ export const handler = define.handlers({
       initial = {
         name: existing.name,
         description: existing.description,
-        category: existing.category,
+        categories: existing.categories,
         subcategories: existing.subcategories,
         website: existing.website,
+        repoUrl: existing.repoUrl,
+        openSource: existing.openSource,
         bskyClient: existing.bskyClient,
-        tags: existing.tags,
         avatar: existing.avatarCid && existing.avatarMime
           ? { ref: existing.avatarCid, mime: existing.avatarMime }
           : null,
@@ -50,11 +51,12 @@ export const handler = define.handlers({
           initial = {
             name: bsky.displayName ?? "",
             description: bsky.description ?? "",
-            category: "app",
+            categories: ["app"],
             subcategories: [],
             website: null,
+            repoUrl: null,
+            openSource: false,
             bskyClient: null,
-            tags: [],
             avatar: bsky.avatar
               ? {
                 ref: bsky.avatar.ref.$link,
@@ -83,6 +85,7 @@ export const handler = define.handlers({
         initial={initial}
         initialAvatarUrl={initialAvatarUrl}
         initialPublished={!!existing}
+        publicProfileHandle={existing?.handle ?? null}
         t={t}
       />,
     );
@@ -94,19 +97,33 @@ interface ManagePageProps {
   initial: Parameters<typeof CreateProfileForm>[0]["initial"];
   initialAvatarUrl: string | null;
   initialPublished: boolean;
+  publicProfileHandle: string | null;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
 function ManagePage(
-  { user, initial, initialAvatarUrl, initialPublished, t }: ManagePageProps,
+  {
+    user,
+    initial,
+    initialAvatarUrl,
+    initialPublished,
+    publicProfileHandle,
+    t,
+  }: ManagePageProps,
 ) {
   const explore = t.explore;
   return (
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav />
+        <Nav
+          account={{
+            user: { did: user.did, handle: user.handle },
+            avatarUrl: "/api/me/avatar",
+            publicProfileHandle,
+          }}
+        />
         <section class="explore-manage" style={{ paddingTop: "8rem" }}>
           <div class="container" style={{ maxWidth: "920px" }}>
             <div class="manage-header">
@@ -137,7 +154,7 @@ function ManagePage(
             </div>
           </div>
         </section>
-        <Footer />
+        <Footer variant="compact" />
       </div>
     </div>
   );

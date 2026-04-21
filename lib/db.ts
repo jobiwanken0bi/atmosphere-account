@@ -70,11 +70,12 @@ const SCHEMA_STATEMENTS: string[] = [
     handle TEXT NOT NULL,
     name TEXT NOT NULL,
     description TEXT NOT NULL,
-    category TEXT NOT NULL,
+    categories TEXT NOT NULL DEFAULT '[]',
     subcategories TEXT NOT NULL DEFAULT '[]',
     website TEXT,
+    repo_url TEXT,
+    open_source INTEGER NOT NULL DEFAULT 0,
     bsky_client TEXT,
-    tags TEXT NOT NULL DEFAULT '[]',
     avatar_cid TEXT,
     avatar_mime TEXT,
     pds_url TEXT NOT NULL,
@@ -83,24 +84,23 @@ const SCHEMA_STATEMENTS: string[] = [
     created_at INTEGER NOT NULL,
     indexed_at INTEGER NOT NULL
   )`,
-  `CREATE INDEX IF NOT EXISTS profile_category ON profile(category)`,
   `CREATE INDEX IF NOT EXISTS profile_handle ON profile(handle)`,
   `CREATE VIRTUAL TABLE IF NOT EXISTS profile_fts USING fts5(
-    name, description, tags, content='profile', content_rowid='rowid'
+    name, description, content='profile', content_rowid='rowid'
   )`,
   `CREATE TRIGGER IF NOT EXISTS profile_ai AFTER INSERT ON profile BEGIN
-    INSERT INTO profile_fts(rowid, name, description, tags)
-    VALUES (new.rowid, new.name, new.description, new.tags);
+    INSERT INTO profile_fts(rowid, name, description)
+    VALUES (new.rowid, new.name, new.description);
   END`,
   `CREATE TRIGGER IF NOT EXISTS profile_ad AFTER DELETE ON profile BEGIN
-    INSERT INTO profile_fts(profile_fts, rowid, name, description, tags)
-    VALUES('delete', old.rowid, old.name, old.description, old.tags);
+    INSERT INTO profile_fts(profile_fts, rowid, name, description)
+    VALUES('delete', old.rowid, old.name, old.description);
   END`,
   `CREATE TRIGGER IF NOT EXISTS profile_au AFTER UPDATE ON profile BEGIN
-    INSERT INTO profile_fts(profile_fts, rowid, name, description, tags)
-    VALUES('delete', old.rowid, old.name, old.description, old.tags);
-    INSERT INTO profile_fts(rowid, name, description, tags)
-    VALUES (new.rowid, new.name, new.description, new.tags);
+    INSERT INTO profile_fts(profile_fts, rowid, name, description)
+    VALUES('delete', old.rowid, old.name, old.description);
+    INSERT INTO profile_fts(rowid, name, description)
+    VALUES (new.rowid, new.name, new.description);
   END`,
   `CREATE TABLE IF NOT EXISTS featured (
     did TEXT PRIMARY KEY,
@@ -140,8 +140,10 @@ const SCHEMA_STATEMENTS: string[] = [
 /**
  * Additive migrations applied after the base schema. SQLite has no
  * `ADD COLUMN IF NOT EXISTS`, so we attempt the ALTER and swallow the
- * "duplicate column" error. Drop columns are no-ops in SQLite (the
- * unused legacy columns simply stay around, holding NULLs).
+ * "duplicate column" error. SQLite makes column drops painful, so legacy
+ * columns we no longer use (e.g. the old single-value `category`, `tags`)
+ * are just left around and ignored — running `scripts/wipe-registry.ts`
+ * recreates the table cleanly when desired.
  */
 async function applyAdditiveMigrations(
   c: { execute: (s: string) => Promise<unknown> },
@@ -152,6 +154,23 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "bsky_client",
         ddl: "ALTER TABLE profile ADD COLUMN bsky_client TEXT",
+      },
+      {
+        table: "profile",
+        column: "categories",
+        ddl:
+          "ALTER TABLE profile ADD COLUMN categories TEXT NOT NULL DEFAULT '[]'",
+      },
+      {
+        table: "profile",
+        column: "repo_url",
+        ddl: "ALTER TABLE profile ADD COLUMN repo_url TEXT",
+      },
+      {
+        table: "profile",
+        column: "open_source",
+        ddl:
+          "ALTER TABLE profile ADD COLUMN open_source INTEGER NOT NULL DEFAULT 0",
       },
     ];
   for (const m of additiveColumns) {

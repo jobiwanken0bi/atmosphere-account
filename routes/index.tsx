@@ -8,6 +8,7 @@ import Features from "../components/Features.tsx";
 import BlueskySection from "../components/BlueskySection.tsx";
 import CrossPollination from "../components/CrossPollination.tsx";
 import YourChoice from "../components/ModerationAndAlgorithms.tsx";
+import HomeExploreCta from "../components/HomeExploreCta.tsx";
 import Footer from "../components/Footer.tsx";
 
 export default define.page(function Home() {
@@ -23,6 +24,7 @@ export default define.page(function Home() {
         <BlueskySection />
         <CrossPollination />
         <YourChoice />
+        <HomeExploreCta />
         <Footer />
       </div>
     </div>

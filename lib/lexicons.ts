@@ -50,12 +50,17 @@ export interface ProfileRecord {
   name: string;
   description: string;
   avatar?: BlobRef;
-  category: Category | string;
+  /** All categories that apply to the project (1-4). The first item is the
+   *  primary category used for sort/grouping in lists. */
+  categories: string[];
   subcategories?: string[];
   website?: string;
+  /** Source repo URL — host (GitHub / Tangled / other) is auto-detected. */
+  repoUrl?: string;
+  /** True if the project is open source (drives the small profile badge). */
+  openSource?: boolean;
   /** Preferred Bluesky client (bluesky | blacksky | anisota | deer | witchsky). */
   bskyClient?: string;
-  tags?: string[];
   createdAt: string;
 }
 
@@ -127,14 +132,31 @@ export function validateProfile(
   ) {
     return { ok: false, error: "description: 1..500 chars required" };
   }
-  if (
-    !isStr(v.category) ||
-    !(CATEGORIES as readonly string[]).includes(v.category as string)
-  ) {
-    return {
-      ok: false,
-      error: `category must be one of ${CATEGORIES.join(", ")}`,
-    };
+  // categories[]: required, deduped, every entry must be a known CATEGORY.
+  // The first entry is treated as the primary category by the UI.
+  let normalizedCategories: string[];
+  {
+    if (!Array.isArray(v.categories) || v.categories.length === 0) {
+      return { ok: false, error: "categories: non-empty array required" };
+    }
+    if (v.categories.length > 4) {
+      return { ok: false, error: "categories: at most 4" };
+    }
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of v.categories) {
+      if (!isStr(c) || !(CATEGORIES as readonly string[]).includes(c)) {
+        return {
+          ok: false,
+          error: `categories: items must be one of ${CATEGORIES.join(", ")}`,
+        };
+      }
+      if (!seen.has(c)) {
+        seen.add(c);
+        out.push(c);
+      }
+    }
+    normalizedCategories = out;
   }
   if (!isStr(v.createdAt)) {
     return { ok: false, error: "createdAt required (ISO 8601)" };
@@ -144,6 +166,12 @@ export function validateProfile(
   }
   if (v.website !== undefined && !isUrl(v.website)) {
     return { ok: false, error: "website: must be http(s) URL" };
+  }
+  if (v.repoUrl !== undefined && !isUrl(v.repoUrl)) {
+    return { ok: false, error: "repoUrl: must be http(s) URL" };
+  }
+  if (v.openSource !== undefined && typeof v.openSource !== "boolean") {
+    return { ok: false, error: "openSource: must be boolean" };
   }
   if (
     v.bskyClient !== undefined &&
@@ -168,16 +196,6 @@ export function validateProfile(
       }
     }
   }
-  if (v.tags !== undefined) {
-    if (!Array.isArray(v.tags) || v.tags.length > 10) {
-      return { ok: false, error: "tags: array of <=10 strings" };
-    }
-    for (const s of v.tags) {
-      if (!isStr(s, 32)) {
-        return { ok: false, error: "tags: items must be strings <=32" };
-      }
-    }
-  }
 
   return {
     ok: true,
@@ -186,11 +204,12 @@ export function validateProfile(
       name: v.name as string,
       description: v.description as string,
       avatar: v.avatar as BlobRef | undefined,
-      category: v.category as string,
+      categories: normalizedCategories,
       subcategories: v.subcategories as string[] | undefined,
       website: v.website as string | undefined,
+      repoUrl: v.repoUrl as string | undefined,
+      openSource: v.openSource as boolean | undefined,
       bskyClient: v.bskyClient as string | undefined,
-      tags: v.tags as string[] | undefined,
       createdAt: v.createdAt as string,
     },
   };

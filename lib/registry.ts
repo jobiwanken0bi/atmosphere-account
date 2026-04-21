@@ -4,18 +4,21 @@
  */
 import type { InValue } from "@libsql/client";
 import { withDb } from "./db.ts";
-import type { Category, FeaturedBadge } from "./lexicons.ts";
+import type { FeaturedBadge } from "./lexicons.ts";
 
 export interface ProfileRow {
   did: string;
   handle: string;
   name: string;
   description: string;
-  category: Category | string;
+  /** All categories that apply (always non-empty). The first item is the
+   *  primary category used for sort/grouping in lists. */
+  categories: string[];
   subcategories: string[];
   website: string | null;
+  repoUrl: string | null;
+  openSource: boolean;
   bskyClient: string | null;
-  tags: string[];
   avatarCid: string | null;
   avatarMime: string | null;
   pdsUrl: string;
@@ -35,11 +38,12 @@ interface RawProfileRow {
   handle: string;
   name: string;
   description: string;
-  category: string;
+  categories: string;
   subcategories: string;
   website: string | null;
+  repo_url: string | null;
+  open_source: number | null;
   bsky_client: string | null;
-  tags: string;
   avatar_cid: string | null;
   avatar_mime: string | null;
   pds_url: string;
@@ -67,11 +71,12 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     handle: r.handle,
     name: r.name,
     description: r.description,
-    category: r.category,
+    categories: safeJsonArray(r.categories),
     subcategories: safeJsonArray(r.subcategories),
     website: r.website,
+    repoUrl: r.repo_url,
+    openSource: Number(r.open_source ?? 0) === 1,
     bskyClient: r.bsky_client,
-    tags: safeJsonArray(r.tags),
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
     pdsUrl: r.pds_url,
@@ -94,11 +99,13 @@ export interface UpsertProfileInput {
   handle: string;
   name: string;
   description: string;
-  category: string;
+  /** Required: 1-4 known category strings. The first is the primary. */
+  categories: string[];
   subcategories: string[];
   website?: string | null;
+  repoUrl?: string | null;
+  openSource?: boolean | null;
   bskyClient?: string | null;
-  tags: string[];
   avatarCid?: string | null;
   avatarMime?: string | null;
   pdsUrl: string;
@@ -109,24 +116,43 @@ export interface UpsertProfileInput {
 
 export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
   const now = Date.now();
+  // Defensive dedupe + drop empties; the lexicon validator already does
+  // this but the worker also calls upsertProfile from the Jetstream path,
+  // and the registry invariant (categories non-empty) is worth enforcing
+  // close to the SQL.
+  const cats = (() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of input.categories) {
+      if (typeof c === "string" && c && !seen.has(c)) {
+        seen.add(c);
+        out.push(c);
+      }
+    }
+    return out;
+  })();
+  if (cats.length === 0) {
+    throw new Error("upsertProfile: categories[] is required and non-empty");
+  }
   await withDb(async (c) => {
     await c.execute({
       sql: `
         INSERT INTO profile (
-          did, handle, name, description, category, subcategories,
-          website, bsky_client, tags,
+          did, handle, name, description, categories, subcategories,
+          website, repo_url, open_source, bsky_client,
           avatar_cid, avatar_mime, pds_url, record_cid, record_rev,
           created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
           name=excluded.name,
           description=excluded.description,
-          category=excluded.category,
+          categories=excluded.categories,
           subcategories=excluded.subcategories,
           website=excluded.website,
+          repo_url=excluded.repo_url,
+          open_source=excluded.open_source,
           bsky_client=excluded.bsky_client,
-          tags=excluded.tags,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
           pds_url=excluded.pds_url,
@@ -140,11 +166,12 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.handle,
         input.name,
         input.description,
-        input.category,
+        JSON.stringify(cats),
         JSON.stringify(input.subcategories ?? []),
         input.website ?? null,
+        input.repoUrl ?? null,
+        input.openSource ? 1 : 0,
         input.bskyClient ?? null,
-        JSON.stringify(input.tags ?? []),
         input.avatarCid ?? null,
         input.avatarMime ?? null,
         input.pdsUrl,
@@ -226,7 +253,9 @@ export async function searchProfiles(
     args.push(`${q}*`);
   }
   if (opts.category) {
-    where.push(`p.category = ?`);
+    where.push(
+      `EXISTS (SELECT 1 FROM json_each(p.categories) WHERE value = ?)`,
+    );
     args.push(opts.category);
   }
   if (opts.subcategory) {

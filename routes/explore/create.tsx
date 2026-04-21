@@ -21,7 +21,11 @@ export default define.page(function ExploreCreate(ctx) {
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav />
+        {/* user is null here (we redirect when signed in), so the menu
+         *  shows the "Sign in" entry — useful if someone lands on this
+         *  page from a deep link and wants the same affordance as the
+         *  rest of the explore section. */}
+        <Nav account={{ user: null }} />
         <section class="explore-create" style={{ paddingTop: "8rem" }}>
           <div class="container" style={{ maxWidth: "640px" }}>
             <p class="text-eyebrow">{t.create.eyebrow}</p>
@@ -44,7 +48,7 @@ export default define.page(function ExploreCreate(ctx) {
             </div>
           </div>
         </section>
-        <Footer />
+        <Footer variant="compact" />
       </div>
     </div>
   );

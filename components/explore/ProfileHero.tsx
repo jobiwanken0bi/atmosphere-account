@@ -11,6 +11,7 @@ export default function ProfileHero({ profile }: Props) {
   const tSub = t.subcategories as Record<string, string>;
   const tBadges = t.badges;
   const featured = profile.featured;
+  const cats = profile.categories;
 
   return (
     <div class="profile-hero glass">
@@ -45,9 +46,16 @@ export default function ProfileHero({ profile }: Props) {
         </div>
         <p class="profile-hero-handle">@{profile.handle}</p>
         <div class="profile-hero-meta">
-          <span class="profile-card-category">
-            {tCat[profile.category] ?? profile.category}
-          </span>
+          {cats.map((c) => (
+            <span key={c} class="profile-card-category">
+              {tCat[c] ?? c}
+            </span>
+          ))}
+          {profile.openSource && (
+            <span class="profile-card-sub profile-card-sub--oss">
+              {t.explore.detail.openSourceBadge}
+            </span>
+          )}
           {profile.subcategories.map((s) => (
             <span key={s} class="profile-card-sub">
               {tSub[s] ?? s}

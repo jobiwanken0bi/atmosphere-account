@@ -1,6 +1,24 @@
 import { useT } from "../i18n/mod.ts";
+import AccountMenu from "../islands/AccountMenu.tsx";
 
-export default function Nav() {
+interface NavProps {
+  /**
+   * When set, render the explore-page AccountMenu rail directly under
+   * the protocol button. `user: null` shows a generic avatar with a
+   * "Sign in" entry; an authenticated user shows their pic + manage /
+   * sign-out actions.
+   *
+   * Pages that don't want the menu (the marketing homepage) just omit
+   * this prop entirely.
+   */
+  account?: {
+    user: { did: string; handle: string } | null;
+    avatarUrl?: string | null;
+    publicProfileHandle?: string | null;
+  };
+}
+
+export default function Nav({ account }: NavProps = {}) {
   const t = useT();
   return (
     <>
@@ -10,19 +28,23 @@ export default function Nav() {
           <span class="nav-logo-text">{t.nav.brand}</span>
         </a>
         <div class="nav-links">
-          <a href="/explore" class="nav-btn nav-btn-ghost">
+          {/* Protocol moved to the footer — the top-right slot now
+            * belongs to Explore (the primary call to action) with the
+            * account button stacked beneath it via the rail below. */}
+          <a href="/explore" class="nav-btn nav-btn-glass">
             {t.nav.explore}
-          </a>
-          <a
-            href="https://atproto.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="nav-btn nav-btn-glass"
-          >
-            {t.nav.protocol}
           </a>
         </div>
       </nav>
+      {account !== undefined && (
+        <div class="account-menu-rail" id="account-menu-rail">
+          <AccountMenu
+            user={account.user}
+            avatarUrl={account.avatarUrl ?? null}
+            publicProfileHandle={account.publicProfileHandle ?? null}
+          />
+        </div>
+      )}
       <div class="nav-effects-bar" id="nav-effects-bar">
         <label class="nav-sky-switch-label">
           <span class="nav-sky-switch-text">{t.nav.effects}</span>

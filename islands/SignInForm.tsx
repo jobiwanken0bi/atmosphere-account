@@ -125,7 +125,7 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
     >
       <div class="signin-form-preview-wrap" ref={wrapRef}>
         <label class="signin-form-label" for="signin-handle">
-          {t.explore.create.handlePlaceholder}
+          {t.explore.create.signInLabel}
         </label>
         <div class="signin-form-row">
           <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
@@ -249,7 +249,6 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
         </div>
       </div>
       {error.value && <p class="signin-form-error">{error.value}</p>}
-      <p class="signin-form-hint">{t.explore.create.whyHandle}</p>
     </form>
   );
 }

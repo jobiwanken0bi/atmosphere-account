@@ -1297,8 +1297,13 @@ h1, h2, h3, h4 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: center;
+  text-align: center;
   gap: 2rem;
-  margin-bottom: 2rem;
+  margin: 0 auto 2rem;
+  /* Constrain so wrapping behaves predictably and the links visually
+   * cluster directly beneath the centered logo on every viewport. */
+  max-width: 36rem;
 }
 
 .footer-quote {
@@ -1982,6 +1987,22 @@ body {
   color: rgba(255, 255, 255, 0.85);
   border-color: rgba(255, 255, 255, 0.15);
 }
+/**
+ * Open-source pill — same shape as the other meta chips, accented with the
+ * site's signature blue so it reads as a positive indicator without
+ * shouting at the rest of the metadata row.
+ */
+.profile-card-sub--oss {
+  background: rgba(59, 130, 246, 0.14);
+  color: rgba(29, 78, 216, 0.95);
+  border-color: rgba(59, 130, 246, 0.32);
+  font-weight: 600;
+}
+.dark-phase .profile-card-sub--oss {
+  background: rgba(96, 165, 250, 0.18);
+  color: rgba(191, 219, 254, 0.95);
+  border-color: rgba(96, 165, 250, 0.35);
+}
 
 .profile-badge {
   display: inline-flex;
@@ -2506,6 +2527,55 @@ body {
   color: rgba(255, 255, 255, 0.65);
 }
 
+/**
+ * Inline checkbox-style toggle row used for the "open source" flag. Lives
+ * between regular labelled fields, so the spacing matches `.profile-form-field`
+ * (gap inherited from the parent), but the row itself reads as a control
+ * with its own affordance.
+ */
+.profile-form-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(18, 26, 47, 0.12);
+  background: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+}
+.profile-form-toggle input[type="checkbox"] {
+  margin-top: 0.15rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+.profile-form-toggle-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.profile-form-toggle-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: rgba(18, 26, 47, 0.92);
+}
+.profile-form-toggle-hint {
+  font-size: 0.78rem;
+  color: rgba(18, 26, 47, 0.55);
+}
+.dark-phase .profile-form-toggle {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.dark-phase .profile-form-toggle-label {
+  color: rgba(255, 255, 255, 0.92);
+}
+.dark-phase .profile-form-toggle-hint {
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .profile-form-chips {
   display: flex;
   gap: 0.4rem;
@@ -2796,4 +2866,328 @@ body.explore-no-effects #nav-effects-bar {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ================================
+   Account menu (explore-page nav rail)
+   ================================ */
+
+/* Fixed rail that hangs directly under the nav, right-aligned, so the
+ * trigger sits visually "underneath the Explore button". The 0.55rem
+ * offset adds a small visual gap so the rail's contents don't crash
+ * into the nav's bottom border (especially once .nav.scrolled paints
+ * its glass background). Sits above the effects bar's z-index so the
+ * dropdown can paint over hero text. */
+.account-menu-rail {
+  position: fixed;
+  top: calc(var(--nav-bar-height) + 0.55rem);
+  right: 1.5rem;
+  z-index: 110;
+  pointer-events: none;
+}
+
+.account-menu-rail .account-menu {
+  pointer-events: auto;
+}
+
+/* On the explore section we hide the effects bar entirely, so the rail
+ * tucks right up under the nav with a hairline of breathing room. */
+.account-menu,
+.account-menu-signin {
+  pointer-events: auto;
+}
+
+.account-menu {
+  position: relative;
+  display: inline-block;
+}
+
+/* Signed-out variant: a text-only ghost button (same family as the
+ * old Explore button before it was promoted to the glass style).
+ * Sized down slightly so it sits comfortably under the Explore CTA
+ * without competing visually. */
+.account-menu-signin {
+  display: inline-block;
+  padding: 0.35rem 0.95rem;
+  font-size: 0.8rem;
+}
+
+.account-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem 0.3rem 0.35rem;
+  border-radius: 100px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 6px 18px rgba(14, 20, 40, 0.08);
+  cursor: pointer;
+  color: #0e1428;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.account-menu-trigger:hover {
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 24px rgba(14, 20, 40, 0.12);
+}
+
+.account-menu-trigger:focus-visible {
+  outline: 2px solid rgba(80, 130, 220, 0.6);
+  outline-offset: 2px;
+}
+
+.account-menu-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #aac6f0 0%, #7da4dc 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.account-menu-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.account-menu-avatar-initial {
+  font-family: "IBM Plex Mono", monospace;
+  /* Anti-alias against the gradient so the letter doesn't look fuzzy */
+  -webkit-font-smoothing: antialiased;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.account-menu-chevron {
+  font-size: 0.7rem;
+  line-height: 1;
+  color: rgba(18, 26, 47, 0.7);
+  transition: transform 0.15s ease;
+}
+
+.account-menu-trigger[aria-expanded="true"] .account-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.account-menu-popup {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  min-width: 240px;
+  padding: 0.45rem;
+  /* Same z-strategy as the sign-in preview: sit above hero text and
+   * the footer regardless of any sibling stacking contexts. */
+  z-index: 1000;
+  isolation: isolate;
+  /* Override the default .glass tint for higher legibility — the menu
+   * sits over arbitrary hero gradients and we don't want the items to
+   * disappear into the sky. */
+}
+.account-menu-popup.glass {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(18, 26, 47, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 16px;
+  box-shadow:
+    0 20px 50px rgba(14, 20, 40, 0.22),
+    0 6px 16px rgba(14, 20, 40, 0.1);
+}
+
+.account-menu-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.55rem 0.7rem 0.4rem;
+}
+
+.account-menu-header-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(18, 26, 47, 0.55);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.account-menu-header-handle {
+  font-size: 0.92rem;
+  color: #0e1428;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.account-menu-divider {
+  height: 1px;
+  margin: 0.25rem 0.5rem;
+  background: rgba(18, 26, 47, 0.1);
+}
+
+.account-menu-form {
+  margin: 0;
+  display: contents;
+}
+
+.account-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  color: #0e1428;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.account-menu-item:hover,
+.account-menu-item:focus-visible {
+  background: rgba(18, 26, 47, 0.06);
+  outline: none;
+}
+
+.account-menu-item-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #4a7bd9 0%, #2c5db4 100%);
+  font-weight: 600;
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+.account-menu-item-primary:hover,
+.account-menu-item-primary:focus-visible {
+  background: linear-gradient(135deg, #5a8be9 0%, #3c6dc4 100%);
+}
+
+.account-menu-item-danger {
+  color: rgba(146, 32, 32, 0.95);
+}
+
+.account-menu-item-danger:hover,
+.account-menu-item-danger:focus-visible {
+  background: rgba(146, 32, 32, 0.08);
+}
+
+.account-menu-hint {
+  margin: 0;
+  padding: 0.6rem 0.7rem 0.45rem;
+  font-size: 0.82rem;
+  color: rgba(18, 26, 47, 0.7);
+  line-height: 1.4;
+}
+
+/* Dark-phase variants — match the sign-in preview palette so both
+ * float on the same hero gradients without re-tinting work. */
+.dark-phase .account-menu-trigger {
+  color: #f3f5fb;
+  background: rgba(22, 28, 48, 0.55);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.dark-phase .account-menu-trigger:hover {
+  background: rgba(34, 42, 68, 0.7);
+}
+
+.dark-phase .account-menu-chevron {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.dark-phase .account-menu-popup.glass {
+  background: rgba(22, 28, 48, 0.94);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.55),
+    0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.dark-phase .account-menu-header-label {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.dark-phase .account-menu-header-handle {
+  color: #f3f5fb;
+}
+
+.dark-phase .account-menu-divider {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark-phase .account-menu-item {
+  color: #f3f5fb;
+}
+
+.dark-phase .account-menu-item:hover,
+.dark-phase .account-menu-item:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark-phase .account-menu-item-danger {
+  color: #f4a3a3;
+}
+
+.dark-phase .account-menu-item-danger:hover,
+.dark-phase .account-menu-item-danger:focus-visible {
+  background: rgba(244, 163, 163, 0.12);
+}
+
+.dark-phase .account-menu-hint {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@media (max-width: 480px) {
+  .account-menu-rail {
+    right: 0.85rem;
+  }
+  .account-menu-popup {
+    min-width: 220px;
+  }
+}
+
+/* ================================
+   Homepage closing CTA → /explore
+   ================================ */
+
+.home-explore-cta {
+  /* Tight under YourChoice's footnote — tighten the top padding so
+   * the section doesn't feel orphaned, and keep generous bottom
+   * breathing room before the footer. */
+  padding-top: 2rem;
+}
+
+.home-explore-cta-button {
+  /* A bit chunkier than the default explore-cta-primary so it reads
+   * as a primary CTA from a distance. */
+  padding: 0.95rem 1.9rem;
+  font-size: 1rem;
+  font-weight: 600;
+  gap: 0.6rem;
+  box-shadow: 0 12px 30px rgba(14, 20, 40, 0.1);
+}
+
+.home-explore-cta-button:hover .home-explore-cta-arrow {
+  transform: translateX(3px);
+}
+
+.home-explore-cta-arrow {
+  transition: transform 0.18s ease;
 }

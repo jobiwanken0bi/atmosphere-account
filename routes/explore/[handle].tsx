@@ -6,16 +6,33 @@ import ProfileHero from "../../components/explore/ProfileHero.tsx";
 import ProfileLinks from "../../components/explore/ProfileLinks.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import type { Locale } from "../../i18n/mod.ts";
-import { getProfileByHandle, type ProfileRow } from "../../lib/registry.ts";
+import {
+  getProfileByDid,
+  getProfileByHandle,
+  type ProfileRow,
+} from "../../lib/registry.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
     const handle = decodeURIComponent(ctx.params.handle).toLowerCase();
-    const profile = await getProfileByHandle(handle).catch(() => null);
+    const user = ctx.state.user;
+    /** Pull the profile being viewed and (in parallel) the signed-in
+     *  user's own registry entry so the AccountMenu can deep-link to
+     *  their public page. The lookups are cheap and trigger from the
+     *  same DB connection. */
+    const [profile, ownerProfile] = await Promise.all([
+      getProfileByHandle(handle).catch(() => null),
+      user ? getProfileByDid(user.did).catch(() => null) : Promise.resolve(
+        null,
+      ),
+    ]);
     return ctx.render(
       <ProfileDetailPage
         profile={profile}
-        signedInDid={ctx.state.user?.did ?? null}
+        signedInUser={user
+          ? { did: user.did, handle: user.handle }
+          : null}
+        ownerHandle={ownerProfile?.handle ?? null}
         locale={ctx.state.locale}
       />,
       { status: profile ? 200 : 404 },
@@ -25,14 +42,30 @@ export const handler = define.handlers({
 
 interface DetailProps {
   profile: ProfileRow | null;
-  signedInDid: string | null;
+  signedInUser: { did: string; handle: string } | null;
+  ownerHandle: string | null;
   locale: Locale;
 }
 
-function ProfileDetailPage({ profile, signedInDid, locale }: DetailProps) {
+function ProfileDetailPage(
+  { profile, signedInUser, ownerHandle, locale }: DetailProps,
+) {
   const t = getMessages(locale).explore;
-  if (!profile) return <NotFound locale={locale} />;
-  const isOwner = signedInDid === profile.did;
+  if (!profile) {
+    return (
+      <NotFound
+        locale={locale}
+        signedInUser={signedInUser}
+        ownerHandle={ownerHandle}
+      />
+    );
+  }
+  const isOwner = signedInUser?.did === profile.did;
+  const account = {
+    user: signedInUser,
+    avatarUrl: signedInUser ? "/api/me/avatar" : null,
+    publicProfileHandle: ownerHandle,
+  };
   const lastUpdated = new Date(profile.indexedAt).toISOString().slice(0, 10);
   const pdsHost = (() => {
     try {
@@ -45,7 +78,7 @@ function ProfileDetailPage({ profile, signedInDid, locale }: DetailProps) {
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav />
+        <Nav account={account} />
         <section class="explore-profile-detail">
           <div class="container" style={{ maxWidth: "880px" }}>
             <p>
@@ -76,19 +109,30 @@ function ProfileDetailPage({ profile, signedInDid, locale }: DetailProps) {
             </div>
           </div>
         </section>
-        <Footer />
+        <Footer variant="compact" />
       </div>
     </div>
   );
 }
 
-function NotFound({ locale }: { locale: Locale }) {
+function NotFound(
+  { locale, signedInUser, ownerHandle }: {
+    locale: Locale;
+    signedInUser: { did: string; handle: string } | null;
+    ownerHandle: string | null;
+  },
+) {
   const t = getMessages(locale).explore.detail;
+  const account = {
+    user: signedInUser,
+    avatarUrl: signedInUser ? "/api/me/avatar" : null,
+    publicProfileHandle: ownerHandle,
+  };
   return (
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav />
+        <Nav account={account} />
         <section class="explore-profile-detail">
           <div
             class="container"
@@ -103,7 +147,7 @@ function NotFound({ locale }: { locale: Locale }) {
             </p>
           </div>
         </section>
-        <Footer />
+        <Footer variant="compact" />
       </div>
     </div>
   );

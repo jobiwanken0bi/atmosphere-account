@@ -8,6 +8,7 @@ import SubcategoryChips from "../components/explore/SubcategoryChips.tsx";
 import FeaturedRail from "../components/explore/FeaturedRail.tsx";
 import ProfileGrid from "../components/explore/ProfileGrid.tsx";
 import {
+  getProfileByDid,
   listFeaturedProfiles,
   type ProfileRow,
   searchProfiles,
@@ -24,6 +25,11 @@ interface ExploreData {
   profiles: ProfileRow[];
   featured: ProfileRow[];
   signedIn: boolean;
+  account: {
+    user: { did: string; handle: string } | null;
+    avatarUrl: string | null;
+    publicProfileHandle: string | null;
+  };
 }
 
 export const handler = define.handlers({
@@ -38,7 +44,16 @@ export const handler = define.handlers({
     const query = url.searchParams.get("q")?.trim() ?? "";
     const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
 
-    const [search, featured] = await Promise.all([
+    /** When signed in, look up the registry profile alongside the
+     *  search/featured queries so the AccountMenu can show the user's
+     *  registered handle (and link to their public profile) in one
+     *  round-trip instead of an extra request after page load. */
+    const user = ctx.state.user;
+    const ownerProfilePromise = user
+      ? getProfileByDid(user.did).catch(() => null)
+      : Promise.resolve(null);
+
+    const [search, featured, ownerProfile] = await Promise.all([
       searchProfiles({
         query: query || undefined,
         category: category ?? undefined,
@@ -52,6 +67,7 @@ export const handler = define.handlers({
       !category && !query
         ? listFeaturedProfiles(8).catch(() => [])
         : Promise.resolve([] as ProfileRow[]),
+      ownerProfilePromise,
     ]);
 
     const data: ExploreData = {
@@ -63,7 +79,12 @@ export const handler = define.handlers({
       total: search.total,
       profiles: search.profiles,
       featured,
-      signedIn: !!ctx.state.user,
+      signedIn: !!user,
+      account: {
+        user: user ? { did: user.did, handle: user.handle } : null,
+        avatarUrl: user ? "/api/me/avatar" : null,
+        publicProfileHandle: ownerProfile?.handle ?? null,
+      },
     };
     return ctx.render(<ExplorePage data={data} locale={ctx.state.locale} />);
   },
@@ -79,7 +100,7 @@ function ExplorePage({ data, locale: _locale }: ExplorePageProps) {
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav />
+        <Nav account={data.account} />
         <StoreHero
           initialQuery={data.query}
           signedIn={data.signedIn}
@@ -104,7 +125,7 @@ function ExplorePage({ data, locale: _locale }: ExplorePageProps) {
           </div>
         </section>
 
-        <Footer />
+        <Footer variant="compact" />
       </div>
     </div>
   );

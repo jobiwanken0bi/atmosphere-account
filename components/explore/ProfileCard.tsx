@@ -7,9 +7,10 @@ interface Props {
 
 export default function ProfileCard({ profile }: Props) {
   const t = useT();
-  const tCat = t.categories;
-  const categoryLabel = (tCat as Record<string, string>)[profile.category] ??
-    profile.category;
+  const tCat = t.categories as Record<string, string>;
+  /** Show every category the project applies to (e.g. "App + Account
+   *  provider"), capped to keep the card from getting busy. */
+  const cats = profile.categories.slice(0, 3);
   const featured = profile.featured;
   return (
     <a
@@ -49,7 +50,16 @@ export default function ProfileCard({ profile }: Props) {
         <p class="profile-card-handle">@{profile.handle}</p>
         <p class="profile-card-description">{profile.description}</p>
         <p class="profile-card-meta">
-          <span class="profile-card-category">{categoryLabel}</span>
+          {cats.map((c) => (
+            <span key={c} class="profile-card-category">
+              {tCat[c] ?? c}
+            </span>
+          ))}
+          {profile.openSource && (
+            <span class="profile-card-sub profile-card-sub--oss">
+              {t.explore.detail.openSourceBadge}
+            </span>
+          )}
           {profile.subcategories.slice(0, 2).map((s) => {
             const sub = (t.subcategories as Record<string, string>)[s] ?? s;
             return (

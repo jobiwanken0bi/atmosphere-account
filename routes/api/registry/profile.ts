@@ -20,11 +20,13 @@ import { deleteProfile, upsertProfile } from "../../../lib/registry.ts";
 interface ProfileFormPayload {
   name?: string;
   description?: string;
-  category?: string;
+  /** Required multi-select. The first entry is the primary category. */
+  categories?: string[];
   subcategories?: string[];
   website?: string;
+  repoUrl?: string;
+  openSource?: boolean;
   bskyClient?: string;
-  tags?: string[];
   /** Either keep an existing avatar (passed as the BlobRef) or upload new bytes */
   avatar?: {
     $type: "blob";
@@ -92,14 +94,36 @@ export const handler = define.handlers({
       }
     }
 
+    // Dedupe categories defensively. The lexicon validator below also
+    // does this, but normalising here means we surface a clean 400 ("at
+    // least one category") instead of a validator error string.
+    const normalizedCategories = (() => {
+      const raw = Array.isArray(body.categories)
+        ? body.categories.filter((x): x is string => typeof x === "string")
+        : [];
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const c of raw) {
+        const t = c.trim();
+        if (t && !seen.has(t)) {
+          seen.add(t);
+          out.push(t);
+        }
+      }
+      return out;
+    })();
+
     const draft: ProfileRecord = {
       name: trimOrNull(body.name) ?? "",
       description: trimOrNull(body.description) ?? "",
-      category: trimOrNull(body.category) ?? "",
+      categories: normalizedCategories,
       subcategories: asArray(body.subcategories),
       website: trimOrNull(body.website),
+      repoUrl: trimOrNull(body.repoUrl),
+      openSource: typeof body.openSource === "boolean"
+        ? body.openSource
+        : undefined,
       bskyClient: trimOrNull(body.bskyClient),
-      tags: asArray(body.tags),
       avatar: avatar ?? undefined,
       createdAt: new Date().toISOString(),
     };
@@ -140,11 +164,12 @@ export const handler = define.handlers({
         handle: user.handle,
         name: validation.value.name,
         description: validation.value.description,
-        category: validation.value.category,
+        categories: validation.value.categories,
         subcategories: validation.value.subcategories ?? [],
         website: validation.value.website ?? null,
+        repoUrl: validation.value.repoUrl ?? null,
+        openSource: validation.value.openSource ?? false,
         bskyClient: validation.value.bskyClient ?? null,
-        tags: validation.value.tags ?? [],
         avatarCid: validation.value.avatar?.ref.$link ?? null,
         avatarMime: validation.value.avatar?.mimeType ?? null,
         pdsUrl: session.pdsUrl,
