@@ -85,7 +85,7 @@ export const ATMOSPHERE_SERVICES: AtmosphereService[] = [
     description: "Social coding platform",
     visible: true,
     allowUrlOverride: true,
-    defaultUrl: (handle: string) => `https://${TANGLED_DOMAIN}/@${handle}`,
+    defaultUrl: (handle: string) => `https://${TANGLED_DOMAIN}/${handle}`,
     iconUrl: faviconFor(TANGLED_DOMAIN),
   },
   {
