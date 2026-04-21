@@ -230,8 +230,7 @@ const en = {
 
   homeCta: {
     headline: "See what's been built.",
-    body:
-      "Browse apps, account providers, moderators, and infrastructure — all built on the same open foundation.",
+    body: "Browse apps and services in the Atmosphere.",
     button: "Explore Apps",
   },
 
