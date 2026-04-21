@@ -19,6 +19,9 @@ export interface ProfileRow {
   links: LinkEntry[];
   avatarCid: string | null;
   avatarMime: string | null;
+  /** Optional developer-facing SVG icon. Not rendered on public profile. */
+  iconCid: string | null;
+  iconMime: string | null;
   pdsUrl: string;
   recordCid: string;
   recordRev: string;
@@ -41,6 +44,8 @@ interface RawProfileRow {
   links: string | null;
   avatar_cid: string | null;
   avatar_mime: string | null;
+  icon_cid: string | null;
+  icon_mime: string | null;
   pds_url: string;
   record_cid: string;
   record_rev: string;
@@ -66,9 +71,7 @@ function safeJsonLinks(text: string | null | undefined): LinkEntry[] {
     const v = JSON.parse(text);
     if (!Array.isArray(v)) return [];
     return v
-      .filter((x): x is Record<string, unknown> =>
-        !!x && typeof x === "object"
-      )
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
       .filter((x) => typeof x.kind === "string")
       .map((x) => {
         const e: LinkEntry = { kind: x.kind as string };
@@ -95,6 +98,8 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     links: safeJsonLinks(r.links),
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
+    iconCid: r.icon_cid,
+    iconMime: r.icon_mime,
     pdsUrl: r.pds_url,
     recordCid: r.record_cid,
     recordRev: r.record_rev,
@@ -121,6 +126,8 @@ export interface UpsertProfileInput {
   links?: LinkEntry[] | null;
   avatarCid?: string | null;
   avatarMime?: string | null;
+  iconCid?: string | null;
+  iconMime?: string | null;
   pdsUrl: string;
   recordCid: string;
   recordRev: string;
@@ -152,9 +159,9 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
       sql: `
         INSERT INTO profile (
           did, handle, name, description, categories, subcategories, links,
-          avatar_cid, avatar_mime, pds_url, record_cid,
+          avatar_cid, avatar_mime, icon_cid, icon_mime, pds_url, record_cid,
           record_rev, created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
           name=excluded.name,
@@ -164,6 +171,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           links=excluded.links,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
+          icon_cid=excluded.icon_cid,
+          icon_mime=excluded.icon_mime,
           pds_url=excluded.pds_url,
           record_cid=excluded.record_cid,
           record_rev=excluded.record_rev,
@@ -180,6 +189,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         JSON.stringify(input.links ?? []),
         input.avatarCid ?? null,
         input.avatarMime ?? null,
+        input.iconCid ?? null,
+        input.iconMime ?? null,
         input.pdsUrl,
         input.recordCid,
         input.recordRev,

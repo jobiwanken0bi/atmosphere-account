@@ -2866,6 +2866,53 @@ body {
   }
 }
 
+/* ---- Developer SVG icon slot (separate from main avatar) -------------- */
+/* Smaller and squarer than the main avatar — this is a developer asset,
+   not the public face of the project, so it shouldn't compete visually
+   with the avatar block above. */
+.profile-form-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+.profile-form-icon-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.profile-form-icon-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 6px;
+}
+.profile-form-icon-placeholder {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: rgba(18, 26, 47, 0.4);
+}
+.profile-form-icon-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.dark-phase .profile-form-icon-preview {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .profile-form-icon-placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* ------------------------------------------------------------------ *
  * Modal popup (used by BskyClientPickerModal)
  * ------------------------------------------------------------------ */
@@ -3293,10 +3340,7 @@ body.explore-no-effects #nav-effects-bar {
   color: #0e1428;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.8rem;
-  transition:
-    background 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.15s ease;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
 }
 
 .account-menu-trigger:hover {
@@ -3481,9 +3525,7 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .account-menu-popup.glass {
   background: rgba(22, 28, 48, 0.94);
   border-color: rgba(255, 255, 255, 0.22);
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, 0.55),
-    0 6px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 .dark-phase .account-menu-header-label {

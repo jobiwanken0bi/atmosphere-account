@@ -24,6 +24,12 @@ import { withRateLimit } from "../../../../lib/rate-limit.ts";
 interface PublicProfileResponse extends ProfileRow {
   /** Fully-qualified URL for the profile's avatar, or null if unset. */
   avatarUrl: string | null;
+  /**
+   * Fully-qualified URL for the profile's developer-facing SVG icon,
+   * or null if unset. Served as `image/svg+xml` with strict CSP +
+   * `nosniff`; safe for `<img src>` embedding.
+   */
+  iconUrl: string | null;
 }
 
 export const handler = define.handlers({
@@ -51,6 +57,9 @@ export const handler = define.handlers({
       ...profile,
       avatarUrl: profile.avatarCid
         ? `${origin}/api/registry/avatar/${encodeURIComponent(profile.did)}`
+        : null,
+      iconUrl: profile.iconCid
+        ? `${origin}/api/registry/icon/${encodeURIComponent(profile.did)}`
         : null,
     };
 

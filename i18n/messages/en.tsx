@@ -375,6 +375,13 @@ const en = {
             "Avatar bytes for the given DID — proxied + cached from the user's PDS. Long cache headers; safe to use directly in <img src>.",
           cache: "public, max-age=3600, s-maxage=86400",
         },
+        icon: {
+          method: "GET",
+          path: "/api/registry/icon/:did",
+          summary:
+            "Optional vector icon (SVG) provided by the project for developer use — sign-in badges, app showcases, programmatic listings. Sanitised on upload and served with strict CSP + nosniff so it's safe to embed via <img src>. Returns 404 when the project hasn't supplied an icon.",
+          cache: "public, max-age=3600, s-maxage=86400",
+        },
       },
       schemaHeading: "Schema",
       schemaBody:
@@ -541,8 +548,8 @@ const en = {
         sectionLabel: "Atmosphere links",
         sectionHint: (handle: string): VNode => (
           <>
-            Toggle which services to show on your page. Links are generated
-            from your handle <strong>@{handle}</strong>.
+            Toggle which services to show on your page. Links are generated from
+            your handle <strong>@{handle}</strong>.
           </>
         ),
         bskyDescription: "Decentralised social network",
@@ -568,8 +575,7 @@ const en = {
         title: "Bluesky clients",
         body:
           "Pick the client(s) that open when visitors click the Bluesky button on your profile. Your handle works on all of them — you can show more than one.",
-        empty:
-          "Pick at least one client to keep the Bluesky toggle enabled.",
+        empty: "Pick at least one client to keep the Bluesky toggle enabled.",
         done: "Done",
         cancel: "Cancel",
       },
@@ -583,6 +589,16 @@ const en = {
         labelPlaceholder: "Label",
         urlPlaceholder: "https://…",
         removeAriaLabel: "Remove link",
+      },
+      icon: {
+        sectionLabel: "Developer icon (SVG, optional)",
+        hint:
+          "A vector mark for developers — sign-in badges, app showcases, programmatic listings. Not shown on your public profile. SVG only, 200KB max.",
+        upload: "Upload SVG",
+        replace: "Replace SVG",
+        remove: "Remove SVG",
+        invalidType: "Icon must be an SVG (image/svg+xml).",
+        tooLarge: "Icon must be 200KB or smaller.",
       },
     },
   },

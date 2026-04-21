@@ -22,6 +22,9 @@ import {
   validateProfile,
 } from "../../../lib/lexicons.ts";
 import { deleteProfile, upsertProfile } from "../../../lib/registry.ts";
+import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
+
+const ICON_MAX_BYTES = 200_000;
 
 interface LinkPayload {
   kind?: string;
@@ -45,6 +48,18 @@ interface ProfileFormPayload {
     size: number;
   } | null;
   avatarUpload?: { dataBase64: string; mimeType: string };
+  /**
+   * Developer-facing SVG icon. Same shape as `avatar`: pass the
+   * existing BlobRef to keep, `null` to clear, or `iconUpload` to
+   * replace.
+   */
+  icon?: {
+    $type: "blob";
+    ref: { $link: string };
+    mimeType: string;
+    size: number;
+  } | null;
+  iconUpload?: { dataBase64: string; mimeType: string };
 }
 
 function trimOrNull(s: unknown): string | undefined {
@@ -88,8 +103,9 @@ function normalizeLinksPayload(input: unknown): LinkEntry[] {
     // will surface cleaner errors for malformed entries that slip
     // through, but dropping the no-op ones here keeps "Save" idempotent
     // when the form hasn't filled a row in yet.
-    const isAtmosphere =
-      (ATMOSPHERE_LINK_KINDS as readonly string[]).includes(kind);
+    const isAtmosphere = (ATMOSPHERE_LINK_KINDS as readonly string[]).includes(
+      kind,
+    );
     if (!isAtmosphere && !entry.url) continue;
     if (kind === "bsky" && !entry.clientId) continue;
 
@@ -141,6 +157,44 @@ export const handler = define.handlers({
       }
     }
 
+    /**
+     * Developer-facing SVG icon. We sanitise the bytes before upload
+     * (strips <script>, on*, foreignObject, javascript: hrefs) so the
+     * blob persisted on the user's PDS is already clean — even if some
+     * other consumer fetches it directly without our serve-time CSP.
+     */
+    let icon = body.icon ?? undefined;
+    if (body.iconUpload?.dataBase64) {
+      const mime = body.iconUpload.mimeType;
+      if (mime !== "image/svg+xml") {
+        return new Response("icon must be image/svg+xml", { status: 400 });
+      }
+      const raw = decodeBase64(body.iconUpload.dataBase64);
+      if (raw.byteLength > ICON_MAX_BYTES) {
+        return new Response(`icon exceeds ${ICON_MAX_BYTES} bytes`, {
+          status: 400,
+        });
+      }
+      let cleaned: Uint8Array;
+      try {
+        cleaned = sanitizeSvgBytes(raw);
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(`invalid svg: ${m}`, { status: 400 });
+      }
+      try {
+        icon = await uploadBlob(
+          user.did,
+          session.pdsUrl,
+          cleaned,
+          "image/svg+xml",
+        );
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(`icon upload failed: ${m}`, { status: 502 });
+      }
+    }
+
     // Dedupe categories defensively. The lexicon validator below also
     // does this, but normalising here means we surface a clean 400 ("at
     // least one category") instead of a validator error string.
@@ -169,6 +223,7 @@ export const handler = define.handlers({
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
       avatar: avatar ?? undefined,
+      icon: icon ?? undefined,
       createdAt: new Date().toISOString(),
     };
 
@@ -208,6 +263,8 @@ export const handler = define.handlers({
         links: validation.value.links ?? [],
         avatarCid: validation.value.avatar?.ref.$link ?? null,
         avatarMime: validation.value.avatar?.mimeType ?? null,
+        iconCid: validation.value.icon?.ref.$link ?? null,
+        iconMime: validation.value.icon?.mimeType ?? null,
         pdsUrl: session.pdsUrl,
         recordCid: result.cid,
         recordRev: result.commit?.rev ?? result.cid,

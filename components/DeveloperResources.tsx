@@ -61,10 +61,12 @@ export default function DeveloperResources() {
         </div>
       </section>
 
-      {/* Profile API: interactive playground + endpoint reference. The
+      {
+        /* Profile API: interactive playground + endpoint reference. The
           endpoint reference is server-rendered so it's discoverable
           without JS; the playground itself is a small island that
-          handles fetch + copy interactions client-side. */}
+          handles fetch + copy interactions client-side. */
+      }
       <section class="section-sm reveal">
         <div class="container-narrow">
           <div class="text-center">
@@ -75,59 +77,63 @@ export default function DeveloperResources() {
 
           <RegistryApiPlayground />
 
-          {/* Visual gap between the playground card and the next
+          {
+            /* Visual gap between the playground card and the next
               subheading. We don't use the global mt-* utilities here
               because they top out at mt-4 (2rem); the Endpoints/Schema
-              dividers want a touch more breathing room. */}
+              dividers want a touch more breathing room. */
+          }
           <div class="api-section-heading">
             <h3 class="text-subsection">{tApi.endpointsHeading}</h3>
             <div class="divider" />
           </div>
           <dl class="api-endpoints">
-            {(["profile", "search", "featured", "avatar"] as const).map(
-              (key) => {
-                const e = tApi.endpoints[key];
-                const params = "params" in e ? e.params : undefined;
-                return (
-                  <div class="api-endpoint" key={key}>
-                    <dt class="api-endpoint-path">
-                      <span class="api-endpoint-method">{e.method}</span>
-                      <code>{e.path}</code>
-                    </dt>
-                    <dd class="api-endpoint-summary">{e.summary}</dd>
-                    {params && params.length > 0 && (
-                      <dd class="api-endpoint-params">
-                        <span class="api-endpoint-params-label">
-                          {tApi.paramsLabel}
-                        </span>
-                        <ul class="api-endpoint-params-list">
-                          {params.map((p) => (
-                            <li key={p.name}>
-                              <code class="api-endpoint-param-name">
-                                {p.name}
-                              </code>
-                              <span class="api-endpoint-param-desc">
-                                {" — "}
-                                {p.desc}
-                              </span>
-                              {"default" in p && p.default && (
-                                <span class="api-endpoint-param-default">
-                                  {" "}
-                                  ({tApi.paramDefault}: <code>{p.default}</code>)
+            {(["profile", "search", "featured", "avatar", "icon"] as const)
+              .map(
+                (key) => {
+                  const e = tApi.endpoints[key];
+                  const params = "params" in e ? e.params : undefined;
+                  return (
+                    <div class="api-endpoint" key={key}>
+                      <dt class="api-endpoint-path">
+                        <span class="api-endpoint-method">{e.method}</span>
+                        <code>{e.path}</code>
+                      </dt>
+                      <dd class="api-endpoint-summary">{e.summary}</dd>
+                      {params && params.length > 0 && (
+                        <dd class="api-endpoint-params">
+                          <span class="api-endpoint-params-label">
+                            {tApi.paramsLabel}
+                          </span>
+                          <ul class="api-endpoint-params-list">
+                            {params.map((p) => (
+                              <li key={p.name}>
+                                <code class="api-endpoint-param-name">
+                                  {p.name}
+                                </code>
+                                <span class="api-endpoint-param-desc">
+                                  {" — "}
+                                  {p.desc}
                                 </span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
+                                {"default" in p && p.default && (
+                                  <span class="api-endpoint-param-default">
+                                    {" "}
+                                    ({tApi.paramDefault}:{" "}
+                                    <code>{p.default}</code>)
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </dd>
+                      )}
+                      <dd class="api-endpoint-cache">
+                        <code>cache-control: {e.cache}</code>
                       </dd>
-                    )}
-                    <dd class="api-endpoint-cache">
-                      <code>cache-control: {e.cache}</code>
-                    </dd>
-                  </div>
-                );
-              },
-            )}
+                    </div>
+                  );
+                },
+              )}
           </dl>
 
           <div class="api-section-heading">

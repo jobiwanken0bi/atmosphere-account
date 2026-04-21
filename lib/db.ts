@@ -75,6 +75,8 @@ const SCHEMA_STATEMENTS: string[] = [
     links TEXT NOT NULL DEFAULT '[]',
     avatar_cid TEXT,
     avatar_mime TEXT,
+    icon_cid TEXT,
+    icon_mime TEXT,
     pds_url TEXT NOT NULL,
     record_cid TEXT NOT NULL,
     record_rev TEXT NOT NULL,
@@ -158,6 +160,16 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "links",
         ddl: "ALTER TABLE profile ADD COLUMN links TEXT NOT NULL DEFAULT '[]'",
+      },
+      {
+        table: "profile",
+        column: "icon_cid",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_cid TEXT",
+      },
+      {
+        table: "profile",
+        column: "icon_mime",
+        ddl: "ALTER TABLE profile ADD COLUMN icon_mime TEXT",
       },
     ];
   for (const m of additiveColumns) {

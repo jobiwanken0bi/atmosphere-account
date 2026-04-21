@@ -115,6 +115,8 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     links: r.links ?? [],
     avatarCid: r.avatar?.ref.$link ?? null,
     avatarMime: r.avatar?.mimeType ?? null,
+    iconCid: r.icon?.ref.$link ?? null,
+    iconMime: r.icon?.mimeType ?? null,
     pdsUrl,
     recordCid: fetched.cid,
     recordRev: commit.rev,

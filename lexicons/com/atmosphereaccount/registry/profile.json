@@ -30,6 +30,12 @@
             "maxSize": 1000000,
             "description": "Project icon. Recommended 512x512 square."
           },
+          "icon": {
+            "type": "blob",
+            "accept": ["image/svg+xml"],
+            "maxSize": 200000,
+            "description": "Optional vector icon (SVG) intended for developers building badges, app showcases, sign-in flows, etc. Not displayed on the public Explore profile. Sanitised on upload (script tags, event handlers, foreignObject and javascript:/data: hrefs are stripped)."
+          },
           "categories": {
             "type": "array",
             "minLength": 1,

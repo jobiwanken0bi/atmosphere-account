@@ -54,6 +54,9 @@ export const handler = define.handlers({
         avatar: existing.avatarCid && existing.avatarMime
           ? { ref: existing.avatarCid, mime: existing.avatarMime }
           : null,
+        icon: existing.iconCid && existing.iconMime
+          ? { ref: existing.iconCid, mime: existing.iconMime }
+          : null,
       };
     } else {
       const session = await loadSession(user.did);
@@ -74,6 +77,7 @@ export const handler = define.handlers({
                 mime: bsky.avatar.mimeType,
               }
               : null,
+            icon: null,
           };
           if (bsky.avatar) {
             initialAvatarUrl = bskyCdnAvatarUrl(

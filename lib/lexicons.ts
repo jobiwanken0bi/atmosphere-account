@@ -115,6 +115,12 @@ export interface ProfileRecord {
   name: string;
   description: string;
   avatar?: BlobRef;
+  /**
+   * Optional vector icon (SVG) intended for developer use — sign-in
+   * badges, app showcases, programmatic listings. Not displayed on the
+   * public profile. Must be `image/svg+xml`; we sanitise on upload.
+   */
+  icon?: BlobRef;
   /** All categories that apply to the project (1-4). The first item is the
    *  primary category used for sort/grouping in lists. */
   categories: string[];
@@ -328,6 +334,14 @@ export function validateProfile(
   if (v.avatar !== undefined && !isBlob(v.avatar)) {
     return { ok: false, error: "avatar: invalid blob ref" };
   }
+  if (v.icon !== undefined) {
+    if (!isBlob(v.icon)) {
+      return { ok: false, error: "icon: invalid blob ref" };
+    }
+    if ((v.icon as BlobRef).mimeType !== "image/svg+xml") {
+      return { ok: false, error: "icon: must be image/svg+xml" };
+    }
+  }
   const linksRes = normalizeLinks(v.links);
   if (!linksRes.ok) return { ok: false, error: linksRes.error };
   if (v.subcategories !== undefined) {
@@ -351,6 +365,7 @@ export function validateProfile(
       name: v.name as string,
       description: v.description as string,
       avatar: v.avatar as BlobRef | undefined,
+      icon: v.icon as BlobRef | undefined,
       categories: normalizedCategories,
       subcategories: v.subcategories as string[] | undefined,
       links: linksRes.value.length > 0 ? linksRes.value : undefined,

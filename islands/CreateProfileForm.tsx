@@ -25,6 +25,8 @@ interface ExistingProfile {
   subcategories: string[];
   links: LinkEntry[];
   avatar: { ref: string; mime: string } | null;
+  /** Optional developer-facing SVG icon. */
+  icon: { ref: string; mime: string } | null;
 }
 
 interface Props {
@@ -169,6 +171,8 @@ export default function CreateProfileForm(
   const website = useSignal<string>(initialSplit.website);
   const customLinks = useSignal<CustomLinkRow[]>(initialSplit.custom);
 
+  const tIcon = tForm.icon;
+
   const avatarKeep = useSignal<BlobRefShape | null>(null);
   /**
    * Preview URL precedence:
@@ -190,6 +194,20 @@ export default function CreateProfileForm(
   const avatarFile = useSignal<File | null>(null);
   const avatarRemoved = useSignal(false);
 
+  /* ---------------- Developer icon (SVG) signals ----------------------- */
+  /**
+   * SVG icons get a separate slot from the main avatar — the avatar is
+   * for the public profile, the icon is a vector mark exposed only via
+   * the developer API. We store the keep/upload/remove state in the
+   * same shape as avatar for consistency on Save.
+   */
+  const iconKeep = useSignal<BlobRefShape | null>(null);
+  const iconPreviewUrl = useSignal<string | null>(
+    initial?.icon ? `/api/registry/icon/${encodeURIComponent(did)}` : null,
+  );
+  const iconFile = useSignal<File | null>(null);
+  const iconRemoved = useSignal(false);
+
   const submitting = useSignal(false);
   const deleting = useSignal(false);
   const message = useSignal<{ kind: "ok" | "error"; text: string } | null>(
@@ -202,6 +220,16 @@ export default function CreateProfileForm(
       $type: "blob",
       ref: { $link: initial.avatar.ref },
       mimeType: initial.avatar.mime,
+      size: 0,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!initial?.icon) return;
+    iconKeep.value = {
+      $type: "blob",
+      ref: { $link: initial.icon.ref },
+      mimeType: initial.icon.mime,
       size: 0,
     };
   }, []);
@@ -270,6 +298,32 @@ export default function CreateProfileForm(
     avatarPreview.value = null;
   };
 
+  const onIconChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.type !== "image/svg+xml") {
+      message.value = { kind: "error", text: tIcon.invalidType };
+      input.value = "";
+      return;
+    }
+    if (file.size > 200_000) {
+      message.value = { kind: "error", text: tIcon.tooLarge };
+      input.value = "";
+      return;
+    }
+    iconFile.value = file;
+    iconRemoved.value = false;
+    iconPreviewUrl.value = URL.createObjectURL(file);
+  };
+
+  const removeIcon = () => {
+    iconFile.value = null;
+    iconKeep.value = null;
+    iconRemoved.value = true;
+    iconPreviewUrl.value = null;
+  };
+
   /**
    * Reduce the form's working state into the lexicon-shaped LinkEntry[]
    * we send to the API. Order matters — we put atmosphere links first
@@ -334,6 +388,17 @@ export default function CreateProfileForm(
         payload.avatar = avatarKeep.value;
       } else {
         payload.avatar = null;
+      }
+
+      if (iconFile.value) {
+        payload.iconUpload = {
+          dataBase64: await readFileAsBase64(iconFile.value),
+          mimeType: iconFile.value.type,
+        };
+      } else if (!iconRemoved.value && iconKeep.value) {
+        payload.icon = iconKeep.value;
+      } else {
+        payload.icon = null;
       }
 
       const res = await fetch("/api/registry/profile", {
@@ -489,9 +554,7 @@ export default function CreateProfileForm(
                 return (
                   <label
                     key={c}
-                    class={`profile-form-chip ${
-                      selected ? "is-selected" : ""
-                    }`}
+                    class={`profile-form-chip ${selected ? "is-selected" : ""}`}
                   >
                     <input
                       type="checkbox"
@@ -613,6 +676,56 @@ export default function CreateProfileForm(
               + {tCustom.addButton}
             </button>
           </fieldset>
+
+          {/* ---------------- Developer SVG icon -------------------- */}
+          {
+            /*
+            Vector mark exposed only via /api/registry/icon/:did, for
+            developers building badges and app showcases. Not shown on
+            the public Explore profile. Kept visually lightweight so it
+            doesn't compete with the main avatar slot above.
+           */
+          }
+          <fieldset class="profile-form-field">
+            <legend class="profile-form-label">{tIcon.sectionLabel}</legend>
+            <div class="profile-form-icon-row">
+              <div class="profile-form-icon-preview" aria-hidden="true">
+                {iconPreviewUrl.value
+                  ? (
+                    <img
+                      src={iconPreviewUrl.value}
+                      alt=""
+                      class="profile-form-icon-preview-img"
+                      onError={() => {
+                        iconPreviewUrl.value = null;
+                      }}
+                    />
+                  )
+                  : <span class="profile-form-icon-placeholder">SVG</span>}
+              </div>
+              <div class="profile-form-icon-actions">
+                <label class="profile-form-button-secondary">
+                  {iconPreviewUrl.value ? tIcon.replace : tIcon.upload}
+                  <input
+                    type="file"
+                    accept="image/svg+xml"
+                    hidden
+                    onChange={onIconChange}
+                  />
+                </label>
+                {iconPreviewUrl.value && (
+                  <button
+                    type="button"
+                    class="profile-form-button-link"
+                    onClick={removeIcon}
+                  >
+                    {tIcon.remove}
+                  </button>
+                )}
+              </div>
+            </div>
+            <p class="profile-form-hint">{tIcon.hint}</p>
+          </fieldset>
         </div>
       </div>
 
@@ -628,7 +741,8 @@ export default function CreateProfileForm(
             ? tManage.updateButton
             : tManage.publishButton}
         </button>
-        {/*
+        {
+          /*
           "View public profile" sits between Update and Remove so it
           reads as the natural read-only complement to the destructive
           actions. We only render it when the user has actually
@@ -636,7 +750,8 @@ export default function CreateProfileForm(
           otherwise the link would 404. We use `published.value` so the
           link appears immediately after a first-time publish without a
           page reload.
-         */}
+         */
+        }
         {published.value && publicProfileHandle && (
           <a
             href={`/explore/${encodeURIComponent(publicProfileHandle)}`}
@@ -672,9 +787,11 @@ export default function CreateProfileForm(
         onClose={() => (bskyPickerOpen.value = false)}
       />
 
-      {/* URL-override modal, shared by Tangled and Supper. Only one is
+      {
+        /* URL-override modal, shared by Tangled and Supper. Only one is
           open at a time so we render a single instance and switch its
-          props on `urlOverrideOpen`. */}
+          props on `urlOverrideOpen`. */
+      }
       {(() => {
         const which = urlOverrideOpen.value;
         const svc = which ? getAtmosphereService(which) : null;
@@ -810,10 +927,12 @@ function BskyAtmosphereRow({ ctx, svc }: BskyRowProps) {
           <span class="atmosphere-row-name">
             {primaryClient?.name ?? svc.name}
           </span>
-          {/* Only render the secondary line when there's something
+          {
+            /* Only render the secondary line when there's something
               meaningful to show (i.e. extra clients selected). The
               service description ("Decentralised social network") is
-              redundant next to the brand name and was just noise. */}
+              redundant next to the brand name and was just noise. */
+          }
           {ids.length > 1 && (
             <span class="atmosphere-row-desc">
               {`${
@@ -861,8 +980,9 @@ function SimpleAtmosphereRow(
         <input
           type="checkbox"
           checked={on.value}
-          onChange={(e) =>
-            (on.value = (e.currentTarget as HTMLInputElement).checked)}
+          onChange={(
+            e,
+          ) => (on.value = (e.currentTarget as HTMLInputElement).checked)}
         />
         <span class="atmosphere-toggle-track" aria-hidden="true">
           <span class="atmosphere-toggle-thumb" />
