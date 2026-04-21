@@ -810,12 +810,17 @@ function BskyAtmosphereRow({ ctx, svc }: BskyRowProps) {
           <span class="atmosphere-row-name">
             {primaryClient?.name ?? svc.name}
           </span>
-          <span class="atmosphere-row-desc">
-            {ids.length > 1
-              ? `${BSKY_CLIENTS.find((c) => c.id === ids[0])?.name ?? svc.name}` +
-                ` + ${ids.length - 1} more`
-              : svc.description}
-          </span>
+          {/* Only render the secondary line when there's something
+              meaningful to show (i.e. extra clients selected). The
+              service description ("Decentralised social network") is
+              redundant next to the brand name and was just noise. */}
+          {ids.length > 1 && (
+            <span class="atmosphere-row-desc">
+              {`${
+                BSKY_CLIENTS.find((c) => c.id === ids[0])?.name ?? svc.name
+              } + ${ids.length - 1} more`}
+            </span>
+          )}
         </div>
       </div>
       <button
