@@ -42,8 +42,9 @@ import {
  *   - `atproto`                                                  - identity
  *   - `include:com.atmosphereaccount.registry.fullPermissions`  - repo writes
  *                                                                 to our
- *                                                                 profile
- *                                                                 collection
+ *                                                                 profile +
+ *                                                                 featured
+ *                                                                 collections
  *                                                                 (resolved
  *                                                                 dynamically
  *                                                                 from the

@@ -257,10 +257,13 @@ export default define.page(function App(ctx) {
    * `sky-static` server-side and hide the user-facing toggle on:
    *   - /explore and any sub-route
    *   - /developer-resources (dense reference material)
+   *   - /admin and any sub-route (operator surface; effects add nothing)
    */
   const effectsOff = url.pathname === "/explore" ||
     url.pathname.startsWith("/explore/") ||
-    url.pathname === "/developer-resources";
+    url.pathname === "/developer-resources" ||
+    url.pathname === "/admin" ||
+    url.pathname.startsWith("/admin/");
   const htmlClass = effectsOff ? "sky-static" : undefined;
   const bodyClass = effectsOff ? "sky-bg explore-no-effects" : "sky-bg";
   return (
