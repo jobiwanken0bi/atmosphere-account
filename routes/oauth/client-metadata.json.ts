@@ -24,17 +24,19 @@ export const handler = define.handlers({
       response_types: ["code"],
       redirect_uris: [redirectUri()],
       /**
-       * Minimum-permission scope: only writes to our own profile
-       * collection plus image-blob uploads (for avatars). The
-       * permission-set lexicon is published at
-       *   /.well-known/atproto-lexicon/com.atmosphereaccount.registry.fullPermissions
-       * and rendered in the consent dialog via its title/detail.
+       * Minimum-permission scope. The `include:` half is resolved by the
+       * authorization server via DNS-based atproto lexicon resolution
+       * (TXT record at `_lexicon.registry.atmosphereaccount.com`) and
+       * rendered in the consent dialog via its `title` / `detail`.
        *
-       * Inline-form equivalent (kept as a reference for maintainers):
-       *   atproto repo:com.atmosphereaccount.registry.profile blob:image/*
+       * `blob:image/*` is requested as a top-level scope because the
+       * atproto permission spec explicitly disallows blob permissions
+       * inside permission sets.
+       *
+       * MUST stay in sync with `DEFAULT_SCOPE` in `lib/oauth.ts`.
        */
       scope:
-        "atproto include:com.atmosphereaccount.registry.fullPermissions",
+        "atproto include:com.atmosphereaccount.registry.fullPermissions blob:image/*",
       dpop_bound_access_tokens: true,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "ES256",

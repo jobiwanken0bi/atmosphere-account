@@ -36,19 +36,37 @@ import {
 } from "./env.ts";
 
 /**
- * Minimum-permission scope. The permission-set lexicon
- * (`com.atmosphereaccount.registry.fullPermissions`) grants only:
- *   - repo writes (create/update/delete) to com.atmosphereaccount.registry.profile
- *   - image/* blob uploads (for avatars)
+ * Minimum-permission scope.
  *
- * This MUST stay in sync with `routes/oauth/client-metadata.json.ts`,
- * which is the document atproto authorization servers actually fetch.
+ * Composed of three parts:
+ *   - `atproto`                                                  - identity
+ *   - `include:com.atmosphereaccount.registry.fullPermissions`  - repo writes
+ *                                                                 to our
+ *                                                                 profile
+ *                                                                 collection
+ *                                                                 (resolved
+ *                                                                 dynamically
+ *                                                                 from the
+ *                                                                 published
+ *                                                                 permission-set
+ *                                                                 lexicon)
+ *   - `blob:image/*`                                            - avatar +
+ *                                                                 SVG icon
+ *                                                                 uploads
  *
- * Inline-form equivalent (for reference):
- *   atproto repo:com.atmosphereaccount.registry.profile blob:image/*
+ * The `blob` scope is intentionally NOT bundled into the permission set
+ * because the atproto permission spec explicitly disallows blob permissions
+ * inside permission sets — they must always be requested separately.
+ * See https://atproto.com/specs/permission ("Permission Sets").
+ *
+ * The permission-set lexicon must be published to the DID that holds DNS
+ * authority for `_lexicon.registry.atmosphereaccount.com` before this scope
+ * will resolve. See `docs/PUBLISHING_LEXICONS.md` for setup steps.
+ *
+ * MUST stay in sync with `routes/oauth/client-metadata.json.ts`.
  */
 const DEFAULT_SCOPE =
-  "atproto include:com.atmosphereaccount.registry.fullPermissions";
+  "atproto include:com.atmosphereaccount.registry.fullPermissions blob:image/*";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
 

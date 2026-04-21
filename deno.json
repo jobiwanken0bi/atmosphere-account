@@ -10,6 +10,11 @@
     "extract:lottie-assets": "deno run -A scripts/extract-lottie-assets.ts",
     "indexer": "deno run -A worker/indexer.ts",
     "publish:featured": "deno run -A scripts/publish-featured.ts",
+    "lex:lint": "goat lex lint lexicons/",
+    "lex:check-dns": "goat lex check-dns --example-did did:plc:ab7uvkn4kyf7l7prl26pz4r2 lexicons/",
+    "lex:status": "goat lex status lexicons/",
+    "lex:publish": "goat lex publish lexicons/",
+    "lex:publish:update": "goat lex publish --update lexicons/",
     "start": "deno serve -A _fresh/server.js",
     "update": "deno run -A -r jsr:@fresh/update ."
   },

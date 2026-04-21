@@ -5,17 +5,12 @@
     "main": {
       "type": "permission-set",
       "title": "Atmosphere Account",
-      "detail": "Manage your Atmosphere Explore profile and avatar.",
+      "detail": "Manage your Atmosphere Explore profile (create, update, and remove your project listing).",
       "permissions": [
         {
           "type": "permission",
           "resource": "repo",
           "collection": ["com.atmosphereaccount.registry.profile"]
-        },
-        {
-          "type": "permission",
-          "resource": "blob",
-          "accept": ["image/*"]
         }
       ]
     }
