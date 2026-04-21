@@ -43,6 +43,12 @@ const en = {
       viewProfile: "View profile",
       signOut: "Sign out",
       avatarAlt: "Account",
+      switchHeading: "Switch account",
+      switchTo: (handle: string): string => `Switch to @${handle}`,
+      addAccount: "Add another account",
+      forget: "Forget",
+      forgetConfirm: (handle: string): string =>
+        `Forget @${handle} on this device? You'll need to sign in again to switch back.`,
     },
   },
 

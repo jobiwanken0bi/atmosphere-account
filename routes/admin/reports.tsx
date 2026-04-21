@@ -11,6 +11,7 @@ import { getMessages } from "../../i18n/mod.ts";
 import type { Locale } from "../../i18n/mod.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { listOpenReports, type ReportRow } from "../../lib/reports.ts";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 interface ReportWithHandle extends ReportRow {
   targetHandle: string;
@@ -32,7 +33,7 @@ export const handler = define.handlers({
     );
     return ctx.render(
       <AdminReportsPage
-        user={ctx.state.user!}
+        account={buildAccountMenuProps(ctx.state)}
         reports={enriched}
         locale={ctx.state.locale}
       />,
@@ -41,24 +42,18 @@ export const handler = define.handlers({
 });
 
 interface PageProps {
-  user: { did: string; handle: string };
+  account: ReturnType<typeof buildAccountMenuProps>;
   reports: ReportWithHandle[];
   locale: Locale;
 }
 
-function AdminReportsPage({ user, reports, locale }: PageProps) {
+function AdminReportsPage({ account, reports, locale }: PageProps) {
   const t = getMessages(locale).admin;
   return (
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav
-          account={{
-            user: { did: user.did, handle: user.handle },
-            avatarUrl: "/api/me/avatar",
-            publicProfileHandle: null,
-          }}
-        />
+        <Nav account={account} />
         <section class="admin-section">
           <div class="container" style={{ maxWidth: "920px" }}>
             <p>

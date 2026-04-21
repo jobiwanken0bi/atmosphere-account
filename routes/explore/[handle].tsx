@@ -13,6 +13,7 @@ import {
   type ProfileRow,
 } from "../../lib/registry.ts";
 import { accountProviderName } from "../../lib/account-providers.ts";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -32,6 +33,7 @@ export const handler = define.handlers({
       <ProfileDetailPage
         profile={profile}
         signedInUser={user ? { did: user.did, handle: user.handle } : null}
+        account={buildAccountMenuProps(ctx.state, ownerProfile?.handle ?? null)}
         ownerHandle={ownerProfile?.handle ?? null}
         locale={ctx.state.locale}
       />,
@@ -43,12 +45,14 @@ export const handler = define.handlers({
 interface DetailProps {
   profile: ProfileRow | null;
   signedInUser: { did: string; handle: string } | null;
+  account: ReturnType<typeof buildAccountMenuProps>;
   ownerHandle: string | null;
   locale: Locale;
 }
 
 function ProfileDetailPage(
-  { profile, signedInUser, ownerHandle, locale }: DetailProps,
+  { profile, signedInUser, account, ownerHandle: _ownerHandle, locale }:
+    DetailProps,
 ) {
   const messages = getMessages(locale);
   const t = messages.explore;
@@ -57,16 +61,11 @@ function ProfileDetailPage(
       <NotFound
         locale={locale}
         signedInUser={signedInUser}
-        ownerHandle={ownerHandle}
+        account={account}
       />
     );
   }
   const isOwner = signedInUser?.did === profile.did;
-  const account = {
-    user: signedInUser,
-    avatarUrl: signedInUser ? "/api/me/avatar" : null,
-    publicProfileHandle: ownerHandle,
-  };
   const lastUpdated = new Date(profile.indexedAt).toISOString().slice(0, 10);
   /** PDS hosts are usually per-shard (e.g. shimeji.us-east.host.bsky.network)
    *  which isn't useful in UI. Collapse known umbrella PDSes to their
@@ -137,18 +136,13 @@ function ProfileDetailPage(
 }
 
 function NotFound(
-  { locale, signedInUser, ownerHandle }: {
+  { locale, signedInUser: _signedInUser, account }: {
     locale: Locale;
     signedInUser: { did: string; handle: string } | null;
-    ownerHandle: string | null;
+    account: ReturnType<typeof buildAccountMenuProps>;
   },
 ) {
   const t = getMessages(locale).explore.detail;
-  const account = {
-    user: signedInUser,
-    avatarUrl: signedInUser ? "/api/me/avatar" : null,
-    publicProfileHandle: ownerHandle,
-  };
   return (
     <div id="page-top">
       <GlassClouds />

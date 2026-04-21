@@ -13,6 +13,7 @@ import {
   countTakenDownProfiles,
 } from "../../lib/registry.ts";
 import { countOpenReports } from "../../lib/reports.ts";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -23,7 +24,7 @@ export const handler = define.handlers({
     ]);
     return ctx.render(
       <AdminHome
-        user={ctx.state.user!}
+        account={buildAccountMenuProps(ctx.state)}
         iconAccessRequests={iconAccessRequests}
         openReports={openReports}
         takenDown={takenDown}
@@ -34,7 +35,7 @@ export const handler = define.handlers({
 });
 
 interface AdminHomeProps {
-  user: { did: string; handle: string };
+  account: ReturnType<typeof buildAccountMenuProps>;
   iconAccessRequests: number;
   openReports: number;
   takenDown: number;
@@ -42,20 +43,15 @@ interface AdminHomeProps {
 }
 
 function AdminHome(
-  { user, iconAccessRequests, openReports, takenDown, locale }: AdminHomeProps,
+  { account, iconAccessRequests, openReports, takenDown, locale }:
+    AdminHomeProps,
 ) {
   const t = getMessages(locale).admin;
   return (
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav
-          account={{
-            user: { did: user.did, handle: user.handle },
-            avatarUrl: "/api/me/avatar",
-            publicProfileHandle: null,
-          }}
-        />
+        <Nav account={account} />
         <section class="admin-section">
           <div class="container" style={{ maxWidth: "920px" }}>
             <header class="admin-header">

@@ -5,6 +5,7 @@ import Footer from "../../components/Footer.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 export default define.page(function ExploreCreate(ctx) {
   const t = getMessages(ctx.state.locale).explore;
@@ -17,17 +18,17 @@ export default define.page(function ExploreCreate(ctx) {
     }) as unknown as preact.JSX.Element;
   }
 
+  /** user is null here (we redirect when signed in), but the menu can
+   *  still surface remembered accounts — that's the "switch to a
+   *  previously signed-in account" affordance for visitors who hit
+   *  this page from a deep link with cleared session cookies. */
+  const account = buildAccountMenuProps(ctx.state);
+
   return (
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        {
-          /* user is null here (we redirect when signed in), so the menu
-         *  shows the "Sign in" entry — useful if someone lands on this
-         *  page from a deep link and wants the same affordance as the
-         *  rest of the explore section. */
-        }
-        <Nav account={{ user: null }} />
+        <Nav account={account} />
         <section class="explore-create" style={{ paddingTop: "8rem" }}>
           <div class="container" style={{ maxWidth: "640px" }}>
             <p class="text-eyebrow">{t.create.eyebrow}</p>

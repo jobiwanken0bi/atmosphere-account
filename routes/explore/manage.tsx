@@ -7,6 +7,7 @@ import { getMessages } from "../../i18n/mod.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 /**
  * Build the deterministic public Bluesky CDN URL for a user's avatar
@@ -116,13 +117,15 @@ export const handler = define.handlers({
       }
       : null;
 
+    const publicProfileHandle = takedown ? null : existing?.handle ?? null;
     return ctx.render(
       <ManagePage
         user={user}
+        account={buildAccountMenuProps(ctx.state, publicProfileHandle)}
         initial={initial}
         initialAvatarUrl={initialAvatarUrl}
         initialPublished={!!existing && !takedown}
-        publicProfileHandle={takedown ? null : existing?.handle ?? null}
+        publicProfileHandle={publicProfileHandle}
         takedown={takedown}
         t={t}
       />,
@@ -132,6 +135,7 @@ export const handler = define.handlers({
 
 interface ManagePageProps {
   user: { did: string; handle: string };
+  account: ReturnType<typeof buildAccountMenuProps>;
   initial: Parameters<typeof CreateProfileForm>[0]["initial"];
   initialAvatarUrl: string | null;
   initialPublished: boolean;
@@ -144,6 +148,7 @@ interface ManagePageProps {
 function ManagePage(
   {
     user,
+    account,
     initial,
     initialAvatarUrl,
     initialPublished,
@@ -158,13 +163,7 @@ function ManagePage(
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav
-          account={{
-            user: { did: user.did, handle: user.handle },
-            avatarUrl: "/api/me/avatar",
-            publicProfileHandle,
-          }}
-        />
+        <Nav account={account} />
         <section class="explore-manage" style={{ paddingTop: "8rem" }}>
           <div class="container" style={{ maxWidth: "920px" }}>
             <div class="manage-header">

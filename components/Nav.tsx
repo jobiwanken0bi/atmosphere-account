@@ -15,6 +15,11 @@ interface NavProps {
     user: { did: string; handle: string } | null;
     avatarUrl?: string | null;
     publicProfileHandle?: string | null;
+    /** Other accounts that have signed in on this device, used to
+     *  power the in-menu account switcher. Optional — pages that
+     *  don't have access to the per-request value (e.g. the static
+     *  marketing nav) can omit it. */
+    rememberedAccounts?: { did: string; handle: string }[];
   };
 }
 
@@ -44,6 +49,7 @@ export default function Nav({ account }: NavProps = {}) {
             user={account.user}
             avatarUrl={account.avatarUrl ?? null}
             publicProfileHandle={account.publicProfileHandle ?? null}
+            rememberedAccounts={account.rememberedAccounts ?? []}
           />
         </div>
       )}

@@ -19,6 +19,7 @@ import {
   type ProfilePickerRow,
   type ProfileRow,
 } from "../../lib/registry.ts";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -32,7 +33,7 @@ export const handler = define.handlers({
     }));
     return ctx.render(
       <AdminFeaturedPage
-        user={ctx.state.user!}
+        account={buildAccountMenuProps(ctx.state)}
         candidates={candidates}
         initial={initial}
         locale={ctx.state.locale}
@@ -42,25 +43,21 @@ export const handler = define.handlers({
 });
 
 interface PageProps {
-  user: { did: string; handle: string };
+  account: ReturnType<typeof buildAccountMenuProps>;
   candidates: FeaturedCandidate[];
   initial: FeaturedEntryDraft[];
   locale: Locale;
 }
 
-function AdminFeaturedPage({ user, candidates, initial, locale }: PageProps) {
+function AdminFeaturedPage(
+  { account, candidates, initial, locale }: PageProps,
+) {
   const t = getMessages(locale).admin;
   return (
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav
-          account={{
-            user: { did: user.did, handle: user.handle },
-            avatarUrl: "/api/me/avatar",
-            publicProfileHandle: null,
-          }}
-        />
+        <Nav account={account} />
         <section class="admin-section">
           <div class="container" style={{ maxWidth: "1080px" }}>
             <p>

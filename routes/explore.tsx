@@ -14,6 +14,7 @@ import {
   searchProfiles,
 } from "../lib/registry.ts";
 import { CATEGORIES } from "../lib/lexicons.ts";
+import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 
 interface ExploreData {
   query: string;
@@ -25,11 +26,7 @@ interface ExploreData {
   profiles: ProfileRow[];
   featured: ProfileRow[];
   signedIn: boolean;
-  account: {
-    user: { did: string; handle: string } | null;
-    avatarUrl: string | null;
-    publicProfileHandle: string | null;
-  };
+  account: ReturnType<typeof buildAccountMenuProps>;
 }
 
 export const handler = define.handlers({
@@ -80,11 +77,10 @@ export const handler = define.handlers({
       profiles: search.profiles,
       featured,
       signedIn: !!user,
-      account: {
-        user: user ? { did: user.did, handle: user.handle } : null,
-        avatarUrl: user ? "/api/me/avatar" : null,
-        publicProfileHandle: ownerProfile?.handle ?? null,
-      },
+      account: buildAccountMenuProps(
+        ctx.state,
+        ownerProfile?.handle ?? null,
+      ),
     };
     return ctx.render(<ExplorePage data={data} locale={ctx.state.locale} />);
   },

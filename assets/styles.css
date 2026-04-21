@@ -3632,6 +3632,95 @@ body.explore-no-effects #nav-effects-bar {
   line-height: 1.4;
 }
 
+/* --- Account switcher (remembered accounts on this device) --- */
+
+.account-menu-section-label {
+  padding: 0.6rem 0.7rem 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(18, 26, 47, 0.55);
+}
+
+.account-menu-switch-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.account-menu-switch-form {
+  flex: 1;
+  display: contents;
+}
+
+.account-menu-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  padding: 0.45rem 0.7rem;
+}
+
+.account-menu-switch-btn .account-menu-avatar {
+  width: 26px;
+  height: 26px;
+}
+
+.account-menu-switch-handle {
+  font-weight: 500;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-menu-forget-form {
+  display: flex;
+  align-items: center;
+}
+
+.account-menu-forget-btn {
+  background: transparent;
+  border: none;
+  color: rgba(18, 26, 47, 0.45);
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  margin-right: 0.35rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.account-menu-forget-btn:hover,
+.account-menu-forget-btn:focus-visible {
+  background: rgba(146, 32, 32, 0.08);
+  color: rgba(146, 32, 32, 0.95);
+  outline: none;
+}
+
+.account-menu-item-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(18, 26, 47, 0.78);
+}
+
+.account-menu-add-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(18, 26, 47, 0.08);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
 /* Dark-phase variants — match the sign-in preview palette so both
  * float on the same hero gradients without re-tinting work. */
 .dark-phase .account-menu-trigger {
@@ -3687,6 +3776,28 @@ body.explore-no-effects #nav-effects-bar {
 
 .dark-phase .account-menu-hint {
   color: rgba(255, 255, 255, 0.7);
+}
+
+.dark-phase .account-menu-section-label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.dark-phase .account-menu-forget-btn {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.dark-phase .account-menu-forget-btn:hover,
+.dark-phase .account-menu-forget-btn:focus-visible {
+  background: rgba(244, 163, 163, 0.18);
+  color: #f4a3a3;
+}
+
+.dark-phase .account-menu-item-add {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.dark-phase .account-menu-add-glyph {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 @media (max-width: 480px) {

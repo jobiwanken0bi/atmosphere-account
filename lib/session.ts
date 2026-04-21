@@ -9,6 +9,7 @@ import { define } from "../utils.ts";
 import { withDb } from "./db.ts";
 import { hmacSign, hmacVerify, randomB64u } from "./jose.ts";
 import { IS_DEV, SESSION_SECRET } from "./env.ts";
+import { readRememberedAccounts } from "./remembered-accounts.ts";
 
 export interface SessionUser {
   did: string;
@@ -30,6 +31,19 @@ export async function createSession(user: SessionUser): Promise<string> {
   });
   const sig = await hmacSign(SESSION_SECRET, sid);
   return `${sid}.${sig}`;
+}
+
+/**
+ * Read the active session user from a request without going through
+ * the middleware. Useful for endpoints that run before/around the
+ * normal middleware chain (e.g. /oauth/forget needs to know whether
+ * to clear the session cookie even though it doesn't have a fresh
+ * `ctx.state`).
+ */
+export async function peekSessionUser(
+  req: Request,
+): Promise<SessionUser | null> {
+  return await readSessionCookie(req);
 }
 
 async function readSessionCookie(req: Request): Promise<SessionUser | null> {
@@ -109,6 +123,12 @@ export const sessionMiddleware = define.middleware(async (ctx) => {
   } catch (err) {
     if (IS_DEV) console.warn("session read failed:", err);
     ctx.state.user = null;
+  }
+  try {
+    ctx.state.rememberedAccounts = await readRememberedAccounts(ctx.req);
+  } catch (err) {
+    if (IS_DEV) console.warn("remembered accounts read failed:", err);
+    ctx.state.rememberedAccounts = [];
   }
   return await ctx.next();
 });

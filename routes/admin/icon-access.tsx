@@ -17,6 +17,7 @@ import {
   listGrantedIconAccess,
   listPendingIconAccess,
 } from "../../lib/registry.ts";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -26,7 +27,7 @@ export const handler = define.handlers({
     ]);
     return ctx.render(
       <Page
-        user={ctx.state.user!}
+        account={buildAccountMenuProps(ctx.state)}
         pending={pending}
         granted={granted}
         locale={ctx.state.locale}
@@ -36,26 +37,20 @@ export const handler = define.handlers({
 });
 
 interface PageProps {
-  user: { did: string; handle: string };
+  account: ReturnType<typeof buildAccountMenuProps>;
   pending: IconAccessRequestRow[];
   granted: GrantedIconAccessRow[];
   locale: Locale;
 }
 
-function Page({ user, pending, granted, locale }: PageProps) {
+function Page({ account, pending, granted, locale }: PageProps) {
   const t = getMessages(locale).admin;
   const ti = t.iconAccess;
   return (
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav
-          account={{
-            user: { did: user.did, handle: user.handle },
-            avatarUrl: "/api/me/avatar",
-            publicProfileHandle: null,
-          }}
-        />
+        <Nav account={account} />
         <section class="admin-section">
           <div class="container" style={{ maxWidth: "920px" }}>
             <p>
