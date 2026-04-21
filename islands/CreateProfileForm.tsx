@@ -381,6 +381,12 @@ export default function CreateProfileForm(
                 src={avatarPreview.value}
                 alt=""
                 class="profile-form-avatar-img"
+                onError={() => {
+                  // If the source URL fails (e.g. PDS slow / CDN miss),
+                  // collapse to the empty-slot placeholder rather than
+                  // leaving the browser's broken-image glyph.
+                  avatarPreview.value = null;
+                }}
               />
             )
             : (

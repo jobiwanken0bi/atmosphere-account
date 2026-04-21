@@ -8,13 +8,22 @@ import { getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 
-/** Route the prefill avatar through our own proxy (which streams the
- *  PDS blob with friendly content-type + cache headers) rather than
- *  embedding the raw PDS getBlob URL into an <img>. Some PDS hosts
- *  don't serve blobs cleanly to a browser <img> tag (content-type,
- *  redirects, CORS quirks), but they all work fine for a server-to-
- *  server fetch. */
-const ME_AVATAR_PROXY = "/api/me/avatar";
+/**
+ * Build the deterministic public Bluesky CDN URL for a user's avatar
+ * blob. The CDN is a thin cached proxy in front of the user's PDS, so
+ * any did/cid pair from `app.bsky.actor.profile` resolves cleanly here
+ * with cache headers + the correct content-type. Using this URL avoids
+ * routing the prefill avatar through our own server (which adds a hop
+ * and can fail in subtle ways on some PDS hosts).
+ */
+function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
+  const ext = mime === "image/png"
+    ? "png"
+    : mime === "image/webp"
+    ? "webp"
+    : "jpeg";
+  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@${ext}`;
+}
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -67,7 +76,11 @@ export const handler = define.handlers({
               : null,
           };
           if (bsky.avatar) {
-            initialAvatarUrl = ME_AVATAR_PROXY;
+            initialAvatarUrl = bskyCdnAvatarUrl(
+              user.did,
+              bsky.avatar.ref.$link,
+              bsky.avatar.mimeType,
+            );
           }
         }
       }
