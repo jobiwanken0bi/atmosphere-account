@@ -33,11 +33,15 @@ export interface ProfileRow {
   handle: string;
   name: string;
   description: string;
+  /** Primary destination for the profile card on /explore. May be null
+   *  for legacy records created before mainLink existed; the listing
+   *  card falls back to /explore/<handle> in that case. */
+  mainLink: string | null;
   /** All categories that apply (always non-empty). The first item is the
    *  primary category used for sort/grouping in lists. */
   categories: string[];
   subcategories: string[];
-  /** Outbound links (atmosphere services, website, custom) in author-defined order. */
+  /** Outbound links (atmosphere services, landing page, custom) in author-defined order. */
   links: LinkEntry[];
   avatarCid: string | null;
   avatarMime: string | null;
@@ -71,6 +75,7 @@ interface RawProfileRow {
   handle: string;
   name: string;
   description: string;
+  main_link: string | null;
   categories: string;
   subcategories: string;
   links: string | null;
@@ -142,6 +147,7 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     handle: r.handle,
     name: r.name,
     description: r.description,
+    mainLink: r.main_link && r.main_link.length > 0 ? r.main_link : null,
     categories: safeJsonArray(r.categories),
     subcategories: safeJsonArray(r.subcategories),
     links: safeJsonLinks(r.links),
@@ -179,6 +185,10 @@ export interface UpsertProfileInput {
   handle: string;
   name: string;
   description: string;
+  /** Optional: nullable for legacy records that pre-date the field.
+   *  Stored as the textual URL; the registry UI/API enforce required-ness
+   *  + URL shape on writes. */
+  mainLink?: string | null;
   /** Required: 1-4 known category strings. The first is the primary. */
   categories: string[];
   subcategories: string[];
@@ -224,16 +234,18 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
     await c.execute({
       sql: `
         INSERT INTO profile (
-          did, handle, name, description, categories, subcategories, links,
+          did, handle, name, description, main_link,
+          categories, subcategories, links,
           avatar_cid, avatar_mime, icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
           takedown_status, takedown_reason, takedown_by, takedown_at,
           pds_url, record_cid, record_rev, created_at, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
           name=excluded.name,
           description=excluded.description,
+          main_link=excluded.main_link,
           categories=excluded.categories,
           subcategories=excluded.subcategories,
           links=excluded.links,
@@ -283,6 +295,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.handle,
         input.name,
         input.description,
+        input.mainLink ?? null,
         JSON.stringify(cats),
         JSON.stringify(input.subcategories ?? []),
         JSON.stringify(input.links ?? []),

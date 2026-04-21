@@ -52,6 +52,7 @@ export const handler = define.handlers({
       initial = {
         name: existing.name,
         description: existing.description,
+        mainLink: existing.mainLink,
         categories: existing.categories,
         subcategories: existing.subcategories,
         links: existing.links,
@@ -77,6 +78,7 @@ export const handler = define.handlers({
           initial = {
             name: bsky.displayName ?? "",
             description: bsky.description ?? "",
+            mainLink: null,
             categories: ["app"],
             subcategories: [],
             links: [],

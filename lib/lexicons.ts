@@ -114,6 +114,16 @@ export interface ProfileRecord {
   $type?: typeof PROFILE_NSID;
   name: string;
   description: string;
+  /**
+   * Primary destination URL for the project — the actual app, service,
+   * or marketing page. The whole profile card on /explore is rendered
+   * as a button that opens this URL. Optional in the lexicon for
+   * backward compatibility with records created before mainLink
+   * existed; the registry UI enforces it as required for new/updated
+   * records (the public listing falls back to /explore/<handle> when
+   * absent on a legacy record).
+   */
+  mainLink?: string;
   avatar?: BlobRef;
   /**
    * Optional vector icon (SVG) intended for developer use — sign-in
@@ -125,7 +135,12 @@ export interface ProfileRecord {
    *  primary category used for sort/grouping in lists. */
   categories: string[];
   subcategories?: string[];
-  /** Outbound buttons shown on the public profile. */
+  /**
+   * Outbound buttons shown on the public profile (Atmosphere link
+   * toggles, the optional Landing Page button, and any custom links).
+   * The legacy `website` kind is rendered as a Landing Page button
+   * post-migration; new records emit `website` for the same purpose.
+   */
   links?: LinkEntry[];
   createdAt: string;
 }
@@ -302,6 +317,17 @@ export function validateProfile(
   ) {
     return { ok: false, error: "description: 1..500 chars required" };
   }
+  // mainLink: optional in the lexicon for backward compat, but if present
+  // must parse as an http(s) URL <=512 chars. The registry UI / API both
+  // enforce required-ness for new writes; we don't reject reads here so
+  // pre-mainLink records keep validating.
+  let normalizedMainLink: string | undefined;
+  if (v.mainLink !== undefined && v.mainLink !== null && v.mainLink !== "") {
+    if (!isStr(v.mainLink, 512) || !isUrl(v.mainLink)) {
+      return { ok: false, error: "mainLink: must be an http(s) URL <=512" };
+    }
+    normalizedMainLink = (v.mainLink as string).trim();
+  }
   // categories[]: required, deduped, every entry must be a known CATEGORY.
   // The first entry is treated as the primary category by the UI.
   let normalizedCategories: string[];
@@ -364,6 +390,7 @@ export function validateProfile(
       $type: PROFILE_NSID,
       name: v.name as string,
       description: v.description as string,
+      mainLink: normalizedMainLink,
       avatar: v.avatar as BlobRef | undefined,
       icon: v.icon as BlobRef | undefined,
       categories: normalizedCategories,

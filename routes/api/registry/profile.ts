@@ -40,6 +40,9 @@ interface LinkPayload {
 interface ProfileFormPayload {
   name?: string;
   description?: string;
+  /** Primary destination URL for the profile card. Required by the
+   *  registry; the form enforces this, the API double-checks. */
+  mainLink?: string;
   /** Required multi-select. The first entry is the primary category. */
   categories?: string[];
   subcategories?: string[];
@@ -240,9 +243,24 @@ export const handler = define.handlers({
 
     const links = normalizeLinksPayload(body.links);
 
+    /**
+     * mainLink is required at the API layer too. The lexicon keeps it
+     * optional for backward-compat reads of pre-mainLink records, but
+     * any new write must carry one — that's how the listing card knows
+     * where to send visitors.
+     */
+    const mainLink = trimOrNull(body.mainLink);
+    if (!mainLink) {
+      return new Response(
+        "main link is required (the URL people land on when they tap your card)",
+        { status: 400 },
+      );
+    }
+
     const draft: ProfileRecord = {
       name: trimOrNull(body.name) ?? "",
       description: trimOrNull(body.description) ?? "",
+      mainLink,
       categories: normalizedCategories,
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
@@ -282,6 +300,7 @@ export const handler = define.handlers({
         handle: user.handle,
         name: validation.value.name,
         description: validation.value.description,
+        mainLink: validation.value.mainLink ?? null,
         categories: validation.value.categories,
         subcategories: validation.value.subcategories ?? [],
         links: validation.value.links ?? [],

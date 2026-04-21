@@ -453,7 +453,9 @@ const en = {
     bsky: "Bluesky",
     tangled: "Tangled",
     supper: "Supper",
-    website: "Website",
+    /** The legacy `website` link kind is repurposed as the optional
+     *  "Landing Page" button on the public profile detail row. */
+    website: "Landing page",
     custom: "Link",
   },
 
@@ -579,9 +581,17 @@ const en = {
         done: "Done",
         cancel: "Cancel",
       },
-      website: {
-        sectionLabel: "Website",
-        placeholder: "https://yoursite.com",
+      mainLink: {
+        sectionLabel: "Main Link (URL)",
+        placeholder: "https://yourapp.com",
+        required: "Main Link is required.",
+        invalid: "Main Link must be a valid http(s) URL.",
+      },
+      landingPage: {
+        sectionLabel: "Landing Page (URL)",
+        placeholder: "https://yourproject.com",
+        hint:
+          "Optional. Use this if your app or service has a separate landing or marketing page.",
       },
       customLinks: {
         sectionLabel: "Custom links",

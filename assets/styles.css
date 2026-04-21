@@ -1906,6 +1906,45 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 12px 32px rgba(48, 70, 128, 0.12);
 }
+/**
+ * Card-as-button affordance: anchor the arrow in the top-right corner
+ * (relative to the card) so it sits clear of the avatar/title row but
+ * doesn't obstruct content. The arrow inherits text colour and fades
+ * up to full opacity on hover/focus. Padding-right reserves space so
+ * long names don't slide under the arrow.
+ */
+.profile-card-button {
+  position: relative;
+  padding-right: 2.4rem;
+  cursor: pointer;
+}
+.profile-card-arrow {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  color: rgba(18, 26, 47, 0.45);
+  opacity: 0.85;
+  transition: transform 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+  pointer-events: none;
+}
+.profile-card-button:hover .profile-card-arrow,
+.profile-card-button:focus-visible .profile-card-arrow {
+  transform: translate(2px, -2px);
+  opacity: 1;
+  color: #254a9e;
+}
+.dark-phase .profile-card-arrow {
+  color: rgba(255, 255, 255, 0.55);
+}
+.dark-phase .profile-card-button:hover .profile-card-arrow,
+.dark-phase .profile-card-button:focus-visible .profile-card-arrow {
+  color: #c8d3ff;
+}
 .profile-card-avatar {
   flex: 0 0 56px;
   width: 56px;

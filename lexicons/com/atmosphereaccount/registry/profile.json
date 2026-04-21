@@ -8,22 +8,28 @@
       "key": "literal:self",
       "record": {
         "type": "object",
-        "required": ["name", "description", "categories", "createdAt"],
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 60,
-            "maxGraphemes": 60,
-            "description": "Display name for the project."
-          },
-          "description": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500,
-            "maxGraphemes": 500,
-            "description": "Short description of the project."
-          },
+      "required": ["name", "description", "categories", "createdAt"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "maxGraphemes": 60,
+          "description": "Display name for the project."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "maxGraphemes": 500,
+          "description": "Short description of the project."
+        },
+        "mainLink": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512,
+          "description": "Primary destination for the project (the actual app, service, or landing page). The whole profile card on /explore is rendered as a button to this URL. Optional in the lexicon for backward compatibility with records created before mainLink existed; the registry UI requires it for new/updated records."
+        },
           "avatar": {
             "type": "blob",
             "accept": ["image/png", "image/jpeg", "image/webp"],

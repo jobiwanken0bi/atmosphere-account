@@ -5,18 +5,48 @@ interface Props {
   profile: ProfileRow;
 }
 
+/**
+ * The profile card is the primary surface of /explore. The whole card
+ * is clickable and lands the visitor on the project's `mainLink` (the
+ * actual app/service/page) — a small top-right arrow signals the
+ * external destination. Legacy records that pre-date `mainLink` fall
+ * back to the local /explore/<handle> detail page so the card never
+ * 404s, just degrades gracefully.
+ */
 export default function ProfileCard({ profile }: Props) {
   const t = useT();
   const tCat = t.categories as Record<string, string>;
-  /** Show every category the project applies to (e.g. "App + Account
-   *  provider"), capped to keep the card from getting busy. */
   const cats = profile.categories.slice(0, 3);
   const featured = profile.featured;
+
+  const isExternal = !!profile.mainLink;
+  const href = profile.mainLink ??
+    `/explore/${encodeURIComponent(profile.handle)}`;
+
   return (
     <a
-      href={`/explore/${encodeURIComponent(profile.handle)}`}
-      class="glass profile-card"
+      href={href}
+      class="glass profile-card profile-card-button"
+      {...(isExternal
+        ? { target: "_blank", rel: "noopener noreferrer external" }
+        : {})}
     >
+      <span class="profile-card-arrow" aria-hidden="true">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <line x1="7" y1="17" x2="17" y2="7"></line>
+          <polyline points="9 7 17 7 17 15"></polyline>
+        </svg>
+      </span>
+
       <div class="profile-card-avatar">
         {profile.avatarCid
           ? (
