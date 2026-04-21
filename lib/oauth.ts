@@ -35,7 +35,20 @@ import {
   redirectUri,
 } from "./env.ts";
 
-const DEFAULT_SCOPE = "atproto transition:generic";
+/**
+ * Minimum-permission scope. The permission-set lexicon
+ * (`com.atmosphereaccount.registry.fullPermissions`) grants only:
+ *   - repo writes (create/update/delete) to com.atmosphereaccount.registry.profile
+ *   - image/* blob uploads (for avatars)
+ *
+ * This MUST stay in sync with `routes/oauth/client-metadata.json.ts`,
+ * which is the document atproto authorization servers actually fetch.
+ *
+ * Inline-form equivalent (for reference):
+ *   atproto repo:com.atmosphereaccount.registry.profile blob:image/*
+ */
+const DEFAULT_SCOPE =
+  "atproto include:com.atmosphereaccount.registry.fullPermissions";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
 

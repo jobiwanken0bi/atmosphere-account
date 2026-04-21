@@ -23,7 +23,18 @@ export const handler = define.handlers({
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       redirect_uris: [redirectUri()],
-      scope: "atproto transition:generic",
+      /**
+       * Minimum-permission scope: only writes to our own profile
+       * collection plus image-blob uploads (for avatars). The
+       * permission-set lexicon is published at
+       *   /.well-known/atproto-lexicon/com.atmosphereaccount.registry.fullPermissions
+       * and rendered in the consent dialog via its title/detail.
+       *
+       * Inline-form equivalent (kept as a reference for maintainers):
+       *   atproto repo:com.atmosphereaccount.registry.profile blob:image/*
+       */
+      scope:
+        "atproto include:com.atmosphereaccount.registry.fullPermissions",
       dpop_bound_access_tokens: true,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "ES256",

@@ -9,10 +9,18 @@
 
 export const PROFILE_NSID = "com.atmosphereaccount.registry.profile";
 export const FEATURED_NSID = "com.atmosphereaccount.registry.featured";
+/**
+ * Permission-set lexicon NSID requested via the OAuth `include:` scope.
+ * The set itself only references the profile collection + image blobs;
+ * see `lexicons/com/atmosphereaccount/registry/fullPermissions.json`.
+ */
+export const PERMISSION_SET_NSID =
+  "com.atmosphereaccount.registry.fullPermissions";
 
 export const REGISTRY_NSIDS = [
   PROFILE_NSID,
   FEATURED_NSID,
+  PERMISSION_SET_NSID,
 ] as const;
 
 export const CATEGORIES = [
@@ -211,7 +219,10 @@ function normalizeLinks(input: unknown): {
       .includes(kind);
     if (e.url !== undefined && e.url !== null && e.url !== "") {
       if (!isUrl(e.url)) {
-        return { ok: false, error: `links[].url (${kind}): must be http(s) URL` };
+        return {
+          ok: false,
+          error: `links[].url (${kind}): must be http(s) URL`,
+        };
       }
       entry.url = (e.url as string).trim();
     } else if (!isAtmosphere) {
@@ -407,6 +418,7 @@ export async function loadLexiconJson(nsid: string): Promise<unknown | null> {
   const fileMap: Record<string, string> = {
     [PROFILE_NSID]: "profile.json",
     [FEATURED_NSID]: "featured.json",
+    [PERMISSION_SET_NSID]: "fullPermissions.json",
   };
   const filename = fileMap[nsid];
   const url = new URL(

@@ -1,0 +1,23 @@
+{
+  "lexicon": 1,
+  "id": "com.atmosphereaccount.registry.fullPermissions",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Atmosphere Account",
+      "detail": "Manage your Atmosphere Explore profile and avatar.",
+      "permissions": [
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": ["com.atmosphereaccount.registry.profile"]
+        },
+        {
+          "type": "permission",
+          "resource": "blob",
+          "accept": ["image/*"]
+        }
+      ]
+    }
+  }
+}
