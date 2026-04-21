@@ -319,6 +319,8 @@ const en = {
         missingId: "Enter a handle or DID first.",
       },
       endpointsHeading: "Endpoints",
+      paramsLabel: "Parameters",
+      paramDefault: "default",
       endpoints: {
         profile: {
           method: "GET",
@@ -332,7 +334,24 @@ const en = {
           path: "/api/registry/search",
           summary:
             "Paginated profile search. Filter by free-text query, category, and subcategory. Returns { profiles, total, page, pageSize }.",
-          params: "?q=&category=&subcategory=&page=1&pageSize=24",
+          params: [
+            { name: "q", desc: "Free-text search query." },
+            {
+              name: "category",
+              desc:
+                "One of app, accountProvider, moderator, infrastructure, developerTool.",
+            },
+            {
+              name: "subcategory",
+              desc: "Subcategory string, e.g. photo or microblog.",
+            },
+            { name: "page", desc: "Page number.", default: "1" },
+            {
+              name: "pageSize",
+              desc: "Results per page (max 48).",
+              default: "24",
+            },
+          ],
           cache: "public, max-age=10, s-maxage=30",
         },
         featured: {
@@ -340,7 +359,13 @@ const en = {
           path: "/api/registry/featured",
           summary:
             "Curated featured list, ordered by position. Returns { profiles }.",
-          params: "?limit=12",
+          params: [
+            {
+              name: "limit",
+              desc: "Number of profiles to return (max 48).",
+              default: "12",
+            },
+          ],
           cache: "public, max-age=30, s-maxage=120",
         },
         avatar: {
