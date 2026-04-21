@@ -1,5 +1,6 @@
 import type { ProfileRow } from "../../lib/registry.ts";
 import { useT } from "../../i18n/mod.ts";
+import VerifiedBadge from "../VerifiedBadge.tsx";
 
 interface Props {
   profile: ProfileRow;
@@ -40,6 +41,11 @@ export default function ProfileCard({ profile }: Props) {
       <div class="profile-card-body">
         <div class="profile-card-title-row">
           <h3 class="profile-card-name">{profile.name}</h3>
+          {profile.iconAccessStatus === "granted" && (
+            <VerifiedBadge
+              size={16}
+            />
+          )}
           {featured?.badges?.includes("official") && (
             <span class="profile-badge profile-badge--official">
               {t.badges.official}

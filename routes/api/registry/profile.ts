@@ -205,7 +205,7 @@ export const handler = define.handlers({
         JSON.stringify({
           error: "icon_access_required",
           detail:
-            "SVG icon uploads require admin verification. Request access from your profile page.",
+            "This project hasn't been verified yet. SVG icon uploads unlock once an admin verifies the project — request verification from your profile page.",
         }),
         {
           status: 403,

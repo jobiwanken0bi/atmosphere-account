@@ -442,6 +442,9 @@ const en = {
   badges: {
     verified: "Verified",
     official: "Official",
+    /** Tooltip / aria label for the verified-seal icon shown next to
+     *  the project name once admin verification is granted. */
+    verifiedTooltip: "Verified project",
   },
 
   /**
@@ -610,9 +613,9 @@ const en = {
         tooLarge: "Icon must be 200KB or smaller.",
         gate: {
           /** Gate state when the project hasn't requested verification yet. */
-          lockedTitle: "SVG Upload requires verification",
+          lockedTitle: "Verification required",
           lockedBody:
-            "Per-project verification keeps malicious SVGs out of the developer API. Submit a request and an admin will review your project.",
+            "Verified projects get a checkmark on their listing and unlock SVG icon uploads for the developer API. Submit a request and an admin will review your project.",
           requestButton: "Request Verification",
           /** Disabled-button text shown before the user has published their profile. */
           requestDisabledHint:
@@ -629,13 +632,13 @@ const en = {
               : `An admin denied your verification request. To appeal, email ${appealEmail}.`,
           /** Gate state after admin grant — uploader unlocked. */
           grantedHint:
-            "Your project is verified — SVG uploads are unlocked. Files are still sanitised on upload.",
+            "Your project is verified — a checkmark appears on your listing and SVG uploads are unlocked. Files are still sanitised on upload.",
         },
         /** Modal that collects a contact email for the verification request. */
         requestModal: {
-          title: "Request SVG icon verification",
+          title: "Request verification",
           body:
-            "An admin will review your project and reply by email. We only use this address for this verification thread.",
+            "An admin will review your project and reply by email. Verified projects get a checkmark on their listing and can upload an SVG icon for the developer API.",
           emailLabel: "Contact email",
           emailPlaceholder: "you@example.com",
           submit: "Submit request",
@@ -660,11 +663,10 @@ const en = {
     errorPrefix: "Error",
     overview: {
       headline: "Admin",
-      subhead:
-        "Verify projects for SVG uploads, triage reports, and curate the featured rail.",
-      iconAccessTitle: "Icon access requests",
+      subhead: "Verify projects, triage reports, and curate the featured rail.",
+      iconAccessTitle: "Verification requests",
       iconAccessBody:
-        "Projects requesting permission to upload an SVG icon for the developer API.",
+        "Projects asking to be verified — grants a checkmark on their listing and unlocks SVG icon uploads for the developer API.",
       reportsTitle: "Open reports",
       reportsBody: "User-submitted reports against profiles in Explore.",
       featuredTitle: "Featured",
@@ -680,22 +682,22 @@ const en = {
       rejected: "Rejected",
     },
     iconAccess: {
-      headline: "Icon access requests",
+      headline: "Verification requests",
       subhead:
-        "Projects asking for permission to upload an SVG icon. Granting unlocks /api/registry/icon/:did and the developer API's `iconUrl`. Per-icon sanitisation still runs server-side. Denying (or revoking) hides any existing icon immediately.",
+        "Projects asking to be verified. Granting puts a checkmark next to the project name on its listing and detail page, and unlocks /api/registry/icon/:did + the developer API's `iconUrl`. Per-icon sanitisation still runs server-side. Denying (or revoking) drops the checkmark and hides any existing icon immediately.",
       pendingHeading: "Pending requests",
       grantedHeading: "Currently verified",
       emptyPending: "No requests in the queue.",
       emptyGranted: "No projects are verified yet.",
-      grant: "Grant",
+      grant: "Verify",
       deny: "Deny",
       revoke: "Revoke",
       denyPrompt:
         "Optional: tell the project owner why you're denying / revoking. Press OK with the field empty to deny without a reason.",
-      markedGranted: "Granted",
+      markedGranted: "Verified",
       markedDenied: "Denied",
       requestedAtLabel: "Requested",
-      grantedAtLabel: "Granted",
+      grantedAtLabel: "Verified",
       emailLabel: "Contact email",
       viewProfile: "View profile",
     },

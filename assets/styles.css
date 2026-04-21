@@ -2005,6 +2005,27 @@ body {
   color: #fff;
 }
 
+/* Verified-project seal: shown next to the project name when an
+   admin has cleared the project. Distinct from `.profile-badge--*`,
+   which are curator-controlled featured rail labels. */
+.profile-verified-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #254a9e;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.profile-verified-badge--inline {
+  vertical-align: -0.15em;
+}
+.profile-verified-badge svg {
+  display: block;
+}
+.profile-verified-badge:hover {
+  color: #1f4f96;
+}
+
 .explore-empty {
   text-align: center;
   padding: 3rem 1rem;
