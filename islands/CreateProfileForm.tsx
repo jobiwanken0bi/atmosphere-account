@@ -37,6 +37,10 @@ interface Props {
   /** Whether the registry currently has a published record for this user.
    *  Drives the live/inactive status pill at the top of the form. */
   initialPublished: boolean;
+  /** Handle stored on the registry row (may differ from the live PDS
+   *  handle if the user has changed it but not republished). Used to
+   *  link to the public profile from the action row. */
+  publicProfileHandle?: string | null;
 }
 
 interface BlobRefShape {
@@ -116,7 +120,14 @@ function splitInitialLinks(links: LinkEntry[]): {
 }
 
 export default function CreateProfileForm(
-  { did, handle, initial, initialAvatarUrl, initialPublished }: Props,
+  {
+    did,
+    handle,
+    initial,
+    initialAvatarUrl,
+    initialPublished,
+    publicProfileHandle,
+  }: Props,
 ) {
   const t = useT();
   const tForm = t.forms.profile;
@@ -617,6 +628,23 @@ export default function CreateProfileForm(
             ? tManage.updateButton
             : tManage.publishButton}
         </button>
+        {/*
+          "View public profile" sits between Update and Remove so it
+          reads as the natural read-only complement to the destructive
+          actions. We only render it when the user has actually
+          published (live in registry) AND we know their public handle —
+          otherwise the link would 404. We use `published.value` so the
+          link appears immediately after a first-time publish without a
+          page reload.
+         */}
+        {published.value && publicProfileHandle && (
+          <a
+            href={`/explore/${encodeURIComponent(publicProfileHandle)}`}
+            class="profile-form-button-secondary"
+          >
+            {tManage.viewPublicProfile}
+          </a>
+        )}
         {published.value && (
           <button
             type="button"

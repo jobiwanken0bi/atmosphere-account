@@ -252,12 +252,15 @@ export default define.page(function App(ctx) {
   const locale = state.locale;
   const t = getMessages(locale);
   /**
-   * The dynamic sky / sun / cloud parallax is intentionally disabled on the
-   * explore section — it competes with content density there. We force-apply
-   * `sky-static` server-side and hide the user-facing toggle.
+   * The dynamic sky / sun / cloud parallax is intentionally disabled on
+   * content-dense pages — it competes with reading. We force-apply
+   * `sky-static` server-side and hide the user-facing toggle on:
+   *   - /explore and any sub-route
+   *   - /developer-resources (dense reference material)
    */
   const effectsOff = url.pathname === "/explore" ||
-    url.pathname.startsWith("/explore/");
+    url.pathname.startsWith("/explore/") ||
+    url.pathname === "/developer-resources";
   const htmlClass = effectsOff ? "sky-static" : undefined;
   const bodyClass = effectsOff ? "sky-bg explore-no-effects" : "sky-bg";
   return (

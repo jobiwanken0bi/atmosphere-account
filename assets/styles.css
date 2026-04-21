@@ -2215,22 +2215,6 @@ body {
   text-align: right;
 }
 
-/* "View public profile" link rendered below the form once the profile
- * is live in the registry. Wraps the secondary button so we can centre
- * it without affecting the form layout above. */
-.manage-view-public {
-  display: flex;
-  justify-content: center;
-  margin-top: 1.75rem;
-}
-
-.manage-view-public-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  text-decoration: none;
-}
-
 .profile-form {
   padding: 1.75rem;
   border-radius: 24px;
