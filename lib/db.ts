@@ -31,8 +31,25 @@ function getEnv(key: string): string | undefined {
   }
 }
 
+/** Hosted runtimes must have an explicit Turso URL. Falling back to a
+ * local file database is useful for `deno task dev`, but on Deno Deploy
+ * it masks configuration mistakes as an empty registry and broken OAuth
+ * because the web libSQL client can't actually open `file:./local.db`. */
+function isHostedRuntime(): boolean {
+  return !!(getEnv("DENO_DEPLOYMENT_ID") ??
+    getEnv("DENO_REGION") ??
+    getEnv("VERCEL"));
+}
+
 function resolveDbUrl(): string {
-  return getEnv("TURSO_DATABASE_URL") ?? "file:./local.db";
+  const url = getEnv("TURSO_DATABASE_URL");
+  if (url) return url;
+  if (isHostedRuntime()) {
+    throw new Error(
+      "TURSO_DATABASE_URL is required in hosted deployments. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN to the registry database credentials.",
+    );
+  }
+  return "file:./local.db";
 }
 
 /**
@@ -51,6 +68,11 @@ function getClient(): Promise<Client> {
     _clientPromise = (async () => {
       const url = resolveDbUrl();
       const authToken = getEnv("TURSO_AUTH_TOKEN");
+      if (/^(libsql|https?):\/\//.test(url) && !authToken) {
+        throw new Error(
+          "TURSO_AUTH_TOKEN is required when TURSO_DATABASE_URL points at a remote Turso database.",
+        );
+      }
       if (shouldLoadNativeFileClient(url)) {
         const { createClient } = await import("@libsql/client");
         _client = createClient({ url, authToken }) as unknown as Client;
