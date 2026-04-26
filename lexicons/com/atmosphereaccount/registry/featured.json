@@ -26,12 +26,14 @@
       "properties": {
         "did": {
           "type": "string",
-          "format": "did"
+          "format": "did",
+          "maxLength": 256
         },
         "badges": {
           "type": "array",
           "items": {
             "type": "string",
+            "maxLength": 32,
             "knownValues": ["verified", "official"]
           }
         },

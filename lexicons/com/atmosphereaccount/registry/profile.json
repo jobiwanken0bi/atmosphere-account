@@ -60,6 +60,7 @@
             "maxLength": 4,
             "items": {
               "type": "string",
+              "maxLength": 32,
               "knownValues": [
                 "app",
                 "accountProvider",
@@ -90,7 +91,8 @@
           },
           "createdAt": {
             "type": "string",
-            "format": "datetime"
+            "format": "datetime",
+            "maxLength": 64
           }
         }
       }
@@ -101,6 +103,7 @@
       "properties": {
         "kind": {
           "type": "string",
+          "maxLength": 32,
           "knownValues": [
             "bsky",
             "tangled",
