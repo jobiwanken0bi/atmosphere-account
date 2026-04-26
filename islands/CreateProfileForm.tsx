@@ -25,6 +25,9 @@ interface ExistingProfile {
    *  (the chosen migration path was "treat existing website as Main
    *  Link"). */
   mainLink: string | null;
+  /** Optional App Store / Android links rendered as platform buttons. */
+  iosLink: string | null;
+  androidLink: string | null;
   /** All categories that apply to the project (always non-empty). The
    *  first item is the primary, used for sort/grouping in lists. */
   categories: string[];
@@ -94,6 +97,15 @@ async function readFileAsBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 interface CustomLinkRow {
   label: string;
   url: string;
@@ -105,9 +117,8 @@ interface CustomLinkRow {
  * `legacyWebsite` is the URL of any pre-mainLink `kind: website` entry.
  * Callers use it to auto-promote that URL into the new top-level
  * `mainLink` field when the existing record doesn't have one yet (the
- * "treat existing website as Main Link" migration); after promotion,
- * the landing-page input is left empty so the user doesn't end up with
- * duplicate buttons pointing at the same URL.
+ * "treat existing website as Main Link" migration). Current records no
+ * longer emit website links because mainLink renders as the Web button.
  */
 function splitInitialLinks(links: LinkEntry[]): {
   bskyClientIds: string[];
@@ -115,7 +126,8 @@ function splitInitialLinks(links: LinkEntry[]): {
   tangledOn: boolean;
   supperOverride: string;
   supperOn: boolean;
-  landing: string;
+  iosLink: string;
+  androidLink: string;
   legacyWebsite: string;
   custom: CustomLinkRow[];
 } {
@@ -124,7 +136,9 @@ function splitInitialLinks(links: LinkEntry[]): {
   let tangledOn = false;
   let supperOverride = "";
   let supperOn = false;
-  let landing = "";
+  let iosLink = "";
+  let androidLink = "";
+  let legacyWebsite = "";
   const custom: CustomLinkRow[] = [];
 
   for (const e of links) {
@@ -141,11 +155,25 @@ function splitInitialLinks(links: LinkEntry[]): {
         if (e.url) supperOverride = e.url;
         break;
       case "website":
-        // The website kind now stores the optional Landing Page URL.
-        if (e.url) landing = e.url;
+        if (e.url && !legacyWebsite) legacyWebsite = e.url;
         break;
       case "other":
-        if (e.url) custom.push({ label: e.label ?? "", url: e.url });
+        if (e.url) {
+          const normalizedLabel = (e.label ?? "").trim().toLowerCase();
+          if (
+            !iosLink &&
+            (normalizedLabel === "ios" || normalizedLabel === "iphone")
+          ) {
+            iosLink = e.url;
+          } else if (
+            !androidLink &&
+            (normalizedLabel === "android" || normalizedLabel === "google play")
+          ) {
+            androidLink = e.url;
+          } else {
+            custom.push({ label: e.label ?? "", url: e.url });
+          }
+        }
         break;
     }
   }
@@ -155,8 +183,9 @@ function splitInitialLinks(links: LinkEntry[]): {
     tangledOn,
     supperOverride,
     supperOn,
-    landing,
-    legacyWebsite: landing,
+    iosLink,
+    androidLink,
+    legacyWebsite,
     custom,
   };
 }
@@ -176,7 +205,7 @@ export default function CreateProfileForm(
   const tAtmos = tForm.atmosphereLinks;
   const tCustom = tForm.customLinks;
   const tMainLink = tForm.mainLink;
-  const tLanding = tForm.landingPage;
+  const tAppLinks = tForm.appLinks;
   const tManage = t.explore.manage;
   /** Live registry status. Flips on save (-> true) and delete (-> false). */
   const published = useSignal<boolean>(initialPublished);
@@ -187,15 +216,18 @@ export default function CreateProfileForm(
   const description = useSignal(initial?.description ?? "");
   /**
    * Auto-promote the legacy `website` URL into the new mainLink slot
-   * for records that pre-date mainLink. The landing-page input then
-   * starts empty so the user doesn't unintentionally save the same
-   * URL twice (once as Main Link, once as a Landing Page button).
+   * for records that pre-date mainLink. Current saves no longer emit
+   * `website` entries, so this is a one-way cleanup path.
    */
   const promoteLegacyWebsite = !initial?.mainLink &&
     !!initialSplit.legacyWebsite;
   const mainLink = useSignal<string>(
     initial?.mainLink ??
       (promoteLegacyWebsite ? initialSplit.legacyWebsite : ""),
+  );
+  const iosLink = useSignal<string>(initial?.iosLink ?? initialSplit.iosLink);
+  const androidLink = useSignal<string>(
+    initial?.androidLink ?? initialSplit.androidLink,
   );
   const categories = useSignal<string[]>(
     initial?.categories?.length ? initial.categories : ["app"],
@@ -221,12 +253,6 @@ export default function CreateProfileForm(
    *  open, if any. `null` = no modal open. */
   const urlOverrideOpen = useSignal<"tangled" | "supper" | null>(null);
 
-  /** Optional secondary URL — rendered as a globe-icon button on the
-   *  public profile detail page. Stored as `kind: website` in the
-   *  links[] array for backward compatibility with existing records. */
-  const landingPage = useSignal<string>(
-    promoteLegacyWebsite ? "" : initialSplit.landing,
-  );
   const customLinks = useSignal<CustomLinkRow[]>(initialSplit.custom);
 
   const tIcon = tForm.icon;
@@ -443,8 +469,7 @@ export default function CreateProfileForm(
    * Reduce the form's working state into the lexicon-shaped LinkEntry[]
    * we send to the API. Order matters for the public profile button row
    * — atmosphere links first (in service order, with the user's chosen
-   * primary bsky client at the head), then the optional Landing Page
-   * (stored as `kind: website`), then custom links in display order.
+   * primary bsky client at the head), then custom links in display order.
    *
    * The Main Link is NOT in this array — it lives at top level on the
    * record (and on the API payload) and drives the listing card target.
@@ -467,8 +492,6 @@ export default function CreateProfileForm(
       if (u) entry.url = u;
       out.push(entry);
     }
-    const landing = landingPage.value.trim();
-    if (landing) out.push({ kind: "website", url: landing });
     for (const row of customLinks.value) {
       const url = row.url.trim();
       const label = row.label.trim();
@@ -504,6 +527,16 @@ export default function CreateProfileForm(
       message.value = { kind: "error", text: tMainLink.invalid };
       return;
     }
+    const trimmedIosLink = iosLink.value.trim();
+    if (trimmedIosLink && !isHttpUrl(trimmedIosLink)) {
+      message.value = { kind: "error", text: tAppLinks.iosInvalid };
+      return;
+    }
+    const trimmedAndroidLink = androidLink.value.trim();
+    if (trimmedAndroidLink && !isHttpUrl(trimmedAndroidLink)) {
+      message.value = { kind: "error", text: tAppLinks.androidInvalid };
+      return;
+    }
     submitting.value = true;
     message.value = null;
 
@@ -514,6 +547,8 @@ export default function CreateProfileForm(
         name: name.value.trim(),
         description: description.value.trim(),
         mainLink: trimmedMainLink,
+        iosLink: trimmedIosLink || null,
+        androidLink: trimmedAndroidLink || null,
         categories: categories.value,
         subcategories: showSubcategories ? subcategories.value : [],
         links: cleanedLinks,
@@ -766,13 +801,10 @@ export default function CreateProfileForm(
         {/* ---------------- Main Link ----------------------------- */}
         {
           /*
-            Required. Drives the listing card's link target on /explore
-            (whole card becomes a button). Also surfaced as a small
-            arrow on hover. We keep it directly above Atmosphere links
-            so the user sees the destination flow top-to-bottom: where
-            the card goes (Main Link) → who runs the project (Atmosphere
-            services) → optional secondary surfaces (Landing Page +
-            custom).
+            Required. Renders as the Web button on the public profile.
+            We keep the mobile-app links directly underneath it so the
+            user sees the primary destinations together before adding
+            Atmosphere and custom buttons.
           */
         }
         <label class="profile-form-field">
@@ -790,6 +822,34 @@ export default function CreateProfileForm(
               mainLink.value = (e.currentTarget as HTMLInputElement).value}
           />
         </label>
+
+        {/* ---------------- Mobile app links (optional) ---------- */}
+        <div class="profile-form-mobile-links">
+          <label class="profile-form-field">
+            <span class="profile-form-label">{tAppLinks.iosLabel}</span>
+            <input
+              type="url"
+              class="profile-form-input"
+              placeholder={tAppLinks.iosPlaceholder}
+              value={iosLink.value}
+              onInput={(e) =>
+                iosLink.value = (e.currentTarget as HTMLInputElement).value}
+            />
+            <p class="profile-form-hint">{tAppLinks.iosHint}</p>
+          </label>
+          <label class="profile-form-field">
+            <span class="profile-form-label">{tAppLinks.androidLabel}</span>
+            <input
+              type="url"
+              class="profile-form-input"
+              placeholder={tAppLinks.androidPlaceholder}
+              value={androidLink.value}
+              onInput={(e) =>
+                androidLink.value = (e.currentTarget as HTMLInputElement).value}
+            />
+            <p class="profile-form-hint">{tAppLinks.androidHint}</p>
+          </label>
+        </div>
 
         {/* ---------------- Atmosphere links ----------------------- */}
         <fieldset class="profile-form-field">
@@ -812,28 +872,6 @@ export default function CreateProfileForm(
             )}
           </div>
         </fieldset>
-
-        {/* ---------------- Landing Page (optional) --------------- */}
-        {
-          /*
-            Optional secondary URL — a separate marketing/landing page
-            distinct from the Main Link. Renders as the globe-icon
-            button on /explore/<handle>. Stored as `kind: website` for
-            backward compatibility with existing records.
-          */
-        }
-        <label class="profile-form-field">
-          <span class="profile-form-label">{tLanding.sectionLabel}</span>
-          <input
-            type="url"
-            class="profile-form-input"
-            placeholder={tLanding.placeholder}
-            value={landingPage.value}
-            onInput={(e) =>
-              landingPage.value = (e.currentTarget as HTMLInputElement).value}
-          />
-          <p class="profile-form-hint">{tLanding.hint}</p>
-        </label>
 
         {/* ---------------- Custom links -------------------------- */}
         <div class="profile-form-field">

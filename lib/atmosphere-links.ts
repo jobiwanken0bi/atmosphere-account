@@ -141,8 +141,15 @@ export interface LinkKindLabels {
  *                   bluesky client; alt clients keep their favicon)
  *   - `tangled`   — inline Tangled "dolly" mark
  *   - `website`   — inline globe
+ *   - `ios`       — inline Apple-style mark
+ *   - `android`   — inline Android-style mark
  */
-export type ResolvedIconKind = "bsky" | "tangled" | "website";
+export type ResolvedIconKind =
+  | "bsky"
+  | "tangled"
+  | "website"
+  | "ios"
+  | "android";
 
 export interface ResolvedLink {
   /** Display title for the button. */

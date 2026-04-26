@@ -9,8 +9,8 @@ interface Props {
 /**
  * Listing-grid card. Clicking the card opens the project's profile
  * detail page (/explore/<handle>) — visitors get the description,
- * Atmosphere services, landing page, etc. on the detail page, where
- * the hero card is what actually links out to mainLink.
+ * Atmosphere services, Web / iOS / Android links, and any custom buttons
+ * on the detail page.
  */
 export default function ProfileCard({ profile }: Props) {
   const t = useT();

@@ -19,6 +19,8 @@ export interface PublicProfileJson {
   name: string;
   description: string;
   mainLink: string | null;
+  iosLink: string | null;
+  androidLink: string | null;
   categories: string[];
   subcategories: string[];
   links: LinkEntry[];
@@ -65,9 +67,13 @@ export function toPublicProfileJson(
     name: profile.name,
     description: profile.description,
     mainLink: profile.mainLink,
+    iosLink: profile.iosLink,
+    androidLink: profile.androidLink,
     categories: profile.categories,
     subcategories: profile.subcategories,
-    links: profile.links,
+    // `website` was the former Landing Page button. The current public
+    // API exposes the primary web destination via `mainLink` instead.
+    links: profile.links.filter((entry) => entry.kind !== "website"),
     avatarCid: profile.avatarCid,
     avatarMime: profile.avatarMime,
     avatarUrl,

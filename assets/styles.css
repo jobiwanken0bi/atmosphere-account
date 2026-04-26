@@ -2044,71 +2044,6 @@ body {
   padding: 1.5rem;
   border-radius: 24px;
 }
-/**
- * When the project has a `mainLink`, the hero is rendered as an
- * anchor — visitors can tap anywhere on the panel to jump straight
- * to the project. The diagonal arrow in the top-right corner sits
- * in a soft glass disc so it reads as a real button affordance, and
- * the whole hero lifts a touch on hover the same way the listing
- * cards do. Padding-right reserves space so long names don't slide
- * under the disc.
- */
-a.profile-hero {
-  text-decoration: none;
-  color: inherit;
-}
-.profile-hero-button {
-  position: relative;
-  padding-right: 3.4rem;
-  cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-.profile-hero-button:hover,
-.profile-hero-button:focus-visible {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 36px rgba(48, 70, 128, 0.14);
-}
-.profile-hero-arrow {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(37, 74, 158, 0.2);
-  color: #254a9e;
-  box-shadow: 0 2px 6px rgba(48, 70, 128, 0.1);
-  transition:
-    transform 0.18s ease,
-    background 0.18s ease,
-    box-shadow 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease;
-  pointer-events: none;
-}
-.profile-hero-button:hover .profile-hero-arrow,
-.profile-hero-button:focus-visible .profile-hero-arrow {
-  transform: translate(3px, -3px);
-  background: #254a9e;
-  border-color: #254a9e;
-  color: #ffffff;
-  box-shadow: 0 6px 16px rgba(37, 74, 158, 0.32);
-}
-.dark-phase .profile-hero-arrow {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(200, 211, 255, 0.32);
-  color: #c8d3ff;
-}
-.dark-phase .profile-hero-button:hover .profile-hero-arrow,
-.dark-phase .profile-hero-button:focus-visible .profile-hero-arrow {
-  background: #c8d3ff;
-  border-color: #c8d3ff;
-  color: #0e1428;
-}
 .profile-hero-avatar {
   width: 120px;
   height: 120px;
@@ -2171,7 +2106,7 @@ a.profile-hero {
   color: rgba(255, 255, 255, 0.85);
 }
 
-/* ---- Profile detail call-to-action buttons (Bluesky + Website) ---- */
+/* ---- Profile detail call-to-action buttons (Web / apps / Atmosphere) ---- */
 .profile-actions {
   margin-top: 1.5rem;
   display: grid;
@@ -2422,6 +2357,16 @@ a.profile-hero {
   flex-direction: column;
   gap: 1.1rem;
   margin-top: 1.5rem;
+}
+.profile-form-mobile-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (max-width: 720px) {
+  .profile-form-mobile-links {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Read-only "Signed in as @handle" row, with the sign-out button

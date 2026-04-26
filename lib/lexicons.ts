@@ -115,15 +115,16 @@ export interface ProfileRecord {
   name: string;
   description: string;
   /**
-   * Primary destination URL for the project — the actual app, service,
-   * or marketing page. The whole profile card on /explore is rendered
-   * as a button that opens this URL. Optional in the lexicon for
-   * backward compatibility with records created before mainLink
-   * existed; the registry UI enforces it as required for new/updated
-   * records (the public listing falls back to /explore/<handle> when
-   * absent on a legacy record).
+   * Primary web destination URL for the project. Rendered as the Web
+   * button on the public profile. Optional in the lexicon for backward
+   * compatibility with records created before mainLink existed; the
+   * registry UI enforces it as required for new/updated records.
    */
   mainLink?: string;
+  /** Optional App Store URL for projects with an iOS app. */
+  iosLink?: string;
+  /** Optional Google Play / Android distribution URL for projects with an Android app. */
+  androidLink?: string;
   avatar?: BlobRef;
   /**
    * Optional vector icon (SVG) intended for developer use — sign-in
@@ -136,10 +137,10 @@ export interface ProfileRecord {
   categories: string[];
   subcategories?: string[];
   /**
-   * Outbound buttons shown on the public profile (Atmosphere link
-   * toggles, the optional Landing Page button, and any custom links).
-   * The legacy `website` kind is rendered as a Landing Page button
-   * post-migration; new records emit `website` for the same purpose.
+   * Outbound buttons shown on the public profile after the Web / iOS /
+   * Android app links (Atmosphere link toggles and any custom links).
+   * Legacy `website` entries are still valid for older records, but the
+   * current form no longer emits them.
    */
   links?: LinkEntry[];
   createdAt: string;
@@ -328,6 +329,26 @@ export function validateProfile(
     }
     normalizedMainLink = (v.mainLink as string).trim();
   }
+  let normalizedIosLink: string | undefined;
+  if (v.iosLink !== undefined && v.iosLink !== null && v.iosLink !== "") {
+    if (!isStr(v.iosLink, 512) || !isUrl(v.iosLink)) {
+      return { ok: false, error: "iosLink: must be an http(s) URL <=512" };
+    }
+    normalizedIosLink = (v.iosLink as string).trim();
+  }
+  let normalizedAndroidLink: string | undefined;
+  if (
+    v.androidLink !== undefined && v.androidLink !== null &&
+    v.androidLink !== ""
+  ) {
+    if (!isStr(v.androidLink, 512) || !isUrl(v.androidLink)) {
+      return {
+        ok: false,
+        error: "androidLink: must be an http(s) URL <=512",
+      };
+    }
+    normalizedAndroidLink = (v.androidLink as string).trim();
+  }
   // categories[]: required, deduped, every entry must be a known CATEGORY.
   // The first entry is treated as the primary category by the UI.
   let normalizedCategories: string[];
@@ -391,6 +412,8 @@ export function validateProfile(
       name: v.name as string,
       description: v.description as string,
       mainLink: normalizedMainLink,
+      iosLink: normalizedIosLink,
+      androidLink: normalizedAndroidLink,
       avatar: v.avatar as BlobRef | undefined,
       icon: v.icon as BlobRef | undefined,
       categories: normalizedCategories,

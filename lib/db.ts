@@ -93,6 +93,8 @@ const SCHEMA_STATEMENTS: string[] = [
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     main_link TEXT,
+    ios_link TEXT,
+    android_link TEXT,
     categories TEXT NOT NULL DEFAULT '[]',
     subcategories TEXT NOT NULL DEFAULT '[]',
     links TEXT NOT NULL DEFAULT '[]',
@@ -239,6 +241,16 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "main_link",
         ddl: "ALTER TABLE profile ADD COLUMN main_link TEXT",
+      },
+      {
+        table: "profile",
+        column: "ios_link",
+        ddl: "ALTER TABLE profile ADD COLUMN ios_link TEXT",
+      },
+      {
+        table: "profile",
+        column: "android_link",
+        ddl: "ALTER TABLE profile ADD COLUMN android_link TEXT",
       },
       {
         table: "profile",

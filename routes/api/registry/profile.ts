@@ -43,6 +43,9 @@ interface ProfileFormPayload {
   /** Primary destination URL for the profile card. Required by the
    *  registry; the form enforces this, the API double-checks. */
   mainLink?: string;
+  /** Optional app store links rendered as iOS / Android buttons. */
+  iosLink?: string;
+  androidLink?: string;
   /** Required multi-select. The first entry is the primary category. */
   categories?: string[];
   subcategories?: string[];
@@ -280,11 +283,15 @@ export const handler = define.handlers({
         { status: 400 },
       );
     }
+    const iosLink = trimOrNull(body.iosLink);
+    const androidLink = trimOrNull(body.androidLink);
 
     const draft: ProfileRecord = {
       name: trimOrNull(body.name) ?? "",
       description: trimOrNull(body.description) ?? "",
       mainLink,
+      iosLink,
+      androidLink,
       categories: normalizedCategories,
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
@@ -325,6 +332,8 @@ export const handler = define.handlers({
         name: validation.value.name,
         description: validation.value.description,
         mainLink: validation.value.mainLink ?? null,
+        iosLink: validation.value.iosLink ?? null,
+        androidLink: validation.value.androidLink ?? null,
         categories: validation.value.categories,
         subcategories: validation.value.subcategories ?? [],
         links: validation.value.links ?? [],

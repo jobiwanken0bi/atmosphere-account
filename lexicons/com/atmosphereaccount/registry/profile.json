@@ -28,7 +28,19 @@
             "type": "string",
             "format": "uri",
             "maxLength": 512,
-            "description": "Primary destination for the project (the actual app, service, or landing page). The whole profile card on /explore is rendered as a button to this URL. Optional in the lexicon for backward compatibility with records created before mainLink existed; the registry UI requires it for new/updated records."
+            "description": "Primary web destination for the project (the actual web app, service, or website). Rendered as the Web button on the public profile. Optional in the lexicon for backward compatibility with records created before mainLink existed; the registry UI requires it for new/updated records."
+          },
+          "iosLink": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Optional App Store URL for projects with an iOS app. Rendered as an iOS button on the public profile when present."
+          },
+          "androidLink": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Optional Google Play or Android distribution URL for projects with an Android app. Rendered as an Android button on the public profile when present."
           },
           "avatar": {
             "type": "blob",
@@ -74,7 +86,7 @@
               "type": "ref",
               "ref": "#linkEntry"
             },
-            "description": "Outbound buttons shown on the public profile. Atmosphere links (kind = bsky / tangled / supper) derive their URL from the project's current handle by default; a `url` override is allowed for tangled / supper when the canonical destination differs from the handle. Custom link kinds (kind = website / other) always carry their `url`."
+            "description": "Outbound buttons shown on the public profile after the Web / iOS / Android app links. Atmosphere links (kind = bsky / tangled / supper) derive their URL from the project's current handle by default; a `url` override is allowed for tangled / supper when the canonical destination differs from the handle. Custom link kinds (kind = website / other) always carry their `url`; new records no longer emit website entries."
           },
           "createdAt": {
             "type": "string",

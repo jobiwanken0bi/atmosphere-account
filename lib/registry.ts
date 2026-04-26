@@ -49,15 +49,18 @@ export interface ProfileRow {
   handle: string;
   name: string;
   description: string;
-  /** Primary destination for the profile card on /explore. May be null
-   *  for legacy records created before mainLink existed; the listing
-   *  card falls back to /explore/<handle> in that case. */
+  /** Primary web destination rendered as the Web button. May be null
+   *  for legacy records created before mainLink existed. */
   mainLink: string | null;
+  /** Optional App Store URL rendered as the iOS button on the public profile. */
+  iosLink: string | null;
+  /** Optional Android app URL rendered as the Android button on the public profile. */
+  androidLink: string | null;
   /** All categories that apply (always non-empty). The first item is the
    *  primary category used for sort/grouping in lists. */
   categories: string[];
   subcategories: string[];
-  /** Outbound links (atmosphere services, landing page, custom) in author-defined order. */
+  /** Outbound links (atmosphere services and custom links) in author-defined order. */
   links: LinkEntry[];
   avatarCid: string | null;
   avatarMime: string | null;
@@ -101,6 +104,8 @@ interface RawProfileRow {
   name: string;
   description: string;
   main_link: string | null;
+  ios_link: string | null;
+  android_link: string | null;
   categories: string;
   subcategories: string;
   links: string | null;
@@ -186,6 +191,10 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     name: r.name,
     description: r.description,
     mainLink: r.main_link && r.main_link.length > 0 ? r.main_link : null,
+    iosLink: r.ios_link && r.ios_link.length > 0 ? r.ios_link : null,
+    androidLink: r.android_link && r.android_link.length > 0
+      ? r.android_link
+      : null,
     categories: safeJsonArray(r.categories),
     subcategories: safeJsonArray(r.subcategories),
     links: safeJsonLinks(r.links),
@@ -237,6 +246,8 @@ export interface UpsertProfileInput {
    *  Stored as the textual URL; the registry UI/API enforce required-ness
    *  + URL shape on writes. */
   mainLink?: string | null;
+  iosLink?: string | null;
+  androidLink?: string | null;
   /** Required: 1-4 known category strings. The first is the primary. */
   categories: string[];
   subcategories: string[];
@@ -283,7 +294,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
     await c.execute({
       sql: `
         INSERT INTO profile (
-          did, handle, name, description, main_link,
+          did, handle, name, description, main_link, ios_link, android_link,
           categories, subcategories, links,
           avatar_cid, avatar_mime, icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
@@ -293,7 +304,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           takedown_status, takedown_reason, takedown_by, takedown_at,
           pds_url, record_cid, record_rev, created_at, indexed_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           NULL, NULL, NULL,
           NULL, NULL, NULL, NULL, NULL, NULL,
           NULL, NULL, NULL, NULL,
@@ -304,6 +315,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           name=excluded.name,
           description=excluded.description,
           main_link=excluded.main_link,
+          ios_link=excluded.ios_link,
+          android_link=excluded.android_link,
           categories=excluded.categories,
           subcategories=excluded.subcategories,
           links=excluded.links,
@@ -379,6 +392,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.name,
         input.description,
         input.mainLink ?? null,
+        input.iosLink ?? null,
+        input.androidLink ?? null,
         JSON.stringify(cats),
         JSON.stringify(input.subcategories ?? []),
         JSON.stringify(input.links ?? []),
