@@ -11,8 +11,7 @@
           "type": "permission",
           "resource": "repo",
           "collection": [
-            "com.atmosphereaccount.registry.profile",
-            "com.atmosphereaccount.registry.featured"
+            "com.atmosphereaccount.registry.profile"
           ]
         }
       ]
