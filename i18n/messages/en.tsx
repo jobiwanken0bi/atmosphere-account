@@ -291,6 +291,10 @@ const en = {
       "The Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
     downloadLottie: "Download Lottie (JSON)",
     downloadIcons: "Download icons (ZIP)",
+    schemaHeading: "Profile schema",
+    schemaBody:
+      "The registry profile schema is maintained in the open source repo. View the canonical AT Protocol lexicon on Tangled.",
+    viewSchema: "View schema on Tangled",
     api: {
       heading: "Profile API",
       intro:
@@ -694,6 +698,15 @@ const en = {
       subhead:
         "Projects asking to be verified. Granting puts a checkmark next to the project name on its listing and detail page, and unlocks /api/registry/icon/:did + the developer API's `iconUrl`. Per-icon sanitisation still runs server-side. Denying (or revoking) drops the checkmark and hides any existing icon immediately.",
       pendingHeading: "Pending requests",
+      proactiveHeading: "Verify a project",
+      proactiveInputLabel: "Project handle or DID",
+      proactivePlaceholder: "atmosphereaccount.com or did:plc:...",
+      proactiveHelp:
+        "Use this to verify a published profile even if the project has not submitted a request. Request emails still appear in the pending queue when projects ask for verification themselves.",
+      proactiveSubmit: "Verify project",
+      proactiveSuccessSuffix: "is now verified.",
+      proactiveNotFound:
+        "No active registry profile was found for that handle or DID.",
       grantedHeading: "Currently verified",
       emptyPending: "No requests in the queue.",
       emptyGranted: "No projects are verified yet.",

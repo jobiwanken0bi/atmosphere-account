@@ -1,9 +1,10 @@
 import { useT } from "../i18n/mod.ts";
-import RegistryApiPlayground from "../islands/RegistryApiPlayground.tsx";
+
+const PROFILE_SCHEMA_URL =
+  "https://tangled.org/joebasser.com/atmosphere-account/blob/main/lexicons/com/atmosphereaccount/registry/profile.json";
 
 export default function DeveloperResources() {
   const t = useT();
-  const tApi = t.developerResources.api;
   return (
     <>
       <section class="section-sm reveal">
@@ -61,93 +62,19 @@ export default function DeveloperResources() {
         </div>
       </section>
 
-      {
-        /* Profile API: interactive playground + endpoint reference. The
-          endpoint reference is server-rendered so it's discoverable
-          without JS; the playground itself is a small island that
-          handles fetch + copy interactions client-side. */
-      }
       <section class="section-sm reveal">
-        <div class="container-narrow">
-          <div class="text-center">
-            <h2 class="text-subsection">{tApi.heading}</h2>
-            <div class="divider" />
-            <p class="text-body mt-2 mb-4">{tApi.intro}</p>
-          </div>
-
-          <RegistryApiPlayground />
-
-          {
-            /* Visual gap between the playground card and the next
-              subheading. We don't use the global mt-* utilities here
-              because they top out at mt-4 (2rem); the Endpoints/Schema
-              dividers want a touch more breathing room. */
-          }
-          <div class="api-section-heading">
-            <h3 class="text-subsection">{tApi.endpointsHeading}</h3>
-            <div class="divider" />
-          </div>
-          <dl class="api-endpoints">
-            {(["profile", "search", "featured", "avatar", "icon"] as const)
-              .map(
-                (key) => {
-                  const e = tApi.endpoints[key];
-                  const params = "params" in e ? e.params : undefined;
-                  return (
-                    <div class="api-endpoint" key={key}>
-                      <dt class="api-endpoint-path">
-                        <span class="api-endpoint-method">{e.method}</span>
-                        <code>{e.path}</code>
-                      </dt>
-                      <dd class="api-endpoint-summary">{e.summary}</dd>
-                      {params && params.length > 0 && (
-                        <dd class="api-endpoint-params">
-                          <span class="api-endpoint-params-label">
-                            {tApi.paramsLabel}
-                          </span>
-                          <ul class="api-endpoint-params-list">
-                            {params.map((p) => (
-                              <li key={p.name}>
-                                <code class="api-endpoint-param-name">
-                                  {p.name}
-                                </code>
-                                <span class="api-endpoint-param-desc">
-                                  {" — "}
-                                  {p.desc}
-                                </span>
-                                {"default" in p && p.default && (
-                                  <span class="api-endpoint-param-default">
-                                    {" "}
-                                    ({tApi.paramDefault}:{" "}
-                                    <code>{p.default}</code>)
-                                  </span>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </dd>
-                      )}
-                      <dd class="api-endpoint-cache">
-                        <code>cache-control: {e.cache}</code>
-                      </dd>
-                    </div>
-                  );
-                },
-              )}
-          </dl>
-
-          <div class="api-section-heading">
-            <h3 class="text-subsection">{tApi.schemaHeading}</h3>
-            <div class="divider" />
-          </div>
-          <p class="text-body mt-2 mb-3">{tApi.schemaBody}</p>
+        <div class="container-narrow text-center">
+          <h2 class="text-subsection">{t.developerResources.schemaHeading}</h2>
+          <div class="divider" />
+          <p class="text-body mt-2 mb-3">{t.developerResources.schemaBody}</p>
           <div class="badge-downloads">
             <a
-              href="/lexicons/com.atmosphereaccount.registry.profile.json"
-              download="com.atmosphereaccount.registry.profile.json"
+              href={PROFILE_SCHEMA_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               class="badge-download-btn font-mono"
             >
-              {tApi.downloadLexicon}
+              {t.developerResources.viewSchema}
             </a>
           </div>
         </div>

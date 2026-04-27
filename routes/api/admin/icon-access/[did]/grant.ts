@@ -19,7 +19,8 @@ export const handler = define.handlers({
     if (!did.startsWith("did:")) return jsonError(400, "invalid_did");
 
     try {
-      await grantIconAccess(did, gate.did);
+      const ok = await grantIconAccess(did, gate.did);
+      if (!ok) return jsonError(404, "profile_not_found");
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
       return jsonError(500, "grant_failed", m);

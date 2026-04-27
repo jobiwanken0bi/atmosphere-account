@@ -433,6 +433,13 @@ export interface GrantedIconAccessRow {
   reviewedBy: string;
 }
 
+export interface IconAccessLookupRow {
+  did: string;
+  handle: string;
+  name: string;
+  status: string | null;
+}
+
 /**
  * Open a verification request for the SVG-icon upload feature. The
  * caller must already own a published profile (DID matches the row).
@@ -471,9 +478,9 @@ export async function requestIconAccess(
 export async function grantIconAccess(
   did: string,
   reviewer: string,
-): Promise<void> {
-  await withDb(async (c) => {
-    await c.execute({
+): Promise<boolean> {
+  return await withDb(async (c) => {
+    const r = await c.execute({
       sql: `
         UPDATE profile SET
           icon_access_status = 'granted',
@@ -494,6 +501,47 @@ export async function grantIconAccess(
       `,
       args: [Date.now(), reviewer, did],
     });
+    return Number(r.rowsAffected ?? 0) > 0;
+  });
+}
+
+/**
+ * Resolve an admin-entered verification target. Accepts a DID or handle
+ * (with or without a leading @). Taken-down rows are intentionally excluded:
+ * takedown should be resolved before public verification is granted.
+ */
+export async function findIconAccessTarget(
+  identifier: string,
+): Promise<IconAccessLookupRow | null> {
+  const raw = identifier.trim().replace(/^@/, "");
+  if (!raw) return null;
+  const where = raw.startsWith("did:")
+    ? "p.did = ?"
+    : "LOWER(p.handle) = LOWER(?)";
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `
+        SELECT did, handle, name, icon_access_status
+        FROM profile p
+        WHERE ${where}
+          AND p.takedown_status IS NULL
+        LIMIT 1
+      `,
+      args: [raw],
+    });
+    if (r.rows.length === 0) return null;
+    const row = r.rows[0] as unknown as {
+      did: string;
+      handle: string;
+      name: string;
+      icon_access_status: string | null;
+    };
+    return {
+      did: row.did,
+      handle: row.handle,
+      name: row.name,
+      status: row.icon_access_status,
+    };
   });
 }
 

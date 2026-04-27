@@ -2,7 +2,26 @@ import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
 
 export default defineConfig({
-  plugins: [fresh()],
+  plugins: [
+    fresh(),
+    {
+      name: "atmosphere-fresh-island-dev-imports",
+      apply: "serve",
+      transformIndexHtml(html) {
+        /**
+         * Fresh's dev SSR currently emits inline module imports like
+         * `from "fresh-island::AccountMenu.tsx"`. The Vite dev server can
+         * serve those modules at `/@id/fresh-island::...`, but browsers try
+         * to resolve the bare `fresh-island::` scheme directly and block it.
+         * This keeps local island hydration working without affecting builds.
+         */
+        return html.replaceAll(
+          /from "fresh-island::([^"]+)"/g,
+          'from "/@id/fresh-island::$1"',
+        );
+      },
+    },
+  ],
   server: {
     /** Match local OAuth / site URL defaults; fail fast if another dev server is still bound. */
     port: 5173,

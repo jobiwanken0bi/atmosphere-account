@@ -7,6 +7,7 @@ import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
+import AdminIconAccessGrant from "../../islands/AdminIconAccessGrant.tsx";
 import AdminIconAccessRow from "../../islands/AdminIconAccessRow.tsx";
 import AdminIconAccessRevoke from "../../islands/AdminIconAccessRevoke.tsx";
 import { getMessages } from "../../i18n/mod.ts";
@@ -62,6 +63,19 @@ function Page({ account, pending, granted, locale }: PageProps) {
               <h1 class="text-section">{ti.headline}</h1>
               <p class="text-body mt-2">{ti.subhead}</p>
             </header>
+
+            <h2 class="text-card mt-6">{ti.proactiveHeading}</h2>
+            <AdminIconAccessGrant
+              copy={{
+                inputLabel: ti.proactiveInputLabel,
+                placeholder: ti.proactivePlaceholder,
+                help: ti.proactiveHelp,
+                submit: ti.proactiveSubmit,
+                successSuffix: ti.proactiveSuccessSuffix,
+                notFound: ti.proactiveNotFound,
+                error: t.errorPrefix,
+              }}
+            />
 
             <h2 class="text-card mt-6">{ti.pendingHeading}</h2>
             {pending.length === 0

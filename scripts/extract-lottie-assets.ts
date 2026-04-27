@@ -16,6 +16,11 @@ const data = JSON.parse(text) as {
 };
 
 await Deno.mkdir(outDir, { recursive: true });
+for await (const entry of Deno.readDir(outDir)) {
+  if (entry.isFile) {
+    await Deno.remove(new URL(entry.name, outDir));
+  }
+}
 
 const filenames: string[] = [];
 
