@@ -213,6 +213,36 @@ export async function getRecordPublic(
   return await res.json() as { uri: string; cid: string; value: unknown };
 }
 
+export async function listRecordsPublic(
+  pdsUrl: string,
+  did: string,
+  collection: string,
+  opts: { limit?: number; reverse?: boolean } = {},
+): Promise<
+  {
+    cursor?: string;
+    records: Array<{ uri: string; cid: string; value: unknown }>;
+  }
+> {
+  const url = new URL(
+    `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.listRecords`,
+  );
+  url.searchParams.set("repo", did);
+  url.searchParams.set("collection", collection);
+  url.searchParams.set(
+    "limit",
+    String(Math.max(1, Math.min(opts.limit ?? 25, 100))),
+  );
+  if (opts.reverse) url.searchParams.set("reverse", "true");
+  const res = await fetch(url.toString());
+  if (res.status === 404) return { records: [] };
+  if (!res.ok) throw new Error(`listRecords failed: HTTP ${res.status}`);
+  return await res.json() as {
+    cursor?: string;
+    records: Array<{ uri: string; cid: string; value: unknown }>;
+  };
+}
+
 /** Public: fetch app.bsky.actor.profile to pre-fill the create form. */
 export async function getBskyProfile(
   pdsUrl: string,

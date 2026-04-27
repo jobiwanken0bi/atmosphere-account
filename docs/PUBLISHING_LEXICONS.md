@@ -133,26 +133,26 @@ When you add or modify a lexicon in `lexicons/`:
 
 ## OAuth integration notes
 
-The login flow requests this scope (see `lib/oauth.ts`):
+The login flow currently requests explicit granular scopes (see `lib/oauth.ts`):
 
 ```
-atproto include:com.atmosphereaccount.registry.fullPermissions blob:image/*
+atproto repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*
 ```
 
-- **`include:...`** — the authorization server resolves this NSID via DNS and
-  reads the schema record's `title` / `detail` to render the consent dialog. It
-  also expands the `permissions[]` array into the actual granted scope. If
-  resolution fails the PDS returns `invalid_scope`, which is exactly what
-  blocked logins until DNS was set up.
+- **`repo:...`** — direct write access to the Atmosphere profile, review, and
+  update collections. We request direct scopes so login keeps working on PDSes
+  that do not yet resolve DNS-backed permission sets correctly.
 - **`blob:image/*`** is a top-level scope on purpose. The atproto permission
   spec
   [explicitly disallows `blob` permissions inside
   permission sets](https://atproto.com/specs/permission#permission-sets) — they
   must always be requested separately.
 
+We still publish `com.atmosphereaccount.registry.fullPermissions` so compatible
+authorization servers can present a human-friendly permission set in the future.
 If you change the permission set's `title`, `detail`, or `permissions[]`,
-remember the consent dialog won't reflect it until you `lex:publish:update`
-**and** the cache on the user's auth server expires.
+remember compatible consent dialogs won't reflect it until you
+`lex:publish:update` **and** the cache on the user's auth server expires.
 
 ---
 

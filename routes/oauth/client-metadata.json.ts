@@ -24,19 +24,12 @@ export const handler = define.handlers({
       response_types: ["code"],
       redirect_uris: [redirectUri()],
       /**
-       * Minimum-permission scope. The `include:` half is resolved by the
-       * authorization server via DNS-based atproto lexicon resolution
-       * (TXT record at `_lexicon.registry.atmosphereaccount.com`) and
-       * rendered in the consent dialog via its `title` / `detail`.
-       *
-       * `blob:image/*` is requested as a top-level scope because the
-       * atproto permission spec explicitly disallows blob permissions
-       * inside permission sets.
-       *
        * MUST stay in sync with `DEFAULT_SCOPE` in `lib/oauth.ts`.
+       * Direct repo scopes avoid depending on every PDS correctly resolving
+       * DNS-backed permission sets during login.
        */
       scope:
-        "atproto include:com.atmosphereaccount.registry.fullPermissions blob:image/*",
+        "atproto repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*",
       dpop_bound_access_tokens: true,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "ES256",

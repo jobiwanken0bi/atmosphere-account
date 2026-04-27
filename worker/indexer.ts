@@ -18,7 +18,6 @@ import {
   REVIEW_NSID,
   UPDATE_NSID,
   validateFeatured,
-  validateProfile,
   validateReview,
   validateUpdate,
 } from "../lib/lexicons.ts";
@@ -28,7 +27,6 @@ import {
   getProfileByDid,
   replaceFeatured,
   setJetstreamCursor,
-  upsertProfile,
 } from "../lib/registry.ts";
 import {
   createOrUpdateReview,
@@ -43,6 +41,7 @@ import {
 import { findPdsEndpoint, resolveDidDocument } from "../lib/identity.ts";
 import { getRecordPublic } from "../lib/pds.ts";
 import { JETSTREAM_URL } from "../lib/env.ts";
+import { upsertProfileFromRecord } from "../lib/profile-sync.ts";
 
 interface JetstreamCommit {
   rev: string;
@@ -106,43 +105,19 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     pdsUrl,
     event.did,
     PROFILE_NSID,
-    "self",
+    commit.rkey,
   );
   if (!fetched) return;
 
-  const validation = validateProfile(fetched.value);
-  if (!validation.ok || !validation.value) {
-    console.warn(
-      `[indexer] invalid profile from ${event.did}: ${validation.error}`,
-    );
-    return;
-  }
-  const r = validation.value;
   const handle = await resolveHandleFromDoc(event.did);
-
-  await upsertProfile({
+  const synced = await upsertProfileFromRecord({
     did: event.did,
     handle,
-    profileType: r.profileType,
-    name: r.name,
-    description: r.description,
-    mainLink: r.mainLink ?? null,
-    iosLink: r.iosLink ?? null,
-    androidLink: r.androidLink ?? null,
-    categories: r.categories ?? [],
-    subcategories: r.subcategories ?? [],
-    links: r.links ?? [],
-    screenshots: r.screenshots ?? [],
-    avatarCid: r.avatar?.ref.$link ?? null,
-    avatarMime: r.avatar?.mimeType ?? null,
-    iconCid: r.icon?.ref.$link ?? null,
-    iconMime: r.icon?.mimeType ?? null,
     pdsUrl,
-    recordCid: fetched.cid,
+    record: { ...fetched, rkey: commit.rkey },
     recordRev: commit.rev,
-    createdAt: Date.parse(r.createdAt) || Date.now(),
   });
-  console.log(`[indexer] upsert profile ${handle} (${event.did})`);
+  if (synced) console.log(`[indexer] upsert profile ${handle} (${event.did})`);
 }
 
 async function handleReviewEvent(event: JetstreamEvent): Promise<void> {

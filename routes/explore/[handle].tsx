@@ -32,6 +32,7 @@ import {
   listProfileUpdates,
   type ProfileUpdateRow,
 } from "../../lib/profile-updates.ts";
+import { syncProfileByIdentifier } from "../../lib/profile-sync.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -41,12 +42,21 @@ export const handler = define.handlers({
      *  user's own registry entry so the AccountMenu can deep-link to
      *  their public page. The lookups are cheap and trigger from the
      *  same DB connection. */
-    const [profile, ownerProfile] = await Promise.all([
+    let [profile, ownerProfile] = await Promise.all([
       getProfileByHandle(handle).catch(() => null),
       user ? getProfileByDid(user.did).catch(() => null) : Promise.resolve(
         null,
       ),
     ]);
+    if (!profile) {
+      const synced = await syncProfileByIdentifier(handle).catch((err) => {
+        console.warn(`[explore] profile sync failed for ${handle}:`, err);
+        return false;
+      });
+      if (synced) {
+        profile = await getProfileByHandle(handle).catch(() => null);
+      }
+    }
     const [reviewSummary, reviews, ownReview, updates] = profile
       ? await Promise.all([
         getReviewSummary(profile.did).catch(() => emptyReviewSummary()),

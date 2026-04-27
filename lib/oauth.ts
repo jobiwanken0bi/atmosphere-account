@@ -38,36 +38,23 @@ import {
 /**
  * Minimum-permission scope.
  *
- * Composed of three parts:
- *   - `atproto`                                                  - identity
- *   - `include:com.atmosphereaccount.registry.fullPermissions`  - repo writes
- *                                                                 to our
- *                                                                 profile +
- *                                                                 review
- *                                                                 collections
- *                                                                 (resolved
- *                                                                 dynamically
- *                                                                 from the
- *                                                                 published
- *                                                                 permission-set
- *                                                                 lexicon)
- *   - `blob:image/*`                                            - avatar +
- *                                                                 SVG icon
- *                                                                 uploads
+ * Composed of explicit granular scopes:
+ *   - `atproto`                                                - identity
+ *   - `repo:com.atmosphereaccount.registry.profile`            - profile writes
+ *   - `repo:com.atmosphereaccount.registry.review`             - review writes
+ *   - `repo:com.atmosphereaccount.registry.update`             - update writes
+ *   - `blob:image/*`                                           - avatar +
+ *                                                                SVG icon
+ *                                                                uploads
  *
- * The `blob` scope is intentionally NOT bundled into the permission set
- * because the atproto permission spec explicitly disallows blob permissions
- * inside permission sets — they must always be requested separately.
- * See https://atproto.com/specs/permission ("Permission Sets").
- *
- * The permission-set lexicon must be published to the DID that holds DNS
- * authority for `_lexicon.registry.atmosphereaccount.com` before this scope
- * will resolve. See `docs/PUBLISHING_LEXICONS.md` for setup steps.
+ * We keep `com.atmosphereaccount.registry.fullPermissions` published as a
+ * human-friendly permission set, but request direct repo scopes here so login
+ * does not depend on every PDS correctly resolving DNS-backed permission sets.
  *
  * MUST stay in sync with `routes/oauth/client-metadata.json.ts`.
  */
 const DEFAULT_SCOPE =
-  "atproto include:com.atmosphereaccount.registry.fullPermissions blob:image/*";
+  "atproto repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
 
