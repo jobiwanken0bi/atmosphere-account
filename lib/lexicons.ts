@@ -9,6 +9,7 @@
 
 export const PROFILE_NSID = "com.atmosphereaccount.registry.profile";
 export const REVIEW_NSID = "com.atmosphereaccount.registry.review";
+export const UPDATE_NSID = "com.atmosphereaccount.registry.update";
 export const FEATURED_NSID = "com.atmosphereaccount.registry.featured";
 /**
  * Permission-set lexicon NSID requested via the OAuth `include:` scope.
@@ -21,6 +22,7 @@ export const PERMISSION_SET_NSID =
 export const REGISTRY_NSIDS = [
   PROFILE_NSID,
   REVIEW_NSID,
+  UPDATE_NSID,
   FEATURED_NSID,
   PERMISSION_SET_NSID,
 ] as const;
@@ -167,6 +169,18 @@ export interface ReviewRecord {
   subjectUri?: string;
   rating: 1 | 2 | 3 | 4 | 5;
   body?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface UpdateRecord {
+  $type?: typeof UPDATE_NSID;
+  title: string;
+  body: string;
+  version?: string;
+  tangledCommitUrl?: string;
+  tangledRepoUrl?: string;
+  source?: "manual" | "tangled" | string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -597,6 +611,76 @@ export function validateReview(
   };
 }
 
+export function validateUpdate(
+  input: unknown,
+): ValidationResult<UpdateRecord> {
+  if (!input || typeof input !== "object") {
+    return { ok: false, error: "record must be an object" };
+  }
+  const v = input as Record<string, unknown>;
+  const title = typeof v.title === "string" ? v.title.trim() : "";
+  if (!title || title.length > 80) {
+    return { ok: false, error: "title: 1..80 chars required" };
+  }
+  const body = typeof v.body === "string" ? v.body.trim() : "";
+  if (!body || body.length > 1000) {
+    return { ok: false, error: "body: 1..1000 chars required" };
+  }
+  const version = typeof v.version === "string" ? v.version.trim() : "";
+  if (version.length > 32) {
+    return { ok: false, error: "version: must be <=32 chars" };
+  }
+  let tangledCommitUrl: string | undefined;
+  if (
+    v.tangledCommitUrl !== undefined && v.tangledCommitUrl !== null &&
+    v.tangledCommitUrl !== ""
+  ) {
+    if (!isStr(v.tangledCommitUrl, 512) || !isUrl(v.tangledCommitUrl)) {
+      return {
+        ok: false,
+        error: "tangledCommitUrl: must be an http(s) URL <=512",
+      };
+    }
+    tangledCommitUrl = (v.tangledCommitUrl as string).trim();
+  }
+  let tangledRepoUrl: string | undefined;
+  if (
+    v.tangledRepoUrl !== undefined && v.tangledRepoUrl !== null &&
+    v.tangledRepoUrl !== ""
+  ) {
+    if (!isStr(v.tangledRepoUrl, 512) || !isUrl(v.tangledRepoUrl)) {
+      return {
+        ok: false,
+        error: "tangledRepoUrl: must be an http(s) URL <=512",
+      };
+    }
+    tangledRepoUrl = (v.tangledRepoUrl as string).trim();
+  }
+  const source = typeof v.source === "string" && v.source.trim()
+    ? v.source.trim().slice(0, 32)
+    : "manual";
+  if (!isStr(v.createdAt, 64)) {
+    return { ok: false, error: "createdAt required (ISO 8601)" };
+  }
+  if (v.updatedAt !== undefined && !isStr(v.updatedAt, 64)) {
+    return { ok: false, error: "updatedAt: string <=64" };
+  }
+  return {
+    ok: true,
+    value: {
+      $type: UPDATE_NSID,
+      title,
+      body,
+      version: version || undefined,
+      tangledCommitUrl,
+      tangledRepoUrl,
+      source,
+      createdAt: v.createdAt as string,
+      updatedAt: typeof v.updatedAt === "string" ? v.updatedAt : undefined,
+    },
+  };
+}
+
 /**
  * The literal JSON for each lexicon (loaded at module init). Used by the
  * `/.well-known/atproto-lexicon/<NSID>` route to publish the schemas, and
@@ -609,6 +693,7 @@ export async function loadLexiconJson(nsid: string): Promise<unknown | null> {
   const fileMap: Record<string, string> = {
     [PROFILE_NSID]: "profile.json",
     [REVIEW_NSID]: "review.json",
+    [UPDATE_NSID]: "update.json",
     [FEATURED_NSID]: "featured.json",
     [PERMISSION_SET_NSID]: "fullPermissions.json",
   };

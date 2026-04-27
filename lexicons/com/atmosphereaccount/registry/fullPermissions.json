@@ -5,14 +5,15 @@
     "main": {
       "type": "permission-set",
       "title": "Atmosphere Account",
-      "detail": "Manage your Atmosphere profile and reviews.",
+      "detail": "Manage your Atmosphere profile, reviews, and updates.",
       "permissions": [
         {
           "type": "permission",
           "resource": "repo",
           "collection": [
             "com.atmosphereaccount.registry.profile",
-            "com.atmosphereaccount.registry.review"
+            "com.atmosphereaccount.registry.review",
+            "com.atmosphereaccount.registry.update"
           ]
         }
       ]

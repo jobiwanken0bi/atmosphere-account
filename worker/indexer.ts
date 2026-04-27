@@ -16,9 +16,11 @@ import {
   FEATURED_NSID,
   PROFILE_NSID,
   REVIEW_NSID,
+  UPDATE_NSID,
   validateFeatured,
   validateProfile,
   validateReview,
+  validateUpdate,
 } from "../lib/lexicons.ts";
 import {
   deleteProfile,
@@ -33,6 +35,11 @@ import {
   markReviewRemovedByRkey,
   reviewUriForRkey,
 } from "../lib/reviews.ts";
+import {
+  markProfileUpdateRemovedByRkey,
+  updateUriForRkey,
+  upsertProfileUpdate,
+} from "../lib/profile-updates.ts";
 import { findPdsEndpoint, resolveDidDocument } from "../lib/identity.ts";
 import { getRecordPublic } from "../lib/pds.ts";
 import { JETSTREAM_URL } from "../lib/env.ts";
@@ -53,7 +60,7 @@ interface JetstreamEvent {
   commit?: JetstreamCommit;
 }
 
-const COLLECTIONS = [PROFILE_NSID, REVIEW_NSID, FEATURED_NSID];
+const COLLECTIONS = [PROFILE_NSID, REVIEW_NSID, UPDATE_NSID, FEATURED_NSID];
 const RECONNECT_DELAY_MS = 5_000;
 const CURSOR_PERSIST_INTERVAL_MS = 5_000;
 
@@ -228,6 +235,55 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
   );
 }
 
+async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
+  const commit = event.commit;
+  if (!commit) return;
+
+  if (commit.operation === "delete") {
+    await markProfileUpdateRemovedByRkey(event.did, commit.rkey);
+    return;
+  }
+
+  const project = await getProfileByDid(event.did).catch(() => null);
+  if (!project || project.profileType !== "project") {
+    console.warn(`[indexer] ignoring update for non-project ${event.did}`);
+    return;
+  }
+
+  const pdsUrl = await resolvePdsForDid(event.did);
+  const fetched = await getRecordPublic(
+    pdsUrl,
+    event.did,
+    UPDATE_NSID,
+    commit.rkey,
+  );
+  if (!fetched) return;
+
+  const validation = validateUpdate(fetched.value);
+  if (!validation.ok || !validation.value) {
+    console.warn(
+      `[indexer] invalid update from ${event.did}: ${validation.error}`,
+    );
+    return;
+  }
+  const r = validation.value;
+  await upsertProfileUpdate({
+    uri: updateUriForRkey(event.did, commit.rkey),
+    cid: fetched.cid,
+    rkey: commit.rkey,
+    projectDid: event.did,
+    title: r.title,
+    body: r.body,
+    version: r.version ?? null,
+    tangledCommitUrl: r.tangledCommitUrl ?? null,
+    tangledRepoUrl: r.tangledRepoUrl ?? null,
+    source: r.source ?? "manual",
+    createdAt: Date.parse(r.createdAt) || Date.now(),
+    updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
+  });
+  console.log(`[indexer] upsert update ${event.did}/${commit.rkey}`);
+}
+
 async function processEvent(event: JetstreamEvent): Promise<void> {
   if (event.kind !== "commit" || !event.commit) return;
   const collection = event.commit.collection;
@@ -236,6 +292,8 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
       await handleProfileEvent(event);
     } else if (collection === REVIEW_NSID) {
       await handleReviewEvent(event);
+    } else if (collection === UPDATE_NSID) {
+      await handleUpdateEvent(event);
     } else if (collection === FEATURED_NSID) {
       await handleFeaturedEvent(event);
     }

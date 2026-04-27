@@ -2,8 +2,8 @@ import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import ProfileHero from "../../components/explore/ProfileHero.tsx";
-import ProfileLinks from "../../components/explore/ProfileLinks.tsx";
 import ProfileScreenshots from "../../components/explore/ProfileScreenshots.tsx";
+import ProfileWhatsNew from "../../components/explore/ProfileWhatsNew.tsx";
 import ProfileRatingSummary from "../../components/explore/ProfileRatingSummary.tsx";
 import ProfileReviewList, {
   type DisplayReview,
@@ -27,14 +27,13 @@ import {
 import { accountProviderName } from "../../lib/account-providers.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUser } from "../../lib/account-types.ts";
+import {
+  listProfileUpdates,
+  type ProfileUpdateRow,
+} from "../../lib/profile-updates.ts";
 
-function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
-  const ext = mime === "image/png"
-    ? "png"
-    : mime === "image/webp"
-    ? "webp"
-    : "jpeg";
-  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@${ext}`;
+function bskyCdnAvatarUrl(did: string, cid: string): string {
+  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
 }
 
 export const handler = define.handlers({
@@ -51,19 +50,26 @@ export const handler = define.handlers({
         null,
       ),
     ]);
-    const [reviewSummary, reviews, ownReview] = profile
+    const [reviewSummary, reviews, ownReview, updates] = profile
       ? await Promise.all([
         getReviewSummary(profile.did).catch(() => emptyReviewSummary()),
         listVisibleReviews(profile.did, { limit: 20 }).catch(() => []),
         user ? getOwnReview(profile.did, user.did).catch(() => null) : null,
+        listProfileUpdates(profile.did, { limit: 6 }).catch(() => []),
       ])
-      : [emptyReviewSummary(), [] as ReviewRow[], null];
+      : [
+        emptyReviewSummary(),
+        [] as ReviewRow[],
+        null,
+        [] as ProfileUpdateRow[],
+      ];
     const displayReviews = profile ? await enrichReviews(reviews) : [];
     return ctx.render(
       <ProfileDetailPage
         profile={profile}
         reviewSummary={reviewSummary}
         reviews={displayReviews}
+        updates={updates}
         ownReview={ownReview?.status === "visible" ? ownReview : null}
         signedInUser={user ? { did: user.did, handle: user.handle } : null}
         account={buildAccountMenuProps(ctx.state, ownerProfile?.handle ?? null)}
@@ -79,6 +85,7 @@ interface DetailProps {
   profile: ProfileRow | null;
   reviewSummary: ReviewSummary;
   reviews: DisplayReview[];
+  updates: ProfileUpdateRow[];
   ownReview: ReviewRow | null;
   signedInUser: { did: string; handle: string } | null;
   account: ReturnType<typeof buildAccountMenuProps>;
@@ -91,6 +98,7 @@ function ProfileDetailPage(
     profile,
     reviewSummary,
     reviews,
+    updates,
     ownReview,
     signedInUser,
     account,
@@ -129,8 +137,16 @@ function ProfileDetailPage(
             <div style={{ marginTop: "1rem" }}>
               <ProfileHero profile={profile} />
             </div>
-            <ProfileLinks profile={profile} />
             <ProfileScreenshots profile={profile} />
+            <ProfileWhatsNew
+              updates={updates}
+              copy={{
+                heading: t.detail.whatsNew.heading,
+                empty: t.detail.whatsNew.empty,
+                versionHistory: t.detail.whatsNew.versionHistory,
+                viewCommit: t.detail.whatsNew.viewCommit,
+              }}
+            />
 
             <div class="profile-reviews-shell">
               <ProfileRatingSummary
@@ -257,11 +273,7 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
       const reviewerName = appUser?.displayName ?? profile?.name ?? null;
       const reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
       const reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
-        ? bskyCdnAvatarUrl(
-          review.reviewerDid,
-          appUser.avatarCid,
-          appUser.avatarMime,
-        )
+        ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
         : profile?.avatarCid
         ? `/api/registry/avatar/${encodeURIComponent(review.reviewerDid)}`
         : null;

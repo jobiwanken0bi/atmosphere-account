@@ -2,12 +2,14 @@ import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import CreateProfileForm from "../../islands/CreateProfileForm.tsx";
+import ProfileUpdateEditor from "../../islands/ProfileUpdateEditor.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
+import { listProfileUpdates } from "../../lib/profile-updates.ts";
 
 /**
  * Build the deterministic public Bluesky CDN URL for a user's avatar
@@ -17,13 +19,8 @@ import { getEffectiveAccountType } from "../../lib/account-types.ts";
  * routing the prefill avatar through our own server (which adds a hop
  * and can fail in subtle ways on some PDS hosts).
  */
-function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
-  const ext = mime === "image/png"
-    ? "png"
-    : mime === "image/webp"
-    ? "webp"
-    : "jpeg";
-  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@${ext}`;
+function bskyCdnAvatarUrl(did: string, cid: string): string {
+  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
 }
 
 export const handler = define.handlers({
@@ -122,7 +119,6 @@ export const handler = define.handlers({
             initialAvatarUrl = bskyCdnAvatarUrl(
               user.did,
               bsky.avatar.ref.$link,
-              bsky.avatar.mimeType,
             );
           }
         }
@@ -141,6 +137,9 @@ export const handler = define.handlers({
       : null;
 
     const publicProfileHandle = takedown ? null : existing?.handle ?? null;
+    const updates = existing
+      ? await listProfileUpdates(user.did, { limit: 8 }).catch(() => [])
+      : [];
     return ctx.render(
       <ManagePage
         user={user}
@@ -149,6 +148,14 @@ export const handler = define.handlers({
         initialAvatarUrl={initialAvatarUrl}
         initialPublished={!!existing && !takedown}
         publicProfileHandle={publicProfileHandle}
+        updates={updates.map((update) => ({
+          rkey: update.rkey,
+          title: update.title,
+          body: update.body,
+          version: update.version,
+          tangledCommitUrl: update.tangledCommitUrl,
+          createdAt: update.createdAt,
+        }))}
         takedown={takedown}
         t={t}
       />,
@@ -163,6 +170,7 @@ interface ManagePageProps {
   initialAvatarUrl: string | null;
   initialPublished: boolean;
   publicProfileHandle: string | null;
+  updates: Parameters<typeof ProfileUpdateEditor>[0]["initialUpdates"];
   takedown: { reason: string; at: number | null } | null;
   // deno-lint-ignore no-explicit-any
   t: any;
@@ -176,6 +184,7 @@ function ManagePage(
     initialAvatarUrl,
     initialPublished,
     publicProfileHandle,
+    updates,
     takedown,
     t,
   }: ManagePageProps,
@@ -217,6 +226,13 @@ function ManagePage(
                 initialAvatarUrl={initialAvatarUrl}
                 initialPublished={initialPublished}
                 publicProfileHandle={publicProfileHandle}
+              />
+            </div>
+
+            <div style={{ marginTop: "1.25rem" }}>
+              <ProfileUpdateEditor
+                initialUpdates={updates}
+                disabled={!initialPublished || !!takedown}
               />
             </div>
           </div>

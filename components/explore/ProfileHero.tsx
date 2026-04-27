@@ -1,9 +1,15 @@
 import type { ProfileRow } from "../../lib/registry.ts";
 import { PUBLIC_CATEGORIES } from "../../lib/lexicons.ts";
+import {
+  type ResolvedIconKind,
+  resolveLink,
+} from "../../lib/atmosphere-links.ts";
 import { useT } from "../../i18n/mod.ts";
 import VerifiedBadge from "../VerifiedBadge.tsx";
 import WebsiteIcon from "../icons/WebsiteIcon.tsx";
 import { AndroidIcon, AppleIcon } from "../icons/PlatformIcons.tsx";
+import BskyIcon from "../icons/BskyIcon.tsx";
+import TangledIcon from "../icons/TangledIcon.tsx";
 
 interface Props {
   profile: ProfileRow;
@@ -11,7 +17,7 @@ interface Props {
 
 /**
  * Profile detail hero. Primary app destinations live in a right-side rail;
- * secondary Atmosphere/custom links render below the card.
+ * secondary Atmosphere/custom links sit under the avatar.
  */
 export default function ProfileHero({ profile }: Props) {
   const t = useT();
@@ -49,23 +55,49 @@ export default function ProfileHero({ profile }: Props) {
       }
       : null,
   ].filter((link): link is NonNullable<typeof link> => link !== null);
+  const secondaryLinks = profile.links
+    .filter((entry) => entry.kind !== "website")
+    .map((entry) => resolveLink(entry, profile.handle, tLink))
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   return (
     <div class="profile-hero glass">
-      <div class="profile-hero-avatar">
-        {profile.avatarCid
-          ? (
-            <img
-              src={`/api/registry/avatar/${encodeURIComponent(profile.did)}`}
-              alt={profile.name}
-              decoding="async"
-            />
-          )
-          : (
-            <div class="profile-hero-avatar-fallback" aria-hidden="true">
-              {profile.name.slice(0, 1).toUpperCase()}
-            </div>
-          )}
+      <div class="profile-hero-media">
+        <div class="profile-hero-avatar">
+          {profile.avatarCid
+            ? (
+              <img
+                src={`/api/registry/avatar/${encodeURIComponent(profile.did)}`}
+                alt={profile.name}
+                decoding="async"
+              />
+            )
+            : (
+              <div class="profile-hero-avatar-fallback" aria-hidden="true">
+                {profile.name.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+        </div>
+        {secondaryLinks.length > 0 && (
+          <div
+            class="profile-hero-secondary-actions"
+            aria-label="Profile links"
+          >
+            {secondaryLinks.map((link, i) => (
+              <a
+                class="profile-action profile-action--compact"
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={link.title}
+                title={link.title}
+                key={`${link.href}-${i}`}
+              >
+                {renderIcon(link.iconKind, link.iconUrl, link.glyph)}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
       <div class="profile-hero-body">
         <div class="profile-hero-name-row">
@@ -134,5 +166,40 @@ export default function ProfileHero({ profile }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function renderIcon(
+  iconKind: ResolvedIconKind | undefined,
+  iconUrl: string | null,
+  glyph: string,
+) {
+  if (iconKind === "bsky") {
+    return (
+      <span class="profile-action-icon profile-action-icon--brand">
+        <BskyIcon class="profile-action-icon-svg" />
+      </span>
+    );
+  }
+  if (iconKind === "tangled") {
+    return (
+      <span class="profile-action-icon profile-action-icon--brand">
+        <TangledIcon class="profile-action-icon-svg" />
+      </span>
+    );
+  }
+  if (iconUrl) {
+    return (
+      <img
+        src={iconUrl}
+        alt=""
+        class="profile-action-icon"
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
+  return (
+    <span class="profile-action-icon profile-action-icon--glyph">{glyph}</span>
   );
 }

@@ -1,0 +1,65 @@
+{
+  "lexicon": 1,
+  "id": "com.atmosphereaccount.registry.update",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A project-owned What's New update for an Atmosphere registry profile. Each record represents one release/update note and may optionally link to Tangled commit metadata.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["title", "body", "createdAt"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "maxGraphemes": 80,
+            "description": "Short update title."
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "maxGraphemes": 1000,
+            "description": "Update notes shown in What's New and version history."
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 32,
+            "maxGraphemes": 32,
+            "description": "Optional version or release label."
+          },
+          "tangledCommitUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Optional Tangled commit URL related to this update."
+          },
+          "tangledRepoUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Optional Tangled repository URL used for future sync provenance."
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 32,
+            "knownValues": ["manual", "tangled"],
+            "description": "Where the update came from. Omitted means manual."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "maxLength": 64
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "maxLength": 64
+          }
+        }
+      }
+    }
+  }
+}

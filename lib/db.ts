@@ -272,6 +272,26 @@ const SCHEMA_STATEMENTS: string[] = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  /**
+   * Project-owned update history ("What's New"). Records live on the
+   * project account's PDS and this table is the local AppView projection.
+   */
+  `CREATE TABLE IF NOT EXISTS profile_update (
+    uri TEXT PRIMARY KEY,
+    cid TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    project_did TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    version TEXT,
+    tangled_commit_url TEXT,
+    tangled_repo_url TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
+    status TEXT NOT NULL DEFAULT 'visible',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    indexed_at INTEGER NOT NULL
+  )`,
 ];
 
 /**
@@ -295,6 +315,8 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS profile_icon_access ON profile(icon_access_status)`,
   `CREATE INDEX IF NOT EXISTS profile_type_takedown ON profile(profile_type, takedown_status)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS review_uri_unique ON review(review_uri) WHERE review_uri IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS profile_update_project_status_created ON profile_update(project_did, status, created_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS profile_update_project_rkey ON profile_update(project_did, rkey)`,
 ];
 
 /**

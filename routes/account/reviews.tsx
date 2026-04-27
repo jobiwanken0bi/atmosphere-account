@@ -12,13 +12,8 @@ import {
 import { getProfileByDid } from "../../lib/registry.ts";
 import { listReviewsByReviewer, type ReviewRow } from "../../lib/reviews.ts";
 
-function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
-  const ext = mime === "image/png"
-    ? "png"
-    : mime === "image/webp"
-    ? "webp"
-    : "jpeg";
-  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@${ext}`;
+function bskyCdnAvatarUrl(did: string, cid: string): string {
+  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
 }
 
 interface ReviewWithTarget extends ReviewRow {
@@ -88,7 +83,7 @@ function AccountReviewsPage(
 ) {
   const copy = t.accountReviews;
   const avatarUrl = profile?.avatarCid && profile.avatarMime
-    ? bskyCdnAvatarUrl(profile.did, profile.avatarCid, profile.avatarMime)
+    ? bskyCdnAvatarUrl(profile.did, profile.avatarCid)
     : null;
   const displayName = profile?.displayName || handle;
   return (

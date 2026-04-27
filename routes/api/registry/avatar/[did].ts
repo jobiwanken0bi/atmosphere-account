@@ -8,6 +8,10 @@ import { getProfileByDid } from "../../../../lib/registry.ts";
 import { fetchBlobPublic } from "../../../../lib/pds.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
+function bskyCdnAvatarUrl(did: string, cid: string): string {
+  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
+}
+
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
     const did = decodeURIComponent(ctx.params.did);
@@ -22,7 +26,7 @@ export const handler = define.handlers({
         profile.avatarCid,
       );
       if (!upstream.ok) {
-        return new Response("not found", { status: 404 });
+        return Response.redirect(bskyCdnAvatarUrl(did, profile.avatarCid), 302);
       }
       const headers = new Headers();
       const ct = upstream.headers.get("content-type") ?? profile.avatarMime ??
@@ -36,7 +40,7 @@ export const handler = define.handlers({
       return new Response(upstream.body, { status: 200, headers });
     } catch (err) {
       console.warn("avatar proxy error:", err);
-      return new Response("upstream error", { status: 502 });
+      return Response.redirect(bskyCdnAvatarUrl(did, profile.avatarCid), 302);
     }
   }),
 });

@@ -9,6 +9,8 @@ import {
   type ProfileRecord,
   REVIEW_NSID,
   type ReviewRecord,
+  UPDATE_NSID,
+  type UpdateRecord,
 } from "./lexicons.ts";
 
 export interface PutRecordResult {
@@ -56,6 +58,21 @@ export async function putReviewRecord(
   );
 }
 
+export async function putUpdateRecord(
+  did: string,
+  pdsUrl: string,
+  rkey: string,
+  record: UpdateRecord,
+): Promise<PutRecordResult> {
+  return await putRecord(
+    did,
+    pdsUrl,
+    UPDATE_NSID,
+    rkey,
+    record as unknown as Record<string, unknown>,
+  );
+}
+
 /**
  * Generic putRecord helper for arbitrary collections (e.g. our curated
  * featured directory). Always uses the authed user's own repo.
@@ -98,6 +115,14 @@ export async function deleteReviewRecord(
   rkey: string,
 ): Promise<void> {
   await deleteRecord(did, pdsUrl, REVIEW_NSID, rkey);
+}
+
+export async function deleteUpdateRecord(
+  did: string,
+  pdsUrl: string,
+  rkey: string,
+): Promise<void> {
+  await deleteRecord(did, pdsUrl, UPDATE_NSID, rkey);
 }
 
 /**
