@@ -300,6 +300,7 @@ export default define.page(function App(ctx) {
         <I18nProvider locale={locale}>
           <Component />
         </I18nProvider>
+        <script type="module" src="/page-skeleton.js" />
         {effectsOn && (
           <>
             <script
