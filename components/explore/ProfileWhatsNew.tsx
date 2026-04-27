@@ -13,7 +13,7 @@ interface Props {
   };
 }
 
-const BODY_PREVIEW_LENGTH = 220;
+const BODY_PREVIEW_LENGTH = 240;
 
 function dateLabel(ms: number): string {
   return new Intl.DateTimeFormat("en", {

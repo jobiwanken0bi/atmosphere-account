@@ -5090,7 +5090,12 @@ body.explore-no-effects #nav-effects-bar {
   display: none;
 }
 .profile-whats-new-preview {
+  display: -webkit-box;
+  overflow: hidden;
   order: 1;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
 }
 .profile-whats-new-full {
   order: 3;
