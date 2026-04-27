@@ -293,6 +293,21 @@ const en = {
       "The Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
     downloadLottie: "Download Lottie (JSON)",
     downloadIcons: "Download icons (ZIP)",
+    icons: {
+      heading: "Project SVG icons",
+      intro:
+        "Current verified project icons for developers building sign-in flows, app showcases, and directory experiences. This list follows profile updates automatically.",
+      searchLabel: "Search icons",
+      searchPlaceholder: "Search by project or handle",
+      downloadZip: "Download all SVGs (ZIP)",
+      downloadSvg: "Download SVG",
+      loading: "Loading current project icons...",
+      count: "{count} SVG icons available",
+      empty: "No verified project SVG icons are available yet.",
+      noResults: "No icons match that search.",
+      error: "Could not load icons: {error}",
+      iconAlt: "{name} SVG icon",
+    },
     schemaHeading: "Profile schema",
     schemaBody:
       "The registry profile schema is maintained in the open source repo. View the canonical AT Protocol lexicon on Tangled.",

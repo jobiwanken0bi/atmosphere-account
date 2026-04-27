@@ -24,9 +24,12 @@ interface NavProps {
     rememberedAccounts?: { did: string; handle: string }[];
   };
   showEffects?: boolean;
+  disableScrollEffects?: boolean;
 }
 
-export default function Nav({ account, showEffects = false }: NavProps = {}) {
+export default function Nav(
+  { account, showEffects = false, disableScrollEffects = false }: NavProps = {},
+) {
   const t = useT();
   return (
     <>
@@ -74,7 +77,7 @@ export default function Nav({ account, showEffects = false }: NavProps = {}) {
           </label>
         </div>
       )}
-      {!showEffects && <NavScroll />}
+      {!showEffects && !disableScrollEffects && <NavScroll />}
     </>
   );
 }

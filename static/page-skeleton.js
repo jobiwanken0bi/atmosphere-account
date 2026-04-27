@@ -1,47 +1,180 @@
 const skeletonId = "page-loading-skeleton";
 let showTimer = 0;
 
-function isNonHomePage(url) {
-  return url.origin === globalThis.location.origin && url.pathname !== "/";
+function isSkeletonPage(url) {
+  return url.origin === globalThis.location.origin &&
+    !url.pathname.startsWith("/api/");
 }
 
-function ensureSkeleton() {
-  let skeleton = document.getElementById(skeletonId);
-  if (skeleton) return skeleton;
+function routeKind(pathname) {
+  if (pathname === "/") return "home";
+  if (pathname === "/developer-resources") return "developer";
+  if (pathname === "/explore") return "explore";
+  if (pathname.startsWith("/explore/")) return "profile";
+  if (pathname.startsWith("/users/")) return "user";
+  return "default";
+}
 
-  skeleton = document.createElement("div");
-  skeleton.id = skeletonId;
-  skeleton.className = "page-skeleton";
-  skeleton.setAttribute("aria-hidden", "true");
-  skeleton.innerHTML = `
+function navMarkup() {
+  return `
     <div class="page-skeleton-nav">
       <span class="page-skeleton-logo"></span>
       <span class="page-skeleton-pill"></span>
     </div>
+  `;
+}
+
+function line(className = "") {
+  return `<span class="page-skeleton-block ${className}"></span>`;
+}
+
+function card(className = "") {
+  return `<span class="page-skeleton-card ${className}"></span>`;
+}
+
+function templateFor(kind) {
+  if (kind === "home") {
+    return `
+      ${navMarkup()}
+      <main class="page-skeleton-main page-skeleton-main--home">
+        <section class="page-skeleton-hero-split">
+          <div>
+            ${line("page-skeleton-block--eyebrow")}
+            ${line("page-skeleton-block--title page-skeleton-block--wide")}
+            ${line("page-skeleton-block--body")}
+            ${line("page-skeleton-block--body page-skeleton-block--short")}
+            <div class="page-skeleton-row">
+              ${line("page-skeleton-block--button")}
+              ${
+      line("page-skeleton-block--button page-skeleton-block--button-secondary")
+    }
+            </div>
+          </div>
+          ${card("page-skeleton-card--cloud")}
+        </section>
+        <section class="page-skeleton-grid page-skeleton-grid--feature">
+          ${card()}${card()}${card()}
+        </section>
+      </main>
+    `;
+  }
+
+  if (kind === "explore") {
+    return `
+      ${navMarkup()}
+      <main class="page-skeleton-main">
+        <section class="page-skeleton-card page-skeleton-card--hero">
+          ${line("page-skeleton-block--title")}
+          ${line("page-skeleton-block--body")}
+          ${line("page-skeleton-block--short")}
+        </section>
+        <section class="page-skeleton-tabs">
+          ${line("page-skeleton-block--tab")}
+          ${line("page-skeleton-block--tab")}
+          ${line("page-skeleton-block--tab")}
+          ${line("page-skeleton-block--tab")}
+        </section>
+        <section class="page-skeleton-grid page-skeleton-grid--profiles">
+          ${card("page-skeleton-card--profile")}
+          ${card("page-skeleton-card--profile")}
+          ${card("page-skeleton-card--profile")}
+          ${card("page-skeleton-card--profile")}
+          ${card("page-skeleton-card--profile")}
+          ${card("page-skeleton-card--profile")}
+        </section>
+      </main>
+    `;
+  }
+
+  if (kind === "profile" || kind === "user") {
+    return `
+      ${navMarkup()}
+      <main class="page-skeleton-main page-skeleton-main--profile">
+        <section class="page-skeleton-card page-skeleton-profile-card">
+          <span class="page-skeleton-avatar"></span>
+          <div class="page-skeleton-profile-lines">
+            ${line("page-skeleton-block--title")}
+            ${line("page-skeleton-block--short")}
+            ${line("page-skeleton-block--body")}
+          </div>
+        </section>
+        ${
+      kind === "profile"
+        ? `
+          <section class="page-skeleton-grid page-skeleton-grid--screenshots">
+            ${card("page-skeleton-card--screenshot")}
+            ${card("page-skeleton-card--screenshot")}
+          </section>
+          ${card("page-skeleton-card--reviews")}
+        `
+        : card("page-skeleton-card--reviews")
+    }
+      </main>
+    `;
+  }
+
+  if (kind === "developer") {
+    return `
+      ${navMarkup()}
+      <main class="page-skeleton-main page-skeleton-main--developer">
+        <section class="page-skeleton-card page-skeleton-card--resource">
+          ${line("page-skeleton-block--title")}
+          ${line("page-skeleton-block--body")}
+          ${line("page-skeleton-block--badge")}
+          <div class="page-skeleton-row">
+            ${line("page-skeleton-block--button")}
+            ${line("page-skeleton-block--button")}
+          </div>
+        </section>
+        <section class="page-skeleton-grid page-skeleton-grid--resources">
+          ${card("page-skeleton-card--resource-small")}
+          ${card("page-skeleton-card--resource-small")}
+          ${card("page-skeleton-card--resource-small")}
+        </section>
+      </main>
+    `;
+  }
+
+  return `
+    ${navMarkup()}
     <main class="page-skeleton-main">
       <section class="page-skeleton-card page-skeleton-card--hero">
-        <span class="page-skeleton-block page-skeleton-block--title"></span>
-        <span class="page-skeleton-block page-skeleton-block--body"></span>
-        <span class="page-skeleton-block page-skeleton-block--short"></span>
+        ${line("page-skeleton-block--title")}
+        ${line("page-skeleton-block--body")}
+        ${line("page-skeleton-block--short")}
       </section>
       <section class="page-skeleton-grid">
-        <span class="page-skeleton-card"></span>
-        <span class="page-skeleton-card"></span>
-        <span class="page-skeleton-card"></span>
+        ${card()}${card()}${card()}
       </section>
     </main>
   `;
-  document.body.appendChild(skeleton);
+}
+
+function ensureSkeleton(kind) {
+  let skeleton = document.getElementById(skeletonId);
+  if (!skeleton) {
+    skeleton = document.createElement("div");
+    skeleton.id = skeletonId;
+    skeleton.className = "page-skeleton";
+    skeleton.setAttribute("aria-hidden", "true");
+    document.body.appendChild(skeleton);
+  }
+
+  if (skeleton.dataset.kind !== kind) {
+    skeleton.dataset.kind = kind;
+    skeleton.innerHTML = templateFor(kind);
+  }
   return skeleton;
 }
 
-function showSkeleton() {
-  ensureSkeleton().classList.add("page-skeleton--visible");
+function showSkeleton(kind) {
+  ensureSkeleton(kind).classList.add("page-skeleton--visible");
 }
 
-function scheduleSkeleton() {
+function scheduleSkeleton(url) {
   clearTimeout(showTimer);
-  showTimer = globalThis.setTimeout(showSkeleton, 120);
+  const kind = routeKind(url.pathname);
+  showTimer = globalThis.setTimeout(() => showSkeleton(kind), 120);
 }
 
 function hideSkeleton() {
@@ -64,9 +197,9 @@ document.addEventListener("click", (event) => {
 
   const url = new URL(link.href, globalThis.location.href);
   if (url.hash && url.pathname === globalThis.location.pathname) return;
-  if (!isNonHomePage(url)) return;
+  if (!isSkeletonPage(url)) return;
 
-  scheduleSkeleton();
+  scheduleSkeleton(url);
 });
 
 document.addEventListener("submit", (event) => {
@@ -76,8 +209,8 @@ document.addEventListener("submit", (event) => {
   globalThis.setTimeout(() => {
     if (event.defaultPrevented) return;
     const url = new URL(form.action || globalThis.location.href);
-    if (!isNonHomePage(url) || url.pathname.startsWith("/api/")) return;
-    scheduleSkeleton();
+    if (!isSkeletonPage(url)) return;
+    scheduleSkeleton(url);
   }, 0);
 });
 

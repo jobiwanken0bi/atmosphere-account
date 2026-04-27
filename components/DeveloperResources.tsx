@@ -1,4 +1,5 @@
 import { useT } from "../i18n/mod.ts";
+import SvgIconDownloads from "../islands/SvgIconDownloads.tsx";
 
 const PROFILE_SCHEMA_URL =
   "https://tangled.org/joebasser.com/atmosphere-account/blob/main/lexicons/com/atmosphereaccount/registry/profile.json";
@@ -7,7 +8,7 @@ export default function DeveloperResources() {
   const t = useT();
   return (
     <>
-      <section class="section-sm reveal">
+      <section class="section-sm">
         <div class="container-narrow text-center">
           <h1 class="text-section">{t.developerResources.heading}</h1>
           <div class="divider" />
@@ -38,7 +39,7 @@ export default function DeveloperResources() {
         </div>
       </section>
 
-      <section class="section-sm reveal">
+      <section class="section-sm">
         <div class="container-narrow text-center">
           <h2 class="text-subsection">{t.developerResources.lottieHeading}</h2>
           <div class="divider" />
@@ -62,7 +63,18 @@ export default function DeveloperResources() {
         </div>
       </section>
 
-      <section class="section-sm reveal">
+      <section class="section-sm">
+        <div class="container-narrow text-center">
+          <h2 class="text-subsection">{t.developerResources.icons.heading}</h2>
+          <div class="divider" />
+          <p class="text-body mt-2 mb-3">
+            {t.developerResources.icons.intro}
+          </p>
+          <SvgIconDownloads />
+        </div>
+      </section>
+
+      <section class="section-sm">
         <div class="container-narrow text-center">
           <h2 class="text-subsection">{t.developerResources.schemaHeading}</h2>
           <div class="divider" />

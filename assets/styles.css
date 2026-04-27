@@ -586,6 +586,7 @@ h1, h2, h3, h4 {
 
 .page-skeleton-logo,
 .page-skeleton-pill,
+.page-skeleton-avatar,
 .page-skeleton-card,
 .page-skeleton-block {
   display: block;
@@ -623,10 +624,54 @@ h1, h2, h3, h4 {
   margin-bottom: 1rem;
 }
 
+.page-skeleton-hero-split {
+  min-height: 460px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(220px, 0.9fr);
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem 0;
+}
+
+.page-skeleton-main--home {
+  width: min(100%, 1120px);
+  padding-top: calc(var(--nav-bar-height) + 2rem);
+}
+
+.page-skeleton-main--profile,
+.page-skeleton-main--developer {
+  width: min(100%, 880px);
+}
+
+.page-skeleton-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.2rem;
+}
+
 .page-skeleton-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.page-skeleton-grid--feature {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.page-skeleton-grid--profiles {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.page-skeleton-grid--screenshots {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1rem 0;
+}
+
+.page-skeleton-grid--resources {
+  grid-template-columns: 1fr;
+  margin-top: 1rem;
 }
 
 .page-skeleton-block {
@@ -634,9 +679,19 @@ h1, h2, h3, h4 {
   margin-bottom: 0.9rem;
 }
 
+.page-skeleton-block--eyebrow {
+  width: 9rem;
+  height: 0.85rem;
+}
+
 .page-skeleton-block--title {
   width: min(60%, 360px);
   height: 2.4rem;
+}
+
+.page-skeleton-block--wide {
+  width: min(86%, 620px);
+  height: 4.2rem;
 }
 
 .page-skeleton-block--body {
@@ -645,6 +700,94 @@ h1, h2, h3, h4 {
 
 .page-skeleton-block--short {
   width: min(48%, 340px);
+}
+
+.page-skeleton-block--button {
+  width: 9.5rem;
+  height: 2.6rem;
+  margin-bottom: 0;
+}
+
+.page-skeleton-block--button-secondary {
+  width: 8rem;
+}
+
+.page-skeleton-block--tab {
+  width: 8rem;
+  height: 2.1rem;
+  margin-bottom: 0;
+}
+
+.page-skeleton-block--badge {
+  width: min(70%, 360px);
+  height: 7rem;
+  margin: 1.5rem auto 1rem;
+  border-radius: 18px;
+}
+
+.page-skeleton-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
+.page-skeleton-card--cloud {
+  min-height: 300px;
+  border-radius: 48% 52% 46% 54%;
+}
+
+.page-skeleton-card--profile {
+  min-height: 210px;
+  position: relative;
+}
+
+.page-skeleton-card--profile::before {
+  content: "";
+  position: absolute;
+  top: 1.2rem;
+  left: 1.2rem;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.page-skeleton-card--screenshot {
+  min-height: 180px;
+}
+
+.page-skeleton-card--reviews {
+  min-height: 220px;
+}
+
+.page-skeleton-profile-card {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  min-height: 220px;
+  padding: 1.5rem;
+}
+
+.page-skeleton-avatar {
+  width: 6rem;
+  height: 6rem;
+  border-radius: 28px;
+  flex: 0 0 auto;
+}
+
+.page-skeleton-profile-lines {
+  flex: 1;
+}
+
+.page-skeleton-card--resource {
+  min-height: 340px;
+  padding: 1.75rem;
+  text-align: center;
+}
+
+.page-skeleton-card--resource-small {
+  min-height: 140px;
 }
 
 @keyframes page-skeleton-shimmer {
@@ -659,8 +802,22 @@ h1, h2, h3, h4 {
     padding-right: 1rem;
   }
 
+  .page-skeleton-hero-split {
+    min-height: 420px;
+    grid-template-columns: 1fr;
+  }
+
   .page-skeleton-grid {
     grid-template-columns: 1fr;
+  }
+
+  .page-skeleton-profile-card {
+    align-items: flex-start;
+  }
+
+  .page-skeleton-avatar {
+    width: 4.5rem;
+    height: 4.5rem;
   }
 
   .page-skeleton-card:nth-child(n+2) {
@@ -4697,11 +4854,118 @@ body.explore-no-effects #nav-effects-bar {
   margin-top: 0.6rem;
 }
 
+/* ---- Project SVG icon download tool ---- */
+
+.svg-download-tool {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 24px rgba(14, 20, 40, 0.06);
+  text-align: left;
+}
+
+.svg-download-toolbar {
+  display: flex;
+  gap: 0.85rem;
+  align-items: end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.svg-download-search {
+  flex: 1 1 240px;
+}
+
+.svg-download-zip {
+  min-height: 2.4rem;
+}
+
+.svg-download-meta {
+  margin-top: 0.9rem;
+  font-size: 0.82rem;
+  color: rgba(14, 20, 40, 0.62);
+}
+
+.svg-download-empty {
+  margin: 1rem 0 0;
+}
+
+.svg-download-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+}
+
+.svg-download-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(14, 20, 40, 0.08);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.svg-download-preview {
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  border-radius: 12px;
+  background:
+    linear-gradient(45deg, rgba(14, 20, 40, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(14, 20, 40, 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(14, 20, 40, 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(14, 20, 40, 0.04) 75%);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.svg-download-preview img {
+  max-width: 72px;
+  max-height: 72px;
+  object-fit: contain;
+}
+
+.svg-download-details {
+  min-width: 0;
+}
+
+.svg-download-name {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.92rem;
+  color: #0e1428;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svg-download-handle {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(14, 20, 40, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svg-download-button {
+  width: 100%;
+}
+
 /* Dark phase — keep the playground readable when the sky is in its
  * darker pass. The /developer-resources page forces sky-static today
  * (effectsOff allowlist), but mobile and reduced-motion users may
  * still hit the dark phase, so we cover the cases. */
 .dark-phase .api-playground {
+  background: rgba(20, 26, 48, 0.55);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.dark-phase .svg-download-tool,
+.dark-phase .svg-download-card {
   background: rgba(20, 26, 48, 0.55);
   border-color: rgba(255, 255, 255, 0.12);
 }
@@ -4728,10 +4992,13 @@ body.explore-no-effects #nav-effects-bar {
 }
 .dark-phase .api-endpoint-summary,
 .dark-phase .api-endpoint-cache,
-.dark-phase .api-endpoint-params-list {
+.dark-phase .api-endpoint-params-list,
+.dark-phase .svg-download-meta,
+.dark-phase .svg-download-handle {
   color: rgba(245, 247, 250, 0.78);
 }
-.dark-phase .api-endpoint-path {
+.dark-phase .api-endpoint-path,
+.dark-phase .svg-download-name {
   color: rgba(245, 247, 250, 0.95);
 }
 .dark-phase .api-endpoint-params-label,

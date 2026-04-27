@@ -7,7 +7,7 @@ export default define.page(function DeveloperResourcesPage() {
   return (
     <div id="page-top">
       <div class="content-layer">
-        <Nav />
+        <Nav disableScrollEffects />
         <section style={{ paddingTop: "8rem" }}>
           <DeveloperResources />
         </section>

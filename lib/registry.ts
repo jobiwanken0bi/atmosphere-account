@@ -1009,6 +1009,29 @@ export async function listAllProfilesForPicker(): Promise<ProfilePickerRow[]> {
   });
 }
 
+/**
+ * Public projection of every approved developer SVG icon. Used by the
+ * developer resources download tool and ZIP endpoint.
+ */
+export async function listApprovedSvgIconProfiles(): Promise<ProfileRow[]> {
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `
+        ${SELECT_PROFILE}
+        WHERE p.takedown_status IS NULL
+          AND p.profile_type = 'project'
+          AND p.icon_access_status = 'granted'
+          AND p.icon_status = 'approved'
+          AND p.icon_cid IS NOT NULL
+          AND p.icon_mime = 'image/svg+xml'
+        ORDER BY LOWER(p.name) ASC, LOWER(p.handle) ASC
+      `,
+      args: [],
+    });
+    return r.rows.map((row) => rowToProfile(row as unknown as RawProfileRow));
+  });
+}
+
 export async function listFeaturedProfiles(limit = 12): Promise<ProfileRow[]> {
   return await withDb(async (c) => {
     const r = await c.execute({
