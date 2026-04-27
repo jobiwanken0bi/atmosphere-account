@@ -543,9 +543,9 @@ const en = {
       namePlaceholder: "e.g. Bluesky",
       descriptionLabel: "Short description",
       descriptionPlaceholder: "What does it do? Who's it for?",
-      categoryLabel: "Categories",
+      categoryLabel: "Category",
       categoryHint:
-        "Pick all that apply. A project can be both an app and an account provider.",
+        "Choose App, Account Provider, or both. Selected categories are shown as primary badges.",
       subcategoriesLabel: "Subcategories (optional)",
       subcategoriesHint: "For apps. Pick up to a few.",
       avatarLabel: "Project icon",
@@ -606,6 +606,26 @@ const en = {
         androidPlaceholder: "https://play.google.com/store/apps/details?id=…",
         androidHint: "Add this if your project has an Android app.",
         androidInvalid: "Android link must be a valid http(s) URL.",
+      },
+      screenshots: {
+        sectionLabel: "Screenshots",
+        hint: "Optional. Add up to 4 PNG, JPEG, or WebP screenshots, 5MB each.",
+        upload: "Add screenshots",
+        addMore: "Add more screenshots",
+        invalidType: "Screenshots must be PNG, JPEG, or WebP images.",
+        tooLarge: "Each screenshot must be 5MB or smaller.",
+        maxReached: "You can add up to 4 screenshots.",
+        added: (n: number) =>
+          `${n} screenshot${
+            n === 1 ? "" : "s"
+          } ready. Click Update profile to save.`,
+        partialAdded: (added: number, skipped: number) =>
+          `${added} screenshot${added === 1 ? "" : "s"} ready. ${skipped} file${
+            skipped === 1 ? " was" : "s were"
+          } skipped because screenshots must be PNG, JPEG, or WebP and 5MB or smaller.`,
+        noneAdded:
+          "No screenshots were added. Use PNG, JPEG, or WebP images that are 5MB or smaller.",
+        removeAriaLabel: (n: number) => `Remove screenshot ${n}`,
       },
       customLinks: {
         sectionLabel: "Custom links",
@@ -681,6 +701,8 @@ const en = {
         "Projects asking to be verified — grants a checkmark on their listing and unlocks SVG icon uploads for the developer API.",
       reportsTitle: "Open reports",
       reportsBody: "User-submitted reports against profiles in Explore.",
+      reviewReportsTitle: "Review reports",
+      reviewReportsBody: "Reports against user reviews and ratings.",
       featuredTitle: "Featured",
       featuredBody:
         "Curate the projects that appear in the featured rail at the top of Explore.",
@@ -752,6 +774,35 @@ const en = {
         harmful: "Harmful or hateful",
         impersonation: "Impersonation",
         spam: "Spam",
+        other: "Other",
+      },
+    },
+    reviewReports: {
+      headline: "Review reports",
+      subhead:
+        "Reports submitted against user reviews. Hide or remove a review to close the report, or dismiss reports that don't need action.",
+      empty: "No open review reports.",
+      action: "Mark actioned",
+      dismiss: "Dismiss",
+      hide: "Hide review",
+      remove: "Remove review",
+      restore: "Restore review",
+      actionedLabel: "Actioned",
+      dismissedLabel: "Dismissed",
+      hiddenLabel: "Hidden",
+      removedLabel: "Removed",
+      restoredLabel: "Restored",
+      notePlaceholder: "What did you do?",
+      reasonLabel: "Reason",
+      reporterLabel: "Reporter",
+      reviewerLabel: "Reviewer",
+      detailsLabel: "Details",
+      reviewLabel: "Review",
+      submittedAt: "Submitted",
+      reasons: {
+        harmful: "Harmful or hateful",
+        spam: "Spam",
+        off_topic: "Off-topic",
         other: "Other",
       },
     },
@@ -829,6 +880,80 @@ const en = {
       impersonation: "Impersonating someone",
       spam: "Spam",
       other: "Other",
+    },
+  },
+
+  reviews: {
+    summary: {
+      heading: "Ratings & Reviews",
+      threshold: (count: number, needed: number): string =>
+        count === 0
+          ? "Ratings appear after 5 reviews."
+          : `${count} review${
+            count === 1 ? "" : "s"
+          } so far. ${needed} more until the average rating appears.`,
+      average: (rating: string, count: number): string =>
+        `${rating} average from ${count} review${count === 1 ? "" : "s"}`,
+      distributionLabel: (stars: number, count: number): string =>
+        `${count} ${stars}-star review${count === 1 ? "" : "s"}`,
+    },
+    composer: {
+      heading: "Write a review",
+      modalBody: "Rate this project and add a short note for other people.",
+      signedOut: "Sign in to rate and review this project.",
+      ownerNote: "You can't review your own project.",
+      ratingLabel: "Rating",
+      bodyLabel: "Review (optional)",
+      bodyPlaceholder: "What should other people know?",
+      charsRemaining: (n: number): string => `${n} characters remaining`,
+      charsRemainingSuffix: "characters remaining",
+      submit: "Post review",
+      update: "Update review",
+      submitting: "Saving…",
+      delete: "Delete review",
+      signIn: "Sign in",
+      cancel: "Cancel",
+      saved: "Review saved.",
+      deleted: "Review deleted.",
+      error: "Couldn't save the review. Please try again.",
+    },
+    list: {
+      heading: "Reviews",
+      empty: "No reviews yet.",
+      reviewerFallback: "Atmosphere user",
+      edited: "edited",
+      ownerResponse: "Developer response",
+    },
+    report: {
+      button: "Report review",
+      modalTitle: "Report this review",
+      modalBody: "Send a report to the Atmosphere admins.",
+      reasonLabel: "What's wrong?",
+      detailsLabel: "Add details (optional)",
+      detailsPlaceholder: "Anything we should know?",
+      submit: "Send report",
+      submitting: "Sending…",
+      cancel: "Cancel",
+      sentTitle: "Report sent",
+      sentBody: "Thanks. An admin will review it shortly.",
+      signInRequired: "Sign in to report reviews.",
+      error: "Couldn't send the report. Please try again.",
+      reasons: {
+        harmful: "Harmful or hateful content",
+        spam: "Spam",
+        off_topic: "Off-topic or not useful",
+        other: "Other",
+      },
+    },
+    response: {
+      button: "Respond as developer",
+      updateButton: "Edit developer response",
+      deleteButton: "Delete response",
+      placeholder: "Add a short developer response…",
+      submit: "Save response",
+      submitting: "Saving…",
+      cancel: "Cancel",
+      error: "Couldn't save the response",
     },
   },
 

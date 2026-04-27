@@ -10,7 +10,7 @@
  * “verified” badge as Explore (`icon_access_status === 'granted'`), without
  * exposing emails, timestamps, or admin DIDs.
  */
-import type { LinkEntry } from "./lexicons.ts";
+import type { LinkEntry, ScreenshotEntry } from "./lexicons.ts";
 import type { ProfileRow } from "./registry.ts";
 
 export interface PublicProfileJson {
@@ -24,6 +24,9 @@ export interface PublicProfileJson {
   categories: string[];
   subcategories: string[];
   links: LinkEntry[];
+  screenshots: ScreenshotEntry[];
+  /** Fully-qualified URLs for lazily loaded detail-page screenshots. */
+  screenshotUrls: string[];
   avatarCid: string | null;
   avatarMime: string | null;
   /** Fully-qualified URL for the profile avatar image proxy, or null. */
@@ -60,6 +63,9 @@ export function toPublicProfileJson(
       profile.iconAccessStatus === "granted"
     ? `${origin}/api/registry/icon/${encodeURIComponent(profile.did)}`
     : null;
+  const screenshotUrls = profile.screenshots.map((_, i) =>
+    `${origin}/api/registry/screenshot/${encodeURIComponent(profile.did)}/${i}`
+  );
 
   const out: PublicProfileJson = {
     did: profile.did,
@@ -74,6 +80,8 @@ export function toPublicProfileJson(
     // `website` was the former Landing Page button. The current public
     // API exposes the primary web destination via `mainLink` instead.
     links: profile.links.filter((entry) => entry.kind !== "website"),
+    screenshots: profile.screenshots,
+    screenshotUrls,
     avatarCid: profile.avatarCid,
     avatarMime: profile.avatarMime,
     avatarUrl,

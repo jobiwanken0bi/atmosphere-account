@@ -53,6 +53,15 @@
             "maxSize": 200000,
             "description": "Optional vector icon (SVG) intended for developers building badges, app showcases, sign-in flows, etc. Not displayed on the public Explore profile. Sanitised on upload (script tags, event handlers, foreignObject and javascript:/data: hrefs are stripped)."
           },
+          "screenshots": {
+            "type": "array",
+            "maxLength": 4,
+            "items": {
+              "type": "ref",
+              "ref": "#screenshotEntry"
+            },
+            "description": "Optional screenshots for the project. Up to 4 PNG, JPEG, or WebP images."
+          },
           "categories": {
             "type": "array",
             "minLength": 1,
@@ -93,6 +102,18 @@
             "format": "datetime",
             "maxLength": 64
           }
+        }
+      }
+    },
+    "screenshotEntry": {
+      "type": "object",
+      "required": ["image"],
+      "properties": {
+        "image": {
+          "type": "blob",
+          "accept": ["image/png", "image/jpeg", "image/webp"],
+          "maxSize": 5000000,
+          "description": "Screenshot image. Up to 5MB."
         }
       }
     },

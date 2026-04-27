@@ -1,4 +1,5 @@
 import type { ProfileRow } from "../../lib/registry.ts";
+import { PUBLIC_CATEGORIES } from "../../lib/lexicons.ts";
 import { useT } from "../../i18n/mod.ts";
 import VerifiedBadge from "../VerifiedBadge.tsx";
 
@@ -15,7 +16,12 @@ interface Props {
 export default function ProfileCard({ profile }: Props) {
   const t = useT();
   const tCat = t.categories as Record<string, string>;
-  const cats = profile.categories.slice(0, 3);
+  const publicCategories = profile.categories.filter((c) =>
+    (PUBLIC_CATEGORIES as readonly string[]).includes(c)
+  );
+  const appSubcategories = publicCategories.includes("app")
+    ? profile.subcategories.slice(0, 2)
+    : [];
   const featured = profile.featured;
 
   return (
@@ -62,21 +68,32 @@ export default function ProfileCard({ profile }: Props) {
         {profile.description && (
           <p class="profile-card-description">{profile.description}</p>
         )}
-        <p class="profile-card-meta">
-          {cats.map((c) => (
-            <span key={c} class="profile-card-category">
-              {tCat[c] ?? c}
-            </span>
-          ))}
-          {profile.subcategories.slice(0, 2).map((s) => {
-            const sub = (t.subcategories as Record<string, string>)[s] ?? s;
-            return (
-              <span key={s} class="profile-card-sub">
-                {sub}
-              </span>
-            );
-          })}
-        </p>
+        {(publicCategories.length > 0 || appSubcategories.length > 0) && (
+          <div class="profile-card-meta">
+            {publicCategories.length > 0 && (
+              <div class="profile-card-categories">
+                {publicCategories.map((c) => (
+                  <span key={c} class="profile-card-category">
+                    {tCat[c] ?? c}
+                  </span>
+                ))}
+              </div>
+            )}
+            {appSubcategories.length > 0 && (
+              <div class="profile-card-subcategories">
+                {appSubcategories.map((s) => {
+                  const sub = (t.subcategories as Record<string, string>)[s] ??
+                    s;
+                  return (
+                    <span key={s} class="profile-card-sub">
+                      {sub}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </a>
   );

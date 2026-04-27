@@ -1,4 +1,4 @@
-import { CATEGORIES, type Category } from "../../lib/lexicons.ts";
+import { type Category, PUBLIC_CATEGORIES } from "../../lib/lexicons.ts";
 import { useT } from "../../i18n/mod.ts";
 
 interface Props {
@@ -24,7 +24,7 @@ export default function CategoryTabs({ active, query }: Props) {
       >
         {t.categories.all}
       </a>
-      {CATEGORIES.map((c: Category) => (
+      {PUBLIC_CATEGORIES.map((c: Category) => (
         <a
           key={c}
           href={buildHref(c, query)}

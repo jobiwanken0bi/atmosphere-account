@@ -13,7 +13,7 @@ import {
   type ProfileRow,
   searchProfiles,
 } from "../lib/registry.ts";
-import { CATEGORIES } from "../lib/lexicons.ts";
+import { PUBLIC_CATEGORIES } from "../lib/lexicons.ts";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 
 interface ExploreData {
@@ -33,10 +33,10 @@ export const handler = define.handlers({
   async GET(ctx) {
     const url = ctx.url;
     const rawCategory = url.searchParams.get("category");
-    const category =
-      rawCategory && (CATEGORIES as readonly string[]).includes(rawCategory)
-        ? rawCategory
-        : null;
+    const category = rawCategory &&
+        (PUBLIC_CATEGORIES as readonly string[]).includes(rawCategory)
+      ? rawCategory
+      : null;
     const subcategory = url.searchParams.get("subcategory");
     const query = url.searchParams.get("q")?.trim() ?? "";
     const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);

@@ -4,6 +4,12 @@ import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import ProfileHero from "../../components/explore/ProfileHero.tsx";
 import ProfileLinks from "../../components/explore/ProfileLinks.tsx";
+import ProfileScreenshots from "../../components/explore/ProfileScreenshots.tsx";
+import ProfileRatingSummary from "../../components/explore/ProfileRatingSummary.tsx";
+import ProfileReviewList, {
+  type DisplayReview,
+} from "../../components/explore/ProfileReviewList.tsx";
+import ProfileReviewComposer from "../../islands/ProfileReviewComposer.tsx";
 import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import type { Locale } from "../../i18n/mod.ts";
@@ -12,6 +18,13 @@ import {
   getProfileByHandle,
   type ProfileRow,
 } from "../../lib/registry.ts";
+import {
+  getOwnReview,
+  getReviewSummary,
+  listVisibleReviews,
+  type ReviewRow,
+  type ReviewSummary,
+} from "../../lib/reviews.ts";
 import { accountProviderName } from "../../lib/account-providers.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
@@ -29,9 +42,20 @@ export const handler = define.handlers({
         null,
       ),
     ]);
+    const [reviewSummary, reviews, ownReview] = profile
+      ? await Promise.all([
+        getReviewSummary(profile.did).catch(() => emptyReviewSummary()),
+        listVisibleReviews(profile.did, { limit: 20 }).catch(() => []),
+        user ? getOwnReview(profile.did, user.did).catch(() => null) : null,
+      ])
+      : [emptyReviewSummary(), [] as ReviewRow[], null];
+    const displayReviews = profile ? await enrichReviews(reviews) : [];
     return ctx.render(
       <ProfileDetailPage
         profile={profile}
+        reviewSummary={reviewSummary}
+        reviews={displayReviews}
+        ownReview={ownReview?.status === "visible" ? ownReview : null}
         signedInUser={user ? { did: user.did, handle: user.handle } : null}
         account={buildAccountMenuProps(ctx.state, ownerProfile?.handle ?? null)}
         ownerHandle={ownerProfile?.handle ?? null}
@@ -44,6 +68,9 @@ export const handler = define.handlers({
 
 interface DetailProps {
   profile: ProfileRow | null;
+  reviewSummary: ReviewSummary;
+  reviews: DisplayReview[];
+  ownReview: ReviewRow | null;
   signedInUser: { did: string; handle: string } | null;
   account: ReturnType<typeof buildAccountMenuProps>;
   ownerHandle: string | null;
@@ -51,8 +78,16 @@ interface DetailProps {
 }
 
 function ProfileDetailPage(
-  { profile, signedInUser, account, ownerHandle: _ownerHandle, locale }:
-    DetailProps,
+  {
+    profile,
+    reviewSummary,
+    reviews,
+    ownReview,
+    signedInUser,
+    account,
+    ownerHandle: _ownerHandle,
+    locale,
+  }: DetailProps,
 ) {
   const messages = getMessages(locale);
   const t = messages.explore;
@@ -87,6 +122,71 @@ function ProfileDetailPage(
               <ProfileHero profile={profile} />
             </div>
             <ProfileLinks profile={profile} />
+            <ProfileScreenshots profile={profile} />
+
+            <div class="profile-reviews-shell">
+              <ProfileRatingSummary
+                summary={reviewSummary}
+                copy={{
+                  heading: messages.reviews.summary.heading,
+                  threshold: messages.reviews.summary.threshold,
+                  average: messages.reviews.summary.average,
+                  distributionLabel: messages.reviews.summary.distributionLabel,
+                }}
+              />
+              <ProfileReviewList
+                reviews={reviews}
+                signedIn={!!signedInUser}
+                isOwner={isOwner}
+                action={
+                  <ProfileReviewComposer
+                    targetId={profile.handle}
+                    signedIn={!!signedInUser}
+                    isOwner={isOwner}
+                    loginHref={`/oauth/login?next=${
+                      encodeURIComponent(`/explore/${profile.handle}`)
+                    }`}
+                    ownReview={ownReview
+                      ? {
+                        id: ownReview.id,
+                        rating: ownReview.rating,
+                        body: ownReview.body,
+                      }
+                      : null}
+                    copy={{
+                      heading: messages.reviews.composer.heading,
+                      modalBody: messages.reviews.composer.modalBody,
+                      signedOut: messages.reviews.composer.signedOut,
+                      ownerNote: messages.reviews.composer.ownerNote,
+                      ratingLabel: messages.reviews.composer.ratingLabel,
+                      bodyLabel: messages.reviews.composer.bodyLabel,
+                      bodyPlaceholder:
+                        messages.reviews.composer.bodyPlaceholder,
+                      charsRemainingSuffix:
+                        messages.reviews.composer.charsRemainingSuffix,
+                      submit: messages.reviews.composer.submit,
+                      update: messages.reviews.composer.update,
+                      submitting: messages.reviews.composer.submitting,
+                      delete: messages.reviews.composer.delete,
+                      signIn: messages.reviews.composer.signIn,
+                      cancel: messages.reviews.composer.cancel,
+                      saved: messages.reviews.composer.saved,
+                      deleted: messages.reviews.composer.deleted,
+                      error: messages.reviews.composer.error,
+                    }}
+                  />
+                }
+                copy={{
+                  heading: messages.reviews.list.heading,
+                  empty: messages.reviews.list.empty,
+                  reviewerFallback: messages.reviews.list.reviewerFallback,
+                  edited: messages.reviews.list.edited,
+                  ownerResponse: messages.reviews.list.ownerResponse,
+                  report: messages.reviews.report,
+                  response: messages.reviews.response,
+                }}
+              />
+            </div>
 
             {isOwner && (
               <p style={{ marginTop: "1.5rem" }}>
@@ -132,6 +232,21 @@ function ProfileDetailPage(
         <Footer variant="compact" />
       </div>
     </div>
+  );
+}
+
+function emptyReviewSummary(): ReviewSummary {
+  return { visibleCount: 0, averageRating: null, distribution: null };
+}
+
+async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
+  return await Promise.all(
+    reviews.map(async (review) => {
+      const profile = await getProfileByDid(review.reviewerDid).catch(() =>
+        null
+      );
+      return { ...review, reviewerHandle: profile?.handle ?? null };
+    }),
   );
 }
 

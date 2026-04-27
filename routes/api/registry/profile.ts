@@ -17,8 +17,10 @@ import {
 } from "../../../lib/pds.ts";
 import {
   ATMOSPHERE_LINK_KINDS,
+  type BlobRef,
   type LinkEntry,
   type ProfileRecord,
+  type ScreenshotEntry,
   validateProfile,
 } from "../../../lib/lexicons.ts";
 import {
@@ -29,6 +31,13 @@ import {
 import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 
 const ICON_MAX_BYTES = 200_000;
+const SCREENSHOT_MAX_BYTES = 5_000_000;
+const SCREENSHOT_MAX_COUNT = 4;
+const SCREENSHOT_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
 
 interface LinkPayload {
   kind?: string;
@@ -70,6 +79,9 @@ interface ProfileFormPayload {
     size: number;
   } | null;
   iconUpload?: { dataBase64: string; mimeType: string };
+  /** Existing screenshots to keep plus new uploads to append. */
+  screenshots?: ScreenshotEntry[];
+  screenshotUploads?: { dataBase64: string; mimeType: string }[];
 }
 
 function trimOrNull(s: unknown): string | undefined {
@@ -129,6 +141,19 @@ function decodeBase64(b64: string): Uint8Array {
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
+}
+
+function isImageBlobRef(v: unknown): v is BlobRef {
+  if (!v || typeof v !== "object") return false;
+  const b = v as Record<string, unknown>;
+  const ref = b.ref as Record<string, unknown> | undefined;
+  return b.$type === "blob" &&
+    !!ref &&
+    typeof ref.$link === "string" &&
+    typeof b.mimeType === "string" &&
+    SCREENSHOT_MIME_TYPES.has(b.mimeType) &&
+    typeof b.size === "number" &&
+    b.size <= SCREENSHOT_MAX_BYTES;
 }
 
 export const handler = define.handlers({
@@ -249,6 +274,47 @@ export const handler = define.handlers({
       }
     }
 
+    const screenshots: ScreenshotEntry[] = [];
+    if (Array.isArray(body.screenshots)) {
+      for (const entry of body.screenshots) {
+        if (screenshots.length >= SCREENSHOT_MAX_COUNT) break;
+        if (entry && isImageBlobRef(entry.image)) {
+          screenshots.push({ image: entry.image });
+        }
+      }
+    }
+    const uploads = Array.isArray(body.screenshotUploads)
+      ? body.screenshotUploads
+      : [];
+    if (screenshots.length + uploads.length > SCREENSHOT_MAX_COUNT) {
+      return new Response(`screenshots: at most ${SCREENSHOT_MAX_COUNT}`, {
+        status: 400,
+      });
+    }
+    for (const upload of uploads) {
+      if (!SCREENSHOT_MIME_TYPES.has(upload.mimeType)) {
+        return new Response("screenshots must be png, jpeg, or webp", {
+          status: 400,
+        });
+      }
+      const bytes = decodeBase64(upload.dataBase64);
+      if (bytes.byteLength > SCREENSHOT_MAX_BYTES) {
+        return new Response("screenshot exceeds 5MB", { status: 400 });
+      }
+      try {
+        const image = await uploadBlob(
+          user.did,
+          session.pdsUrl,
+          bytes,
+          upload.mimeType,
+        );
+        screenshots.push({ image });
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(`screenshot upload failed: ${m}`, { status: 502 });
+      }
+    }
+
     // Dedupe categories defensively. The lexicon validator below also
     // does this, but normalising here means we surface a clean 400 ("at
     // least one category") instead of a validator error string.
@@ -291,6 +357,7 @@ export const handler = define.handlers({
       links: links.length > 0 ? links : undefined,
       avatar: avatar ?? undefined,
       icon: icon ?? undefined,
+      screenshots: screenshots.length > 0 ? screenshots : undefined,
       createdAt: new Date().toISOString(),
     };
 
@@ -331,6 +398,7 @@ export const handler = define.handlers({
         categories: validation.value.categories,
         subcategories: validation.value.subcategories ?? [],
         links: validation.value.links ?? [],
+        screenshots: validation.value.screenshots ?? [],
         avatarCid: validation.value.avatar?.ref.$link ?? null,
         avatarMime: validation.value.avatar?.mimeType ?? null,
         iconCid: validation.value.icon?.ref.$link ?? null,

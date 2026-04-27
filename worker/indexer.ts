@@ -116,6 +116,7 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     categories: r.categories,
     subcategories: r.subcategories ?? [],
     links: r.links ?? [],
+    screenshots: r.screenshots ?? [],
     avatarCid: r.avatar?.ref.$link ?? null,
     avatarMime: r.avatar?.mimeType ?? null,
     iconCid: r.icon?.ref.$link ?? null,

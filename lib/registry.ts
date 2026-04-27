@@ -4,7 +4,7 @@
  */
 import type { InValue } from "@libsql/client";
 import { withDb } from "./db.ts";
-import type { FeaturedBadge, LinkEntry } from "./lexicons.ts";
+import type { FeaturedBadge, LinkEntry, ScreenshotEntry } from "./lexicons.ts";
 
 /**
  * Approval state of the developer-facing SVG icon.
@@ -62,6 +62,7 @@ export interface ProfileRow {
   subcategories: string[];
   /** Outbound links (atmosphere services and custom links) in author-defined order. */
   links: LinkEntry[];
+  screenshots: ScreenshotEntry[];
   avatarCid: string | null;
   avatarMime: string | null;
   /** Optional developer-facing SVG icon. Not rendered on public profile.
@@ -109,6 +110,7 @@ interface RawProfileRow {
   categories: string;
   subcategories: string;
   links: string | null;
+  screenshots: string | null;
   avatar_cid: string | null;
   avatar_mime: string | null;
   icon_cid: string | null;
@@ -168,6 +170,33 @@ function safeJsonLinks(text: string | null | undefined): LinkEntry[] {
   }
 }
 
+function safeJsonScreenshots(
+  text: string | null | undefined,
+): ScreenshotEntry[] {
+  if (!text) return [];
+  try {
+    const v = JSON.parse(text);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((x) => x.image)
+      .filter((image): image is ScreenshotEntry["image"] =>
+        !!image && typeof image === "object" &&
+        (image as Record<string, unknown>).$type === "blob" &&
+        typeof ((image as Record<string, unknown>).ref as
+            | Record<
+              string,
+              unknown
+            >
+            | undefined)?.$link === "string" &&
+        typeof (image as Record<string, unknown>).mimeType === "string"
+      )
+      .map((image) => ({ image }));
+  } catch {
+    return [];
+  }
+}
+
 function normalizeIconStatus(v: string | null): IconStatus | null {
   if (v === "pending" || v === "approved" || v === "rejected") return v;
   return null;
@@ -198,6 +227,7 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     categories: safeJsonArray(r.categories),
     subcategories: safeJsonArray(r.subcategories),
     links: safeJsonLinks(r.links),
+    screenshots: safeJsonScreenshots(r.screenshots),
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
     iconCid: r.icon_cid,
@@ -252,6 +282,7 @@ export interface UpsertProfileInput {
   categories: string[];
   subcategories: string[];
   links?: LinkEntry[] | null;
+  screenshots?: ScreenshotEntry[] | null;
   avatarCid?: string | null;
   avatarMime?: string | null;
   iconCid?: string | null;
@@ -295,7 +326,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
       sql: `
         INSERT INTO profile (
           did, handle, name, description, main_link, ios_link, android_link,
-          categories, subcategories, links,
+          categories, subcategories, links, screenshots,
           avatar_cid, avatar_mime, icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
           icon_access_status, icon_access_email, icon_access_requested_at,
@@ -304,7 +335,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           takedown_status, takedown_reason, takedown_by, takedown_at,
           pds_url, record_cid, record_rev, created_at, indexed_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           NULL, NULL, NULL,
           NULL, NULL, NULL, NULL, NULL, NULL,
           NULL, NULL, NULL, NULL,
@@ -320,6 +351,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           categories=excluded.categories,
           subcategories=excluded.subcategories,
           links=excluded.links,
+          screenshots=excluded.screenshots,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
           icon_cid=excluded.icon_cid,
@@ -397,6 +429,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         JSON.stringify(cats),
         JSON.stringify(input.subcategories ?? []),
         JSON.stringify(input.links ?? []),
+        JSON.stringify(input.screenshots ?? []),
         input.avatarCid ?? null,
         input.avatarMime ?? null,
         input.iconCid ?? null,

@@ -2,9 +2,9 @@ import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import {
   APP_SUBCATEGORIES,
-  CATEGORIES,
   type Category,
   type LinkEntry,
+  PUBLIC_CATEGORIES,
 } from "../lib/lexicons.ts";
 import {
   type AtmosphereService,
@@ -33,6 +33,7 @@ interface ExistingProfile {
   categories: string[];
   subcategories: string[];
   links: LinkEntry[];
+  screenshots: Array<{ ref: string; mime: string; size: number }>;
   avatar: { ref: string; mime: string } | null;
   /** Optional developer-facing SVG icon. */
   icon:
@@ -81,6 +82,27 @@ interface BlobRefShape {
   ref: { $link: string };
   mimeType: string;
   size: number;
+}
+
+interface ScreenshotDraft {
+  id: string;
+  previewUrl: string;
+  blob: BlobRefShape | null;
+  file: File | null;
+  mimeType: string | null;
+}
+
+const SCREENSHOT_MAX_COUNT = 4;
+const SCREENSHOT_MAX_BYTES = 5_000_000;
+const SCREENSHOT_ACCEPT = ["image/png", "image/jpeg", "image/webp"];
+
+function screenshotMimeForFile(file: File): string | null {
+  if (SCREENSHOT_ACCEPT.includes(file.type)) return file.type;
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (name.endsWith(".webp")) return "image/webp";
+  return null;
 }
 
 async function readFileAsBase64(file: File): Promise<string> {
@@ -206,6 +228,7 @@ export default function CreateProfileForm(
   const tCustom = tForm.customLinks;
   const tMainLink = tForm.mainLink;
   const tAppLinks = tForm.appLinks;
+  const tScreenshots = tForm.screenshots;
   const tManage = t.explore.manage;
   /** Live registry status. Flips on save (-> true) and delete (-> false). */
   const published = useSignal<boolean>(initialPublished);
@@ -229,8 +252,11 @@ export default function CreateProfileForm(
   const androidLink = useSignal<string>(
     initial?.androidLink ?? initialSplit.androidLink,
   );
+  const initialCategories = initial?.categories?.filter((c) =>
+    (PUBLIC_CATEGORIES as readonly string[]).includes(c)
+  );
   const categories = useSignal<string[]>(
-    initial?.categories?.length ? initial.categories : ["app"],
+    initialCategories?.length ? initialCategories : ["app"],
   );
   const subcategories = useSignal<string[]>(initial?.subcategories ?? []);
 
@@ -278,6 +304,24 @@ export default function CreateProfileForm(
   const avatarFile = useSignal<File | null>(null);
   const avatarRemoved = useSignal(false);
 
+  const screenshots = useSignal<ScreenshotDraft[]>(
+    (initial?.screenshots ?? []).slice(0, SCREENSHOT_MAX_COUNT).map((s, i) => ({
+      id: `existing-${s.ref}-${i}`,
+      previewUrl: `/api/registry/screenshot/${encodeURIComponent(did)}/${i}`,
+      blob: {
+        $type: "blob",
+        ref: { $link: s.ref },
+        mimeType: s.mime,
+        size: s.size,
+      },
+      file: null,
+      mimeType: s.mime,
+    })),
+  );
+  const screenshotMessage = useSignal<
+    { kind: "ok" | "error"; text: string } | null
+  >(null);
+
   /* ---------------- Developer icon (SVG) signals ----------------------- */
   /**
    * SVG icons get a separate slot from the main avatar — the avatar is
@@ -316,9 +360,14 @@ export default function CreateProfileForm(
 
   const submitting = useSignal(false);
   const deleting = useSignal(false);
+  const hydrated = useSignal(false);
   const message = useSignal<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
+
+  useEffect(() => {
+    hydrated.value = true;
+  }, []);
 
   useEffect(() => {
     if (!initial?.avatar) return;
@@ -402,6 +451,62 @@ export default function CreateProfileForm(
     avatarKeep.value = null;
     avatarRemoved.value = true;
     avatarPreview.value = null;
+  };
+
+  const onScreenshotsChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+    const available = SCREENSHOT_MAX_COUNT - screenshots.value.length;
+    if (available <= 0) {
+      screenshotMessage.value = {
+        kind: "error",
+        text: tScreenshots.maxReached,
+      };
+      input.value = "";
+      return;
+    }
+    const next: ScreenshotDraft[] = [];
+    let skipped = 0;
+    for (const file of files.slice(0, available)) {
+      const mimeType = screenshotMimeForFile(file);
+      if (!mimeType) {
+        skipped++;
+        continue;
+      }
+      if (file.size > SCREENSHOT_MAX_BYTES) {
+        skipped++;
+        continue;
+      }
+      next.push({
+        id: `new-${crypto.randomUUID()}`,
+        previewUrl: URL.createObjectURL(file),
+        blob: null,
+        file,
+        mimeType,
+      });
+    }
+    skipped += Math.max(0, files.length - available);
+    if (next.length > 0) {
+      screenshots.value = [...screenshots.value, ...next];
+      screenshotMessage.value = {
+        kind: skipped > 0 ? "error" : "ok",
+        text: skipped > 0
+          ? tScreenshots.partialAdded(next.length, skipped)
+          : tScreenshots.added(next.length),
+      };
+    } else {
+      screenshotMessage.value = {
+        kind: "error",
+        text: tScreenshots.noneAdded,
+      };
+    }
+    input.value = "";
+  };
+
+  const removeScreenshot = (id: string) => {
+    screenshots.value = screenshots.value.filter((s) => s.id !== id);
+    screenshotMessage.value = null;
   };
 
   const onIconChange = (event: Event) => {
@@ -576,6 +681,18 @@ export default function CreateProfileForm(
       } else {
         payload.icon = null;
       }
+
+      payload.screenshots = screenshots.value
+        .filter((s) => s.blob)
+        .map((s) => ({ image: s.blob }));
+      payload.screenshotUploads = await Promise.all(
+        screenshots.value
+          .filter((s) => s.file)
+          .map(async (s) => ({
+            dataBase64: await readFileAsBase64(s.file as File),
+            mimeType: s.mimeType ?? (s.file as File).type,
+          })),
+      );
 
       const res = await fetch("/api/registry/profile", {
         method: "PUT",
@@ -754,7 +871,7 @@ export default function CreateProfileForm(
         <fieldset class="profile-form-field">
           <legend class="profile-form-label">{tForm.categoryLabel}</legend>
           <div class="profile-form-chips" role="group">
-            {CATEGORIES.map((c: Category) => {
+            {PUBLIC_CATEGORIES.map((c: Category) => {
               const selected = categories.value.includes(c);
               return (
                 <label
@@ -846,6 +963,64 @@ export default function CreateProfileForm(
                 androidLink.value = (e.currentTarget as HTMLInputElement).value}
             />
             <p class="profile-form-hint">{tAppLinks.androidHint}</p>
+          </label>
+        </div>
+
+        {/* ---------------- Screenshots --------------------------- */}
+        <div class="profile-form-field profile-screenshots-field">
+          <div class="profile-form-section-heading">
+            <span class="profile-form-label">{tScreenshots.sectionLabel}</span>
+            <span class="profile-form-count">
+              {screenshots.value.length}/{SCREENSHOT_MAX_COUNT}
+            </span>
+          </div>
+          <p class="profile-form-hint">{tScreenshots.hint}</p>
+          {screenshotMessage.value && (
+            <p
+              class={`profile-screenshot-status profile-form-status profile-form-status--${screenshotMessage.value.kind}`}
+              role="status"
+            >
+              {screenshotMessage.value.text}
+            </p>
+          )}
+
+          {screenshots.value.length > 0 && (
+            <div class="profile-screenshot-grid">
+              {screenshots.value.map((shot, i) => (
+                <div class="profile-screenshot-edit" key={shot.id}>
+                  <img
+                    src={shot.previewUrl}
+                    alt=""
+                    class="profile-screenshot-edit-img"
+                  />
+                  <button
+                    type="button"
+                    class="profile-screenshot-remove"
+                    aria-label={tScreenshots.removeAriaLabel(i + 1)}
+                    onClick={() =>
+                      removeScreenshot(shot.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <label class="profile-form-field profile-screenshot-native-picker">
+            <span class="profile-form-label">
+              {screenshots.value.length > 0
+                ? tScreenshots.addMore
+                : tScreenshots.upload}
+            </span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+              multiple
+              disabled={screenshots.value.length >= SCREENSHOT_MAX_COUNT}
+              onChange={onScreenshotsChange}
+              class="profile-form-input profile-screenshot-file-input"
+            />
           </label>
         </div>
 
@@ -1095,6 +1270,11 @@ export default function CreateProfileForm(
           </span>
         )}
       </div>
+      {!hydrated.value && (
+        <p class="profile-form-hydration-note">
+          Loading editor controls...
+        </p>
+      )}
 
       {/* ---------------- Verification request modal ---------------- */}
       {requestModalOpen.value && (

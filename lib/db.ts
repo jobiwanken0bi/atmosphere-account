@@ -98,6 +98,7 @@ const SCHEMA_STATEMENTS: string[] = [
     categories TEXT NOT NULL DEFAULT '[]',
     subcategories TEXT NOT NULL DEFAULT '[]',
     links TEXT NOT NULL DEFAULT '[]',
+    screenshots TEXT NOT NULL DEFAULT '[]',
     avatar_cid TEXT,
     avatar_mime TEXT,
     icon_cid TEXT,
@@ -194,6 +195,59 @@ const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS report_status_target ON report(status, target_did)`,
   `CREATE INDEX IF NOT EXISTS report_dedup ON report(target_did, reporter_ip_hash, reason, created_at)`,
+  /**
+   * Signed-in user reviews for registry profiles. Reviews are AppView-owned
+   * moderation data, not ATProto records: this keeps aggregates and admin
+   * actions local to the Explore surface.
+   */
+  `CREATE TABLE IF NOT EXISTS review (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_did TEXT NOT NULL,
+    reviewer_did TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+    body TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'visible',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    hidden_at INTEGER,
+    hidden_by TEXT,
+    removed_at INTEGER,
+    removed_by TEXT,
+    admin_notes TEXT
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS review_target_reviewer ON review(target_did, reviewer_did)`,
+  `CREATE INDEX IF NOT EXISTS review_target_status_rating ON review(target_did, status, rating)`,
+  `CREATE INDEX IF NOT EXISTS review_target_status_created ON review(target_did, status, created_at)`,
+  /**
+   * Reports against individual reviews. Kept separate from profile reports
+   * because moderation targets and action surfaces differ.
+   */
+  `CREATE TABLE IF NOT EXISTS review_report (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id INTEGER NOT NULL,
+    reporter_did TEXT,
+    reporter_ip_hash TEXT,
+    reason TEXT NOT NULL,
+    details TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    admin_notes TEXT,
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER,
+    resolved_by TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS review_report_status_review ON review_report(status, review_id)`,
+  `CREATE INDEX IF NOT EXISTS review_report_dedup ON review_report(review_id, reporter_ip_hash, reason, created_at)`,
+  /**
+   * Optional developer response for App Store-style owner replies. One
+   * response per review; hidden/removed parent reviews are not served publicly.
+   */
+  `CREATE TABLE IF NOT EXISTS review_response (
+    review_id INTEGER PRIMARY KEY,
+    responder_did TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
 ];
 
 /**
@@ -256,6 +310,12 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "links",
         ddl: "ALTER TABLE profile ADD COLUMN links TEXT NOT NULL DEFAULT '[]'",
+      },
+      {
+        table: "profile",
+        column: "screenshots",
+        ddl:
+          "ALTER TABLE profile ADD COLUMN screenshots TEXT NOT NULL DEFAULT '[]'",
       },
       {
         table: "profile",

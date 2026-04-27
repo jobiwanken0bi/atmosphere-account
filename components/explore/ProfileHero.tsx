@@ -1,4 +1,5 @@
 import type { ProfileRow } from "../../lib/registry.ts";
+import { PUBLIC_CATEGORIES } from "../../lib/lexicons.ts";
 import { useT } from "../../i18n/mod.ts";
 import VerifiedBadge from "../VerifiedBadge.tsx";
 import WebsiteIcon from "../icons/WebsiteIcon.tsx";
@@ -19,7 +20,12 @@ export default function ProfileHero({ profile }: Props) {
   const tBadges = t.badges;
   const tLink = t.linkKinds;
   const featured = profile.featured;
-  const cats = profile.categories;
+  const publicCategories = profile.categories.filter((c) =>
+    (PUBLIC_CATEGORIES as readonly string[]).includes(c)
+  );
+  const appSubcategories = publicCategories.includes("app")
+    ? profile.subcategories
+    : [];
   const primaryLinks = [
     profile.mainLink
       ? {
@@ -81,18 +87,28 @@ export default function ProfileHero({ profile }: Props) {
           )}
         </div>
         <p class="profile-hero-handle">@{profile.handle}</p>
-        <div class="profile-hero-meta">
-          {cats.map((c) => (
-            <span key={c} class="profile-card-category">
-              {tCat[c] ?? c}
-            </span>
-          ))}
-          {profile.subcategories.map((s) => (
-            <span key={s} class="profile-card-sub">
-              {tSub[s] ?? s}
-            </span>
-          ))}
-        </div>
+        {(publicCategories.length > 0 || appSubcategories.length > 0) && (
+          <div class="profile-hero-meta">
+            {publicCategories.length > 0 && (
+              <div class="profile-card-categories">
+                {publicCategories.map((c) => (
+                  <span key={c} class="profile-card-category">
+                    {tCat[c] ?? c}
+                  </span>
+                ))}
+              </div>
+            )}
+            {appSubcategories.length > 0 && (
+              <div class="profile-card-subcategories">
+                {appSubcategories.map((s) => (
+                  <span key={s} class="profile-card-sub">
+                    {tSub[s] ?? s}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {profile.description && (
           <p class="profile-hero-description">{profile.description}</p>
         )}

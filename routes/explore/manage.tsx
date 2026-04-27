@@ -59,6 +59,11 @@ export const handler = define.handlers({
         categories: existing.categories,
         subcategories: existing.subcategories,
         links: existing.links,
+        screenshots: existing.screenshots.map((entry) => ({
+          ref: entry.image.ref.$link,
+          mime: entry.image.mimeType,
+          size: entry.image.size,
+        })),
         avatar: existing.avatarCid && existing.avatarMime
           ? { ref: existing.avatarCid, mime: existing.avatarMime }
           : null,
@@ -88,6 +93,7 @@ export const handler = define.handlers({
             categories: ["app"],
             subcategories: [],
             links: [],
+            screenshots: [],
             avatar: bsky.avatar
               ? {
                 ref: bsky.avatar.ref.$link,

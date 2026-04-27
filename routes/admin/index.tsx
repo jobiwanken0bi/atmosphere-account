@@ -13,20 +13,24 @@ import {
   countTakenDownProfiles,
 } from "../../lib/registry.ts";
 import { countOpenReports } from "../../lib/reports.ts";
+import { countOpenReviewReports } from "../../lib/reviews.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const [iconAccessRequests, openReports, takenDown] = await Promise.all([
-      countPendingIconAccess().catch(() => 0),
-      countOpenReports().catch(() => 0),
-      countTakenDownProfiles().catch(() => 0),
-    ]);
+    const [iconAccessRequests, openReports, openReviewReports, takenDown] =
+      await Promise.all([
+        countPendingIconAccess().catch(() => 0),
+        countOpenReports().catch(() => 0),
+        countOpenReviewReports().catch(() => 0),
+        countTakenDownProfiles().catch(() => 0),
+      ]);
     return ctx.render(
       <AdminHome
         account={buildAccountMenuProps(ctx.state)}
         iconAccessRequests={iconAccessRequests}
         openReports={openReports}
+        openReviewReports={openReviewReports}
         takenDown={takenDown}
         locale={ctx.state.locale}
       />,
@@ -38,13 +42,20 @@ interface AdminHomeProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   iconAccessRequests: number;
   openReports: number;
+  openReviewReports: number;
   takenDown: number;
   locale: Locale;
 }
 
 function AdminHome(
-  { account, iconAccessRequests, openReports, takenDown, locale }:
-    AdminHomeProps,
+  {
+    account,
+    iconAccessRequests,
+    openReports,
+    openReviewReports,
+    takenDown,
+    locale,
+  }: AdminHomeProps,
 ) {
   const t = getMessages(locale).admin;
   return (
@@ -69,6 +80,13 @@ function AdminHome(
                 <p class="admin-card-count">{openReports}</p>
                 <h2 class="admin-card-title">{t.overview.reportsTitle}</h2>
                 <p class="admin-card-body">{t.overview.reportsBody}</p>
+              </a>
+              <a href="/admin/reviews" class="admin-card">
+                <p class="admin-card-count">{openReviewReports}</p>
+                <h2 class="admin-card-title">
+                  {t.overview.reviewReportsTitle}
+                </h2>
+                <p class="admin-card-body">{t.overview.reviewReportsBody}</p>
               </a>
               <a href="/admin/featured" class="admin-card">
                 <p class="admin-card-count">★</p>

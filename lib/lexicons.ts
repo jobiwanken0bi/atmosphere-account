@@ -31,6 +31,10 @@ export const CATEGORIES = [
   "developerTool",
 ] as const;
 export type Category = typeof CATEGORIES[number];
+export const PUBLIC_CATEGORIES = [
+  "app",
+  "accountProvider",
+] as const satisfies readonly Category[];
 
 export const APP_SUBCATEGORIES = [
   "microblog",
@@ -110,6 +114,10 @@ export interface BlobRef {
   size: number;
 }
 
+export interface ScreenshotEntry {
+  image: BlobRef;
+}
+
 export interface ProfileRecord {
   $type?: typeof PROFILE_NSID;
   name: string;
@@ -130,6 +138,9 @@ export interface ProfileRecord {
    * public profile. Must be `image/svg+xml`; we sanitise on upload.
    */
   icon?: BlobRef;
+  /** Optional detail-page screenshots. Stored as PDS blobs and lazy-loaded
+   *  only on the profile detail page. */
+  screenshots?: ScreenshotEntry[];
   /** All categories that apply to the project (1-4). The first item is the
    *  primary category used for sort/grouping in lists. */
   categories: string[];
@@ -182,6 +193,46 @@ function isBlob(v: unknown): v is BlobRef {
   if (typeof b.mimeType !== "string") return false;
   if (typeof b.size !== "number") return false;
   return true;
+}
+
+function validateScreenshots(
+  input: unknown,
+): { ok: true; value: ScreenshotEntry[] } | { ok: false; error: string } {
+  if (input === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(input)) {
+    return { ok: false, error: "screenshots: must be an array" };
+  }
+  if (input.length > 4) {
+    return { ok: false, error: "screenshots: at most 4" };
+  }
+  const out: ScreenshotEntry[] = [];
+  const seen = new Set<string>();
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object") {
+      return { ok: false, error: "screenshots: items must be objects" };
+    }
+    const image = (raw as Record<string, unknown>).image;
+    if (!isBlob(image)) {
+      return { ok: false, error: "screenshots[].image: invalid blob ref" };
+    }
+    if (
+      image.mimeType !== "image/png" &&
+      image.mimeType !== "image/jpeg" &&
+      image.mimeType !== "image/webp"
+    ) {
+      return {
+        ok: false,
+        error: "screenshots[].image: must be png, jpeg, or webp",
+      };
+    }
+    if (image.size > 5_000_000) {
+      return { ok: false, error: "screenshots[].image: max 5MB" };
+    }
+    if (seen.has(image.ref.$link)) continue;
+    seen.add(image.ref.$link);
+    out.push({ image });
+  }
+  return { ok: true, value: out };
 }
 
 export interface ValidationResult<T> {
@@ -386,6 +437,8 @@ export function validateProfile(
       return { ok: false, error: "icon: must be image/svg+xml" };
     }
   }
+  const screenshotsRes = validateScreenshots(v.screenshots);
+  if (!screenshotsRes.ok) return { ok: false, error: screenshotsRes.error };
   const linksRes = normalizeLinks(v.links);
   if (!linksRes.ok) return { ok: false, error: linksRes.error };
   if (v.subcategories !== undefined) {
@@ -413,6 +466,9 @@ export function validateProfile(
       androidLink: normalizedAndroidLink,
       avatar: v.avatar as BlobRef | undefined,
       icon: v.icon as BlobRef | undefined,
+      screenshots: screenshotsRes.value.length > 0
+        ? screenshotsRes.value
+        : undefined,
       categories: normalizedCategories,
       subcategories: v.subcategories as string[] | undefined,
       links: linksRes.value.length > 0 ? linksRes.value : undefined,
@@ -483,12 +539,10 @@ export async function loadLexiconJson(nsid: string): Promise<unknown | null> {
     [PERMISSION_SET_NSID]: "fullPermissions.json",
   };
   const filename = fileMap[nsid];
-  const url = new URL(
-    `../lexicons/com/atmosphereaccount/registry/${filename}`,
-    import.meta.url,
-  );
   try {
-    const text = await Deno.readTextFile(url);
+    const text = await Deno.readTextFile(
+      `lexicons/com/atmosphereaccount/registry/${filename}`,
+    );
     return JSON.parse(text);
   } catch (_) {
     return null;
