@@ -9,12 +9,9 @@ import {
   getAppUser,
   getEffectiveAccountType,
 } from "../../lib/account-types.ts";
+import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { listReviewsByReviewer, type ReviewRow } from "../../lib/reviews.ts";
-
-function bskyCdnAvatarUrl(did: string, cid: string): string {
-  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
-}
 
 interface ReviewWithTarget extends ReviewRow {
   targetHandle: string;

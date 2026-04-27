@@ -35,6 +35,8 @@ export const handler = define.handlers({
       );
       headers.set(
         "cache-control",
+        // The blob CID is immutable, but this route is keyed by did/index, so
+        // keep shared caching bounded in case a profile replaces a screenshot.
         "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
       );
       headers.set("etag", cid);

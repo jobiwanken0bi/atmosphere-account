@@ -1,5 +1,6 @@
 import type { ProfileRow } from "../../lib/registry.ts";
 import { PUBLIC_CATEGORIES } from "../../lib/lexicons.ts";
+import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import {
   type ResolvedIconKind,
   resolveLink,
@@ -67,7 +68,7 @@ export default function ProfileHero({ profile }: Props) {
           {profile.avatarCid
             ? (
               <img
-                src={`/api/registry/avatar/${encodeURIComponent(profile.did)}`}
+                src={bskyCdnAvatarUrl(profile.did, profile.avatarCid)}
                 alt={profile.name}
                 decoding="async"
               />

@@ -1,6 +1,7 @@
 import type { ProfileRow } from "../../lib/registry.ts";
 import { PUBLIC_CATEGORIES } from "../../lib/lexicons.ts";
 import { useT } from "../../i18n/mod.ts";
+import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import VerifiedBadge from "../VerifiedBadge.tsx";
 
 interface Props {
@@ -33,7 +34,7 @@ export default function ProfileCard({ profile }: Props) {
         {profile.avatarCid
           ? (
             <img
-              src={`/api/registry/avatar/${encodeURIComponent(profile.did)}`}
+              src={bskyCdnAvatarUrl(profile.did, profile.avatarCid)}
               alt=""
               loading="lazy"
               decoding="async"

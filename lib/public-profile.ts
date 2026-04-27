@@ -12,6 +12,7 @@
  */
 import type { LinkEntry, ScreenshotEntry } from "./lexicons.ts";
 import type { ProfileRow } from "./registry.ts";
+import { bskyCdnAvatarUrl } from "./avatar.ts";
 
 export interface PublicProfileJson {
   did: string;
@@ -29,7 +30,7 @@ export interface PublicProfileJson {
   screenshotUrls: string[];
   avatarCid: string | null;
   avatarMime: string | null;
-  /** Fully-qualified URL for the profile avatar image proxy, or null. */
+  /** Fully-qualified URL for the profile avatar image, or null. */
   avatarUrl: string | null;
   /**
    * True when the project shows the public verified badge on Explore
@@ -55,7 +56,7 @@ export function toPublicProfileJson(
   origin: string,
 ): PublicProfileJson {
   const avatarUrl = profile.avatarCid
-    ? `${origin}/api/registry/avatar/${encodeURIComponent(profile.did)}`
+    ? bskyCdnAvatarUrl(profile.did, profile.avatarCid)
     : null;
   const verified = profile.iconAccessStatus === "granted";
   const iconUrl = profile.iconCid &&

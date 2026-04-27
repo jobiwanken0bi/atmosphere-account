@@ -27,14 +27,11 @@ import {
 import { accountProviderName } from "../../lib/account-providers.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUser } from "../../lib/account-types.ts";
+import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import {
   listProfileUpdates,
   type ProfileUpdateRow,
 } from "../../lib/profile-updates.ts";
-
-function bskyCdnAvatarUrl(did: string, cid: string): string {
-  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
-}
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -277,7 +274,7 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
       const reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
         ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
         : profile?.avatarCid
-        ? `/api/registry/avatar/${encodeURIComponent(review.reviewerDid)}`
+        ? bskyCdnAvatarUrl(review.reviewerDid, profile.avatarCid)
         : null;
       return {
         ...review,

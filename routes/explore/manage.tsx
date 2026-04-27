@@ -10,18 +10,7 @@ import { getBskyProfile } from "../../lib/pds.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { listProfileUpdates } from "../../lib/profile-updates.ts";
-
-/**
- * Build the deterministic public Bluesky CDN URL for a user's avatar
- * blob. The CDN is a thin cached proxy in front of the user's PDS, so
- * any did/cid pair from `app.bsky.actor.profile` resolves cleanly here
- * with cache headers + the correct content-type. Using this URL avoids
- * routing the prefill avatar through our own server (which adds a hop
- * and can fail in subtle ways on some PDS hosts).
- */
-function bskyCdnAvatarUrl(did: string, cid: string): string {
-  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
-}
+import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -49,10 +38,9 @@ export const handler = define.handlers({
     const t = getMessages(ctx.state.locale);
 
     let initial: Parameters<typeof CreateProfileForm>[0]["initial"] = null;
-    /** When showing a Bluesky-prefilled draft (no registry record yet), we
-     *  display the user's PDS-hosted avatar directly via getBlob. After the
-     *  registry record exists, the form switches to the cached
-     *  /api/registry/avatar/:did proxy. */
+    /** When showing a Bluesky-prefilled draft (no registry record yet), and
+     *  after a registry record exists, the form previews the avatar through
+     *  Bluesky's CDN whenever a did/cid pair is available. */
     let initialAvatarUrl: string | null = null;
     /** Owner-aware lookup: include taken-down rows so the form can
      *  surface a "Your profile has been taken down" banner with the

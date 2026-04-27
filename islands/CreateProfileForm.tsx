@@ -11,6 +11,7 @@ import {
   getAtmosphereService,
   visibleAtmosphereServices,
 } from "../lib/atmosphere-links.ts";
+import { bskyCdnAvatarUrl } from "../lib/avatar.ts";
 import { BSKY_CLIENTS, getBskyClient } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
 import BskyClientPickerModal from "./BskyClientPickerModal.tsx";
@@ -292,14 +293,12 @@ export default function CreateProfileForm(
    *      check this first because in the prefill case `initial.avatar`
    *      is also set (so it can carry through the BlobRef on Save) but
    *      the registry-side proxy doesn't have anything to serve yet.
-   *   3. Existing registry record → cached server proxy.
+   *   3. Existing registry record → Bluesky CDN avatar by did/cid.
    *   4. Empty placeholder.
    */
   const avatarPreview = useSignal<string | null>(
     initialAvatarUrl ??
-      (initial?.avatar
-        ? `/api/registry/avatar/${encodeURIComponent(did)}`
-        : null),
+      (initial?.avatar ? bskyCdnAvatarUrl(did, initial.avatar.ref) : null),
   );
   const avatarFile = useSignal<File | null>(null);
   const avatarRemoved = useSignal(false);

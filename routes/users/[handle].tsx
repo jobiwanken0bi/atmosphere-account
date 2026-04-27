@@ -4,12 +4,9 @@ import Footer from "../../components/Footer.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUserByHandle } from "../../lib/account-types.ts";
+import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import { getBskyClient } from "../../lib/bsky-clients.ts";
 import { getProfileByHandle } from "../../lib/registry.ts";
-
-function bskyCdnAvatarUrl(did: string, cid: string): string {
-  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}`;
-}
 
 export const handler = define.handlers({
   async GET(ctx) {
