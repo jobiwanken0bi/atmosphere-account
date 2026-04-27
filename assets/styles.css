@@ -5016,8 +5016,8 @@ body.explore-no-effects #nav-effects-bar {
 .profile-reviews-shell {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  margin-top: 1.5rem;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 .profile-whats-new {
   margin-top: 1rem;
@@ -5107,12 +5107,13 @@ body.explore-no-effects #nav-effects-bar {
   color: rgba(18, 26, 47, 0.58);
 }
 .profile-whats-new-icon-button,
-.profile-whats-new-history-link,
+.profile-whats-new-history-button,
 .profile-version-history-commit {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font: inherit;
   text-decoration: none;
   color: #254a9e;
   border: 1px solid rgba(18, 26, 47, 0.12);
@@ -5120,18 +5121,19 @@ body.explore-no-effects #nav-effects-bar {
   border-radius: 999px;
 }
 .profile-whats-new-icon-button,
-.profile-whats-new-history-link {
+.profile-whats-new-history-button {
   width: 2.15rem;
   height: 2.15rem;
 }
 .profile-whats-new-icon-button {
   position: relative;
 }
-.profile-whats-new-history-link {
+.profile-whats-new-history-button {
+  cursor: pointer;
   font-size: 1rem;
 }
 .profile-whats-new-icon-button:hover,
-.profile-whats-new-history-link:hover,
+.profile-whats-new-history-button:hover,
 .profile-version-history-commit:hover {
   background: rgba(255, 255, 255, 0.86);
   border-color: rgba(42, 90, 168, 0.3);
@@ -5147,15 +5149,14 @@ body.explore-no-effects #nav-effects-bar {
   font-size: 0.62rem;
   line-height: 1;
 }
-.profile-version-history {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(18, 26, 47, 0.1);
-  scroll-margin-top: 6rem;
+.profile-version-history-modal {
+  max-width: 640px;
 }
-.profile-version-history h3 {
-  font-size: 0.9rem;
-  margin-bottom: 0.75rem;
+.profile-version-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0.75rem;
 }
 .profile-version-history-item {
   padding: 0.85rem 0;
@@ -5165,7 +5166,7 @@ body.explore-no-effects #nav-effects-bar {
   border-top: 0;
   padding-top: 0;
 }
-.profile-version-history-item h4 {
+.profile-version-history-item h3 {
   margin-top: 0.2rem;
   font-size: 0.98rem;
 }
@@ -5183,8 +5184,14 @@ body.explore-no-effects #nav-effects-bar {
 .profile-reviews-summary,
 .profile-reviews-panel,
 .profile-review-card {
-  padding: 1.1rem 1.2rem;
+  padding: 1rem;
   border-radius: 1.2rem;
+}
+.profile-reviews-summary.glass,
+.profile-reviews-panel.glass,
+.profile-review-card.glass {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(18, 26, 47, 0.08);
 }
 .profile-reviews-summary {
   display: grid;
@@ -5193,8 +5200,8 @@ body.explore-no-effects #nav-effects-bar {
   align-items: center;
 }
 .profile-reviews-average {
-  margin: 0.2rem 0 0;
-  font-size: clamp(1.3rem, 2.5vw, 1.9rem);
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.15rem, 2.1vw, 1.55rem);
   font-weight: 850;
 }
 .profile-reviews-average span,
@@ -5236,7 +5243,9 @@ body.explore-no-effects #nav-effects-bar {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(18, 26, 47, 0.08);
 }
 .profile-review-action-row {
   display: flex;
@@ -5315,7 +5324,12 @@ body.explore-no-effects #nav-effects-bar {
 .profile-review-cards {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.65rem;
+}
+.profile-review-card {
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(18, 26, 47, 0.07);
+  box-shadow: none;
 }
 .profile-reviews-empty {
   margin-top: 0.25rem;
@@ -5379,8 +5393,12 @@ body.explore-no-effects #nav-effects-bar {
   color: rgba(18, 26, 47, 0.24);
 }
 .profile-review-body {
-  margin-top: 0.8rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(18, 26, 47, 0.07);
   white-space: pre-wrap;
+  font-size: 0.92rem;
+  line-height: 1.55;
 }
 .profile-review-response {
   margin-top: 0.9rem;
@@ -5415,6 +5433,12 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .profile-card-section-title {
   color: rgba(255, 255, 255, 0.92);
 }
+.dark-phase .profile-reviews-summary.glass,
+.dark-phase .profile-reviews-panel.glass,
+.dark-phase .profile-review-card.glass {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.13);
+}
 .dark-phase .profile-reviews-threshold,
 .dark-phase .profile-whats-new-empty,
 .dark-phase .profile-whats-new-body,
@@ -5433,6 +5457,10 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .profile-rating-bar {
   background: rgba(255, 255, 255, 0.12);
 }
+.dark-phase .profile-reviews-panel-header,
+.dark-phase .profile-review-body {
+  border-color: rgba(255, 255, 255, 0.1);
+}
 .dark-phase .profile-review-star {
   color: rgba(255, 255, 255, 0.22);
 }
@@ -5448,24 +5476,21 @@ body.explore-no-effects #nav-effects-bar {
 }
 .dark-phase .profile-whats-new-expand summary,
 .dark-phase .profile-whats-new-icon-button,
-.dark-phase .profile-whats-new-history-link,
+.dark-phase .profile-whats-new-history-button,
 .dark-phase .profile-version-history-commit {
   color: rgba(160, 200, 255, 1);
 }
 .dark-phase .profile-whats-new-icon-button,
-.dark-phase .profile-whats-new-history-link,
+.dark-phase .profile-whats-new-history-button,
 .dark-phase .profile-version-history-commit {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.13);
 }
 .dark-phase .profile-whats-new-icon-button:hover,
-.dark-phase .profile-whats-new-history-link:hover,
+.dark-phase .profile-whats-new-history-button:hover,
 .dark-phase .profile-version-history-commit:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(160, 200, 255, 0.35);
-}
-.dark-phase .profile-version-history {
-  border-top-color: rgba(255, 255, 255, 0.12);
 }
 .dark-phase .profile-version-history-item {
   border-top-color: rgba(255, 255, 255, 0.1);

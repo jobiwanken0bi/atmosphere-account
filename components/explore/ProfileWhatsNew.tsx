@@ -1,4 +1,5 @@
 import type { ProfileUpdateRow } from "../../lib/profile-updates.ts";
+import ProfileVersionHistoryModal from "../../islands/ProfileVersionHistoryModal.tsx";
 import TangledIcon from "../icons/TangledIcon.tsx";
 
 interface Props {
@@ -77,16 +78,13 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
         <div class="profile-whats-new-copy">
           <div class="profile-whats-new-heading-row">
             <h2 class="profile-card-section-title">{copy.heading}</h2>
-            {history.length > 0 && (
-              <a
-                href="#profile-version-history"
-                class="profile-whats-new-history-link"
-                aria-label={copy.versionHistory}
-                title={copy.versionHistory}
-              >
-                <span aria-hidden="true">↺</span>
-              </a>
-            )}
+            <ProfileVersionHistoryModal
+              updates={history}
+              copy={{
+                versionHistory: copy.versionHistory,
+                viewCommit: copy.viewCommit,
+              }}
+            />
           </div>
           <UpdateMeta update={latest} />
           <h3 class="profile-whats-new-title">{latest.title}</h3>
@@ -106,31 +104,6 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
           <CommitLink href={latest.tangledCommitUrl} label={copy.viewCommit} />
         )}
       </div>
-
-      {history.length > 0 && (
-        <div class="profile-version-history" id="profile-version-history">
-          <h3>{copy.versionHistory}</h3>
-          {history.slice(0, 5).map((update) => (
-            <article class="profile-version-history-item" key={update.uri}>
-              <UpdateMeta update={update} />
-              <h4>{update.title}</h4>
-              <p>{update.body}</p>
-              {update.tangledCommitUrl && (
-                <a
-                  href={update.tangledCommitUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="profile-version-history-commit"
-                >
-                  <TangledIcon class="profile-whats-new-icon" />
-                  <span aria-hidden="true">↗</span>
-                  <span class="visually-hidden">{copy.viewCommit}</span>
-                </a>
-              )}
-            </article>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
