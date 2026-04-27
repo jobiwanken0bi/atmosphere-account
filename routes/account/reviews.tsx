@@ -127,11 +127,17 @@ function AccountReviewsPage(
               </div>
               <UserBskyClientPicker
                 selectedClientId={profile?.bskyClientId ?? null}
+                visible={profile?.bskyButtonVisible ?? true}
                 label={copy.clientLabel}
+                displayLabel={copy.displayBskyButton}
+                settingsLabel={copy.configureBskyClient}
                 saveLabel={copy.saveClient}
+                cancelLabel={copy.cancel}
+                doneLabel={copy.done}
               />
             </section>
 
+            <h2 class="user-reviews-heading">{copy.reviewsHeading}</h2>
             {reviews.length === 0
               ? (
                 <div class="glass account-reviews-empty">

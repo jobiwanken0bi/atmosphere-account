@@ -138,15 +138,6 @@ function ProfileDetailPage(
               <ProfileHero profile={profile} />
             </div>
             <ProfileScreenshots profile={profile} />
-            <ProfileWhatsNew
-              updates={updates}
-              copy={{
-                heading: t.detail.whatsNew.heading,
-                empty: t.detail.whatsNew.empty,
-                versionHistory: t.detail.whatsNew.versionHistory,
-                viewCommit: t.detail.whatsNew.viewCommit,
-              }}
-            />
 
             <div class="profile-reviews-shell">
               <ProfileRatingSummary
@@ -211,6 +202,17 @@ function ProfileDetailPage(
                 }}
               />
             </div>
+
+            <ProfileWhatsNew
+              updates={updates}
+              copy={{
+                heading: t.detail.whatsNew.heading,
+                empty: t.detail.whatsNew.empty,
+                versionHistory: t.detail.whatsNew.versionHistory,
+                viewCommit: t.detail.whatsNew.viewCommit,
+                readFullUpdate: t.detail.whatsNew.readFullUpdate,
+              }}
+            />
 
             {isOwner && (
               <p style={{ marginTop: "1.5rem" }}>

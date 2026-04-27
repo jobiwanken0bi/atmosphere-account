@@ -26,6 +26,7 @@ export const handler = define.handlers({
         account={buildAccountMenuProps(ctx.state)}
         profile={profile}
         bskyClientId={appUser?.bskyClientId ?? null}
+        bskyButtonVisible={appUser?.bskyButtonVisible ?? true}
         t={getMessages(ctx.state.locale)}
       />,
       { status: profile ? 200 : 404 },
@@ -37,12 +38,14 @@ interface UserProfilePageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   profile: Awaited<ReturnType<typeof getProfileByHandle>>;
   bskyClientId: string | null;
+  bskyButtonVisible: boolean;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
 function UserProfilePage(
-  { account, profile, bskyClientId, t }: UserProfilePageProps,
+  { account, profile, bskyClientId, bskyButtonVisible, t }:
+    UserProfilePageProps,
 ) {
   const copy = t.userProfile;
   if (!profile) {
@@ -81,10 +84,30 @@ function UserProfilePage(
               </a>
             </p>
             <div class="glass user-public-card">
-              <div class="user-public-avatar">
-                {avatarUrl
-                  ? <img src={avatarUrl} alt="" decoding="async" />
-                  : <span>{displayName.slice(0, 1).toUpperCase()}</span>}
+              <div class="user-public-media">
+                <div class="user-public-avatar">
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt="" decoding="async" />
+                    : <span>{displayName.slice(0, 1).toUpperCase()}</span>}
+                </div>
+                {bskyButtonVisible && (
+                  <a
+                    class="profile-action profile-action--compact user-public-client-link"
+                    href={client.profileUrl(profile.handle)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={copy.openIn(client.name)}
+                    title={copy.openIn(client.name)}
+                  >
+                    <img
+                      src={client.iconUrl}
+                      alt=""
+                      class="profile-action-icon"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </a>
+                )}
               </div>
               <div class="user-public-body">
                 <h1 class="text-section">{displayName}</h1>
@@ -94,25 +117,6 @@ function UserProfilePage(
                     {profile.description}
                   </p>
                 )}
-                <a
-                  class="profile-hero-action user-public-client-link"
-                  href={client.profileUrl(profile.handle)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span class="profile-hero-action-icon">
-                    <img
-                      src={client.iconUrl}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </span>
-                  <span>{copy.openIn(client.name)}</span>
-                  <span class="profile-hero-action-arrow" aria-hidden="true">
-                    ↗
-                  </span>
-                </a>
               </div>
             </div>
           </div>

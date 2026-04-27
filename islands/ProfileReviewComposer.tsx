@@ -109,11 +109,16 @@ export default function ProfileReviewComposer(
           : (
             <button
               type="button"
-              class="explore-cta-primary"
+              class="explore-cta-primary profile-review-write-button"
               onClick={() => {
                 open.value = true;
               }}
             >
+              {!ownReview && (
+                <span class="profile-review-write-icon" aria-hidden="true">
+                  ✎
+                </span>
+              )}
               {ownReview ? copy.update : copy.heading}
             </button>
           )}

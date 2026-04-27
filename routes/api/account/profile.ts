@@ -23,6 +23,7 @@ export const handler = define.handlers({
 
     const form = await ctx.req.formData().catch(() => null);
     const rawClient = form?.get("bskyClientId");
+    const visible = form?.getAll("bskyButtonVisible").includes("1");
     if (
       typeof rawClient !== "string" ||
       !BSKY_CLIENT_IDS.includes(rawClient as typeof BSKY_CLIENT_IDS[number])
@@ -30,7 +31,7 @@ export const handler = define.handlers({
       return new Response("invalid Bluesky client", { status: 400 });
     }
 
-    await updateAppUserBskyClient(user.did, rawClient);
+    await updateAppUserBskyClient(user.did, rawClient, visible);
     return new Response(null, {
       status: 303,
       headers: { location: "/account/reviews" },

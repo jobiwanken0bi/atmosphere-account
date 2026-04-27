@@ -1,4 +1,5 @@
 import type { ProfileUpdateRow } from "../../lib/profile-updates.ts";
+import TangledIcon from "../icons/TangledIcon.tsx";
 
 interface Props {
   updates: ProfileUpdateRow[];
@@ -7,8 +8,11 @@ interface Props {
     empty: string;
     versionHistory: string;
     viewCommit: string;
+    readFullUpdate: string;
   };
 }
+
+const BODY_PREVIEW_LENGTH = 220;
 
 function dateLabel(ms: number): string {
   return new Intl.DateTimeFormat("en", {
@@ -29,6 +33,33 @@ function UpdateMeta({ update }: { update: ProfileUpdateRow }) {
   );
 }
 
+function isLongBody(body: string): boolean {
+  return body.length > BODY_PREVIEW_LENGTH || body.split("\n").length > 3;
+}
+
+function previewBody(body: string): string {
+  if (!isLongBody(body)) return body;
+  return `${body.slice(0, BODY_PREVIEW_LENGTH).trimEnd()}...`;
+}
+
+function CommitLink(
+  { href, label }: { href: string; label: string },
+) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="profile-whats-new-icon-button"
+      aria-label={label}
+      title={label}
+    >
+      <TangledIcon class="profile-whats-new-icon" />
+      <span class="profile-whats-new-icon-arrow" aria-hidden="true">↗</span>
+    </a>
+  );
+}
+
 export default function ProfileWhatsNew({ updates, copy }: Props) {
   const [latest, ...history] = updates;
   if (!latest) {
@@ -43,26 +74,41 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
   return (
     <section class="profile-whats-new glass">
       <div class="profile-whats-new-main">
-        <div>
-          <p class="text-eyebrow">{copy.heading}</p>
+        <div class="profile-whats-new-copy">
+          <div class="profile-whats-new-heading-row">
+            <p class="text-eyebrow">{copy.heading}</p>
+            {history.length > 0 && (
+              <a
+                href="#profile-version-history"
+                class="profile-whats-new-history-link"
+                aria-label={copy.versionHistory}
+                title={copy.versionHistory}
+              >
+                <span aria-hidden="true">↺</span>
+              </a>
+            )}
+          </div>
           <UpdateMeta update={latest} />
           <h2>{latest.title}</h2>
-          <p>{latest.body}</p>
+          {isLongBody(latest.body)
+            ? (
+              <details class="profile-whats-new-expand">
+                <p class="profile-whats-new-preview">
+                  {previewBody(latest.body)}
+                </p>
+                <summary>{copy.readFullUpdate}</summary>
+                <p class="profile-whats-new-full">{latest.body}</p>
+              </details>
+            )
+            : <p class="profile-whats-new-body">{latest.body}</p>}
         </div>
         {latest.tangledCommitUrl && (
-          <a
-            href={latest.tangledCommitUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="profile-form-button-secondary profile-whats-new-commit"
-          >
-            {copy.viewCommit}
-          </a>
+          <CommitLink href={latest.tangledCommitUrl} label={copy.viewCommit} />
         )}
       </div>
 
       {history.length > 0 && (
-        <div class="profile-version-history">
+        <div class="profile-version-history" id="profile-version-history">
           <h3>{copy.versionHistory}</h3>
           {history.slice(0, 5).map((update) => (
             <article class="profile-version-history-item" key={update.uri}>
@@ -74,9 +120,11 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
                   href={update.tangledCommitUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="text-link-button"
+                  class="profile-version-history-commit"
                 >
-                  {copy.viewCommit}
+                  <TangledIcon class="profile-whats-new-icon" />
+                  <span aria-hidden="true">↗</span>
+                  <span class="visually-hidden">{copy.viewCommit}</span>
                 </a>
               )}
             </article>

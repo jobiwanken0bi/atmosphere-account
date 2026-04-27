@@ -17,6 +17,7 @@ export interface AppUserRow {
   avatarCid: string | null;
   avatarMime: string | null;
   bskyClientId: string;
+  bskyButtonVisible: boolean;
   accountType: AccountType;
   createdAt: number;
   updatedAt: number;
@@ -30,6 +31,7 @@ interface RawAppUserRow {
   avatar_cid: string | null;
   avatar_mime: string | null;
   bsky_client_id: string | null;
+  bsky_button_visible: number | null;
   account_type: string;
   created_at: number;
   updated_at: number;
@@ -48,6 +50,7 @@ function rowToAppUser(row: RawAppUserRow): AppUserRow {
     avatarCid: row.avatar_cid,
     avatarMime: row.avatar_mime,
     bskyClientId: getBskyClient(row.bsky_client_id).id,
+    bskyButtonVisible: row.bsky_button_visible !== 0,
     accountType: normalizeAccountType(row.account_type),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -59,7 +62,8 @@ export async function getAppUser(did: string): Promise<AppUserRow | null> {
     const r = await c.execute({
       sql: `
         SELECT did, handle, display_name, avatar_cid, avatar_mime,
-               bio, bsky_client_id, account_type, created_at, updated_at
+               bio, bsky_client_id, bsky_button_visible, account_type,
+               created_at, updated_at
         FROM app_user
         WHERE did = ?
         LIMIT 1
@@ -78,7 +82,8 @@ export async function getAppUserByHandle(
     const r = await c.execute({
       sql: `
         SELECT did, handle, display_name, avatar_cid, avatar_mime,
-               bio, bsky_client_id, account_type, created_at, updated_at
+               bio, bsky_client_id, bsky_button_visible, account_type,
+               created_at, updated_at
         FROM app_user
         WHERE lower(handle) = lower(?)
         LIMIT 1
@@ -174,6 +179,7 @@ export async function updateAppUserProfile(input: {
 export async function updateAppUserBskyClient(
   did: string,
   bskyClientId: string,
+  visible = true,
 ): Promise<void> {
   const client = getBskyClient(bskyClientId);
   await withDb(async (c) => {
@@ -181,10 +187,11 @@ export async function updateAppUserBskyClient(
       sql: `
         UPDATE app_user SET
           bsky_client_id = ?,
+          bsky_button_visible = ?,
           updated_at = ?
         WHERE did = ? AND account_type = 'user'
       `,
-      args: [client.id, Date.now(), did],
+      args: [client.id, visible ? 1 : 0, Date.now(), did],
     });
   });
 }

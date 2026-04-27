@@ -5020,8 +5020,8 @@ body.explore-no-effects #nav-effects-bar {
   margin-top: 1.5rem;
 }
 .profile-whats-new {
-  margin-top: 1.25rem;
-  padding: 1.2rem;
+  margin-top: 1rem;
+  padding: 0.95rem 1rem;
   border-radius: 1.2rem;
 }
 .profile-whats-new-main {
@@ -5029,6 +5029,15 @@ body.explore-no-effects #nav-effects-bar {
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
+}
+.profile-whats-new-copy {
+  min-width: 0;
+}
+.profile-whats-new-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 .profile-whats-new h2,
 .profile-whats-new h3,
@@ -5038,12 +5047,52 @@ body.explore-no-effects #nav-effects-bar {
 }
 .profile-whats-new h2 {
   margin-top: 0.25rem;
-  font-size: clamp(1.2rem, 2.3vw, 1.55rem);
+  font-size: clamp(1rem, 1.8vw, 1.2rem);
 }
-.profile-whats-new-main p {
+.profile-whats-new-heading-row .text-eyebrow,
+.profile-reviews-eyebrow,
+.profile-reviews-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgba(18, 26, 47, 0.92);
+}
+.profile-whats-new-body,
+.profile-whats-new-preview,
+.profile-whats-new-full {
   margin-top: 0.45rem;
   color: rgba(18, 26, 47, 0.76);
   white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.profile-whats-new-expand {
+  display: flex;
+  flex-direction: column;
+}
+.profile-whats-new-expand[open] .profile-whats-new-preview {
+  display: none;
+}
+.profile-whats-new-expand summary {
+  order: 2;
+  align-self: flex-start;
+  margin-top: 0.55rem;
+  list-style: none;
+  color: #254a9e;
+  font-size: 0.82rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.profile-whats-new-expand summary::-webkit-details-marker {
+  display: none;
+}
+.profile-whats-new-preview {
+  order: 1;
+}
+.profile-whats-new-full {
+  order: 3;
 }
 .profile-whats-new-empty {
   color: rgba(18, 26, 47, 0.62);
@@ -5056,18 +5105,55 @@ body.explore-no-effects #nav-effects-bar {
   font-weight: 750;
   color: rgba(18, 26, 47, 0.58);
 }
-.profile-whats-new-commit {
+.profile-whats-new-icon-button,
+.profile-whats-new-history-link,
+.profile-version-history-commit {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-decoration: none;
-  color: inherit;
+  color: #254a9e;
+  border: 1px solid rgba(18, 26, 47, 0.12);
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+}
+.profile-whats-new-icon-button,
+.profile-whats-new-history-link {
+  width: 2.15rem;
+  height: 2.15rem;
+}
+.profile-whats-new-icon-button {
+  position: relative;
+}
+.profile-whats-new-history-link {
+  font-size: 1rem;
+}
+.profile-whats-new-icon-button:hover,
+.profile-whats-new-history-link:hover,
+.profile-version-history-commit:hover {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(42, 90, 168, 0.3);
+}
+.profile-whats-new-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+.profile-whats-new-icon-arrow {
+  position: absolute;
+  right: 0.25rem;
+  top: 0.18rem;
+  font-size: 0.62rem;
+  line-height: 1;
 }
 .profile-version-history {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid rgba(18, 26, 47, 0.1);
+  scroll-margin-top: 6rem;
 }
 .profile-version-history h3 {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   margin-bottom: 0.75rem;
 }
 .profile-version-history-item {
@@ -5086,6 +5172,12 @@ body.explore-no-effects #nav-effects-bar {
   margin-top: 0.25rem;
   color: rgba(18, 26, 47, 0.7);
   white-space: pre-wrap;
+  font-size: 0.88rem;
+}
+.profile-version-history-commit {
+  gap: 0.25rem;
+  margin-top: 0.55rem;
+  padding: 0.32rem 0.55rem;
 }
 .profile-reviews-summary,
 .profile-reviews-panel,
@@ -5098,14 +5190,6 @@ body.explore-no-effects #nav-effects-bar {
   grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
   gap: 1.2rem;
   align-items: center;
-}
-.profile-reviews-eyebrow {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(18, 26, 47, 0.58);
 }
 .profile-reviews-average {
   margin: 0.2rem 0 0;
@@ -5145,10 +5229,6 @@ body.explore-no-effects #nav-effects-bar {
   border-radius: inherit;
   background: linear-gradient(90deg, #d89a23, #f2c75c);
 }
-.profile-reviews-heading {
-  margin: 0;
-  font-size: 1rem;
-}
 .profile-reviews-panel-header {
   display: flex;
   flex-wrap: wrap;
@@ -5163,6 +5243,15 @@ body.explore-no-effects #nav-effects-bar {
   justify-content: flex-end;
   align-items: center;
   gap: 0.75rem;
+}
+.profile-review-write-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.profile-review-write-icon {
+  font-size: 1rem;
+  line-height: 1;
 }
 .profile-review-action-hint,
 .profile-review-owner-note {
@@ -5317,15 +5406,21 @@ body.explore-no-effects #nav-effects-bar {
 .profile-review-response-composer {
   margin-top: 0.9rem;
 }
-.dark-phase .profile-reviews-eyebrow,
 .dark-phase .profile-review-rating-field legend,
 .dark-phase .profile-review-body-field span,
 .dark-phase .profile-review-response-label {
   color: rgba(255, 255, 255, 0.65);
 }
+.dark-phase .profile-whats-new-heading-row .text-eyebrow,
+.dark-phase .profile-reviews-eyebrow,
+.dark-phase .profile-reviews-heading {
+  color: rgba(255, 255, 255, 0.92);
+}
 .dark-phase .profile-reviews-threshold,
 .dark-phase .profile-whats-new-empty,
-.dark-phase .profile-whats-new-main p,
+.dark-phase .profile-whats-new-body,
+.dark-phase .profile-whats-new-preview,
+.dark-phase .profile-whats-new-full,
 .dark-phase .profile-version-history-item p,
 .dark-phase .profile-whats-new-meta,
 .dark-phase .profile-rating-row,
@@ -5351,6 +5446,24 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .profile-review-avatar {
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.72);
+}
+.dark-phase .profile-whats-new-expand summary,
+.dark-phase .profile-whats-new-icon-button,
+.dark-phase .profile-whats-new-history-link,
+.dark-phase .profile-version-history-commit {
+  color: rgba(160, 200, 255, 1);
+}
+.dark-phase .profile-whats-new-icon-button,
+.dark-phase .profile-whats-new-history-link,
+.dark-phase .profile-version-history-commit {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+.dark-phase .profile-whats-new-icon-button:hover,
+.dark-phase .profile-whats-new-history-link:hover,
+.dark-phase .profile-version-history-commit:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(160, 200, 255, 0.35);
 }
 .dark-phase .profile-version-history {
   border-top-color: rgba(255, 255, 255, 0.12);
@@ -5440,6 +5553,10 @@ body.explore-no-effects #nav-effects-bar {
   align-items: center;
   justify-content: space-between;
   padding: 1.2rem;
+}
+.user-reviews-heading {
+  margin: 1.45rem 0 0.75rem;
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
 }
 .user-profile-settings {
   display: grid;
@@ -5665,17 +5782,18 @@ body.explore-no-effects #nav-effects-bar {
   padding: 1.5rem;
   border-radius: 1.4rem;
 }
+.user-public-media {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+}
 .user-public-body {
   min-width: 0;
 }
 .user-public-client-link {
-  display: inline-flex;
-  margin-top: 1rem;
-}
-.user-public-client-link img {
-  width: 22px;
-  height: 22px;
-  border-radius: 0.4rem;
+  margin-top: 0;
 }
 @media (max-width: 640px) {
   .user-public-card {

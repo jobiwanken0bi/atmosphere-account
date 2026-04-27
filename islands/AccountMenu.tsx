@@ -177,7 +177,7 @@ function SignedInMenu(
             }}
           >
             {accountType === "user"
-              ? t.manageReviews
+              ? t.manageProfile
               : accountType === "project"
               ? t.manageProfile
               : t.chooseAccountType}

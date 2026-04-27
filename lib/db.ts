@@ -189,6 +189,7 @@ const SCHEMA_STATEMENTS: string[] = [
     avatar_cid TEXT,
     avatar_mime TEXT,
     bsky_client_id TEXT NOT NULL DEFAULT 'bluesky',
+    bsky_button_visible INTEGER NOT NULL DEFAULT 1,
     account_type TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -491,6 +492,12 @@ async function applyAdditiveMigrations(
         column: "bsky_client_id",
         ddl:
           "ALTER TABLE app_user ADD COLUMN bsky_client_id TEXT NOT NULL DEFAULT 'bluesky'",
+      },
+      {
+        table: "app_user",
+        column: "bsky_button_visible",
+        ddl:
+          "ALTER TABLE app_user ADD COLUMN bsky_button_visible INTEGER NOT NULL DEFAULT 1",
       },
     ];
   for (const m of additiveColumns) {
