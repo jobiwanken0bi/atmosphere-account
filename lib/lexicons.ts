@@ -116,9 +116,7 @@ export interface ProfileRecord {
   description: string;
   /**
    * Primary web destination URL for the project. Rendered as the Web
-   * button on the public profile. Optional in the lexicon for backward
-   * compatibility with records created before mainLink existed; the
-   * registry UI enforces it as required for new/updated records.
+   * button inside the public profile card when present.
    */
   mainLink?: string;
   /** Optional App Store URL for projects with an iOS app. */
@@ -318,10 +316,9 @@ export function validateProfile(
   if (normalizedDescription.length > 500) {
     return { ok: false, error: "description: must be <=500 chars" };
   }
-  // mainLink: optional in the lexicon for backward compat, but if present
-  // must parse as an http(s) URL <=512 chars. The registry UI / API both
-  // enforce required-ness for new writes; we don't reject reads here so
-  // pre-mainLink records keep validating.
+  // mainLink: optional, but if present must parse as an http(s) URL <=512
+  // chars. The registry UI / API require at least one primary destination
+  // among mainLink, iosLink, and androidLink on new writes.
   let normalizedMainLink: string | undefined;
   if (v.mainLink !== undefined && v.mainLink !== null && v.mainLink !== "") {
     if (!isStr(v.mainLink, 512) || !isUrl(v.mainLink)) {

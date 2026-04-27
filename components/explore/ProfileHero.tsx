@@ -1,23 +1,48 @@
 import type { ProfileRow } from "../../lib/registry.ts";
 import { useT } from "../../i18n/mod.ts";
 import VerifiedBadge from "../VerifiedBadge.tsx";
+import WebsiteIcon from "../icons/WebsiteIcon.tsx";
+import { AndroidIcon, AppleIcon } from "../icons/PlatformIcons.tsx";
 
 interface Props {
   profile: ProfileRow;
 }
 
 /**
- * Profile detail hero. Destination links render as explicit action buttons
- * below this panel (Web / iOS / Android / Atmosphere / custom), so the hero
- * stays a static project summary.
+ * Profile detail hero. Primary app destinations live in a right-side rail;
+ * secondary Atmosphere/custom links render below the card.
  */
 export default function ProfileHero({ profile }: Props) {
   const t = useT();
   const tCat = t.categories as Record<string, string>;
   const tSub = t.subcategories as Record<string, string>;
   const tBadges = t.badges;
+  const tLink = t.linkKinds;
   const featured = profile.featured;
   const cats = profile.categories;
+  const primaryLinks = [
+    profile.mainLink
+      ? {
+        title: tLink.website,
+        href: profile.mainLink,
+        icon: <WebsiteIcon class="profile-hero-action-icon-svg" />,
+      }
+      : null,
+    profile.iosLink
+      ? {
+        title: "iOS",
+        href: profile.iosLink,
+        icon: <AppleIcon class="profile-hero-action-icon-svg" />,
+      }
+      : null,
+    profile.androidLink
+      ? {
+        title: "Android",
+        href: profile.androidLink,
+        icon: <AndroidIcon class="profile-hero-action-icon-svg" />,
+      }
+      : null,
+  ].filter((link): link is NonNullable<typeof link> => link !== null);
 
   return (
     <div class="profile-hero glass">
@@ -72,6 +97,25 @@ export default function ProfileHero({ profile }: Props) {
           <p class="profile-hero-description">{profile.description}</p>
         )}
       </div>
+      {primaryLinks.length > 0 && (
+        <div class="profile-hero-actions" aria-label="Primary links">
+          {primaryLinks.map((link) => (
+            <a
+              class="profile-hero-action"
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              key={link.href}
+            >
+              <span class="profile-hero-action-icon">{link.icon}</span>
+              <span>{link.title}</span>
+              <span class="profile-hero-action-arrow" aria-hidden="true">
+                ↗
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

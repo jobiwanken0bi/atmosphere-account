@@ -509,7 +509,9 @@ export default function CreateProfileForm(
       return;
     }
     const trimmedMainLink = mainLink.value.trim();
-    if (!trimmedMainLink) {
+    const trimmedIosLink = iosLink.value.trim();
+    const trimmedAndroidLink = androidLink.value.trim();
+    if (!trimmedMainLink && !trimmedIosLink && !trimmedAndroidLink) {
       message.value = { kind: "error", text: tMainLink.required };
       return;
     }
@@ -518,21 +520,21 @@ export default function CreateProfileForm(
      * URL parsing — this is just so the user doesn't have to round-trip
      * to find out they typed "yourapp.com" without a protocol.
      */
-    try {
-      const u = new URL(trimmedMainLink);
-      if (u.protocol !== "http:" && u.protocol !== "https:") {
-        throw new Error("non-http");
+    if (trimmedMainLink) {
+      try {
+        const u = new URL(trimmedMainLink);
+        if (u.protocol !== "http:" && u.protocol !== "https:") {
+          throw new Error("non-http");
+        }
+      } catch {
+        message.value = { kind: "error", text: tMainLink.invalid };
+        return;
       }
-    } catch {
-      message.value = { kind: "error", text: tMainLink.invalid };
-      return;
     }
-    const trimmedIosLink = iosLink.value.trim();
     if (trimmedIosLink && !isHttpUrl(trimmedIosLink)) {
       message.value = { kind: "error", text: tAppLinks.iosInvalid };
       return;
     }
-    const trimmedAndroidLink = androidLink.value.trim();
     if (trimmedAndroidLink && !isHttpUrl(trimmedAndroidLink)) {
       message.value = { kind: "error", text: tAppLinks.androidInvalid };
       return;
@@ -800,23 +802,20 @@ export default function CreateProfileForm(
         {/* ---------------- Main Link ----------------------------- */}
         {
           /*
-            Required. Renders as the Web button on the public profile.
-            We keep the mobile-app links directly underneath it so the
-            user sees the primary destinations together before adding
-            Atmosphere and custom buttons.
+            Primary destinations render as buttons inside the public
+            profile card. A project needs at least one Web / iOS /
+            Android destination, but each individual field is optional.
           */
         }
         <label class="profile-form-field">
           <span class="profile-form-label">
-            {tMainLink.sectionLabel}{" "}
-            <span class="profile-form-required">*</span>
+            {tMainLink.sectionLabel}
           </span>
           <input
             type="url"
             class="profile-form-input"
             placeholder={tMainLink.placeholder}
             value={mainLink.value}
-            required
             onInput={(e) =>
               mainLink.value = (e.currentTarget as HTMLInputElement).value}
           />

@@ -2040,7 +2040,6 @@ body {
   display: flex;
   gap: 1.5rem;
   align-items: flex-start;
-  flex-wrap: wrap;
   padding: 1.5rem;
   border-radius: 24px;
 }
@@ -2068,6 +2067,98 @@ body {
 .profile-hero-body {
   flex: 1;
   min-width: 240px;
+}
+.profile-hero-actions {
+  align-self: stretch;
+  border-left: 1px solid rgba(18, 26, 47, 0.12);
+  padding-left: 1.25rem;
+  min-width: 156px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.65rem;
+}
+.profile-hero-action {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  color: #0e1428;
+  text-decoration: none;
+  font-weight: 650;
+  font-size: 0.92rem;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.profile-hero-action:hover {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(42, 90, 168, 0.2);
+  transform: translateY(-1px);
+}
+.profile-hero-action-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #254a9e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.profile-hero-action-icon-svg {
+  width: 100%;
+  height: 100%;
+}
+.profile-hero-action-arrow {
+  margin-left: auto;
+  color: rgba(42, 90, 168, 0.75);
+  font-size: 0.92rem;
+}
+.dark-phase .profile-hero-actions {
+  border-left-color: rgba(255, 255, 255, 0.14);
+}
+.dark-phase .profile-hero-action {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #f0f4ff;
+}
+.dark-phase .profile-hero-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+.dark-phase .profile-hero-action-icon {
+  background: rgba(255, 255, 255, 0.92);
+}
+.dark-phase .profile-hero-action-arrow {
+  color: rgba(255, 255, 255, 0.72);
+}
+@media (max-width: 720px) {
+  .profile-hero {
+    flex-wrap: wrap;
+  }
+  .profile-hero-actions {
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid rgba(18, 26, 47, 0.12);
+    padding-left: 0;
+    padding-top: 1rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .profile-hero-action {
+    flex: 1 1 150px;
+  }
+  .dark-phase .profile-hero-actions {
+    border-top-color: rgba(255, 255, 255, 0.14);
+  }
 }
 .profile-hero-name-row {
   display: flex;
@@ -2106,12 +2197,12 @@ body {
   color: rgba(255, 255, 255, 0.85);
 }
 
-/* ---- Profile detail call-to-action buttons (Web / apps / Atmosphere) ---- */
+/* ---- Profile detail secondary buttons (Atmosphere / custom) ---- */
 .profile-actions {
   margin-top: 1.5rem;
-  display: grid;
+  display: flex;
   gap: 0.7rem;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  flex-wrap: wrap;
 }
 .profile-action {
   display: flex;
@@ -2128,25 +2219,16 @@ body {
     border-color 0.15s ease,
     transform 0.15s ease;
 }
+.profile-action--compact {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 999px;
+}
 .profile-action:hover {
   background: rgba(255, 255, 255, 0.85);
   transform: translateY(-1px);
-}
-.profile-action--primary {
-  background: linear-gradient(
-    135deg,
-    rgba(42, 90, 168, 0.95),
-    rgba(60, 124, 220, 0.95)
-  );
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.18);
-}
-.profile-action--primary:hover {
-  background: linear-gradient(
-    135deg,
-    rgba(42, 90, 168, 1),
-    rgba(72, 138, 232, 1)
-  );
 }
 .profile-action-icon {
   width: 32px;
@@ -2167,10 +2249,8 @@ body {
   font-size: 1rem;
   padding: 0;
 }
-/* Wrapper for inline-SVG branded icons (Bluesky / Tangled / Website
- * globe). Tints the SVG to the site's primary blue via currentColor.
- * On the primary CTA we invert to white so the icon stays legible
- * against the blue gradient background. */
+/* Wrapper for inline-SVG branded icons (Bluesky / Tangled). Tints the SVG
+ * to the site's primary blue via currentColor. */
 .profile-action-icon--brand {
   display: inline-flex;
   align-items: center;
@@ -2182,9 +2262,12 @@ body {
   width: 100%;
   height: 100%;
 }
-.profile-action--primary .profile-action-icon--brand {
-  color: #1d3a78;
-  background: #ffffff;
+.profile-action--compact .profile-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  padding: 5px;
+  box-shadow: none;
 }
 .profile-action-label {
   display: flex;
@@ -2202,9 +2285,6 @@ body {
 }
 .dark-phase .profile-action:hover {
   background: rgba(255, 255, 255, 0.16);
-}
-.dark-phase .profile-action--primary {
-  border-color: rgba(255, 255, 255, 0.24);
 }
 .dark-phase .profile-action-icon--glyph {
   background: rgba(255, 255, 255, 0.12);

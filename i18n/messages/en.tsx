@@ -592,10 +592,10 @@ const en = {
         cancel: "Cancel",
       },
       mainLink: {
-        sectionLabel: "Main Link / Web (URL)",
+        sectionLabel: "Web link",
         placeholder: "https://yourapp.com",
-        required: "Main Link is required.",
-        invalid: "Main Link must be a valid http(s) URL.",
+        required: "Add at least one Web, iOS, or Android link.",
+        invalid: "Web link must be a valid http(s) URL.",
       },
       appLinks: {
         iosLabel: "iOS link (optional)",

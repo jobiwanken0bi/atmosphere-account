@@ -27,7 +27,7 @@
             "type": "string",
             "format": "uri",
             "maxLength": 512,
-            "description": "Primary web destination for the project (the actual web app, service, or website). Rendered as the Web button on the public profile. Optional in the lexicon for backward compatibility with records created before mainLink existed; the registry UI requires it for new/updated records."
+            "description": "Primary web destination for the project (the actual web app, service, or website). Rendered as the Web button inside the public profile card when present. Optional when an iOS or Android destination is provided."
           },
           "iosLink": {
             "type": "string",

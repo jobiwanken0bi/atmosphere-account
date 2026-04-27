@@ -40,8 +40,8 @@ interface LinkPayload {
 interface ProfileFormPayload {
   name?: string;
   description?: string;
-  /** Primary destination URL for the profile card. Required by the
-   *  registry; the form enforces this, the API double-checks. */
+  /** Optional Web destination. At least one of mainLink, iosLink, or
+   *  androidLink is required for new writes. */
   mainLink?: string;
   /** Optional app store links rendered as iOS / Android buttons. */
   iosLink?: string;
@@ -270,21 +270,15 @@ export const handler = define.handlers({
 
     const links = normalizeLinksPayload(body.links);
 
-    /**
-     * mainLink is required at the API layer too. The lexicon keeps it
-     * optional for backward-compat reads of pre-mainLink records, but
-     * any new write must carry one — that's how the listing card knows
-     * where to send visitors.
-     */
     const mainLink = trimOrNull(body.mainLink);
-    if (!mainLink) {
+    const iosLink = trimOrNull(body.iosLink);
+    const androidLink = trimOrNull(body.androidLink);
+    if (!mainLink && !iosLink && !androidLink) {
       return new Response(
-        "main link is required (the URL people land on when they tap your card)",
+        "at least one Web, iOS, or Android link is required",
         { status: 400 },
       );
     }
-    const iosLink = trimOrNull(body.iosLink);
-    const androidLink = trimOrNull(body.androidLink);
 
     const draft: ProfileRecord = {
       name: trimOrNull(body.name) ?? "",
