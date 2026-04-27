@@ -11,9 +11,12 @@
 }
 
 html {
-  scroll-behavior: smooth;
   scroll-padding-top: 5rem;
   -webkit-text-size-adjust: 100%;
+}
+
+html.sky-effects {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -1342,12 +1345,17 @@ a.back-to-top:hover {
    ================================ */
 
 .reveal {
+  opacity: 1;
+  transform: none;
+}
+
+.sky-effects .reveal {
   opacity: 0;
   transform: translateY(30px);
   transition: opacity 0.8s ease, transform 0.8s ease;
 }
 
-.reveal.visible {
+.sky-effects .reveal.visible {
   opacity: 1;
   transform: translateY(0);
 }
@@ -3531,12 +3539,6 @@ body.explore-no-effects {
 body.explore-no-effects #nav-effects-bar {
   display: none !important;
 }
-body.explore-no-effects .reveal {
-  opacity: 1;
-  transform: none;
-  transition: none;
-}
-
 /* ---- Sign-in handle preview dropdown ---- */
 /* IMPORTANT: do NOT set z-index here. position:relative alone is enough
    to anchor the absolutely positioned dropdown without creating a stacking
@@ -5302,29 +5304,80 @@ body.explore-no-effects .reveal {
   color: rgba(18, 26, 47, 0.58);
 }
 .user-profile-bio {
-  margin-top: 0.7rem;
+  margin: 0.7rem 0 0;
   white-space: pre-wrap;
+}
+.user-profile-view-link {
+  display: inline-flex;
+  margin-top: 0.85rem;
+  text-decoration: none;
+  color: inherit;
 }
 .user-profile-client-form {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
-.user-profile-client-form label span {
+.user-bsky-picker-label {
   display: block;
   margin-bottom: 0.35rem;
   font-size: 0.82rem;
   font-weight: 750;
   color: rgba(18, 26, 47, 0.7);
 }
-.user-profile-client-form select {
+.user-bsky-picker {
+  position: relative;
+}
+.user-bsky-picker-trigger {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
   border: 1px solid rgba(18, 26, 47, 0.14);
-  border-radius: 0.8rem;
-  padding: 0.7rem 0.8rem;
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: 0.95rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(255, 255, 255, 0.82);
   color: inherit;
   font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.user-bsky-picker-trigger:hover,
+.user-bsky-picker-trigger[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(42, 90, 168, 0.3);
+  box-shadow: 0 10px 24px rgba(14, 20, 40, 0.08);
+}
+.user-bsky-picker-trigger:focus-visible {
+  outline: 2px solid rgba(42, 90, 168, 0.45);
+  outline-offset: 2px;
+}
+.user-bsky-picker-chevron {
+  margin-left: auto;
+  color: rgba(18, 26, 47, 0.55);
+  transition: transform 0.15s ease;
+}
+.user-bsky-picker-trigger[aria-expanded="true"] .user-bsky-picker-chevron {
+  transform: rotate(180deg);
+}
+.user-bsky-picker-popover {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin-top: 0;
+  box-shadow: 0 18px 46px rgba(14, 20, 40, 0.18);
+}
+.user-bsky-picker-popover .bsky-client-row {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
 }
 .user-review-list {
   display: flex;
@@ -5378,7 +5431,7 @@ body.explore-no-effects .reveal {
 }
 .dark-phase .account-type-option span,
 .dark-phase .user-profile-handle,
-.dark-phase .user-profile-client-form label span,
+.dark-phase .user-bsky-picker-label,
 .dark-phase .user-review-row-actions {
   color: rgba(255, 255, 255, 0.6);
 }
@@ -5387,9 +5440,17 @@ body.explore-no-effects .reveal {
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.75);
 }
-.dark-phase .user-profile-client-form select {
+.dark-phase .user-bsky-picker-trigger {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
+}
+.dark-phase .user-bsky-picker-trigger:hover,
+.dark-phase .user-bsky-picker-trigger[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(160, 200, 255, 0.35);
+}
+.dark-phase .user-bsky-picker-chevron {
+  color: rgba(255, 255, 255, 0.55);
 }
 @media (max-width: 640px) {
   .account-type-options {

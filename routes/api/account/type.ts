@@ -7,8 +7,9 @@ import {
   setAppUserType,
 } from "../../../lib/account-types.ts";
 import { loadSession } from "../../../lib/oauth.ts";
-import { getBskyProfile } from "../../../lib/pds.ts";
-import { getProfileByDid } from "../../../lib/registry.ts";
+import { getBskyProfile, putProfileRecord } from "../../../lib/pds.ts";
+import { getProfileByDid, upsertProfile } from "../../../lib/registry.ts";
+import { type ProfileRecord, validateProfile } from "../../../lib/lexicons.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -42,6 +43,12 @@ export const handler = define.handlers({
     }
 
     const session = await loadSession(user.did).catch(() => null);
+    if (accountType === "user" && !session) {
+      return new Response("OAuth session expired, please sign in again", {
+        status: 401,
+      });
+    }
+
     const bskyProfile = session
       ? await getBskyProfile(session.pdsUrl, user.did).catch(() => null)
       : null;
@@ -55,6 +62,52 @@ export const handler = define.handlers({
       avatarMime: bskyProfile?.avatar?.mimeType ?? null,
       accountType,
     });
+
+    if (accountType === "user" && session) {
+      const now = new Date().toISOString();
+      const draft: ProfileRecord = {
+        profileType: "user",
+        name: bskyProfile?.displayName?.trim() || user.handle,
+        description: bskyProfile?.description?.trim() ?? "",
+        avatar: bskyProfile?.avatar,
+        createdAt: now,
+      };
+      const validation = validateProfile(draft);
+      if (!validation.ok || !validation.value) {
+        return new Response(`invalid user profile: ${validation.error}`, {
+          status: 400,
+        });
+      }
+      const result = await putProfileRecord(
+        user.did,
+        session.pdsUrl,
+        validation.value,
+      ).then((value) => value).catch((err) =>
+        err instanceof Error ? err : new Error(String(err))
+      );
+      if (result instanceof Error) {
+        return new Response(`putRecord failed: ${result.message}`, {
+          status: 502,
+        });
+      }
+      await upsertProfile({
+        did: user.did,
+        handle: user.handle,
+        profileType: "user",
+        name: validation.value.name,
+        description: validation.value.description,
+        categories: [],
+        subcategories: [],
+        links: [],
+        screenshots: [],
+        avatarCid: validation.value.avatar?.ref.$link ?? null,
+        avatarMime: validation.value.avatar?.mimeType ?? null,
+        pdsUrl: session.pdsUrl,
+        recordCid: result.cid,
+        recordRev: result.commit?.rev ?? result.cid,
+        createdAt: Date.parse(validation.value.createdAt) || Date.now(),
+      });
+    }
 
     return new Response(null, {
       status: 303,

@@ -5,12 +5,15 @@
  */
 import { define } from "../../../../../../utils.ts";
 import { withRateLimit } from "../../../../../../lib/rate-limit.ts";
+import { loadSession } from "../../../../../../lib/oauth.ts";
+import { deleteReviewRecord } from "../../../../../../lib/pds.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
 } from "../../../../../../lib/registry.ts";
 import {
   deleteOwnReview,
+  getOwnReview,
   getReviewSummary,
 } from "../../../../../../lib/reviews.ts";
 
@@ -22,6 +25,24 @@ export const handler = define.handlers({
     const target = await resolveTarget(ctx.params.id);
     if (!target) return jsonError(404, "not_found");
 
+    const existing = await getOwnReview(target.did, user.did);
+    if (existing?.reviewRkey) {
+      const session = await loadSession(user.did);
+      if (!session) return jsonError(401, "oauth_session_expired");
+      const deleted = await deleteReviewRecord(
+        user.did,
+        session.pdsUrl,
+        existing.reviewRkey,
+      ).then(() => null).catch((err) =>
+        err instanceof Error ? err : new Error(String(err))
+      );
+      if (deleted) {
+        return jsonResponse(502, {
+          error: "delete_record_failed",
+          detail: deleted.message,
+        });
+      }
+    }
     const removed = await deleteOwnReview(target.did, user.did);
     const summary = await getReviewSummary(target.did);
     return jsonResponse(200, { ok: true, removed, summary });

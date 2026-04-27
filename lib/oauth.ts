@@ -43,7 +43,7 @@ import {
  *   - `include:com.atmosphereaccount.registry.fullPermissions`  - repo writes
  *                                                                 to our
  *                                                                 profile +
- *                                                                 featured
+ *                                                                 review
  *                                                                 collections
  *                                                                 (resolved
  *                                                                 dynamically

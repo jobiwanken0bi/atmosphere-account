@@ -8,6 +8,7 @@
  */
 
 export const PROFILE_NSID = "com.atmosphereaccount.registry.profile";
+export const REVIEW_NSID = "com.atmosphereaccount.registry.review";
 export const FEATURED_NSID = "com.atmosphereaccount.registry.featured";
 /**
  * Permission-set lexicon NSID requested via the OAuth `include:` scope.
@@ -19,9 +20,13 @@ export const PERMISSION_SET_NSID =
 
 export const REGISTRY_NSIDS = [
   PROFILE_NSID,
+  REVIEW_NSID,
   FEATURED_NSID,
   PERMISSION_SET_NSID,
 ] as const;
+
+export const PROFILE_TYPES = ["project", "user"] as const;
+export type ProfileType = typeof PROFILE_TYPES[number];
 
 export const CATEGORIES = [
   "app",
@@ -120,6 +125,7 @@ export interface ScreenshotEntry {
 
 export interface ProfileRecord {
   $type?: typeof PROFILE_NSID;
+  profileType?: ProfileType;
   name: string;
   description: string;
   /**
@@ -143,7 +149,7 @@ export interface ProfileRecord {
   screenshots?: ScreenshotEntry[];
   /** All categories that apply to the project (1-4). The first item is the
    *  primary category used for sort/grouping in lists. */
-  categories: string[];
+  categories?: string[];
   subcategories?: string[];
   /**
    * Outbound buttons shown on the public profile after the Web / iOS /
@@ -153,6 +159,16 @@ export interface ProfileRecord {
    */
   links?: LinkEntry[];
   createdAt: string;
+}
+
+export interface ReviewRecord {
+  $type?: typeof REVIEW_NSID;
+  subject: string;
+  subjectUri?: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  body?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface FeaturedEntry {
@@ -167,6 +183,8 @@ export interface FeaturedRecord {
 }
 
 const DID_RE = /^did:[a-z]+:[a-zA-Z0-9._:%-]+$/;
+const AT_URI_RE =
+  /^at:\/\/did:[a-z]+:[a-zA-Z0-9._:%-]+\/[a-zA-Z0-9.:-]+\/[a-zA-Z0-9._~:-]+$/;
 
 function isStr(v: unknown, max?: number): v is string {
   if (typeof v !== "string") return false;
@@ -354,6 +372,9 @@ export function validateProfile(
     return { ok: false, error: "record must be an object" };
   }
   const v = input as Record<string, unknown>;
+  const profileType: ProfileType = v.profileType === "user"
+    ? "user"
+    : "project";
 
   if (
     !isStr(v.name) || (v.name as string).length < 1 ||
@@ -397,31 +418,35 @@ export function validateProfile(
     }
     normalizedAndroidLink = (v.androidLink as string).trim();
   }
-  // categories[]: required, deduped, every entry must be a known CATEGORY.
+  // categories[]: required for projects, optional for user profiles.
   // The first entry is treated as the primary category by the UI.
-  let normalizedCategories: string[];
+  let normalizedCategories: string[] | undefined;
   {
     if (!Array.isArray(v.categories) || v.categories.length === 0) {
-      return { ok: false, error: "categories: non-empty array required" };
-    }
-    if (v.categories.length > 4) {
-      return { ok: false, error: "categories: at most 4" };
-    }
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const c of v.categories) {
-      if (!isStr(c) || !(CATEGORIES as readonly string[]).includes(c)) {
-        return {
-          ok: false,
-          error: `categories: items must be one of ${CATEGORIES.join(", ")}`,
-        };
+      if (profileType === "project") {
+        return { ok: false, error: "categories: non-empty array required" };
       }
-      if (!seen.has(c)) {
-        seen.add(c);
-        out.push(c);
+      normalizedCategories = undefined;
+    } else {
+      if (v.categories.length > 4) {
+        return { ok: false, error: "categories: at most 4" };
       }
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const c of v.categories) {
+        if (!isStr(c) || !(CATEGORIES as readonly string[]).includes(c)) {
+          return {
+            ok: false,
+            error: `categories: items must be one of ${CATEGORIES.join(", ")}`,
+          };
+        }
+        if (!seen.has(c)) {
+          seen.add(c);
+          out.push(c);
+        }
+      }
+      normalizedCategories = out;
     }
-    normalizedCategories = out;
   }
   if (!isStr(v.createdAt)) {
     return { ok: false, error: "createdAt required (ISO 8601)" };
@@ -459,6 +484,7 @@ export function validateProfile(
     ok: true,
     value: {
       $type: PROFILE_NSID,
+      profileType,
       name: v.name as string,
       description: normalizedDescription,
       mainLink: normalizedMainLink,
@@ -524,6 +550,53 @@ export function validateFeatured(
   };
 }
 
+export function validateReview(
+  input: unknown,
+): ValidationResult<ReviewRecord> {
+  if (!input || typeof input !== "object") {
+    return { ok: false, error: "record must be an object" };
+  }
+  const v = input as Record<string, unknown>;
+  if (typeof v.subject !== "string" || !DID_RE.test(v.subject)) {
+    return { ok: false, error: "subject: invalid DID" };
+  }
+  if (
+    v.subjectUri !== undefined &&
+    (typeof v.subjectUri !== "string" || !AT_URI_RE.test(v.subjectUri) ||
+      v.subjectUri.length > 512)
+  ) {
+    return { ok: false, error: "subjectUri: invalid AT URI" };
+  }
+  if (
+    typeof v.rating !== "number" || !Number.isInteger(v.rating) ||
+    v.rating < 1 || v.rating > 5
+  ) {
+    return { ok: false, error: "rating: integer 1..5 required" };
+  }
+  const body = typeof v.body === "string" ? v.body.trim() : "";
+  if (body.length > 300) {
+    return { ok: false, error: "body: must be <=300 chars" };
+  }
+  if (!isStr(v.createdAt, 64)) {
+    return { ok: false, error: "createdAt required (ISO 8601)" };
+  }
+  if (v.updatedAt !== undefined && !isStr(v.updatedAt, 64)) {
+    return { ok: false, error: "updatedAt: string <=64" };
+  }
+  return {
+    ok: true,
+    value: {
+      $type: REVIEW_NSID,
+      subject: v.subject,
+      subjectUri: typeof v.subjectUri === "string" ? v.subjectUri : undefined,
+      rating: v.rating as 1 | 2 | 3 | 4 | 5,
+      body: body || undefined,
+      createdAt: v.createdAt as string,
+      updatedAt: typeof v.updatedAt === "string" ? v.updatedAt : undefined,
+    },
+  };
+}
+
 /**
  * The literal JSON for each lexicon (loaded at module init). Used by the
  * `/.well-known/atproto-lexicon/<NSID>` route to publish the schemas, and
@@ -535,6 +608,7 @@ export async function loadLexiconJson(nsid: string): Promise<unknown | null> {
   }
   const fileMap: Record<string, string> = {
     [PROFILE_NSID]: "profile.json",
+    [REVIEW_NSID]: "review.json",
     [FEATURED_NSID]: "featured.json",
     [PERMISSION_SET_NSID]: "fullPermissions.json",
   };

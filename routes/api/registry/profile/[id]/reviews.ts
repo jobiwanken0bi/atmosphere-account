@@ -6,6 +6,8 @@
  */
 import { define } from "../../../../../utils.ts";
 import { withRateLimit } from "../../../../../lib/rate-limit.ts";
+import { loadSession } from "../../../../../lib/oauth.ts";
+import { putReviewRecord } from "../../../../../lib/pds.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
@@ -16,8 +18,14 @@ import {
   getReviewSummary,
   listVisibleReviews,
   normalizeReviewBody,
+  reviewRkeyForTarget,
+  reviewUriForRkey,
   validateReviewRating,
 } from "../../../../../lib/reviews.ts";
+import {
+  type ReviewRecord,
+  validateReview,
+} from "../../../../../lib/lexicons.ts";
 
 interface ReviewPayload {
   rating?: unknown;
@@ -60,6 +68,10 @@ export const handler = define.handlers({
     const target = await resolveTarget(ctx.params.id);
     if (!target) return jsonError(404, "not_found");
     if (target.did === user.did) return jsonError(400, "cannot_review_self");
+    if (target.profileType !== "project") return jsonError(400, "not_project");
+
+    const session = await loadSession(user.did);
+    if (!session) return jsonError(401, "oauth_session_expired");
 
     const body = await ctx.req.json().catch(() => null) as
       | ReviewPayload
@@ -72,11 +84,51 @@ export const handler = define.handlers({
     const reviewBody = normalizeReviewBody(body.body);
     if (reviewBody == null) return jsonError(400, "body_too_long");
 
+    const existing = await getOwnReview(target.did, user.did).catch(() => null);
+    const now = new Date();
+    const rkey = existing?.reviewRkey ?? await reviewRkeyForTarget(target.did);
+    const createdAt = existing
+      ? new Date(existing.createdAt).toISOString()
+      : now.toISOString();
+    const record: ReviewRecord = {
+      subject: target.did,
+      subjectUri:
+        `at://${target.did}/com.atmosphereaccount.registry.profile/self`,
+      rating,
+      body: reviewBody || undefined,
+      createdAt,
+      updatedAt: now.toISOString(),
+    };
+    const validation = validateReview(record);
+    if (!validation.ok || !validation.value) {
+      return jsonError(400, "invalid_review_record");
+    }
+
+    const result = await putReviewRecord(
+      user.did,
+      session.pdsUrl,
+      rkey,
+      validation.value,
+    ).catch((err) => err instanceof Error ? err : new Error(String(err)));
+    if (result instanceof Error) {
+      return jsonResponse(502, {
+        error: "put_record_failed",
+        detail: result.message,
+      });
+    }
+
     const review = await createOrUpdateReview({
       targetDid: target.did,
       reviewerDid: user.did,
+      reviewUri: reviewUriForRkey(user.did, rkey),
+      reviewCid: result.cid,
+      reviewRkey: rkey,
       rating,
       body: reviewBody,
+      createdAt: Date.parse(validation.value.createdAt) || Date.now(),
+      updatedAt:
+        Date.parse(validation.value.updatedAt ?? validation.value.createdAt) ||
+        Date.now(),
     });
     const summary = await getReviewSummary(target.did);
     return jsonResponse(200, { ok: true, review, summary });

@@ -1,6 +1,5 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
-import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import ProfileHero from "../../components/explore/ProfileHero.tsx";
 import ProfileLinks from "../../components/explore/ProfileLinks.tsx";
@@ -27,9 +26,7 @@ import {
 } from "../../lib/reviews.ts";
 import { accountProviderName } from "../../lib/account-providers.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getAppUser, updateAppUserProfile } from "../../lib/account-types.ts";
-import { resolveIdentity } from "../../lib/identity.ts";
-import { getBskyProfile } from "../../lib/pds.ts";
+import { getAppUser } from "../../lib/account-types.ts";
 
 function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
   const ext = mime === "image/png"
@@ -120,7 +117,6 @@ function ProfileDetailPage(
   const providerName = accountProviderName(profile.pdsUrl);
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} />
         <section class="explore-profile-detail">
@@ -258,9 +254,9 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
         getAppUser(review.reviewerDid).catch(() => null),
         getProfileByDid(review.reviewerDid).catch(() => null),
       ]);
-      let reviewerName = appUser?.displayName ?? profile?.name ?? null;
-      let reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
-      let reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
+      const reviewerName = appUser?.displayName ?? profile?.name ?? null;
+      const reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
+      const reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
         ? bskyCdnAvatarUrl(
           review.reviewerDid,
           appUser.avatarCid,
@@ -269,35 +265,6 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
         : profile?.avatarCid
         ? `/api/registry/avatar/${encodeURIComponent(review.reviewerDid)}`
         : null;
-      if (!reviewerName || !reviewerAvatarUrl) {
-        const identity = await resolveIdentity(review.reviewerDid).catch(() =>
-          null
-        );
-        const bsky = identity
-          ? await getBskyProfile(identity.pdsUrl, review.reviewerDid).catch(
-            () => null,
-          )
-          : null;
-        reviewerName = bsky?.displayName ?? null;
-        reviewerHandle = reviewerHandle ?? identity?.handle ?? null;
-        reviewerAvatarUrl = bsky?.avatar
-          ? bskyCdnAvatarUrl(
-            review.reviewerDid,
-            bsky.avatar.ref.$link,
-            bsky.avatar.mimeType,
-          )
-          : reviewerAvatarUrl;
-        if (appUser && identity) {
-          await updateAppUserProfile({
-            did: review.reviewerDid,
-            handle: identity.handle,
-            displayName: bsky?.displayName ?? null,
-            bio: bsky?.description ?? null,
-            avatarCid: bsky?.avatar?.ref.$link ?? null,
-            avatarMime: bsky?.avatar?.mimeType ?? null,
-          }).catch(() => {});
-        }
-      }
       return {
         ...review,
         reviewerName,
@@ -321,7 +288,6 @@ function NotFound(
   const t = getMessages(locale).explore.detail;
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} />
         <section class="explore-profile-detail">

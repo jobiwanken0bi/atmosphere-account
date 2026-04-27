@@ -5,13 +5,14 @@
     "main": {
       "type": "permission-set",
       "title": "Atmosphere Account",
-      "detail": "Manage your Atmosphere Explore profile (create, update, and remove your project listing).",
+      "detail": "Manage your Atmosphere profile and reviews.",
       "permissions": [
         {
           "type": "permission",
           "resource": "repo",
           "collection": [
-            "com.atmosphereaccount.registry.profile"
+            "com.atmosphereaccount.registry.profile",
+            "com.atmosphereaccount.registry.review"
           ]
         }
       ]

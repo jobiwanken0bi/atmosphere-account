@@ -5,7 +5,6 @@
  */
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
-import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import AdminIconAccessGrant from "../../islands/AdminIconAccessGrant.tsx";
 import AdminIconAccessRow from "../../islands/AdminIconAccessRow.tsx";
@@ -55,7 +54,6 @@ function Page({ account, pending, unverified, granted, locale }: PageProps) {
   const ti = t.iconAccess;
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} />
         <section class="admin-section">

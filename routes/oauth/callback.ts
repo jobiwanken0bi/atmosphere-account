@@ -10,15 +10,18 @@
 import { define } from "../../utils.ts";
 import { completeCallback, isOAuthConfigured } from "../../lib/oauth.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
-import { getBskyProfile } from "../../lib/pds.ts";
+import { getBskyProfile, putProfileRecord } from "../../lib/pds.ts";
 import {
   addRememberedAccountCookie,
   readRememberedAccountsFromHeader,
 } from "../../lib/remembered-accounts.ts";
 import {
+  getEffectiveAccountType,
   requiresAccountTypeChoice,
   updateAppUserProfile,
 } from "../../lib/account-types.ts";
+import { type ProfileRecord, validateProfile } from "../../lib/lexicons.ts";
+import { upsertProfile } from "../../lib/registry.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -64,6 +67,46 @@ export const handler = define.handlers({
         avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
         avatarMime: bskyProfile?.avatar?.mimeType ?? null,
       }).catch(() => {});
+      const accountType = await getEffectiveAccountType(result.did).catch(() =>
+        null
+      );
+      if (accountType === "user") {
+        const now = new Date().toISOString();
+        const draft: ProfileRecord = {
+          profileType: "user",
+          name: bskyProfile?.displayName?.trim() || result.handle,
+          description: bskyProfile?.description?.trim() ?? "",
+          avatar: bskyProfile?.avatar,
+          createdAt: now,
+        };
+        const validation = validateProfile(draft);
+        if (validation.ok && validation.value) {
+          const put = await putProfileRecord(
+            result.did,
+            result.pdsUrl,
+            validation.value,
+          ).catch(() => null);
+          if (put) {
+            await upsertProfile({
+              did: result.did,
+              handle: result.handle,
+              profileType: "user",
+              name: validation.value.name,
+              description: validation.value.description,
+              categories: [],
+              subcategories: [],
+              links: [],
+              screenshots: [],
+              avatarCid: validation.value.avatar?.ref.$link ?? null,
+              avatarMime: validation.value.avatar?.mimeType ?? null,
+              pdsUrl: result.pdsUrl,
+              recordCid: put.cid,
+              recordRev: put.commit?.rev ?? put.cid,
+              createdAt: Date.parse(validation.value.createdAt) || Date.now(),
+            }).catch(() => {});
+          }
+        }
+      }
       const returnTo = result.returnTo && result.returnTo.startsWith("/") &&
           !result.returnTo.startsWith("//")
         ? result.returnTo

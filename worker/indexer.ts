@@ -15,16 +15,24 @@
 import {
   FEATURED_NSID,
   PROFILE_NSID,
+  REVIEW_NSID,
   validateFeatured,
   validateProfile,
+  validateReview,
 } from "../lib/lexicons.ts";
 import {
   deleteProfile,
   getJetstreamCursor,
+  getProfileByDid,
   replaceFeatured,
   setJetstreamCursor,
   upsertProfile,
 } from "../lib/registry.ts";
+import {
+  createOrUpdateReview,
+  markReviewRemovedByRkey,
+  reviewUriForRkey,
+} from "../lib/reviews.ts";
 import { findPdsEndpoint, resolveDidDocument } from "../lib/identity.ts";
 import { getRecordPublic } from "../lib/pds.ts";
 import { JETSTREAM_URL } from "../lib/env.ts";
@@ -45,7 +53,7 @@ interface JetstreamEvent {
   commit?: JetstreamCommit;
 }
 
-const COLLECTIONS = [PROFILE_NSID, FEATURED_NSID];
+const COLLECTIONS = [PROFILE_NSID, REVIEW_NSID, FEATURED_NSID];
 const RECONNECT_DELAY_MS = 5_000;
 const CURSOR_PERSIST_INTERVAL_MS = 5_000;
 
@@ -108,12 +116,13 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
   await upsertProfile({
     did: event.did,
     handle,
+    profileType: r.profileType,
     name: r.name,
     description: r.description,
     mainLink: r.mainLink ?? null,
     iosLink: r.iosLink ?? null,
     androidLink: r.androidLink ?? null,
-    categories: r.categories,
+    categories: r.categories ?? [],
     subcategories: r.subcategories ?? [],
     links: r.links ?? [],
     screenshots: r.screenshots ?? [],
@@ -127,6 +136,51 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
   });
   console.log(`[indexer] upsert profile ${handle} (${event.did})`);
+}
+
+async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
+  const commit = event.commit;
+  if (!commit) return;
+
+  if (commit.operation === "delete") {
+    await markReviewRemovedByRkey(event.did, commit.rkey);
+    return;
+  }
+
+  const pdsUrl = await resolvePdsForDid(event.did);
+  const fetched = await getRecordPublic(
+    pdsUrl,
+    event.did,
+    REVIEW_NSID,
+    commit.rkey,
+  );
+  if (!fetched) return;
+
+  const validation = validateReview(fetched.value);
+  if (!validation.ok || !validation.value) {
+    console.warn(
+      `[indexer] invalid review from ${event.did}: ${validation.error}`,
+    );
+    return;
+  }
+  const r = validation.value;
+  const target = await getProfileByDid(r.subject).catch(() => null);
+  if (!target || target.profileType !== "project") {
+    console.warn(`[indexer] ignoring review for non-project ${r.subject}`);
+    return;
+  }
+  await createOrUpdateReview({
+    targetDid: r.subject,
+    reviewerDid: event.did,
+    reviewUri: reviewUriForRkey(event.did, commit.rkey),
+    reviewCid: fetched.cid,
+    reviewRkey: commit.rkey,
+    rating: r.rating,
+    body: r.body ?? "",
+    createdAt: Date.parse(r.createdAt) || Date.now(),
+    updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
+  });
+  console.log(`[indexer] upsert review ${event.did} -> ${r.subject}`);
 }
 
 async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
@@ -180,6 +234,8 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
   try {
     if (collection === PROFILE_NSID) {
       await handleProfileEvent(event);
+    } else if (collection === REVIEW_NSID) {
+      await handleReviewEvent(event);
     } else if (collection === FEATURED_NSID) {
       await handleFeaturedEvent(event);
     }

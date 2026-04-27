@@ -4,6 +4,7 @@
  * without changing a user's PDS records.
  */
 import { withDb } from "./db.ts";
+import { REVIEW_NSID, type ReviewRecord } from "./lexicons.ts";
 
 export const MAX_REVIEW_BODY_LENGTH = 300;
 export const REVIEW_AGGREGATE_MIN_COUNT = 5;
@@ -46,6 +47,9 @@ export interface ReviewRow {
   id: number;
   targetDid: string;
   reviewerDid: string;
+  reviewUri: string | null;
+  reviewCid: string | null;
+  reviewRkey: string | null;
   rating: 1 | 2 | 3 | 4 | 5;
   body: string;
   status: ReviewStatus;
@@ -77,6 +81,9 @@ interface RawReviewRow {
   id: number;
   target_did: string;
   reviewer_did: string;
+  review_uri: string | null;
+  review_cid: string | null;
+  review_rkey: string | null;
   rating: number;
   body: string;
   status: string;
@@ -141,6 +148,9 @@ function rowToReview(r: RawReviewRow): ReviewRow {
     id: Number(r.id),
     targetDid: r.target_did,
     reviewerDid: r.reviewer_did,
+    reviewUri: r.review_uri,
+    reviewCid: r.review_cid,
+    reviewRkey: r.review_rkey,
     rating: normalizeRating(Number(r.rating)),
     body: r.body ?? "",
     status: normalizeReviewStatus(r.status),
@@ -195,20 +205,55 @@ export function normalizeReviewResponseBody(value: unknown): string | null {
   return body;
 }
 
+export function reviewUriForRkey(reviewerDid: string, rkey: string): string {
+  return `at://${reviewerDid}/${REVIEW_NSID}/${rkey}`;
+}
+
+export async function reviewRkeyForTarget(targetDid: string): Promise<string> {
+  const bytes = new TextEncoder().encode(targetDid);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  const hex = Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `review-${hex.slice(0, 32)}`;
+}
+
+export function reviewRowToRecord(review: ReviewRow): ReviewRecord {
+  return {
+    subject: review.targetDid,
+    subjectUri:
+      `at://${review.targetDid}/com.atmosphereaccount.registry.profile/self`,
+    rating: review.rating,
+    body: review.body || undefined,
+    createdAt: new Date(review.createdAt).toISOString(),
+    updatedAt: new Date(review.updatedAt).toISOString(),
+  };
+}
+
 export async function createOrUpdateReview(input: {
   targetDid: string;
   reviewerDid: string;
+  reviewUri?: string | null;
+  reviewCid?: string | null;
+  reviewRkey?: string | null;
   rating: 1 | 2 | 3 | 4 | 5;
   body: string;
+  createdAt?: number;
+  updatedAt?: number;
 }): Promise<ReviewRow> {
   return await withDb(async (c) => {
-    const now = Date.now();
+    const now = input.updatedAt ?? Date.now();
+    const createdAt = input.createdAt ?? now;
     await c.execute({
       sql: `
         INSERT INTO review (
-          target_did, reviewer_did, rating, body, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'visible', ?, ?)
+          target_did, reviewer_did, review_uri, review_cid, review_rkey,
+          rating, body, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'visible', ?, ?)
         ON CONFLICT(target_did, reviewer_did) DO UPDATE SET
+          review_uri = COALESCE(excluded.review_uri, review.review_uri),
+          review_cid = COALESCE(excluded.review_cid, review.review_cid),
+          review_rkey = COALESCE(excluded.review_rkey, review.review_rkey),
           rating = excluded.rating,
           body = excluded.body,
           status = 'visible',
@@ -222,15 +267,39 @@ export async function createOrUpdateReview(input: {
       args: [
         input.targetDid,
         input.reviewerDid,
+        input.reviewUri ?? null,
+        input.reviewCid ?? null,
+        input.reviewRkey ?? null,
         input.rating,
         input.body,
-        now,
+        createdAt,
         now,
       ],
     });
     const review = await getOwnReview(input.targetDid, input.reviewerDid);
     if (!review) throw new Error("review_write_failed");
     return review;
+  });
+}
+
+export async function markReviewRemovedByRkey(
+  reviewerDid: string,
+  reviewRkey: string,
+): Promise<boolean> {
+  return await withDb(async (c) => {
+    const now = Date.now();
+    const r = await c.execute({
+      sql: `
+        UPDATE review SET
+          status = 'removed',
+          updated_at = ?,
+          removed_at = ?,
+          removed_by = ?
+        WHERE reviewer_did = ? AND review_rkey = ? AND status != 'removed'
+      `,
+      args: [now, now, reviewerDid, reviewerDid, reviewRkey],
+    });
+    return Number(r.rowsAffected ?? 0) > 0;
   });
 }
 
@@ -495,7 +564,8 @@ export async function listOpenReviewReports(): Promise<ReviewReportRow[]> {
         rp.id AS report_id, rp.review_id, rp.reporter_did, rp.reason,
         rp.details, rp.status AS report_status, rp.admin_notes AS report_notes,
         rp.created_at AS report_created_at, rp.resolved_at, rp.resolved_by,
-        rv.id, rv.target_did, rv.reviewer_did, rv.rating, rv.body,
+        rv.id, rv.target_did, rv.reviewer_did, rv.review_uri, rv.review_cid,
+        rv.review_rkey, rv.rating, rv.body,
         rv.status, rv.created_at, rv.updated_at, rv.hidden_at, rv.hidden_by,
         rv.removed_at, rv.removed_by, rv.admin_notes
       FROM review_report rp
@@ -523,6 +593,9 @@ export async function listOpenReviewReports(): Promise<ReviewReportRow[]> {
         id: Number(record.id),
         target_did: String(record.target_did),
         reviewer_did: String(record.reviewer_did),
+        review_uri: record.review_uri as string | null,
+        review_cid: record.review_cid as string | null,
+        review_rkey: record.review_rkey as string | null,
         rating: Number(record.rating),
         body: String(record.body ?? ""),
         status: String(record.status ?? "visible"),

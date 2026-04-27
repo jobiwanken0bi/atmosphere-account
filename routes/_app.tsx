@@ -252,7 +252,7 @@ export default define.page(function App(ctx) {
   const locale = state.locale;
   const t = getMessages(locale);
   const effectsOn = url.pathname === "/";
-  const htmlClass = effectsOn ? undefined : "sky-static";
+  const htmlClass = effectsOn ? "sky-effects" : "sky-static";
   const bodyClass = effectsOn ? "sky-bg" : "sky-bg explore-no-effects";
   return (
     <html lang={locale} class={htmlClass}>

@@ -3,7 +3,13 @@
  * One thin function per XRPC method we actually call from the registry.
  */
 import { authedFetch } from "./oauth.ts";
-import { type BlobRef, PROFILE_NSID, type ProfileRecord } from "./lexicons.ts";
+import {
+  type BlobRef,
+  PROFILE_NSID,
+  type ProfileRecord,
+  REVIEW_NSID,
+  type ReviewRecord,
+} from "./lexicons.ts";
 
 export interface PutRecordResult {
   uri: string;
@@ -33,6 +39,21 @@ export async function putProfileRecord(
     throw new Error(`putRecord failed: HTTP ${res.status}: ${text}`);
   }
   return await res.json() as PutRecordResult;
+}
+
+export async function putReviewRecord(
+  did: string,
+  pdsUrl: string,
+  rkey: string,
+  record: ReviewRecord,
+): Promise<PutRecordResult> {
+  return await putRecord(
+    did,
+    pdsUrl,
+    REVIEW_NSID,
+    rkey,
+    record as unknown as Record<string, unknown>,
+  );
 }
 
 /**
@@ -69,6 +90,14 @@ export async function deleteProfileRecord(
   pdsUrl: string,
 ): Promise<void> {
   await deleteRecord(did, pdsUrl, PROFILE_NSID, "self");
+}
+
+export async function deleteReviewRecord(
+  did: string,
+  pdsUrl: string,
+  rkey: string,
+): Promise<void> {
+  await deleteRecord(did, pdsUrl, REVIEW_NSID, rkey);
 }
 
 /**

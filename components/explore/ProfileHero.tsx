@@ -58,6 +58,7 @@ export default function ProfileHero({ profile }: Props) {
             <img
               src={`/api/registry/avatar/${encodeURIComponent(profile.did)}`}
               alt={profile.name}
+              decoding="async"
             />
           )
           : (

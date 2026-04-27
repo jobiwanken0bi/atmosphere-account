@@ -90,6 +90,7 @@ const SCHEMA_STATEMENTS: string[] = [
   `CREATE TABLE IF NOT EXISTS profile (
     did TEXT PRIMARY KEY,
     handle TEXT NOT NULL,
+    profile_type TEXT NOT NULL DEFAULT 'project',
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     main_link TEXT,
@@ -224,6 +225,9 @@ const SCHEMA_STATEMENTS: string[] = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     target_did TEXT NOT NULL,
     reviewer_did TEXT NOT NULL,
+    review_uri TEXT,
+    review_cid TEXT,
+    review_rkey TEXT,
     rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
     body TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'visible',
@@ -289,6 +293,8 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
    * handful of rows are non-NULL at any time so the index stays cheap.
    */
   `CREATE INDEX IF NOT EXISTS profile_icon_access ON profile(icon_access_status)`,
+  `CREATE INDEX IF NOT EXISTS profile_type_takedown ON profile(profile_type, takedown_status)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS review_uri_unique ON review(review_uri) WHERE review_uri IS NOT NULL`,
 ];
 
 /**
@@ -305,6 +311,12 @@ async function applyAdditiveMigrations(
 ): Promise<void> {
   const additiveColumns: Array<{ table: string; column: string; ddl: string }> =
     [
+      {
+        table: "profile",
+        column: "profile_type",
+        ddl:
+          "ALTER TABLE profile ADD COLUMN profile_type TEXT NOT NULL DEFAULT 'project'",
+      },
       {
         table: "profile",
         column: "categories",
@@ -416,6 +428,21 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "takedown_at",
         ddl: "ALTER TABLE profile ADD COLUMN takedown_at INTEGER",
+      },
+      {
+        table: "review",
+        column: "review_uri",
+        ddl: "ALTER TABLE review ADD COLUMN review_uri TEXT",
+      },
+      {
+        table: "review",
+        column: "review_cid",
+        ddl: "ALTER TABLE review ADD COLUMN review_cid TEXT",
+      },
+      {
+        table: "review",
+        column: "review_rkey",
+        ddl: "ALTER TABLE review ADD COLUMN review_rkey TEXT",
       },
       {
         table: "app_user",

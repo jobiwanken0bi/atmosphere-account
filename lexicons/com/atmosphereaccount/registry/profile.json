@@ -4,24 +4,30 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A project's profile in the Atmosphere registry. Created by the project's own account on its PDS; one record per account. Kept intentionally minimal so future additions (reviews, age ratings, donations metadata, etc.) live in sibling com.atmosphereaccount.registry.* records.",
+      "description": "A user or project profile in the Atmosphere registry. Created by the account owner on their PDS; one record per account. Reviews, ratings, moderation, and other social data live in sibling com.atmosphereaccount.registry.* records.",
       "key": "literal:self",
       "record": {
         "type": "object",
-        "required": ["name", "categories", "createdAt"],
+        "required": ["name", "createdAt"],
         "properties": {
+          "profileType": {
+            "type": "string",
+            "maxLength": 16,
+            "knownValues": ["project", "user"],
+            "description": "Distinguishes project profiles from user profiles. Omitted means project for backwards compatibility with existing records."
+          },
           "name": {
             "type": "string",
             "minLength": 1,
             "maxLength": 60,
             "maxGraphemes": 60,
-            "description": "Display name for the project."
+            "description": "Display name for the user or project."
           },
           "description": {
             "type": "string",
             "maxLength": 500,
             "maxGraphemes": 500,
-            "description": "Optional short description of the project."
+            "description": "Optional short description for a project or bio for a user profile."
           },
           "mainLink": {
             "type": "string",

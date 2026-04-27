@@ -36,6 +36,7 @@ export default function ProfileCard({ profile }: Props) {
               src={`/api/registry/avatar/${encodeURIComponent(profile.did)}`}
               alt=""
               loading="lazy"
+              decoding="async"
             />
           )
           : (

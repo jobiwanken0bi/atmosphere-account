@@ -1,6 +1,5 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
-import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
 import { getMessages } from "../../i18n/mod.ts";
@@ -40,7 +39,6 @@ export default define.page(async function ExploreCreate(ctx) {
 
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} />
         <section class="explore-create" style={{ paddingTop: "8rem" }}>

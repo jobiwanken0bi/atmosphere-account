@@ -1,6 +1,5 @@
 import { define } from "../utils.ts";
 import Nav from "../components/Nav.tsx";
-import GlassClouds from "../components/GlassClouds.tsx";
 import Footer from "../components/Footer.tsx";
 import StoreHero from "../components/explore/StoreHero.tsx";
 import CategoryTabs from "../components/explore/CategoryTabs.tsx";
@@ -94,7 +93,6 @@ interface ExplorePageProps {
 function ExplorePage({ data, locale: _locale }: ExplorePageProps) {
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={data.account} />
         <StoreHero

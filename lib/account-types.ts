@@ -199,10 +199,11 @@ export async function getEffectiveAccountType(
 ): Promise<AccountType | null> {
   const user = await getAppUser(did);
   if (user) return user.accountType;
-  const profile = await getProfileByDid(did, { includeTakenDown: true }).catch(
-    () => null,
-  );
-  return profile ? "project" : null;
+  const profile = await getProfileByDid(did, {
+    includeTakenDown: true,
+    profileType: "any",
+  }).catch(() => null);
+  return profile?.profileType ?? null;
 }
 
 export async function requiresAccountTypeChoice(did: string): Promise<boolean> {

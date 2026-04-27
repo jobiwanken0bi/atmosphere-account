@@ -4,7 +4,12 @@
  */
 import type { InValue } from "@libsql/client";
 import { withDb } from "./db.ts";
-import type { FeaturedBadge, LinkEntry, ScreenshotEntry } from "./lexicons.ts";
+import type {
+  FeaturedBadge,
+  LinkEntry,
+  ProfileType,
+  ScreenshotEntry,
+} from "./lexicons.ts";
 
 /**
  * Approval state of the developer-facing SVG icon.
@@ -47,6 +52,7 @@ export type TakedownStatus = "taken_down";
 export interface ProfileRow {
   did: string;
   handle: string;
+  profileType: ProfileType;
   name: string;
   description: string;
   /** Primary web destination rendered as the Web button. May be null
@@ -102,6 +108,7 @@ export interface ProfileRow {
 interface RawProfileRow {
   did: string;
   handle: string;
+  profile_type: string | null;
   name: string;
   description: string;
   main_link: string | null;
@@ -213,10 +220,15 @@ function normalizeTakedownStatus(v: string | null): TakedownStatus | null {
   return v === "taken_down" ? "taken_down" : null;
 }
 
+function normalizeProfileType(v: string | null): ProfileType {
+  return v === "user" ? "user" : "project";
+}
+
 function rowToProfile(r: RawProfileRow): ProfileRow {
   const out: ProfileRow = {
     did: r.did,
     handle: r.handle,
+    profileType: normalizeProfileType(r.profile_type),
     name: r.name,
     description: r.description,
     mainLink: r.main_link && r.main_link.length > 0 ? r.main_link : null,
@@ -270,6 +282,7 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
 export interface UpsertProfileInput {
   did: string;
   handle: string;
+  profileType?: ProfileType;
   name: string;
   description: string;
   /** Optional: nullable for legacy records that pre-date the field.
@@ -278,7 +291,7 @@ export interface UpsertProfileInput {
   mainLink?: string | null;
   iosLink?: string | null;
   androidLink?: string | null;
-  /** Required: 1-4 known category strings. The first is the primary. */
+  /** Required for project profiles; empty for user profiles. */
   categories: string[];
   subcategories: string[];
   links?: LinkEntry[] | null;
@@ -295,6 +308,7 @@ export interface UpsertProfileInput {
 
 export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
   const now = Date.now();
+  const profileType = input.profileType ?? "project";
   // Defensive dedupe + drop empties; the lexicon validator already does
   // this but the worker also calls upsertProfile from the Jetstream path,
   // and the registry invariant (categories non-empty) is worth enforcing
@@ -310,7 +324,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
     }
     return out;
   })();
-  if (cats.length === 0) {
+  if (profileType === "project" && cats.length === 0) {
     throw new Error("upsertProfile: categories[] is required and non-empty");
   }
   /**
@@ -325,7 +339,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
     await c.execute({
       sql: `
         INSERT INTO profile (
-          did, handle, name, description, main_link, ios_link, android_link,
+          did, handle, profile_type, name, description, main_link, ios_link, android_link,
           categories, subcategories, links, screenshots,
           avatar_cid, avatar_mime, icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
@@ -335,7 +349,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           takedown_status, takedown_reason, takedown_by, takedown_at,
           pds_url, record_cid, record_rev, created_at, indexed_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           NULL, NULL, NULL,
           NULL, NULL, NULL, NULL, NULL, NULL,
           NULL, NULL, NULL, NULL,
@@ -343,6 +357,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         )
         ON CONFLICT(did) DO UPDATE SET
           handle=excluded.handle,
+          profile_type=excluded.profile_type,
           name=excluded.name,
           description=excluded.description,
           main_link=excluded.main_link,
@@ -421,6 +436,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
       args: [
         input.did,
         input.handle,
+        profileType,
         input.name,
         input.description,
         input.mainLink ?? null,
@@ -558,6 +574,7 @@ export async function findIconAccessTarget(
         FROM profile p
         WHERE ${where}
           AND p.takedown_status IS NULL
+          AND p.profile_type = 'project'
         LIMIT 1
       `,
       args: [raw],
@@ -622,6 +639,7 @@ export async function listPendingIconAccess(): Promise<IconAccessRequestRow[]> {
       SELECT did, handle, name, icon_access_email, icon_access_requested_at
       FROM profile
       WHERE icon_access_status = 'requested'
+        AND profile_type = 'project'
       ORDER BY icon_access_requested_at ASC
     `);
     return r.rows.map((row) => {
@@ -648,7 +666,7 @@ export async function listPendingIconAccess(): Promise<IconAccessRequestRow[]> {
 export async function countPendingIconAccess(): Promise<number> {
   return await withDb(async (c) => {
     const r = await c.execute(
-      `SELECT COUNT(*) AS n FROM profile WHERE icon_access_status = 'requested'`,
+      `SELECT COUNT(*) AS n FROM profile WHERE icon_access_status = 'requested' AND profile_type = 'project'`,
     );
     return Number((r.rows[0] as Record<string, unknown>).n ?? 0);
   });
@@ -663,6 +681,7 @@ export async function listUnverifiedIconAccess(): Promise<
       SELECT did, handle, name, icon_access_status
       FROM profile
       WHERE takedown_status IS NULL
+        AND profile_type = 'project'
         AND (icon_access_status IS NULL OR icon_access_status = 'denied')
       ORDER BY indexed_at DESC
     `);
@@ -691,6 +710,7 @@ export async function listGrantedIconAccess(): Promise<GrantedIconAccessRow[]> {
              icon_access_reviewed_at, icon_access_reviewed_by
       FROM profile
       WHERE icon_access_status = 'granted'
+        AND profile_type = 'project'
       ORDER BY icon_access_reviewed_at DESC
     `);
     return r.rows.map((row) => {
@@ -831,19 +851,24 @@ const SELECT_PROFILE = `
  */
 export interface ProfileLookupOptions {
   includeTakenDown?: boolean;
+  profileType?: ProfileType | "any";
 }
 
 export async function getProfileByDid(
   did: string,
   opts: ProfileLookupOptions = {},
 ): Promise<ProfileRow | null> {
-  const where = opts.includeTakenDown
-    ? `WHERE p.did = ?`
-    : `WHERE p.did = ? AND p.takedown_status IS NULL`;
+  const type = opts.profileType ?? "project";
+  const where = [
+    "p.did = ?",
+    ...(opts.includeTakenDown ? [] : ["p.takedown_status IS NULL"]),
+    ...(type === "any" ? [] : ["p.profile_type = ?"]),
+  ];
+  const args: InValue[] = type === "any" ? [did] : [did, type];
   return await withDb(async (c) => {
     const r = await c.execute({
-      sql: `${SELECT_PROFILE} ${where} LIMIT 1`,
-      args: [did],
+      sql: `${SELECT_PROFILE} WHERE ${where.join(" AND ")} LIMIT 1`,
+      args,
     });
     if (r.rows.length === 0) return null;
     return rowToProfile(r.rows[0] as unknown as RawProfileRow);
@@ -854,13 +879,17 @@ export async function getProfileByHandle(
   handle: string,
   opts: ProfileLookupOptions = {},
 ): Promise<ProfileRow | null> {
-  const where = opts.includeTakenDown
-    ? `WHERE p.handle = ?`
-    : `WHERE p.handle = ? AND p.takedown_status IS NULL`;
+  const type = opts.profileType ?? "project";
+  const where = [
+    "p.handle = ?",
+    ...(opts.includeTakenDown ? [] : ["p.takedown_status IS NULL"]),
+    ...(type === "any" ? [] : ["p.profile_type = ?"]),
+  ];
+  const args: InValue[] = type === "any" ? [handle] : [handle, type];
   return await withDb(async (c) => {
     const r = await c.execute({
-      sql: `${SELECT_PROFILE} ${where} LIMIT 1`,
-      args: [handle],
+      sql: `${SELECT_PROFILE} WHERE ${where.join(" AND ")} LIMIT 1`,
+      args,
     });
     if (r.rows.length === 0) return null;
     return rowToProfile(r.rows[0] as unknown as RawProfileRow);
@@ -895,7 +924,10 @@ export async function searchProfiles(
    * the purpose of the takedown; admin tooling reads via
    * `listTakenDownProfiles` instead.
    */
-  const where: string[] = ["p.takedown_status IS NULL"];
+  const where: string[] = [
+    "p.takedown_status IS NULL",
+    "p.profile_type = 'project'",
+  ];
   const args: InValue[] = [];
 
   if (opts.query && opts.query.trim()) {
@@ -967,7 +999,7 @@ export async function listAllProfilesForPicker(): Promise<ProfilePickerRow[]> {
   return await withDb(async (c) => {
     const r = await c.execute(
       `SELECT did, handle, name FROM profile
-       WHERE takedown_status IS NULL
+       WHERE takedown_status IS NULL AND profile_type = 'project'
        ORDER BY handle ASC`,
     );
     return r.rows.map((row) => {
@@ -983,6 +1015,7 @@ export async function listFeaturedProfiles(limit = 12): Promise<ProfileRow[]> {
       sql: `
         ${SELECT_PROFILE}
         WHERE f.did IS NOT NULL AND p.takedown_status IS NULL
+          AND p.profile_type = 'project'
         ORDER BY COALESCE(f.position, 999999) ASC, p.indexed_at DESC
         LIMIT ?
       `,

@@ -5,7 +5,6 @@
  */
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
-import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import AdminTakedownRow from "../../islands/AdminTakedownRow.tsx";
 import { getMessages } from "../../i18n/mod.ts";
@@ -41,7 +40,6 @@ function AdminTakedownsPage({ account, rows, locale }: PageProps) {
   const t = getMessages(locale).admin;
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} />
         <section class="admin-section">

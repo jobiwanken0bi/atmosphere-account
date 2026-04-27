@@ -1,6 +1,5 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
-import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
@@ -64,7 +63,6 @@ function AccountTypePage({ account, handle, next, t }: AccountTypePageProps) {
   const copy = t.accountType;
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} />
         <section class="account-type-section">

@@ -1,7 +1,7 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
-import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
+import UserBskyClientPicker from "../../islands/UserBskyClientPicker.tsx";
 import UserReviewRow from "../../islands/UserReviewRow.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
@@ -9,7 +9,6 @@ import {
   getAppUser,
   getEffectiveAccountType,
 } from "../../lib/account-types.ts";
-import { BSKY_CLIENTS } from "../../lib/bsky-clients.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { listReviewsByReviewer, type ReviewRow } from "../../lib/reviews.ts";
 
@@ -94,7 +93,6 @@ function AccountReviewsPage(
   const displayName = profile?.displayName || handle;
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} />
         <section class="account-reviews-section">
@@ -109,7 +107,14 @@ function AccountReviewsPage(
               <div class="user-profile-preview">
                 <div class="user-profile-avatar">
                   {avatarUrl
-                    ? <img src={avatarUrl} alt="" loading="lazy" />
+                    ? (
+                      <img
+                        src={avatarUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    )
                     : <span>{displayName.slice(0, 1).toUpperCase()}</span>}
                 </div>
                 <div>
@@ -118,36 +123,18 @@ function AccountReviewsPage(
                   {profile?.bio && <p class="user-profile-bio">{profile.bio}
                   </p>}
                   <a
-                    class="profile-form-button-secondary"
+                    class="profile-form-button-secondary user-profile-view-link"
                     href={`/users/${encodeURIComponent(handle)}`}
                   >
                     {copy.viewProfile}
                   </a>
                 </div>
               </div>
-              <form
-                method="POST"
-                action="/api/account/profile"
-                class="user-profile-client-form"
-              >
-                <label>
-                  <span>{copy.clientLabel}</span>
-                  <select name="bskyClientId">
-                    {BSKY_CLIENTS.map((client) => (
-                      <option
-                        key={client.id}
-                        value={client.id}
-                        selected={profile?.bskyClientId === client.id}
-                      >
-                        {client.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button type="submit" class="profile-form-button-primary">
-                  {copy.saveClient}
-                </button>
-              </form>
+              <UserBskyClientPicker
+                selectedClientId={profile?.bskyClientId ?? null}
+                label={copy.clientLabel}
+                saveLabel={copy.saveClient}
+              />
             </section>
 
             {reviews.length === 0

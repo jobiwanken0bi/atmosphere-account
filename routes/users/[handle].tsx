@@ -1,11 +1,11 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
-import GlassClouds from "../../components/GlassClouds.tsx";
 import Footer from "../../components/Footer.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUserByHandle } from "../../lib/account-types.ts";
 import { getBskyClient } from "../../lib/bsky-clients.ts";
+import { getProfileByHandle } from "../../lib/registry.ts";
 
 function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
   const ext = mime === "image/png"
@@ -20,33 +20,39 @@ export const handler = define.handlers({
   async GET(ctx) {
     const handle = decodeURIComponent(ctx.params.handle ?? "").trim()
       .toLowerCase();
-    const profile = handle
-      ? await getAppUserByHandle(handle).catch(() => null)
-      : null;
+    const [profile, appUser] = handle
+      ? await Promise.all([
+        getProfileByHandle(handle, { profileType: "user" }).catch(() => null),
+        getAppUserByHandle(handle).catch(() => null),
+      ])
+      : [null, null];
     return ctx.render(
       <UserProfilePage
         account={buildAccountMenuProps(ctx.state)}
-        profile={profile?.accountType === "user" ? profile : null}
+        profile={profile}
+        bskyClientId={appUser?.bskyClientId ?? null}
         t={getMessages(ctx.state.locale)}
       />,
-      { status: profile?.accountType === "user" ? 200 : 404 },
+      { status: profile ? 200 : 404 },
     );
   },
 });
 
 interface UserProfilePageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
-  profile: Awaited<ReturnType<typeof getAppUserByHandle>>;
+  profile: Awaited<ReturnType<typeof getProfileByHandle>>;
+  bskyClientId: string | null;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
-function UserProfilePage({ account, profile, t }: UserProfilePageProps) {
+function UserProfilePage(
+  { account, profile, bskyClientId, t }: UserProfilePageProps,
+) {
   const copy = t.userProfile;
   if (!profile) {
     return (
       <div id="page-top">
-        <GlassClouds />
         <div class="content-layer">
           <Nav account={account} showEffects={false} />
           <section class="user-public-section">
@@ -63,14 +69,13 @@ function UserProfilePage({ account, profile, t }: UserProfilePageProps) {
     );
   }
 
-  const displayName = profile.displayName || profile.handle;
+  const displayName = profile.name || profile.handle;
   const avatarUrl = profile.avatarCid && profile.avatarMime
     ? bskyCdnAvatarUrl(profile.did, profile.avatarCid, profile.avatarMime)
     : null;
-  const client = getBskyClient(profile.bskyClientId);
+  const client = getBskyClient(bskyClientId);
   return (
     <div id="page-top">
-      <GlassClouds />
       <div class="content-layer">
         <Nav account={account} showEffects={false} />
         <section class="user-public-section">
@@ -83,14 +88,16 @@ function UserProfilePage({ account, profile, t }: UserProfilePageProps) {
             <div class="glass user-public-card">
               <div class="user-public-avatar">
                 {avatarUrl
-                  ? <img src={avatarUrl} alt="" />
+                  ? <img src={avatarUrl} alt="" decoding="async" />
                   : <span>{displayName.slice(0, 1).toUpperCase()}</span>}
               </div>
               <div class="user-public-body">
                 <h1 class="text-section">{displayName}</h1>
                 <p class="user-profile-handle">@{profile.handle}</p>
-                {profile.bio && (
-                  <p class="text-body user-profile-bio">{profile.bio}</p>
+                {profile.description && (
+                  <p class="text-body user-profile-bio">
+                    {profile.description}
+                  </p>
                 )}
                 <a
                   class="profile-hero-action user-public-client-link"
@@ -99,7 +106,12 @@ function UserProfilePage({ account, profile, t }: UserProfilePageProps) {
                   rel="noopener noreferrer"
                 >
                   <span class="profile-hero-action-icon">
-                    <img src={client.iconUrl} alt="" />
+                    <img
+                      src={client.iconUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </span>
                   <span>{copy.openIn(client.name)}</span>
                   <span class="profile-hero-action-arrow" aria-hidden="true">

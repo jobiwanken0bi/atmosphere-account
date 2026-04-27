@@ -354,6 +354,7 @@ export const handler = define.handlers({
     }
 
     const draft: ProfileRecord = {
+      profileType: "project",
       name: trimOrNull(body.name) ?? "",
       description: trimOrNull(body.description) ?? "",
       mainLink,
@@ -397,12 +398,13 @@ export const handler = define.handlers({
       await upsertProfile({
         did: user.did,
         handle: user.handle,
+        profileType: validation.value.profileType,
         name: validation.value.name,
         description: validation.value.description,
         mainLink: validation.value.mainLink ?? null,
         iosLink: validation.value.iosLink ?? null,
         androidLink: validation.value.androidLink ?? null,
-        categories: validation.value.categories,
+        categories: validation.value.categories ?? [],
         subcategories: validation.value.subcategories ?? [],
         links: validation.value.links ?? [],
         screenshots: validation.value.screenshots ?? [],
