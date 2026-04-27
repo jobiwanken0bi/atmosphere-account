@@ -39,7 +39,7 @@ export default function DeveloperResources() {
         </div>
       </section>
 
-      <section class="section-sm">
+      <section class="section-sm" id="project-icons">
         <div class="container-narrow text-center">
           <h2 class="text-subsection">{t.developerResources.lottieHeading}</h2>
           <div class="divider" />

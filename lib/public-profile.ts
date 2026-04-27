@@ -67,12 +67,16 @@ export function toPublicProfileJson(
   const iconUrl = profile.iconCid &&
       profile.iconStatus === "approved" &&
       profile.iconAccessStatus === "granted"
-    ? `${origin}/api/registry/icon/${encodeURIComponent(profile.did)}`
+    ? `${origin}/api/registry/icon/${encodeURIComponent(profile.did)}?v=${
+      encodeURIComponent(profile.iconCid)
+    }`
     : null;
   const iconBwUrl = profile.iconBwCid &&
       profile.iconBwStatus === "approved" &&
       profile.iconAccessStatus === "granted"
-    ? `${origin}/api/registry/icon-bw/${encodeURIComponent(profile.did)}`
+    ? `${origin}/api/registry/icon-bw/${encodeURIComponent(profile.did)}?v=${
+      encodeURIComponent(profile.iconBwCid)
+    }`
     : null;
   const screenshotUrls = profile.screenshots.map((_, i) =>
     `${origin}/api/registry/screenshot/${encodeURIComponent(profile.did)}/${i}`

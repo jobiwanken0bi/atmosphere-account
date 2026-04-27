@@ -3592,7 +3592,7 @@ body {
   color: rgba(255, 255, 255, 0.5);
 }
 
-/* Two parallel slots — colour and B/W — share the same access gate
+/* Two parallel slots — color and B/W — share the same access gate
    and sanitiser, so we render them side-by-side. They wrap to a single
    column on narrow viewports so the upload buttons stay reachable. */
 .profile-form-icon-grid {
@@ -3640,6 +3640,13 @@ body {
     linear-gradient(-45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
     linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%),
     linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%);
+}
+.profile-form-icon-resource-actions {
+  margin-top: 0.75rem;
+}
+.profile-form-icon-resource-link {
+  text-decoration: none;
+  color: inherit;
 }
 
 /* ------------------------------------------------------------------ *
@@ -4932,7 +4939,7 @@ body.explore-no-effects #nav-effects-bar {
   min-height: 2.4rem;
 }
 
-/* Colour / B/W toggle. Sits between the search input and the ZIP
+/* Color / B/W toggle. Sits between the search input and the ZIP
    button so the toolbar reads search → variant → bulk-download. */
 .svg-download-tabs {
   display: inline-flex;

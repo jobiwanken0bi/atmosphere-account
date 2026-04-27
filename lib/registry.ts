@@ -80,7 +80,7 @@ export interface ProfileRow {
   iconReviewedAt: number | null;
   iconRejectedReason: string | null;
   /** Optional black-and-white companion to `iconCid`. Same access gate
-   *  and per-icon approval lifecycle as the colour icon — surfaced on
+   *  and per-icon approval lifecycle as the color icon — surfaced on
    *  the developer downloads UI alongside (or instead of) `iconCid`. */
   iconBwCid: string | null;
   iconBwMime: string | null;
@@ -435,7 +435,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           END,
           /**
            * Black-and-white companion icon — same per-project gate
-           * and lifecycle as the colour icon. Tracked independently so
+           * and lifecycle as the color icon. Tracked independently so
            * a project can swap one variant without revoking the other.
            */
           icon_bw_cid=excluded.icon_bw_cid,
@@ -1081,7 +1081,7 @@ export async function listAllProfilesForPicker(): Promise<ProfilePickerRow[]> {
 
 /**
  * Public projection of every approved developer SVG icon. A project
- * appears once it has at least one approved variant (colour or B/W);
+ * appears once it has at least one approved variant (color or B/W);
  * the downloads UI decides which buttons to render per row based on
  * `iconCid` / `iconBwCid` presence.
  */

@@ -63,7 +63,7 @@
             "type": "blob",
             "accept": ["image/svg+xml"],
             "maxSize": 200000,
-            "description": "Optional black & white companion to `icon`. Same audience and sanitisation rules — published alongside the colour mark for monochrome contexts (light/dark badges, sign-in chrome, print)."
+            "description": "Optional black & white companion to `icon`. Same audience and sanitisation rules — published alongside the color mark for monochrome contexts (light/dark badges, sign-in chrome, print)."
           },
           "screenshots": {
             "type": "array",

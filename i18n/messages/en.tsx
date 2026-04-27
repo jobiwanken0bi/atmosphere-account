@@ -310,7 +310,7 @@ const en = {
       error: "Could not load icons: {error}",
       iconAlt: "{name} SVG icon",
       variantToggleLabel: "Icon variant",
-      variantColor: "Colour",
+      variantColor: "Color",
       variantBw: "B/W",
     },
     schemaHeading: "Profile schema",
@@ -670,7 +670,7 @@ const en = {
         upload: "Upload SVG",
         replace: "Replace SVG",
         remove: "Remove SVG",
-        colorLabel: "Colour",
+        colorLabel: "Color",
         colorHint: "Your primary mark, used by default in badges and listings.",
         bwLabel: "Black & white",
         bwHint:
@@ -678,6 +678,7 @@ const en = {
         bwUpload: "Upload B/W SVG",
         bwReplace: "Replace B/W SVG",
         bwRemove: "Remove B/W SVG",
+        viewOnDeveloperResources: "View on developer resources",
         invalidType: "Icon must be an SVG (image/svg+xml).",
         tooLarge: "Icon must be 200KB or smaller.",
         gate: {

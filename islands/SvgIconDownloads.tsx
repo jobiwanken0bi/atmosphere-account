@@ -27,6 +27,14 @@ export default function SvgIconDownloads() {
   const error = useSignal<string | null>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(globalThis.location?.search ?? "");
+    const initialQuery = params.get("icon") ?? params.get("q");
+    const initialVariant = params.get("variant");
+    if (initialQuery) query.value = initialQuery.replace(/^@/, "");
+    if (initialVariant === "bw" || initialVariant === "color") {
+      tab.value = initialVariant;
+    }
+
     let cancelled = false;
     async function loadIcons() {
       loading.value = true;

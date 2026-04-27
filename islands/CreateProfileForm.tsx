@@ -69,6 +69,28 @@ interface ExistingProfile {
  */
 const APPEAL_EMAIL = "contact@atmosphereaccount.com";
 
+function iconPreviewRoute(
+  did: string,
+  variant: "color" | "bw",
+  ref: string,
+): string {
+  const path = variant === "bw" ? "icon-bw" : "icon";
+  return `/api/registry/${path}/${encodeURIComponent(did)}?v=${
+    encodeURIComponent(ref)
+  }`;
+}
+
+function developerResourcesIconHref(
+  handle: string,
+  variant: "color" | "bw",
+): string {
+  const params = new URLSearchParams({
+    icon: handle,
+    variant,
+  });
+  return `/developer-resources?${params.toString()}#project-icons`;
+}
+
 interface Props {
   did: string;
   handle: string;
@@ -339,14 +361,14 @@ export default function CreateProfileForm(
    */
   const iconKeep = useSignal<BlobRefShape | null>(null);
   const iconPreviewUrl = useSignal<string | null>(
-    initial?.icon ? `/api/registry/icon/${encodeURIComponent(did)}` : null,
+    initial?.icon ? iconPreviewRoute(did, "color", initial.icon.ref) : null,
   );
   const iconFile = useSignal<File | null>(null);
   const iconRemoved = useSignal(false);
 
   const iconBwKeep = useSignal<BlobRefShape | null>(null);
   const iconBwPreviewUrl = useSignal<string | null>(
-    initial?.iconBw ? `/api/registry/icon-bw/${encodeURIComponent(did)}` : null,
+    initial?.iconBw ? iconPreviewRoute(did, "bw", initial.iconBw.ref) : null,
   );
   const iconBwFile = useSignal<File | null>(null);
   const iconBwRemoved = useSignal(false);
@@ -763,6 +785,22 @@ export default function CreateProfileForm(
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
+      const saved = await res.json() as {
+        icon?: BlobRefShape | null;
+        iconBw?: BlobRefShape | null;
+      };
+      iconKeep.value = saved.icon ?? null;
+      iconPreviewUrl.value = saved.icon
+        ? iconPreviewRoute(did, "color", saved.icon.ref.$link)
+        : null;
+      iconFile.value = null;
+      iconRemoved.value = false;
+      iconBwKeep.value = saved.iconBw ?? null;
+      iconBwPreviewUrl.value = saved.iconBw
+        ? iconPreviewRoute(did, "bw", saved.iconBw.ref.$link)
+        : null;
+      iconBwFile.value = null;
+      iconBwRemoved.value = false;
       published.value = true;
       message.value = { kind: "ok", text: tManage.savedToast };
     } catch (err) {
@@ -1229,10 +1267,10 @@ export default function CreateProfileForm(
             </p>
           )}
 
-          {/* ---- Two slots: colour + optional B/W companion ---- */}
+          {/* ---- Two slots: color + optional B/W companion ---- */}
           {
             /*
-              Colour and B/W share the same access gate, sanitiser, and
+              Color and B/W share the same access gate, sanitiser, and
               200KB cap — we just persist them to parallel `icon_*` /
               `icon_bw_*` columns and surface both on the developer
               downloads UI.
@@ -1269,6 +1307,19 @@ export default function CreateProfileForm(
             />
           </div>
           <p class="profile-form-hint">{tIcon.hint}</p>
+          {(iconKeep.value || iconBwKeep.value) && (
+            <div class="profile-form-icon-resource-actions">
+              <a
+                href={developerResourcesIconHref(
+                  handle,
+                  iconKeep.value ? "color" : "bw",
+                )}
+                class="profile-form-button-secondary profile-form-icon-resource-link"
+              >
+                {tIcon.viewOnDeveloperResources}
+              </a>
+            </div>
+          )}
         </div>
       </div>
 

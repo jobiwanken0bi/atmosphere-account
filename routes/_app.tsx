@@ -260,7 +260,7 @@ export default define.page(function App(ctx) {
     ? "/og-explore.png"
     : "/og-hero.png";
   const socialImageAlt = url.pathname.startsWith("/developer-resources")
-    ? "Atmosphere developer resources: sign-in badges, project icons, and the registry API."
+    ? "Atmosphere developer resources: tools to make the Atmosphere easier to understand."
     : url.pathname.startsWith("/explore")
     ? "Explore the Atmosphere registry: apps, profiles, reviews, and updates."
     : t.meta.ogImageAlt;

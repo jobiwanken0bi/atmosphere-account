@@ -11,7 +11,7 @@ export interface PublicSvgIconDownload {
   did: string;
   handle: string;
   name: string;
-  /** Colour variant. `null` when the project has only published a B/W icon. */
+  /** Color variant. `null` when the project has only published a B/W icon. */
   color: PublicSvgIconVariant | null;
   /** Optional black-and-white companion. `null` when not uploaded / approved. */
   bw: PublicSvgIconVariant | null;
@@ -50,10 +50,11 @@ function buildVariant(
   variant: IconVariant,
   origin: string,
 ): PublicSvgIconVariant {
+  const cid = variant === "bw" ? profile.iconBwCid : profile.iconCid;
   return {
     iconUrl: `${origin}/api/registry/${variantUrlPath(variant)}/${
       encodeURIComponent(profile.did)
-    }`,
+    }?v=${encodeURIComponent(cid ?? "")}`,
     downloadFilename: svgIconDownloadFilename(profile, variant),
   };
 }

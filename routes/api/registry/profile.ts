@@ -232,7 +232,7 @@ export const handler = define.handlers({
     }
 
     /**
-     * Developer-facing SVG icons (colour + optional B/W companion).
+     * Developer-facing SVG icons (color + optional B/W companion).
      * Two gates apply identically to both variants:
      *
      *   1. Per-project verification (`icon_access_status === 'granted'`).
@@ -268,7 +268,7 @@ export const handler = define.handlers({
     }
 
     /**
-     * Process one icon-variant upload. Centralised so the colour and
+     * Process one icon-variant upload. Centralised so the color and
      * B/W slots stay 1:1 — same MIME check, size cap, sanitiser, and
      * PDS upload path.
      *
@@ -479,6 +479,8 @@ export const handler = define.handlers({
         ok: true,
         uri: result.uri,
         cid: result.cid,
+        icon: validation.value.icon ?? null,
+        iconBw: validation.value.iconBw ?? null,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
