@@ -5073,11 +5073,11 @@ body.explore-no-effects #nav-effects-bar {
   display: flex;
   flex-direction: column;
 }
-.profile-whats-new-expand[open] .profile-whats-new-preview {
+.profile-whats-new-expand:has(.profile-whats-new-details[open])
+  .profile-whats-new-preview {
   display: none;
 }
-.profile-whats-new-expand summary {
-  order: 2;
+.profile-whats-new-details summary {
   align-self: flex-start;
   margin-top: 0.55rem;
   list-style: none;
@@ -5086,19 +5086,15 @@ body.explore-no-effects #nav-effects-bar {
   font-weight: 750;
   cursor: pointer;
 }
-.profile-whats-new-expand summary::-webkit-details-marker {
+.profile-whats-new-details summary::-webkit-details-marker {
   display: none;
 }
 .profile-whats-new-preview {
   display: -webkit-box;
   overflow: hidden;
-  order: 1;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   white-space: normal;
-}
-.profile-whats-new-full {
-  order: 3;
 }
 .profile-whats-new-empty {
   color: rgba(18, 26, 47, 0.62);
@@ -5479,7 +5475,7 @@ body.explore-no-effects #nav-effects-bar {
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.72);
 }
-.dark-phase .profile-whats-new-expand summary,
+.dark-phase .profile-whats-new-details summary,
 .dark-phase .profile-whats-new-icon-button,
 .dark-phase .profile-whats-new-history-button,
 .dark-phase .profile-version-history-commit {

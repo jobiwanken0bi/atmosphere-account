@@ -90,13 +90,15 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
           <h3 class="profile-whats-new-title">{latest.title}</h3>
           {isLongBody(latest.body)
             ? (
-              <details class="profile-whats-new-expand">
+              <div class="profile-whats-new-expand">
                 <p class="profile-whats-new-preview">
                   {previewBody(latest.body)}
                 </p>
-                <summary>{copy.readFullUpdate}</summary>
-                <p class="profile-whats-new-full">{latest.body}</p>
-              </details>
+                <details class="profile-whats-new-details">
+                  <summary>{copy.readFullUpdate}</summary>
+                  <p class="profile-whats-new-full">{latest.body}</p>
+                </details>
+              </div>
             )
             : <p class="profile-whats-new-body">{latest.body}</p>}
         </div>
