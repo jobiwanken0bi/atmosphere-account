@@ -23,6 +23,7 @@ import {
   destroySession,
 } from "../../lib/session.ts";
 import { readRememberedAccountsFromHeader } from "../../lib/remembered-accounts.ts";
+import { getEffectiveAccountType } from "../../lib/account-types.ts";
 
 async function readDid(req: Request): Promise<string | null> {
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
@@ -74,11 +75,18 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     did: oauthSession.did,
     handle: oauthSession.handle,
   });
+  const accountType = await getEffectiveAccountType(oauthSession.did).catch(
+    () => null,
+  );
 
   return new Response(null, {
     status: 303,
     headers: {
-      location: "/explore/manage",
+      location: accountType === "project"
+        ? "/explore/manage"
+        : accountType === "user"
+        ? "/account/reviews"
+        : "/account/type",
       "set-cookie": buildSessionCookie(cookieValue),
     },
   });

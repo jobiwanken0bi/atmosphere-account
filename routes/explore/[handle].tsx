@@ -27,6 +27,9 @@ import {
 } from "../../lib/reviews.ts";
 import { accountProviderName } from "../../lib/account-providers.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { getAppUser, updateAppUserProfile } from "../../lib/account-types.ts";
+import { resolveIdentity } from "../../lib/identity.ts";
+import { getBskyProfile } from "../../lib/pds.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -242,10 +245,36 @@ function emptyReviewSummary(): ReviewSummary {
 async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
   return await Promise.all(
     reviews.map(async (review) => {
-      const profile = await getProfileByDid(review.reviewerDid).catch(() =>
-        null
-      );
-      return { ...review, reviewerHandle: profile?.handle ?? null };
+      const [appUser, profile] = await Promise.all([
+        getAppUser(review.reviewerDid).catch(() => null),
+        getProfileByDid(review.reviewerDid).catch(() => null),
+      ]);
+      let reviewerName = appUser?.displayName ?? profile?.name ?? null;
+      let reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
+      if (!reviewerName) {
+        const identity = await resolveIdentity(review.reviewerDid).catch(() =>
+          null
+        );
+        const bsky = identity
+          ? await getBskyProfile(identity.pdsUrl, review.reviewerDid).catch(
+            () => null,
+          )
+          : null;
+        reviewerName = bsky?.displayName ?? null;
+        reviewerHandle = reviewerHandle ?? identity?.handle ?? null;
+        if (appUser && identity) {
+          await updateAppUserProfile({
+            did: review.reviewerDid,
+            handle: identity.handle,
+            displayName: bsky?.displayName ?? null,
+          }).catch(() => {});
+        }
+      }
+      return {
+        ...review,
+        reviewerName,
+        reviewerHandle,
+      };
     }),
   );
 }

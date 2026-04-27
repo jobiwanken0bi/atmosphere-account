@@ -11,6 +11,7 @@ interface Props {
   /** null when signed out — drives whether the menu shows sign-in or
    *  sign-out + manage actions. */
   user: { did: string; handle: string } | null;
+  accountType?: "user" | "project" | null;
   /**
    * Server-resolved avatar URL (typically /api/me/avatar). Falls back
    * to a handle-initial pill if the image 404s or fails to load.
@@ -38,6 +39,7 @@ interface Props {
 export default function AccountMenu(
   {
     user,
+    accountType,
     avatarUrl,
     publicProfileHandle,
     rememberedAccounts,
@@ -63,6 +65,7 @@ export default function AccountMenu(
   return (
     <SignedInMenu
       user={user}
+      accountType={accountType ?? null}
       avatarUrl={avatarUrl ?? null}
       publicProfileHandle={publicProfileHandle ?? null}
       rememberedAccounts={rememberedAccounts ?? []}
@@ -72,13 +75,14 @@ export default function AccountMenu(
 
 interface SignedInMenuProps {
   user: { did: string; handle: string };
+  accountType: "user" | "project" | null;
   avatarUrl: string | null;
   publicProfileHandle: string | null;
   rememberedAccounts: RememberedAccount[];
 }
 
 function SignedInMenu(
-  { user, avatarUrl, publicProfileHandle, rememberedAccounts }:
+  { user, accountType, avatarUrl, publicProfileHandle, rememberedAccounts }:
     SignedInMenuProps,
 ) {
   const t = useT().nav.account;
@@ -161,14 +165,22 @@ function SignedInMenu(
             </a>
           )}
           <a
-            href="/explore/manage"
+            href={accountType === "user"
+              ? "/account/reviews"
+              : accountType === "project"
+              ? "/explore/manage"
+              : "/account/type"}
             class="account-menu-item"
             role="menuitem"
             onClick={() => {
               open.value = false;
             }}
           >
-            {t.manageProfile}
+            {accountType === "user"
+              ? t.manageReviews
+              : accountType === "project"
+              ? t.manageProfile
+              : t.chooseAccountType}
           </a>
           <form
             method="POST"

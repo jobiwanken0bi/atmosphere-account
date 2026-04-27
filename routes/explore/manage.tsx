@@ -8,6 +8,7 @@ import { getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { getEffectiveAccountType } from "../../lib/account-types.ts";
 
 /**
  * Build the deterministic public Bluesky CDN URL for a user's avatar
@@ -33,6 +34,19 @@ export const handler = define.handlers({
       return new Response(null, {
         status: 303,
         headers: { location: "/explore/create" },
+      });
+    }
+    const accountType = await getEffectiveAccountType(user.did).catch(() =>
+      null
+    );
+    if (accountType !== "project") {
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: accountType === "user"
+            ? "/account/reviews"
+            : "/account/type",
+        },
       });
     }
 

@@ -297,6 +297,26 @@ export async function deleteOwnReview(
   });
 }
 
+export async function deleteOwnReviewById(
+  reviewId: number,
+  reviewerDid: string,
+): Promise<boolean> {
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `
+        UPDATE review SET
+          status = 'removed',
+          updated_at = ?,
+          removed_at = ?,
+          removed_by = ?
+        WHERE id = ? AND reviewer_did = ? AND status != 'removed'
+      `,
+      args: [Date.now(), Date.now(), reviewerDid, reviewId, reviewerDid],
+    });
+    return Number(r.rowsAffected ?? 0) > 0;
+  });
+}
+
 export async function getReviewSummary(
   targetDid: string,
 ): Promise<ReviewSummary> {
@@ -355,6 +375,29 @@ export async function listVisibleReviews(
         LIMIT ?
       `,
       args: hasCursor ? [targetDid, opts.cursor!, limit] : [targetDid, limit],
+    });
+    return r.rows.map((row) => rowToReview(row as unknown as RawReviewRow));
+  });
+}
+
+export async function listReviewsByReviewer(
+  reviewerDid: string,
+  opts: { includeRemoved?: boolean } = {},
+): Promise<ReviewRow[]> {
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `
+        SELECT r.*, rr.body AS response_body,
+               rr.responder_did AS response_responder_did,
+               rr.created_at AS response_created_at,
+               rr.updated_at AS response_updated_at
+        FROM review r
+        LEFT JOIN review_response rr ON rr.review_id = r.id
+        WHERE r.reviewer_did = ?
+          ${opts.includeRemoved ? "" : "AND r.status != 'removed'"}
+        ORDER BY r.updated_at DESC
+      `,
+      args: [reviewerDid],
     });
     return r.rows.map((row) => rowToReview(row as unknown as RawReviewRow));
   });

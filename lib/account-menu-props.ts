@@ -12,21 +12,24 @@
  * previous user.
  */
 import type { State } from "../utils.ts";
+import type { AccountType } from "./account-types.ts";
 
 interface AccountMenuProps {
   user: { did: string; handle: string } | null;
+  accountType: AccountType | null;
   avatarUrl: string | null;
   publicProfileHandle: string | null;
   rememberedAccounts: { did: string; handle: string }[];
 }
 
 export function buildAccountMenuProps(
-  state: Pick<State, "user" | "rememberedAccounts">,
+  state: Pick<State, "user" | "accountType" | "rememberedAccounts">,
   publicProfileHandle: string | null = null,
 ): AccountMenuProps {
   const user = state.user;
   return {
     user: user ? { did: user.did, handle: user.handle } : null,
+    accountType: state.accountType ?? null,
     avatarUrl: user ? `/api/me/avatar?v=${encodeURIComponent(user.did)}` : null,
     publicProfileHandle,
     rememberedAccounts: state.rememberedAccounts ?? [],

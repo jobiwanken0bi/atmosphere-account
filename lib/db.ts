@@ -175,6 +175,21 @@ const SCHEMA_STATEMENTS: string[] = [
     expires_at INTEGER NOT NULL
   )`,
   /**
+   * App-level account type. OAuth identities can use the registry as
+   * plain users (reviews only) or as projects (can publish registry
+   * profiles). This is separate from the public `profile` table so
+   * regular users never need to create a registry profile.
+   */
+  `CREATE TABLE IF NOT EXISTS app_user (
+    did TEXT PRIMARY KEY,
+    handle TEXT NOT NULL,
+    display_name TEXT,
+    account_type TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS app_user_account_type ON app_user(account_type)`,
+  /**
    * User reports against profiles. Anonymous reports carry a hashed IP
    * for dedup + rate-limit; signed-in reports also record the
    * reporter's DID. Admin actions write `status`, `admin_notes`,
@@ -396,6 +411,11 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "takedown_at",
         ddl: "ALTER TABLE profile ADD COLUMN takedown_at INTEGER",
+      },
+      {
+        table: "app_user",
+        column: "display_name",
+        ddl: "ALTER TABLE app_user ADD COLUMN display_name TEXT",
       },
     ];
   for (const m of additiveColumns) {

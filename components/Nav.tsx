@@ -13,6 +13,7 @@ interface NavProps {
    */
   account?: {
     user: { did: string; handle: string } | null;
+    accountType?: "user" | "project" | null;
     avatarUrl?: string | null;
     publicProfileHandle?: string | null;
     /** Other accounts that have signed in on this device, used to
@@ -47,6 +48,7 @@ export default function Nav({ account }: NavProps = {}) {
         <div class="account-menu-rail" id="account-menu-rail">
           <AccountMenu
             user={account.user}
+            accountType={account.accountType ?? null}
             avatarUrl={account.avatarUrl ?? null}
             publicProfileHandle={account.publicProfileHandle ?? null}
             rememberedAccounts={account.rememberedAccounts ?? []}

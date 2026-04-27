@@ -10,6 +10,7 @@ import { withDb } from "./db.ts";
 import { hmacSign, hmacVerify, randomB64u } from "./jose.ts";
 import { IS_DEV, SESSION_SECRET } from "./env.ts";
 import { readRememberedAccounts } from "./remembered-accounts.ts";
+import { getEffectiveAccountType } from "./account-types.ts";
 
 export interface SessionUser {
   did: string;
@@ -120,9 +121,13 @@ export function clearSessionCookie(): string {
 export const sessionMiddleware = define.middleware(async (ctx) => {
   try {
     ctx.state.user = await readSessionCookie(ctx.req);
+    ctx.state.accountType = ctx.state.user
+      ? await getEffectiveAccountType(ctx.state.user.did).catch(() => null)
+      : null;
   } catch (err) {
     if (IS_DEV) console.warn("session read failed:", err);
     ctx.state.user = null;
+    ctx.state.accountType = null;
   }
   try {
     ctx.state.rememberedAccounts = await readRememberedAccounts(ctx.req);

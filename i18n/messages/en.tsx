@@ -40,6 +40,8 @@ const en = {
       signIn: "Sign in",
       signInHint: "Sign in with your Atmosphere account to publish a profile.",
       manageProfile: "Manage profile",
+      manageReviews: "Manage reviews",
+      chooseAccountType: "Choose account type",
       viewProfile: "View profile",
       signOut: "Sign out",
       avatarAlt: "Account",
@@ -881,6 +883,32 @@ const en = {
       spam: "Spam",
       other: "Other",
     },
+  },
+
+  accountType: {
+    title: "How will you use Atmosphere?",
+    body: (handle: string): string =>
+      `You're signed in as @${handle}. Choose whether this account represents you as a person or a project you want listed in Explore.`,
+    userTitle: "I'm a user",
+    userBody:
+      "Use your Bluesky profile for identity, write reviews, and manage your reviews. No registry profile is created.",
+    projectTitle: "I'm a project",
+    projectBody:
+      "Create and manage a public project profile in Explore with app links, screenshots, and developer details.",
+  },
+
+  accountReviews: {
+    eyebrow: "User account",
+    headline: "Your reviews",
+    subhead: (handle: string): string =>
+      `Signed in as @${handle}. Your user profile comes from Bluesky; reviews are managed here.`,
+    empty: "You haven't reviewed any projects yet.",
+    explore: "Explore projects",
+    viewProject: "View project",
+    delete: "Delete review",
+    deleting: "Deleting…",
+    deleted: "Review deleted.",
+    error: "Couldn't update the review",
   },
 
   reviews: {

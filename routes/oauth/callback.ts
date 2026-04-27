@@ -10,10 +10,15 @@
 import { define } from "../../utils.ts";
 import { completeCallback, isOAuthConfigured } from "../../lib/oauth.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
+import { getBskyProfile } from "../../lib/pds.ts";
 import {
   addRememberedAccountCookie,
   readRememberedAccountsFromHeader,
 } from "../../lib/remembered-accounts.ts";
+import {
+  requiresAccountTypeChoice,
+  updateAppUserProfile,
+} from "../../lib/account-types.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -47,7 +52,18 @@ export const handler = define.handlers({
         handle: result.handle,
       });
 
-      const headers = new Headers({ location: "/explore/manage" });
+      const needsChoice = await requiresAccountTypeChoice(result.did);
+      const bskyProfile = await getBskyProfile(result.pdsUrl, result.did).catch(
+        () => null,
+      );
+      await updateAppUserProfile({
+        did: result.did,
+        handle: result.handle,
+        displayName: bskyProfile?.displayName ?? null,
+      }).catch(() => {});
+      const headers = new Headers({
+        location: needsChoice ? "/account/type" : "/explore/manage",
+      });
       headers.append("set-cookie", sessionCookie);
       headers.append("set-cookie", rememberedCookie);
       return new Response(null, { status: 303, headers });

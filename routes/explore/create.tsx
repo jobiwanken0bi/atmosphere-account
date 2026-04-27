@@ -6,15 +6,25 @@ import SignInForm from "../../islands/SignInForm.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { getEffectiveAccountType } from "../../lib/account-types.ts";
 
-export default define.page(function ExploreCreate(ctx) {
+export default define.page(async function ExploreCreate(ctx) {
   const t = getMessages(ctx.state.locale).explore;
   const user = ctx.state.user;
 
   if (user) {
+    const accountType = await getEffectiveAccountType(user.did).catch(() =>
+      null
+    );
     return new Response(null, {
       status: 303,
-      headers: { location: "/explore/manage" },
+      headers: {
+        location: accountType === "project"
+          ? "/explore/manage"
+          : accountType === "user"
+          ? "/account/reviews"
+          : "/account/type",
+      },
     }) as unknown as preact.JSX.Element;
   }
 

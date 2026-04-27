@@ -5060,6 +5060,11 @@ body.explore-no-effects #nav-effects-bar {
 .profile-review-author {
   font-weight: 800;
 }
+.profile-review-handle {
+  margin: 0.1rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(18, 26, 47, 0.55);
+}
 .profile-review-date {
   margin-top: 0.15rem;
   font-size: 0.78rem;
@@ -5109,6 +5114,7 @@ body.explore-no-effects #nav-effects-bar {
 }
 .dark-phase .profile-reviews-threshold,
 .dark-phase .profile-rating-row,
+.dark-phase .profile-review-handle,
 .dark-phase .profile-review-date,
 .dark-phase .profile-review-char-count,
 .dark-phase .profile-review-action-hint,
@@ -5140,6 +5146,133 @@ body.explore-no-effects #nav-effects-bar {
     grid-template-columns: 1fr;
   }
   .profile-review-header {
+    flex-direction: column;
+  }
+}
+
+/* Account type onboarding + user review management */
+.account-type-section,
+.account-reviews-section {
+  min-height: 70vh;
+  padding: 8rem 0 4rem;
+}
+.account-type-backdrop {
+  position: fixed;
+}
+.account-type-card {
+  width: min(560px, 100%);
+}
+.account-type-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+.account-type-options form {
+  margin: 0;
+}
+.account-type-option {
+  display: flex;
+  min-height: 10rem;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: flex-start;
+  justify-content: flex-start;
+  border: 1px solid rgba(18, 26, 47, 0.14);
+  border-radius: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.account-type-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(81, 114, 255, 0.45);
+  background: rgba(255, 255, 255, 0.9);
+}
+.account-type-option strong {
+  font-size: 1rem;
+}
+.account-type-option span {
+  font-size: 0.9rem;
+  color: rgba(18, 26, 47, 0.68);
+}
+.account-reviews-header {
+  margin-bottom: 1.5rem;
+}
+.account-reviews-empty {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.2rem;
+}
+.user-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.user-review-row {
+  padding: 1rem 1.1rem;
+  border-radius: 1.2rem;
+}
+.user-review-row--deleted {
+  opacity: 0.65;
+}
+.user-review-row-header,
+.user-review-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.user-review-row-header h2,
+.user-review-row-header p,
+.user-review-row-body {
+  margin: 0;
+}
+.user-review-row-header h2 {
+  font-size: 1rem;
+}
+.user-review-row-header a {
+  color: inherit;
+  opacity: 0.68;
+}
+.user-review-row-body {
+  margin-top: 0.8rem;
+  white-space: pre-wrap;
+}
+.user-review-row-actions {
+  align-items: center;
+  margin-top: 1rem;
+  color: rgba(18, 26, 47, 0.58);
+  font-size: 0.82rem;
+}
+.dark-phase .account-type-option {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.dark-phase .account-type-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(160, 180, 255, 0.45);
+}
+.dark-phase .account-type-option span,
+.dark-phase .user-review-row-actions {
+  color: rgba(255, 255, 255, 0.6);
+}
+@media (max-width: 640px) {
+  .account-type-options {
+    grid-template-columns: 1fr;
+  }
+  .account-reviews-empty {
+    align-items: flex-start;
     flex-direction: column;
   }
 }

@@ -4,6 +4,7 @@ import ReportReviewButton from "../../islands/ReportReviewButton.tsx";
 import ReviewResponseComposer from "../../islands/ReviewResponseComposer.tsx";
 
 export interface DisplayReview extends ReviewRow {
+  reviewerName: string | null;
   reviewerHandle: string | null;
 }
 
@@ -65,10 +66,14 @@ export default function ProfileReviewList(
                 <header class="profile-review-header">
                   <div>
                     <p class="profile-review-author">
-                      {review.reviewerHandle
-                        ? `@${review.reviewerHandle}`
-                        : copy.reviewerFallback}
+                      {review.reviewerName ?? review.reviewerHandle ??
+                        copy.reviewerFallback}
                     </p>
+                    {review.reviewerHandle && (
+                      <p class="profile-review-handle">
+                        @{review.reviewerHandle}
+                      </p>
+                    )}
                     <p class="profile-review-date">
                       {new Date(review.createdAt).toISOString().slice(0, 10)}
                       {review.updatedAt > review.createdAt && (

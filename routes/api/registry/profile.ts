@@ -29,6 +29,7 @@ import {
   upsertProfile,
 } from "../../../lib/registry.ts";
 import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
+import { getEffectiveAccountType } from "../../../lib/account-types.ts";
 
 const ICON_MAX_BYTES = 200_000;
 const SCREENSHOT_MAX_BYTES = 5_000_000;
@@ -160,6 +161,12 @@ export const handler = define.handlers({
   async PUT(ctx) {
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const accountType = await getEffectiveAccountType(user.did).catch(() =>
+      null
+    );
+    if (accountType !== "project") {
+      return new Response("project account required", { status: 403 });
+    }
 
     const session = await loadSession(user.did);
     if (!session) {
@@ -431,6 +438,12 @@ export const handler = define.handlers({
   async DELETE(ctx) {
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const accountType = await getEffectiveAccountType(user.did).catch(() =>
+      null
+    );
+    if (accountType !== "project") {
+      return new Response("project account required", { status: 403 });
+    }
 
     const session = await loadSession(user.did);
     if (!session) return new Response("OAuth session expired", { status: 401 });
