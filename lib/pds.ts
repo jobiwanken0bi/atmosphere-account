@@ -43,6 +43,28 @@ export async function putProfileRecord(
   return await res.json() as PutRecordResult;
 }
 
+export async function getProfileRecord(
+  did: string,
+  pdsUrl: string,
+): Promise<ProfileRecord | null> {
+  const url = new URL(
+    `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.getRecord`,
+  );
+  url.searchParams.set("repo", did);
+  url.searchParams.set("collection", PROFILE_NSID);
+  url.searchParams.set("rkey", "self");
+  const res = await authedFetch(did, url.toString());
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`getRecord failed: HTTP ${res.status}: ${text}`);
+  }
+  const json = await res.json() as { value?: unknown };
+  return json.value && typeof json.value === "object"
+    ? json.value as ProfileRecord
+    : null;
+}
+
 export async function putReviewRecord(
   did: string,
   pdsUrl: string,

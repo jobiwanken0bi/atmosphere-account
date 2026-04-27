@@ -5,7 +5,7 @@
     "main": {
       "type": "permission-set",
       "title": "Atmosphere Account",
-      "detail": "Manage your Atmosphere profile, reviews, and updates.",
+      "detail": "Manage your Atmosphere explore profile, reviews, and updates.",
       "permissions": [
         {
           "type": "permission",

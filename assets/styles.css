@@ -5559,6 +5559,7 @@ body.explore-no-effects #nav-effects-bar {
   font-size: clamp(1.15rem, 2vw, 1.45rem);
 }
 .user-profile-settings {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
   gap: 1.2rem;
@@ -5566,6 +5567,12 @@ body.explore-no-effects #nav-effects-bar {
   margin-bottom: 1rem;
   padding: 1.2rem;
   border-radius: 1.2rem;
+}
+.user-profile-settings:has(.user-profile-client-form.is-modal-open) {
+  z-index: 300;
+}
+.user-profile-client-form.is-modal-open .modal-backdrop {
+  z-index: 1000;
 }
 .user-profile-preview {
   display: flex;
@@ -5621,6 +5628,16 @@ body.explore-no-effects #nav-effects-bar {
 .user-profile-client-form {
   display: flex;
   flex-direction: column;
+  gap: 0.75rem;
+}
+.user-profile-bio-input {
+  min-height: 6rem;
+  resize: vertical;
+}
+.user-profile-save-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.75rem;
 }
 .user-bsky-picker-label {

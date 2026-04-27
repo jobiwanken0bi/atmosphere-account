@@ -196,6 +196,37 @@ export async function updateAppUserBskyClient(
   });
 }
 
+export async function updateAppUserSettings(input: {
+  did: string;
+  displayName: string;
+  bio: string;
+  bskyClientId: string;
+  bskyButtonVisible: boolean;
+}): Promise<void> {
+  const client = getBskyClient(input.bskyClientId);
+  await withDb(async (c) => {
+    await c.execute({
+      sql: `
+        UPDATE app_user SET
+          display_name = ?,
+          bio = ?,
+          bsky_client_id = ?,
+          bsky_button_visible = ?,
+          updated_at = ?
+        WHERE did = ? AND account_type = 'user'
+      `,
+      args: [
+        input.displayName.trim(),
+        input.bio.trim(),
+        client.id,
+        input.bskyButtonVisible ? 1 : 0,
+        Date.now(),
+        input.did,
+      ],
+    });
+  });
+}
+
 /**
  * Existing published registry profiles predate account types. Treat those
  * DIDs as projects so old project accounts do not get forced through the

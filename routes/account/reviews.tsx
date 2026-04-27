@@ -126,12 +126,21 @@ function AccountReviewsPage(
                 </div>
               </div>
               <UserBskyClientPicker
+                displayName={displayName}
+                bio={profile?.bio ?? ""}
                 selectedClientId={profile?.bskyClientId ?? null}
                 visible={profile?.bskyButtonVisible ?? true}
+                nameLabel={copy.nameLabel}
+                namePlaceholder={copy.namePlaceholder}
+                bioLabel={copy.bioLabel}
+                bioPlaceholder={copy.bioPlaceholder}
                 label={copy.clientLabel}
                 displayLabel={copy.displayBskyButton}
                 settingsLabel={copy.configureBskyClient}
                 saveLabel={copy.saveClient}
+                savingLabel={copy.saving}
+                savedLabel={copy.saved}
+                errorLabel={copy.saveError}
                 cancelLabel={copy.cancel}
                 doneLabel={copy.done}
               />
