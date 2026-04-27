@@ -18,7 +18,7 @@ export default function ProfileRatingSummary({ summary, copy }: Props) {
   return (
     <section class="profile-reviews-summary glass">
       <div>
-        <p class="profile-reviews-eyebrow">{copy.heading}</p>
+        <h2 class="profile-card-section-title">{copy.heading}</h2>
         {hasAggregate
           ? (
             <p class="profile-reviews-average">

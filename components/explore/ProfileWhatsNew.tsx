@@ -65,7 +65,7 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
   if (!latest) {
     return (
       <section class="profile-whats-new glass">
-        <h2>{copy.heading}</h2>
+        <h2 class="profile-card-section-title">{copy.heading}</h2>
         <p class="profile-whats-new-empty">{copy.empty}</p>
       </section>
     );
@@ -76,7 +76,7 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
       <div class="profile-whats-new-main">
         <div class="profile-whats-new-copy">
           <div class="profile-whats-new-heading-row">
-            <p class="text-eyebrow">{copy.heading}</p>
+            <h2 class="profile-card-section-title">{copy.heading}</h2>
             {history.length > 0 && (
               <a
                 href="#profile-version-history"
@@ -89,7 +89,7 @@ export default function ProfileWhatsNew({ updates, copy }: Props) {
             )}
           </div>
           <UpdateMeta update={latest} />
-          <h2>{latest.title}</h2>
+          <h3 class="profile-whats-new-title">{latest.title}</h3>
           {isLongBody(latest.body)
             ? (
               <details class="profile-whats-new-expand">

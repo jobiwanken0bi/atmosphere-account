@@ -56,7 +56,7 @@ export default function ProfileReviewList(
   return (
     <section class="profile-reviews-panel glass">
       <div class="profile-reviews-panel-header">
-        <h2 class="profile-reviews-heading">{copy.heading}</h2>
+        <h2 class="profile-card-section-title">{copy.heading}</h2>
         {action}
       </div>
       {reviews.length === 0

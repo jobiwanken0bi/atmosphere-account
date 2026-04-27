@@ -5045,19 +5045,20 @@ body.explore-no-effects #nav-effects-bar {
 .profile-whats-new p {
   margin: 0;
 }
-.profile-whats-new h2 {
-  margin-top: 0.25rem;
-  font-size: clamp(1rem, 1.8vw, 1.2rem);
-}
-.profile-whats-new-heading-row .text-eyebrow,
-.profile-reviews-eyebrow,
-.profile-reviews-heading {
+.profile-card-section-title {
   margin: 0;
   font-size: 1rem;
   font-weight: 800;
   letter-spacing: 0;
+  line-height: 1.25;
   text-transform: none;
   color: rgba(18, 26, 47, 0.92);
+}
+.profile-whats-new-title {
+  margin-top: 0.25rem;
+  font-size: clamp(1rem, 1.8vw, 1.2rem);
+  font-weight: 750;
+  line-height: 1.3;
 }
 .profile-whats-new-body,
 .profile-whats-new-preview,
@@ -5411,9 +5412,7 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .profile-review-response-label {
   color: rgba(255, 255, 255, 0.65);
 }
-.dark-phase .profile-whats-new-heading-row .text-eyebrow,
-.dark-phase .profile-reviews-eyebrow,
-.dark-phase .profile-reviews-heading {
+.dark-phase .profile-card-section-title {
   color: rgba(255, 255, 255, 0.92);
 }
 .dark-phase .profile-reviews-threshold,
@@ -5647,60 +5646,6 @@ body.explore-no-effects #nav-effects-bar {
   font-weight: 750;
   color: rgba(18, 26, 47, 0.7);
 }
-.user-bsky-picker {
-  position: relative;
-}
-.user-bsky-picker-trigger {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  border: 1px solid rgba(18, 26, 47, 0.14);
-  border-radius: 0.95rem;
-  padding: 0.65rem 0.85rem;
-  background: rgba(255, 255, 255, 0.82);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-.user-bsky-picker-trigger:hover,
-.user-bsky-picker-trigger[aria-expanded="true"] {
-  background: rgba(255, 255, 255, 0.96);
-  border-color: rgba(42, 90, 168, 0.3);
-  box-shadow: 0 10px 24px rgba(14, 20, 40, 0.08);
-}
-.user-bsky-picker-trigger:focus-visible {
-  outline: 2px solid rgba(42, 90, 168, 0.45);
-  outline-offset: 2px;
-}
-.user-bsky-picker-chevron {
-  margin-left: auto;
-  color: rgba(18, 26, 47, 0.55);
-  transition: transform 0.15s ease;
-}
-.user-bsky-picker-trigger[aria-expanded="true"] .user-bsky-picker-chevron {
-  transform: rotate(180deg);
-}
-.user-bsky-picker-popover {
-  position: absolute;
-  top: calc(100% + 0.45rem);
-  left: 0;
-  right: 0;
-  z-index: 30;
-  margin-top: 0;
-  box-shadow: 0 18px 46px rgba(14, 20, 40, 0.18);
-}
-.user-bsky-picker-popover .bsky-client-row {
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-}
 .user-review-list {
   display: flex;
   flex-direction: column;
@@ -5761,18 +5706,6 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .user-public-avatar {
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.75);
-}
-.dark-phase .user-bsky-picker-trigger {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-.dark-phase .user-bsky-picker-trigger:hover,
-.dark-phase .user-bsky-picker-trigger[aria-expanded="true"] {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(160, 200, 255, 0.35);
-}
-.dark-phase .user-bsky-picker-chevron {
-  color: rgba(255, 255, 255, 0.55);
 }
 @media (max-width: 640px) {
   .account-type-options {

@@ -923,8 +923,7 @@ const en = {
     body: (handle: string): string =>
       `You're signed in as @${handle}. Choose whether this account represents you as a person or a project you want listed in Explore.`,
     userTitle: "I'm a user",
-    userBody:
-      "Create a user profile from Bluesky, write reviews, and manage your reviews.",
+    userBody: "Create a user profile to write and manage your reviews.",
     projectTitle: "I'm a project",
     projectBody:
       "Create and manage a public project profile in Explore with app links, screenshots, and developer details.",
