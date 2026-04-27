@@ -97,6 +97,7 @@ interface FlowState {
   did: string;
   handle: string;
   pdsUrl: string;
+  returnTo?: string;
   asNonce?: string;
 }
 
@@ -236,6 +237,7 @@ export async function deleteSession(did: string): Promise<void> {
 
 export async function startLogin(
   handleOrDid: string,
+  returnTo?: string | null,
 ): Promise<{ redirectUrl: string }> {
   ensureConfigured();
   const id = await resolveIdentity(handleOrDid);
@@ -254,6 +256,7 @@ export async function startLogin(
     did: id.did,
     handle: id.handle,
     pdsUrl: id.pdsUrl,
+    returnTo: returnTo ?? undefined,
   };
   await saveFlowState(flow);
 
@@ -332,6 +335,7 @@ export interface CallbackResult {
   did: string;
   handle: string;
   pdsUrl: string;
+  returnTo?: string;
 }
 
 export async function completeCallback(params: {
@@ -374,7 +378,12 @@ export async function completeCallback(params: {
   await saveSession(session);
   await deleteFlowState(params.state);
 
-  return { did: session.did, handle: session.handle, pdsUrl: session.pdsUrl };
+  return {
+    did: session.did,
+    handle: session.handle,
+    pdsUrl: session.pdsUrl,
+    returnTo: flow.returnTo,
+  };
 }
 
 interface TokenResponse {

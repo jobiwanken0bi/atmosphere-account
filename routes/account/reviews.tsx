@@ -5,9 +5,22 @@ import Footer from "../../components/Footer.tsx";
 import UserReviewRow from "../../islands/UserReviewRow.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getEffectiveAccountType } from "../../lib/account-types.ts";
+import {
+  getAppUser,
+  getEffectiveAccountType,
+} from "../../lib/account-types.ts";
+import { BSKY_CLIENTS } from "../../lib/bsky-clients.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { listReviewsByReviewer, type ReviewRow } from "../../lib/reviews.ts";
+
+function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
+  const ext = mime === "image/png"
+    ? "png"
+    : mime === "image/webp"
+    ? "webp"
+    : "jpeg";
+  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@${ext}`;
+}
 
 interface ReviewWithTarget extends ReviewRow {
   targetHandle: string;
@@ -33,7 +46,10 @@ export const handler = define.handlers({
       });
     }
 
-    const reviews = await listReviewsByReviewer(user.did).catch(() => []);
+    const [appUser, reviews] = await Promise.all([
+      getAppUser(user.did).catch(() => null),
+      listReviewsByReviewer(user.did).catch(() => []),
+    ]);
     const enriched: ReviewWithTarget[] = await Promise.all(
       reviews.map(async (review) => {
         const target = await getProfileByDid(review.targetDid, {
@@ -51,6 +67,7 @@ export const handler = define.handlers({
       <AccountReviewsPage
         account={buildAccountMenuProps(ctx.state)}
         handle={user.handle}
+        profile={appUser}
         reviews={enriched}
         t={getMessages(ctx.state.locale)}
       />,
@@ -61,15 +78,20 @@ export const handler = define.handlers({
 interface AccountReviewsPageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   handle: string;
+  profile: Awaited<ReturnType<typeof getAppUser>>;
   reviews: ReviewWithTarget[];
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
 function AccountReviewsPage(
-  { account, handle, reviews, t }: AccountReviewsPageProps,
+  { account, handle, profile, reviews, t }: AccountReviewsPageProps,
 ) {
   const copy = t.accountReviews;
+  const avatarUrl = profile?.avatarCid && profile.avatarMime
+    ? bskyCdnAvatarUrl(profile.did, profile.avatarCid, profile.avatarMime)
+    : null;
+  const displayName = profile?.displayName || handle;
   return (
     <div id="page-top">
       <GlassClouds />
@@ -82,6 +104,51 @@ function AccountReviewsPage(
               <h1 class="text-section">{copy.headline}</h1>
               <p class="text-body mt-2">{copy.subhead(handle)}</p>
             </header>
+
+            <section class="glass user-profile-settings">
+              <div class="user-profile-preview">
+                <div class="user-profile-avatar">
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt="" loading="lazy" />
+                    : <span>{displayName.slice(0, 1).toUpperCase()}</span>}
+                </div>
+                <div>
+                  <h2>{displayName}</h2>
+                  <p class="user-profile-handle">@{handle}</p>
+                  {profile?.bio && <p class="user-profile-bio">{profile.bio}
+                  </p>}
+                  <a
+                    class="profile-form-button-secondary"
+                    href={`/users/${encodeURIComponent(handle)}`}
+                  >
+                    {copy.viewProfile}
+                  </a>
+                </div>
+              </div>
+              <form
+                method="POST"
+                action="/api/account/profile"
+                class="user-profile-client-form"
+              >
+                <label>
+                  <span>{copy.clientLabel}</span>
+                  <select name="bskyClientId">
+                    {BSKY_CLIENTS.map((client) => (
+                      <option
+                        key={client.id}
+                        value={client.id}
+                        selected={profile?.bskyClientId === client.id}
+                      >
+                        {client.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" class="profile-form-button-primary">
+                  {copy.saveClient}
+                </button>
+              </form>
+            </section>
 
             {reviews.length === 0
               ? (

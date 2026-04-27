@@ -6,6 +6,8 @@ import ReviewResponseComposer from "../../islands/ReviewResponseComposer.tsx";
 export interface DisplayReview extends ReviewRow {
   reviewerName: string | null;
   reviewerHandle: string | null;
+  reviewerAvatarUrl: string | null;
+  reviewerProfileHref: string | null;
 }
 
 interface Props {
@@ -64,23 +66,45 @@ export default function ProfileReviewList(
             {reviews.map((review) => (
               <article class="profile-review-card glass" key={review.id}>
                 <header class="profile-review-header">
-                  <div>
-                    <p class="profile-review-author">
-                      {review.reviewerName ?? review.reviewerHandle ??
-                        copy.reviewerFallback}
-                    </p>
-                    {review.reviewerHandle && (
-                      <p class="profile-review-handle">
-                        @{review.reviewerHandle}
+                  <a
+                    class="profile-review-author-row"
+                    href={review.reviewerProfileHref ?? undefined}
+                  >
+                    <span class="profile-review-avatar" aria-hidden="true">
+                      {review.reviewerAvatarUrl
+                        ? (
+                          <img
+                            src={review.reviewerAvatarUrl}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        )
+                        : (
+                          <span>
+                            {(review.reviewerName ?? review.reviewerHandle ??
+                              copy.reviewerFallback).slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                    </span>
+                    <div>
+                      <p class="profile-review-author">
+                        {review.reviewerName ?? review.reviewerHandle ??
+                          copy.reviewerFallback}
                       </p>
-                    )}
-                    <p class="profile-review-date">
-                      {new Date(review.createdAt).toISOString().slice(0, 10)}
-                      {review.updatedAt > review.createdAt && (
-                        <span>· {copy.edited}</span>
+                      {review.reviewerHandle && (
+                        <p class="profile-review-handle">
+                          @{review.reviewerHandle}
+                        </p>
                       )}
-                    </p>
-                  </div>
+                      <p class="profile-review-date">
+                        {new Date(review.createdAt).toISOString().slice(0, 10)}
+                        {review.updatedAt > review.createdAt && (
+                          <span>· {copy.edited}</span>
+                        )}
+                      </p>
+                    </div>
+                  </a>
                   <p
                     class="profile-review-stars"
                     aria-label={`${review.rating} stars`}

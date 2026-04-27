@@ -9,26 +9,42 @@
 import { define } from "../../utils.ts";
 import { isOAuthConfigured, startLogin } from "../../lib/oauth.ts";
 
-async function getHandle(req: Request, url: URL): Promise<string | null> {
+function safeNext(raw: string | null): string | null {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
+}
+
+async function getLoginInput(
+  req: Request,
+  url: URL,
+): Promise<{ handle: string | null; next: string | null }> {
   const fromQs = url.searchParams.get("handle");
-  if (fromQs) return fromQs.trim();
+  const nextFromQs = safeNext(url.searchParams.get("next"));
+  if (fromQs) return { handle: fromQs.trim(), next: nextFromQs };
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => null) as
-      | { handle?: string }
+      | { handle?: string; next?: string }
       | null;
-    return body?.handle?.trim() ?? null;
+    return {
+      handle: body?.handle?.trim() ?? null,
+      next: safeNext(body?.next ?? null),
+    };
   }
   if (
     ct.includes("application/x-www-form-urlencoded") ||
     ct.includes("multipart/form-data")
   ) {
     const form = await req.formData().catch(() => null);
-    if (!form) return null;
+    if (!form) return { handle: null, next: nextFromQs };
     const v = form.get("handle");
-    return typeof v === "string" ? v.trim() : null;
+    const next = form.get("next");
+    return {
+      handle: typeof v === "string" ? v.trim() : null,
+      next: safeNext(typeof next === "string" ? next : null) ?? nextFromQs,
+    };
   }
-  return null;
+  return { handle: null, next: nextFromQs };
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
@@ -38,12 +54,15 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       { status: 503 },
     );
   }
-  const handleStr = await getHandle(ctx.req, ctx.url);
+  const { handle: handleStr, next: returnTo } = await getLoginInput(
+    ctx.req,
+    ctx.url,
+  );
   if (!handleStr) {
     return new Response("missing handle", { status: 400 });
   }
   try {
-    const { redirectUrl } = await startLogin(handleStr);
+    const { redirectUrl } = await startLogin(handleStr, returnTo);
     return new Response(null, {
       status: 303,
       headers: { location: redirectUrl },

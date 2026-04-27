@@ -251,21 +251,9 @@ export default define.page(function App(ctx) {
   const { Component, state, url } = ctx;
   const locale = state.locale;
   const t = getMessages(locale);
-  /**
-   * The dynamic sky / sun / cloud parallax is intentionally disabled on
-   * content-dense pages — it competes with reading. We force-apply
-   * `sky-static` server-side and hide the user-facing toggle on:
-   *   - /explore and any sub-route
-   *   - /developer-resources (dense reference material)
-   *   - /admin and any sub-route (operator surface; effects add nothing)
-   */
-  const effectsOff = url.pathname === "/explore" ||
-    url.pathname.startsWith("/explore/") ||
-    url.pathname === "/developer-resources" ||
-    url.pathname === "/admin" ||
-    url.pathname.startsWith("/admin/");
-  const htmlClass = effectsOff ? "sky-static" : undefined;
-  const bodyClass = effectsOff ? "sky-bg explore-no-effects" : "sky-bg";
+  const effectsOn = url.pathname === "/";
+  const htmlClass = effectsOn ? undefined : "sky-static";
+  const bodyClass = effectsOn ? "sky-bg" : "sky-bg explore-no-effects";
   return (
     <html lang={locale} class={htmlClass}>
       <head>
@@ -287,32 +275,40 @@ export default define.page(function App(ctx) {
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/svg+xml" href="/union.svg" />
         <link rel="apple-touch-icon" href="/union.svg" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "(function(){try{var m=window.matchMedia&&window.matchMedia('(max-width: 768px)');if(m&&m.matches)document.documentElement.classList.add('sky-static');else if(localStorage.getItem('atmosphere-sky-effects')==='0')document.documentElement.classList.add('sky-static');}catch(e){}})();",
-          }}
-        />
-        <script
-          src="https://unpkg.com/@lottiefiles/lottie-player@2.0.8/dist/lottie-player.js"
-          defer
-        />
+        {effectsOn && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html:
+                "(function(){try{var m=window.matchMedia&&window.matchMedia('(max-width: 768px)');if(m&&m.matches)document.documentElement.classList.add('sky-static');else if(localStorage.getItem('atmosphere-sky-effects')==='0')document.documentElement.classList.add('sky-static');}catch(e){}})();",
+            }}
+          />
+        )}
+        {effectsOn && (
+          <script
+            src="https://unpkg.com/@lottiefiles/lottie-player@2.0.8/dist/lottie-player.js"
+            defer
+          />
+        )}
       </head>
       <body class={bodyClass}>
         <I18nProvider locale={locale}>
           <Component />
         </I18nProvider>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `window.__ATMOSPHERE_I18N__=${
-              JSON.stringify({
-                effectsOn: t.nav.effectsOn,
-                effectsOff: t.nav.effectsOff,
-              })
-            };`,
-          }}
-        />
-        <script dangerouslySetInnerHTML={{ __html: inlineScript }} />
+        {effectsOn && (
+          <>
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `window.__ATMOSPHERE_I18N__=${
+                  JSON.stringify({
+                    effectsOn: t.nav.effectsOn,
+                    effectsOff: t.nav.effectsOff,
+                  })
+                };`,
+              }}
+            />
+            <script dangerouslySetInnerHTML={{ __html: inlineScript }} />
+          </>
+        )}
       </body>
     </html>
   );

@@ -20,19 +20,24 @@ export const handler = define.handlers({
       });
     }
 
+    const rawNext = ctx.url.searchParams.get("next");
+    const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+      ? rawNext
+      : null;
+
     const existingType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
     if (existingType === "project") {
       return new Response(null, {
         status: 303,
-        headers: { location: "/explore/manage" },
+        headers: { location: next ?? "/explore/manage" },
       });
     }
     if (existingType === "user") {
       return new Response(null, {
         status: 303,
-        headers: { location: "/account/reviews" },
+        headers: { location: next ?? "/account/reviews" },
       });
     }
 
@@ -40,6 +45,7 @@ export const handler = define.handlers({
       <AccountTypePage
         account={buildAccountMenuProps(ctx.state)}
         handle={user.handle}
+        next={next}
         t={getMessages(ctx.state.locale)}
       />,
     );
@@ -49,11 +55,12 @@ export const handler = define.handlers({
 interface AccountTypePageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   handle: string;
+  next: string | null;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
-function AccountTypePage({ account, handle, t }: AccountTypePageProps) {
+function AccountTypePage({ account, handle, next, t }: AccountTypePageProps) {
   const copy = t.accountType;
   return (
     <div id="page-top">
@@ -70,6 +77,7 @@ function AccountTypePage({ account, handle, t }: AccountTypePageProps) {
               <div class="account-type-options">
                 <form method="POST" action="/api/account/type">
                   <input type="hidden" name="accountType" value="user" />
+                  {next && <input type="hidden" name="next" value={next} />}
                   <button type="submit" class="account-type-option">
                     <strong>{copy.userTitle}</strong>
                     <span>{copy.userBody}</span>
@@ -77,6 +85,7 @@ function AccountTypePage({ account, handle, t }: AccountTypePageProps) {
                 </form>
                 <form method="POST" action="/api/account/type">
                   <input type="hidden" name="accountType" value="project" />
+                  {next && <input type="hidden" name="next" value={next} />}
                   <button type="submit" class="account-type-option">
                     <strong>{copy.projectTitle}</strong>
                     <span>{copy.projectBody}</span>

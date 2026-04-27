@@ -3525,8 +3525,16 @@ body {
 }
 
 /* Hide the sky-effects toggle anywhere we explicitly disable effects (e.g. /explore). */
+body.explore-no-effects {
+  --nav-effects-strip: 0;
+}
 body.explore-no-effects #nav-effects-bar {
   display: none !important;
+}
+body.explore-no-effects .reveal {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 
 /* ---- Sign-in handle preview dropdown ---- */
@@ -5051,6 +5059,32 @@ body.explore-no-effects #nav-effects-bar {
   gap: 1rem;
   align-items: flex-start;
 }
+.profile-review-author-row {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  color: inherit;
+  text-decoration: none;
+}
+.profile-review-avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(18, 26, 47, 0.1);
+  color: rgba(18, 26, 47, 0.68);
+  font-size: 0.9rem;
+  font-weight: 850;
+}
+.profile-review-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .profile-review-author,
 .profile-review-date,
 .profile-review-body,
@@ -5133,6 +5167,10 @@ body.explore-no-effects #nav-effects-bar {
 .dark-phase .profile-review-stars span {
   color: rgba(255, 255, 255, 0.25);
 }
+.dark-phase .profile-review-avatar {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.72);
+}
 .dark-phase .profile-review-body-field textarea,
 .dark-phase .profile-review-response-composer textarea {
   background: rgba(255, 255, 255, 0.06);
@@ -5213,6 +5251,81 @@ body.explore-no-effects #nav-effects-bar {
   justify-content: space-between;
   padding: 1.2rem;
 }
+.user-profile-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 1.2rem;
+  align-items: start;
+  margin-bottom: 1rem;
+  padding: 1.2rem;
+  border-radius: 1.2rem;
+}
+.user-profile-preview {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.user-profile-avatar,
+.user-public-avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(18, 26, 47, 0.1);
+  color: rgba(18, 26, 47, 0.7);
+  font-weight: 850;
+}
+.user-profile-avatar {
+  width: 4rem;
+  height: 4rem;
+  font-size: 1.3rem;
+}
+.user-public-avatar {
+  width: 6.5rem;
+  height: 6.5rem;
+  font-size: 2rem;
+}
+.user-profile-avatar img,
+.user-public-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.user-profile-preview h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.user-profile-handle {
+  margin: 0.15rem 0 0.6rem;
+  color: rgba(18, 26, 47, 0.58);
+}
+.user-profile-bio {
+  margin-top: 0.7rem;
+  white-space: pre-wrap;
+}
+.user-profile-client-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.user-profile-client-form label span {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: rgba(18, 26, 47, 0.7);
+}
+.user-profile-client-form select {
+  width: 100%;
+  border: 1px solid rgba(18, 26, 47, 0.14);
+  border-radius: 0.8rem;
+  padding: 0.7rem 0.8rem;
+  background: rgba(255, 255, 255, 0.92);
+  color: inherit;
+  font: inherit;
+}
 .user-review-list {
   display: flex;
   flex-direction: column;
@@ -5264,8 +5377,19 @@ body.explore-no-effects #nav-effects-bar {
   border-color: rgba(160, 180, 255, 0.45);
 }
 .dark-phase .account-type-option span,
+.dark-phase .user-profile-handle,
+.dark-phase .user-profile-client-form label span,
 .dark-phase .user-review-row-actions {
   color: rgba(255, 255, 255, 0.6);
+}
+.dark-phase .user-profile-avatar,
+.dark-phase .user-public-avatar {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+}
+.dark-phase .user-profile-client-form select {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 @media (max-width: 640px) {
   .account-type-options {
@@ -5273,6 +5397,39 @@ body.explore-no-effects #nav-effects-bar {
   }
   .account-reviews-empty {
     align-items: flex-start;
+    flex-direction: column;
+  }
+  .user-profile-settings {
+    grid-template-columns: 1fr;
+  }
+}
+
+.user-public-section {
+  min-height: 70vh;
+  padding: 8rem 0 4rem;
+}
+.user-public-card {
+  display: flex;
+  gap: 1.4rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+  padding: 1.5rem;
+  border-radius: 1.4rem;
+}
+.user-public-body {
+  min-width: 0;
+}
+.user-public-client-link {
+  display: inline-flex;
+  margin-top: 1rem;
+}
+.user-public-client-link img {
+  width: 22px;
+  height: 22px;
+  border-radius: 0.4rem;
+}
+@media (max-width: 640px) {
+  .user-public-card {
     flex-direction: column;
   }
 }

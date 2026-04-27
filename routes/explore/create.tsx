@@ -11,6 +11,10 @@ import { getEffectiveAccountType } from "../../lib/account-types.ts";
 export default define.page(async function ExploreCreate(ctx) {
   const t = getMessages(ctx.state.locale).explore;
   const user = ctx.state.user;
+  const rawNext = ctx.url.searchParams.get("next");
+  const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+    ? rawNext
+    : null;
 
   if (user) {
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
@@ -20,10 +24,10 @@ export default define.page(async function ExploreCreate(ctx) {
       status: 303,
       headers: {
         location: accountType === "project"
-          ? "/explore/manage"
+          ? next ?? "/explore/manage"
           : accountType === "user"
-          ? "/account/reviews"
-          : "/account/type",
+          ? next ?? "/account/reviews"
+          : `/account/type${next ? `?next=${encodeURIComponent(next)}` : ""}`,
       },
     }) as unknown as preact.JSX.Element;
   }
@@ -56,7 +60,7 @@ export default define.page(async function ExploreCreate(ctx) {
               }}
             >
               {isOAuthConfigured()
-                ? <SignInForm />
+                ? <SignInForm returnTo={next ?? undefined} />
                 : <p class="text-body">{t.create.configError}</p>}
             </div>
           </div>

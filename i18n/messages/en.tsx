@@ -891,7 +891,7 @@ const en = {
       `You're signed in as @${handle}. Choose whether this account represents you as a person or a project you want listed in Explore.`,
     userTitle: "I'm a user",
     userBody:
-      "Use your Bluesky profile for identity, write reviews, and manage your reviews. No registry profile is created.",
+      "Create a user profile from Bluesky, write reviews, and manage your reviews.",
     projectTitle: "I'm a project",
     projectBody:
       "Create and manage a public project profile in Explore with app links, screenshots, and developer details.",
@@ -904,11 +904,21 @@ const en = {
       `Signed in as @${handle}. Your user profile comes from Bluesky; reviews are managed here.`,
     empty: "You haven't reviewed any projects yet.",
     explore: "Explore projects",
+    viewProfile: "View public profile",
+    clientLabel: "Open Bluesky links with",
+    saveClient: "Save",
     viewProject: "View project",
     delete: "Delete review",
     deleting: "Deleting…",
     deleted: "Review deleted.",
     error: "Couldn't update the review",
+  },
+
+  userProfile: {
+    backToExplore: "Back to Explore",
+    notFoundTitle: "User not found",
+    notFoundBody: "That user profile is not available.",
+    openIn: (clientName: string): string => `Open in ${clientName}`,
   },
 
   reviews: {

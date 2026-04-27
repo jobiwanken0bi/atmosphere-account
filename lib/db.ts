@@ -184,10 +184,15 @@ const SCHEMA_STATEMENTS: string[] = [
     did TEXT PRIMARY KEY,
     handle TEXT NOT NULL,
     display_name TEXT,
+    bio TEXT,
+    avatar_cid TEXT,
+    avatar_mime TEXT,
+    bsky_client_id TEXT NOT NULL DEFAULT 'bluesky',
     account_type TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  `CREATE INDEX IF NOT EXISTS app_user_handle ON app_user(handle)`,
   `CREATE INDEX IF NOT EXISTS app_user_account_type ON app_user(account_type)`,
   /**
    * User reports against profiles. Anonymous reports carry a hashed IP
@@ -416,6 +421,27 @@ async function applyAdditiveMigrations(
         table: "app_user",
         column: "display_name",
         ddl: "ALTER TABLE app_user ADD COLUMN display_name TEXT",
+      },
+      {
+        table: "app_user",
+        column: "bio",
+        ddl: "ALTER TABLE app_user ADD COLUMN bio TEXT",
+      },
+      {
+        table: "app_user",
+        column: "avatar_cid",
+        ddl: "ALTER TABLE app_user ADD COLUMN avatar_cid TEXT",
+      },
+      {
+        table: "app_user",
+        column: "avatar_mime",
+        ddl: "ALTER TABLE app_user ADD COLUMN avatar_mime TEXT",
+      },
+      {
+        table: "app_user",
+        column: "bsky_client_id",
+        ddl:
+          "ALTER TABLE app_user ADD COLUMN bsky_client_id TEXT NOT NULL DEFAULT 'bluesky'",
       },
     ];
   for (const m of additiveColumns) {

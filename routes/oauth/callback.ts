@@ -60,9 +60,20 @@ export const handler = define.handlers({
         did: result.did,
         handle: result.handle,
         displayName: bskyProfile?.displayName ?? null,
+        bio: bskyProfile?.description ?? null,
+        avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
+        avatarMime: bskyProfile?.avatar?.mimeType ?? null,
       }).catch(() => {});
+      const returnTo = result.returnTo && result.returnTo.startsWith("/") &&
+          !result.returnTo.startsWith("//")
+        ? result.returnTo
+        : null;
       const headers = new Headers({
-        location: needsChoice ? "/account/type" : "/explore/manage",
+        location: needsChoice
+          ? `/account/type${
+            returnTo ? `?next=${encodeURIComponent(returnTo)}` : ""
+          }`
+          : returnTo ?? "/explore/manage",
       });
       headers.append("set-cookie", sessionCookie);
       headers.append("set-cookie", rememberedCookie);

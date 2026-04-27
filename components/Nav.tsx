@@ -22,9 +22,10 @@ interface NavProps {
      *  marketing nav) can omit it. */
     rememberedAccounts?: { did: string; handle: string }[];
   };
+  showEffects?: boolean;
 }
 
-export default function Nav({ account }: NavProps = {}) {
+export default function Nav({ account, showEffects = false }: NavProps = {}) {
   const t = useT();
   return (
     <>
@@ -55,21 +56,23 @@ export default function Nav({ account }: NavProps = {}) {
           />
         </div>
       )}
-      <div class="nav-effects-bar" id="nav-effects-bar">
-        <label class="nav-sky-switch-label">
-          <span class="nav-sky-switch-text">{t.nav.effects}</span>
-          <span class="nav-sky-switch">
-            <input
-              type="checkbox"
-              id="sky-effects-toggle"
-              class="nav-sky-switch-input"
-              defaultChecked
-              aria-label={t.nav.effectsOn}
-            />
-            <span class="nav-sky-switch-track" aria-hidden="true" />
-          </span>
-        </label>
-      </div>
+      {showEffects && (
+        <div class="nav-effects-bar" id="nav-effects-bar">
+          <label class="nav-sky-switch-label">
+            <span class="nav-sky-switch-text">{t.nav.effects}</span>
+            <span class="nav-sky-switch">
+              <input
+                type="checkbox"
+                id="sky-effects-toggle"
+                class="nav-sky-switch-input"
+                defaultChecked
+                aria-label={t.nav.effectsOn}
+              />
+              <span class="nav-sky-switch-track" aria-hidden="true" />
+            </span>
+          </label>
+        </div>
+      )}
     </>
   );
 }

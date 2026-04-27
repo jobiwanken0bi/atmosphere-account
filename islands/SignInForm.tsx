@@ -26,7 +26,7 @@ interface PreviewMiss {
 
 type PreviewResponse = PreviewSuccess | PreviewMiss;
 
-export default function SignInForm({ returnTo: _returnTo }: Props) {
+export default function SignInForm({ returnTo }: Props) {
   const t = useT();
   const handle = useSignal("");
   const submitting = useSignal(false);
@@ -123,6 +123,7 @@ export default function SignInForm({ returnTo: _returnTo }: Props) {
       onSubmit={onSubmit}
       class="signin-form"
     >
+      {returnTo && <input type="hidden" name="next" value={returnTo} />}
       <div class="signin-form-preview-wrap" ref={wrapRef}>
         <label class="signin-form-label" for="signin-handle">
           {t.explore.create.signInLabel}

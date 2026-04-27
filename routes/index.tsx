@@ -16,7 +16,7 @@ export default define.page(function Home() {
     <div id="page-top">
       <GlassClouds />
       <div class="content-layer">
-        <Nav />
+        <Nav showEffects />
         <Hero />
         <WhatIsAtmosphere />
         <OnePlace />

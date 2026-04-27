@@ -18,6 +18,11 @@ export const handler = define.handlers({
     }
     const form = await ctx.req.formData().catch(() => null);
     const raw = form?.get("accountType");
+    const rawNext = form?.get("next");
+    const next = typeof rawNext === "string" && rawNext.startsWith("/") &&
+        !rawNext.startsWith("//")
+      ? rawNext
+      : null;
     const accountType = raw === "project" || raw === "user"
       ? raw as AccountType
       : null;
@@ -45,6 +50,9 @@ export const handler = define.handlers({
       did: user.did,
       handle: user.handle,
       displayName: bskyProfile?.displayName ?? null,
+      bio: bskyProfile?.description ?? null,
+      avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
+      avatarMime: bskyProfile?.avatar?.mimeType ?? null,
       accountType,
     });
 
@@ -52,8 +60,8 @@ export const handler = define.handlers({
       status: 303,
       headers: {
         location: accountType === "project"
-          ? "/explore/manage"
-          : "/account/reviews",
+          ? next ?? "/explore/manage"
+          : next ?? "/account/reviews",
       },
     });
   },

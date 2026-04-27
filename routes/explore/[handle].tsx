@@ -31,6 +31,15 @@ import { getAppUser, updateAppUserProfile } from "../../lib/account-types.ts";
 import { resolveIdentity } from "../../lib/identity.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 
+function bskyCdnAvatarUrl(did: string, cid: string, mime: string): string {
+  const ext = mime === "image/png"
+    ? "png"
+    : mime === "image/webp"
+    ? "webp"
+    : "jpeg";
+  return `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@${ext}`;
+}
+
 export const handler = define.handlers({
   async GET(ctx) {
     const handle = decodeURIComponent(ctx.params.handle).toLowerCase();
@@ -146,7 +155,7 @@ function ProfileDetailPage(
                     targetId={profile.handle}
                     signedIn={!!signedInUser}
                     isOwner={isOwner}
-                    loginHref={`/oauth/login?next=${
+                    loginHref={`/explore/create?next=${
                       encodeURIComponent(`/explore/${profile.handle}`)
                     }`}
                     ownReview={ownReview
@@ -251,7 +260,16 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
       ]);
       let reviewerName = appUser?.displayName ?? profile?.name ?? null;
       let reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
-      if (!reviewerName) {
+      let reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
+        ? bskyCdnAvatarUrl(
+          review.reviewerDid,
+          appUser.avatarCid,
+          appUser.avatarMime,
+        )
+        : profile?.avatarCid
+        ? `/api/registry/avatar/${encodeURIComponent(review.reviewerDid)}`
+        : null;
+      if (!reviewerName || !reviewerAvatarUrl) {
         const identity = await resolveIdentity(review.reviewerDid).catch(() =>
           null
         );
@@ -262,11 +280,21 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
           : null;
         reviewerName = bsky?.displayName ?? null;
         reviewerHandle = reviewerHandle ?? identity?.handle ?? null;
+        reviewerAvatarUrl = bsky?.avatar
+          ? bskyCdnAvatarUrl(
+            review.reviewerDid,
+            bsky.avatar.ref.$link,
+            bsky.avatar.mimeType,
+          )
+          : reviewerAvatarUrl;
         if (appUser && identity) {
           await updateAppUserProfile({
             did: review.reviewerDid,
             handle: identity.handle,
             displayName: bsky?.displayName ?? null,
+            bio: bsky?.description ?? null,
+            avatarCid: bsky?.avatar?.ref.$link ?? null,
+            avatarMime: bsky?.avatar?.mimeType ?? null,
           }).catch(() => {});
         }
       }
@@ -274,6 +302,10 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
         ...review,
         reviewerName,
         reviewerHandle,
+        reviewerAvatarUrl,
+        reviewerProfileHref: appUser?.accountType === "user" && reviewerHandle
+          ? `/users/${encodeURIComponent(reviewerHandle)}`
+          : null,
       };
     }),
   );
