@@ -13,6 +13,7 @@ export default function NavScroll() {
       }
     };
 
+    onScroll();
     globalThis.addEventListener("scroll", onScroll, { passive: true });
     return () => globalThis.removeEventListener("scroll", onScroll);
   }, []);

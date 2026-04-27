@@ -1,5 +1,6 @@
 import { useT } from "../i18n/mod.ts";
 import AccountMenu from "../islands/AccountMenu.tsx";
+import NavScroll from "../islands/NavScroll.tsx";
 
 interface NavProps {
   /**
@@ -73,6 +74,7 @@ export default function Nav({ account, showEffects = false }: NavProps = {}) {
           </label>
         </div>
       )}
+      {!showEffects && <NavScroll />}
     </>
   );
 }
