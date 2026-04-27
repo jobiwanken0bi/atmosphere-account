@@ -79,6 +79,15 @@ export interface ProfileRow {
   iconReviewedBy: string | null;
   iconReviewedAt: number | null;
   iconRejectedReason: string | null;
+  /** Optional black-and-white companion to `iconCid`. Same access gate
+   *  and per-icon approval lifecycle as the colour icon — surfaced on
+   *  the developer downloads UI alongside (or instead of) `iconCid`. */
+  iconBwCid: string | null;
+  iconBwMime: string | null;
+  iconBwStatus: IconStatus | null;
+  iconBwReviewedBy: string | null;
+  iconBwReviewedAt: number | null;
+  iconBwRejectedReason: string | null;
   /** Per-project SVG-upload verification state. */
   iconAccessStatus: IconAccessStatus | null;
   /** Contact email captured at request time (admin-only sees this). */
@@ -126,6 +135,12 @@ interface RawProfileRow {
   icon_reviewed_by: string | null;
   icon_reviewed_at: number | null;
   icon_rejected_reason: string | null;
+  icon_bw_cid: string | null;
+  icon_bw_mime: string | null;
+  icon_bw_status: string | null;
+  icon_bw_reviewed_by: string | null;
+  icon_bw_reviewed_at: number | null;
+  icon_bw_rejected_reason: string | null;
   icon_access_status: string | null;
   icon_access_email: string | null;
   icon_access_requested_at: number | null;
@@ -250,6 +265,14 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
       ? Number(r.icon_reviewed_at)
       : null,
     iconRejectedReason: r.icon_rejected_reason,
+    iconBwCid: r.icon_bw_cid,
+    iconBwMime: r.icon_bw_mime,
+    iconBwStatus: normalizeIconStatus(r.icon_bw_status),
+    iconBwReviewedBy: r.icon_bw_reviewed_by,
+    iconBwReviewedAt: r.icon_bw_reviewed_at != null
+      ? Number(r.icon_bw_reviewed_at)
+      : null,
+    iconBwRejectedReason: r.icon_bw_rejected_reason,
     iconAccessStatus: normalizeIconAccessStatus(r.icon_access_status),
     iconAccessEmail: r.icon_access_email,
     iconAccessRequestedAt: r.icon_access_requested_at != null
@@ -300,6 +323,8 @@ export interface UpsertProfileInput {
   avatarMime?: string | null;
   iconCid?: string | null;
   iconMime?: string | null;
+  iconBwCid?: string | null;
+  iconBwMime?: string | null;
   pdsUrl: string;
   recordCid: string;
   recordRev: string;
@@ -343,6 +368,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           categories, subcategories, links, screenshots,
           avatar_cid, avatar_mime, icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
+          icon_bw_cid, icon_bw_mime, icon_bw_status,
+          icon_bw_reviewed_by, icon_bw_reviewed_at, icon_bw_rejected_reason,
           icon_access_status, icon_access_email, icon_access_requested_at,
           icon_access_reviewed_at, icon_access_reviewed_by,
           icon_access_denied_reason,
@@ -350,6 +377,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           pds_url, record_cid, record_rev, created_at, indexed_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          NULL, NULL, NULL,
+          ?, ?, ?,
           NULL, NULL, NULL,
           NULL, NULL, NULL, NULL, NULL, NULL,
           NULL, NULL, NULL, NULL,
@@ -405,6 +434,34 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
             ELSE NULL
           END,
           /**
+           * Black-and-white companion icon — same per-project gate
+           * and lifecycle as the colour icon. Tracked independently so
+           * a project can swap one variant without revoking the other.
+           */
+          icon_bw_cid=excluded.icon_bw_cid,
+          icon_bw_mime=excluded.icon_bw_mime,
+          icon_bw_status = CASE
+            WHEN excluded.icon_bw_cid IS NULL THEN NULL
+            WHEN profile.icon_bw_cid IS NOT NULL AND profile.icon_bw_cid = excluded.icon_bw_cid THEN profile.icon_bw_status
+            WHEN profile.icon_access_status = 'granted' THEN 'approved'
+            ELSE 'pending'
+          END,
+          icon_bw_reviewed_by = CASE
+            WHEN excluded.icon_bw_cid IS NULL THEN NULL
+            WHEN profile.icon_bw_cid IS NOT NULL AND profile.icon_bw_cid = excluded.icon_bw_cid THEN profile.icon_bw_reviewed_by
+            ELSE NULL
+          END,
+          icon_bw_reviewed_at = CASE
+            WHEN excluded.icon_bw_cid IS NULL THEN NULL
+            WHEN profile.icon_bw_cid IS NOT NULL AND profile.icon_bw_cid = excluded.icon_bw_cid THEN profile.icon_bw_reviewed_at
+            ELSE NULL
+          END,
+          icon_bw_rejected_reason = CASE
+            WHEN excluded.icon_bw_cid IS NULL THEN NULL
+            WHEN profile.icon_bw_cid IS NOT NULL AND profile.icon_bw_cid = excluded.icon_bw_cid THEN profile.icon_bw_rejected_reason
+            ELSE NULL
+          END,
+          /**
            * Per-project verification state is admin-managed and must
            * survive any firehose-driven re-upsert. Same shape as the
            * takedown columns: only mutated by the dedicated grant /
@@ -450,6 +507,9 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.avatarMime ?? null,
         input.iconCid ?? null,
         input.iconMime ?? null,
+        initialIconStatus,
+        input.iconBwCid ?? null,
+        input.iconBwMime ?? null,
         initialIconStatus,
         input.pdsUrl,
         input.recordCid,
@@ -541,10 +601,15 @@ export async function grantIconAccess(
            * project was previously granted, then revoked, then granted
            * again), promote it straight to approved so the developer
            * API picks up serving without a republish from the user.
+           * Same logic for the black-and-white companion.
            */
           icon_status = CASE
             WHEN icon_cid IS NOT NULL THEN 'approved'
             ELSE icon_status
+          END,
+          icon_bw_status = CASE
+            WHEN icon_bw_cid IS NOT NULL THEN 'approved'
+            ELSE icon_bw_status
           END
         WHERE did = ?
       `,
@@ -619,11 +684,16 @@ export async function denyIconAccess(
            * denied/revoked. The blob stays on the user's PDS untouched
            * (we don't have authority to delete it), but our serve route
            * checks icon_status alongside the access gate so flipping
-           * this is enough to take it offline immediately.
+           * this is enough to take it offline immediately. Mirrors for
+           * the black-and-white companion.
            */
           icon_status = CASE
             WHEN icon_cid IS NOT NULL THEN 'rejected'
             ELSE icon_status
+          END,
+          icon_bw_status = CASE
+            WHEN icon_bw_cid IS NOT NULL THEN 'rejected'
+            ELSE icon_bw_status
           END
         WHERE did = ?
       `,
@@ -1010,8 +1080,10 @@ export async function listAllProfilesForPicker(): Promise<ProfilePickerRow[]> {
 }
 
 /**
- * Public projection of every approved developer SVG icon. Used by the
- * developer resources download tool and ZIP endpoint.
+ * Public projection of every approved developer SVG icon. A project
+ * appears once it has at least one approved variant (colour or B/W);
+ * the downloads UI decides which buttons to render per row based on
+ * `iconCid` / `iconBwCid` presence.
  */
 export async function listApprovedSvgIconProfiles(): Promise<ProfileRow[]> {
   return await withDb(async (c) => {
@@ -1021,9 +1093,14 @@ export async function listApprovedSvgIconProfiles(): Promise<ProfileRow[]> {
         WHERE p.takedown_status IS NULL
           AND p.profile_type = 'project'
           AND p.icon_access_status = 'granted'
-          AND p.icon_status = 'approved'
-          AND p.icon_cid IS NOT NULL
-          AND p.icon_mime = 'image/svg+xml'
+          AND (
+            (p.icon_status = 'approved'
+              AND p.icon_cid IS NOT NULL
+              AND p.icon_mime = 'image/svg+xml')
+            OR (p.icon_bw_status = 'approved'
+              AND p.icon_bw_cid IS NOT NULL
+              AND p.icon_bw_mime = 'image/svg+xml')
+          )
         ORDER BY LOWER(p.name) ASC, LOWER(p.handle) ASC
       `,
       args: [],

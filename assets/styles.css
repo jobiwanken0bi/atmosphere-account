@@ -3592,6 +3592,56 @@ body {
   color: rgba(255, 255, 255, 0.5);
 }
 
+/* Two parallel slots — colour and B/W — share the same access gate
+   and sanitiser, so we render them side-by-side. They wrap to a single
+   column on narrow viewports so the upload buttons stay reachable. */
+.profile-form-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-top: 0.6rem;
+}
+.profile-form-icon-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(18, 26, 47, 0.06);
+}
+.profile-form-icon-slot-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.profile-form-icon-slot-hint {
+  margin: 0;
+}
+/* Render B/W previews with a neutral checker so a black-on-transparent
+   mark is still visible without us having to inject CSS into the SVG. */
+.profile-form-icon-preview--bw {
+  background:
+    linear-gradient(45deg, rgba(0, 0, 0, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(0, 0, 0, 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(0, 0, 0, 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(0, 0, 0, 0.04) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+.dark-phase .profile-form-icon-slot {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.dark-phase .profile-form-icon-preview--bw {
+  background-color: rgba(255, 255, 255, 0.06);
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%);
+}
+
 /* ------------------------------------------------------------------ *
  * Modal popup (used by BskyClientPickerModal)
  * ------------------------------------------------------------------ */
@@ -4882,6 +4932,53 @@ body.explore-no-effects #nav-effects-bar {
   min-height: 2.4rem;
 }
 
+/* Colour / B/W toggle. Sits between the search input and the ZIP
+   button so the toolbar reads search → variant → bulk-download. */
+.svg-download-tabs {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(14, 20, 40, 0.06);
+  border: 1px solid rgba(14, 20, 40, 0.08);
+}
+.svg-download-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(14, 20, 40, 0.7);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.svg-download-tab:hover {
+  color: #0e1428;
+}
+.svg-download-tab.is-active {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0e1428;
+  box-shadow: 0 1px 2px rgba(14, 20, 40, 0.08);
+}
+.dark-phase .svg-download-tabs {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.dark-phase .svg-download-tab {
+  color: rgba(255, 255, 255, 0.7);
+}
+.dark-phase .svg-download-tab:hover {
+  color: #fff;
+}
+.dark-phase .svg-download-tab.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  box-shadow: none;
+}
+
 .svg-download-meta {
   margin-top: 0.9rem;
   font-size: 0.82rem;
@@ -4927,6 +5024,18 @@ body.explore-no-effects #nav-effects-bar {
   max-width: 72px;
   max-height: 72px;
   object-fit: contain;
+}
+
+/* When showing the B/W variant we paint the preview tile white so a
+   pure-black mark remains legible regardless of the page theme. The
+   downloaded SVG itself is unmodified — this is preview-only chrome. */
+.svg-download-preview--bw {
+  background: #ffffff;
+  border: 1px solid rgba(14, 20, 40, 0.08);
+}
+.dark-phase .svg-download-preview--bw {
+  background: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .svg-download-details {

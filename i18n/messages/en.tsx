@@ -301,12 +301,17 @@ const en = {
       searchPlaceholder: "Search by project or handle",
       downloadZip: "Download all SVGs (ZIP)",
       downloadSvg: "Download SVG",
+      downloadSvgBw: "Download B/W SVG",
       loading: "Loading current project icons...",
       count: "{count} SVG icons available",
       empty: "No verified project SVG icons are available yet.",
+      emptyBw: "No verified projects have published a B/W icon yet.",
       noResults: "No icons match that search.",
       error: "Could not load icons: {error}",
       iconAlt: "{name} SVG icon",
+      variantToggleLabel: "Icon variant",
+      variantColor: "Colour",
+      variantBw: "B/W",
     },
     schemaHeading: "Profile schema",
     schemaBody:
@@ -661,10 +666,18 @@ const en = {
       icon: {
         sectionLabel: "Developer icon (SVG, optional)",
         hint:
-          "A vector mark for developers — sign-in badges, app showcases, programmatic listings. Not shown on your public profile. SVG only, 200KB max.",
+          "Vector marks for developers — sign-in badges, app showcases, programmatic listings. Not shown on your public profile. SVG only, 200KB max per variant. Both variants are optional and can be uploaded independently.",
         upload: "Upload SVG",
         replace: "Replace SVG",
         remove: "Remove SVG",
+        colorLabel: "Colour",
+        colorHint: "Your primary mark, used by default in badges and listings.",
+        bwLabel: "Black & white",
+        bwHint:
+          "Optional monochrome companion for light/dark badges, sign-in chrome, and print.",
+        bwUpload: "Upload B/W SVG",
+        bwReplace: "Replace B/W SVG",
+        bwRemove: "Remove B/W SVG",
         invalidType: "Icon must be an SVG (image/svg+xml).",
         tooLarge: "Icon must be 200KB or smaller.",
         gate: {

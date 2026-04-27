@@ -71,6 +71,12 @@ export const handler = define.handlers({
             mime: existing.iconMime,
           }
           : null,
+        iconBw: existing.iconBwCid && existing.iconBwMime
+          ? {
+            ref: existing.iconBwCid,
+            mime: existing.iconBwMime,
+          }
+          : null,
         iconAccessStatus: existing.iconAccessStatus,
         iconAccessEmail: existing.iconAccessEmail,
         iconAccessDeniedReason: existing.iconAccessDeniedReason,
@@ -99,6 +105,7 @@ export const handler = define.handlers({
               }
               : null,
             icon: null,
+            iconBw: null,
             iconAccessStatus: null,
             iconAccessEmail: null,
             iconAccessDeniedReason: null,

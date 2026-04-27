@@ -48,6 +48,8 @@ export async function upsertProfileFromRecord(input: {
     avatarMime: r.avatar?.mimeType ?? null,
     iconCid: r.icon?.ref.$link ?? null,
     iconMime: r.icon?.mimeType ?? null,
+    iconBwCid: r.iconBw?.ref.$link ?? null,
+    iconBwMime: r.iconBw?.mimeType ?? null,
     pdsUrl: input.pdsUrl,
     recordCid: input.record.cid,
     recordRev: input.recordRev,

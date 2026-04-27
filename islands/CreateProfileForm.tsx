@@ -43,6 +43,13 @@ interface ExistingProfile {
       mime: string;
     }
     | null;
+  /** Optional black-and-white companion to `icon`. Same access gate. */
+  iconBw:
+    | {
+      ref: string;
+      mime: string;
+    }
+    | null;
   /**
    * Per-project verification gate for the SVG icon uploader. Drives the
    * locked / pending / denied / granted UX in the icon section.
@@ -337,6 +344,13 @@ export default function CreateProfileForm(
   const iconFile = useSignal<File | null>(null);
   const iconRemoved = useSignal(false);
 
+  const iconBwKeep = useSignal<BlobRefShape | null>(null);
+  const iconBwPreviewUrl = useSignal<string | null>(
+    initial?.iconBw ? `/api/registry/icon-bw/${encodeURIComponent(did)}` : null,
+  );
+  const iconBwFile = useSignal<File | null>(null);
+  const iconBwRemoved = useSignal(false);
+
   /**
    * Live access status. Starts from the value the server rendered, then
    * flips to `requested` when the user submits the request modal so the
@@ -384,6 +398,16 @@ export default function CreateProfileForm(
       $type: "blob",
       ref: { $link: initial.icon.ref },
       mimeType: initial.icon.mime,
+      size: 0,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!initial?.iconBw) return;
+    iconBwKeep.value = {
+      $type: "blob",
+      ref: { $link: initial.iconBw.ref },
+      mimeType: initial.iconBw.mime,
       size: 0,
     };
   }, []);
@@ -534,6 +558,32 @@ export default function CreateProfileForm(
     iconPreviewUrl.value = null;
   };
 
+  const onIconBwChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.type !== "image/svg+xml") {
+      message.value = { kind: "error", text: tIcon.invalidType };
+      input.value = "";
+      return;
+    }
+    if (file.size > 200_000) {
+      message.value = { kind: "error", text: tIcon.tooLarge };
+      input.value = "";
+      return;
+    }
+    iconBwFile.value = file;
+    iconBwRemoved.value = false;
+    iconBwPreviewUrl.value = URL.createObjectURL(file);
+  };
+
+  const removeIconBw = () => {
+    iconBwFile.value = null;
+    iconBwKeep.value = null;
+    iconBwRemoved.value = true;
+    iconBwPreviewUrl.value = null;
+  };
+
   /**
    * Submit the verification request to the server. We optimistically
    * update `iconAccessStatus` to `requested` so the gate UI flips
@@ -679,6 +729,17 @@ export default function CreateProfileForm(
         payload.icon = iconKeep.value;
       } else {
         payload.icon = null;
+      }
+
+      if (iconBwFile.value) {
+        payload.iconBwUpload = {
+          dataBase64: await readFileAsBase64(iconBwFile.value),
+          mimeType: iconBwFile.value.type,
+        };
+      } else if (!iconBwRemoved.value && iconBwKeep.value) {
+        payload.iconBw = iconBwKeep.value;
+      } else {
+        payload.iconBw = null;
       }
 
       payload.screenshots = screenshots.value
@@ -1168,52 +1229,44 @@ export default function CreateProfileForm(
             </p>
           )}
 
-          {/* ---- Uploader (greyed-out unless granted) ---- */}
-          <div
-            class={`profile-form-icon-row ${
-              iconUploadUnlocked ? "" : "is-locked"
-            }`}
-          >
-            <div class="profile-form-icon-preview" aria-hidden="true">
-              {iconPreviewUrl.value
-                ? (
-                  <img
-                    src={iconPreviewUrl.value}
-                    alt=""
-                    class="profile-form-icon-preview-img"
-                    onError={() => {
-                      iconPreviewUrl.value = null;
-                    }}
-                  />
-                )
-                : <span class="profile-form-icon-placeholder">SVG</span>}
-            </div>
-            <div class="profile-form-icon-actions">
-              <label
-                class={`profile-form-button-secondary ${
-                  iconUploadUnlocked ? "" : "is-disabled"
-                }`}
-                aria-disabled={!iconUploadUnlocked}
-              >
-                {iconPreviewUrl.value ? tIcon.replace : tIcon.upload}
-                <input
-                  type="file"
-                  accept="image/svg+xml"
-                  hidden
-                  disabled={!iconUploadUnlocked}
-                  onChange={onIconChange}
-                />
-              </label>
-              {iconPreviewUrl.value && iconUploadUnlocked && (
-                <button
-                  type="button"
-                  class="profile-form-button-link"
-                  onClick={removeIcon}
-                >
-                  {tIcon.remove}
-                </button>
-              )}
-            </div>
+          {/* ---- Two slots: colour + optional B/W companion ---- */}
+          {
+            /*
+              Colour and B/W share the same access gate, sanitiser, and
+              200KB cap — we just persist them to parallel `icon_*` /
+              `icon_bw_*` columns and surface both on the developer
+              downloads UI.
+             */
+          }
+          <div class="profile-form-icon-grid">
+            <IconUploadSlot
+              label={tIcon.colorLabel}
+              hint={tIcon.colorHint}
+              previewClass="profile-form-icon-preview"
+              placeholderText="SVG"
+              previewUrl={iconPreviewUrl.value}
+              onClearPreview={() => (iconPreviewUrl.value = null)}
+              uploadLabel={iconPreviewUrl.value ? tIcon.replace : tIcon.upload}
+              removeLabel={tIcon.remove}
+              unlocked={iconUploadUnlocked}
+              onChange={onIconChange}
+              onRemove={removeIcon}
+            />
+            <IconUploadSlot
+              label={tIcon.bwLabel}
+              hint={tIcon.bwHint}
+              previewClass="profile-form-icon-preview profile-form-icon-preview--bw"
+              placeholderText="B/W"
+              previewUrl={iconBwPreviewUrl.value}
+              onClearPreview={() => (iconBwPreviewUrl.value = null)}
+              uploadLabel={iconBwPreviewUrl.value
+                ? tIcon.bwReplace
+                : tIcon.bwUpload}
+              removeLabel={tIcon.bwRemove}
+              unlocked={iconUploadUnlocked}
+              onChange={onIconBwChange}
+              onRemove={removeIconBw}
+            />
           </div>
           <p class="profile-form-hint">{tIcon.hint}</p>
         </div>
@@ -1374,6 +1427,81 @@ export default function CreateProfileForm(
         );
       })()}
     </form>
+  );
+}
+
+/* ----------------------- Developer icon slot ---------------------------- */
+
+interface IconUploadSlotProps {
+  label: string;
+  hint: string;
+  previewClass: string;
+  placeholderText: string;
+  previewUrl: string | null;
+  onClearPreview: () => void;
+  uploadLabel: string;
+  removeLabel: string;
+  unlocked: boolean;
+  onChange: (e: Event) => void;
+  onRemove: () => void;
+}
+
+function IconUploadSlot(props: IconUploadSlotProps) {
+  return (
+    <div class="profile-form-icon-slot">
+      <div class="profile-form-icon-slot-heading">
+        <span class="profile-form-label">{props.label}</span>
+        <span class="profile-form-hint profile-form-icon-slot-hint">
+          {props.hint}
+        </span>
+      </div>
+      <div
+        class={`profile-form-icon-row ${props.unlocked ? "" : "is-locked"}`}
+      >
+        <div class={props.previewClass} aria-hidden="true">
+          {props.previewUrl
+            ? (
+              <img
+                src={props.previewUrl}
+                alt=""
+                class="profile-form-icon-preview-img"
+                onError={props.onClearPreview}
+              />
+            )
+            : (
+              <span class="profile-form-icon-placeholder">
+                {props.placeholderText}
+              </span>
+            )}
+        </div>
+        <div class="profile-form-icon-actions">
+          <label
+            class={`profile-form-button-secondary ${
+              props.unlocked ? "" : "is-disabled"
+            }`}
+            aria-disabled={!props.unlocked}
+          >
+            {props.uploadLabel}
+            <input
+              type="file"
+              accept="image/svg+xml"
+              hidden
+              disabled={!props.unlocked}
+              onChange={props.onChange}
+            />
+          </label>
+          {props.previewUrl && props.unlocked && (
+            <button
+              type="button"
+              class="profile-form-button-link"
+              onClick={props.onRemove}
+            >
+              {props.removeLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

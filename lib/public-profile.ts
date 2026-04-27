@@ -42,6 +42,11 @@ export interface PublicProfileJson {
    * is verified; otherwise null. Raw `iconCid` / review state are not exposed.
    */
   iconUrl: string | null;
+  /**
+   * Optional black-and-white companion to `iconUrl`. Same gating
+   * (verified project + approved variant); null when not present.
+   */
+  iconBwUrl: string | null;
   pdsUrl: string;
   recordCid: string;
   recordRev: string;
@@ -63,6 +68,11 @@ export function toPublicProfileJson(
       profile.iconStatus === "approved" &&
       profile.iconAccessStatus === "granted"
     ? `${origin}/api/registry/icon/${encodeURIComponent(profile.did)}`
+    : null;
+  const iconBwUrl = profile.iconBwCid &&
+      profile.iconBwStatus === "approved" &&
+      profile.iconAccessStatus === "granted"
+    ? `${origin}/api/registry/icon-bw/${encodeURIComponent(profile.did)}`
     : null;
   const screenshotUrls = profile.screenshots.map((_, i) =>
     `${origin}/api/registry/screenshot/${encodeURIComponent(profile.did)}/${i}`
@@ -88,6 +98,7 @@ export function toPublicProfileJson(
     avatarUrl,
     verified,
     iconUrl,
+    iconBwUrl,
     pdsUrl: profile.pdsUrl,
     recordCid: profile.recordCid,
     recordRev: profile.recordRev,

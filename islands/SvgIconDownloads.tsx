@@ -2,19 +2,27 @@ import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import { useT } from "../i18n/mod.ts";
 
+interface IconVariant {
+  iconUrl: string;
+  downloadFilename: string;
+}
+
 interface IconDownload {
   did: string;
   handle: string;
   name: string;
-  iconUrl: string;
-  downloadFilename: string;
+  color: IconVariant | null;
+  bw: IconVariant | null;
   indexedAt: number;
 }
+
+type Tab = "color" | "bw";
 
 export default function SvgIconDownloads() {
   const t = useT().developerResources.icons;
   const icons = useSignal<IconDownload[]>([]);
   const query = useSignal("");
+  const tab = useSignal<Tab>("color");
   const loading = useSignal(true);
   const error = useSignal<string | null>(null);
 
@@ -47,11 +55,20 @@ export default function SvgIconDownloads() {
   }, []);
 
   const needle = query.value.trim().toLowerCase();
-  const filtered = needle
-    ? icons.value.filter((icon) =>
-      `${icon.name} ${icon.handle}`.toLowerCase().includes(needle)
-    )
-    : icons.value;
+  const matchesQuery = (icon: IconDownload) =>
+    needle
+      ? `${icon.name} ${icon.handle}`.toLowerCase().includes(needle)
+      : true;
+
+  const activeVariant = (icon: IconDownload): IconVariant | null =>
+    tab.value === "bw" ? icon.bw : icon.color;
+
+  // Only show projects that have published the currently-selected
+  // variant. Switching tabs swaps the grid; the totals reflect the
+  // chosen variant so the count never lies.
+  const filtered = icons.value
+    .filter(matchesQuery)
+    .filter((icon) => activeVariant(icon) !== null);
 
   return (
     <div class="svg-download-tool">
@@ -68,6 +85,32 @@ export default function SvgIconDownloads() {
             ) => (query.value = (e.currentTarget as HTMLInputElement).value)}
           />
         </label>
+        <div
+          class="svg-download-tabs"
+          role="tablist"
+          aria-label={t.variantToggleLabel}
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab.value === "color"}
+            class={`svg-download-tab ${
+              tab.value === "color" ? "is-active" : ""
+            }`}
+            onClick={() => (tab.value = "color")}
+          >
+            {t.variantColor}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab.value === "bw"}
+            class={`svg-download-tab ${tab.value === "bw" ? "is-active" : ""}`}
+            onClick={() => (tab.value = "bw")}
+          >
+            {t.variantBw}
+          </button>
+        </div>
         <a
           href="/api/registry/icons.zip"
           download="atmosphere-project-icons.zip"
@@ -91,34 +134,48 @@ export default function SvgIconDownloads() {
 
       {!loading.value && !error.value && filtered.length === 0 && (
         <p class="text-body-sm svg-download-empty">
-          {icons.value.length === 0 ? t.empty : t.noResults}
+          {icons.value.length === 0
+            ? t.empty
+            : tab.value === "bw"
+            ? t.emptyBw
+            : t.noResults}
         </p>
       )}
 
       {filtered.length > 0 && (
         <div class="svg-download-grid">
-          {filtered.map((icon) => (
-            <article class="svg-download-card" key={icon.did}>
-              <div class="svg-download-preview">
-                <img
-                  src={icon.iconUrl}
-                  alt={t.iconAlt.replace("{name}", icon.name)}
-                  loading="lazy"
-                />
-              </div>
-              <div class="svg-download-details">
-                <h3 class="svg-download-name">{icon.name}</h3>
-                <p class="svg-download-handle">@{icon.handle}</p>
-              </div>
-              <a
-                href={icon.iconUrl}
-                download={icon.downloadFilename}
-                class="badge-download-btn font-mono svg-download-button"
+          {filtered.map((icon) => {
+            const variant = activeVariant(icon)!;
+            return (
+              <article
+                class="svg-download-card"
+                key={`${icon.did}-${tab.value}`}
               >
-                {t.downloadSvg}
-              </a>
-            </article>
-          ))}
+                <div
+                  class={`svg-download-preview ${
+                    tab.value === "bw" ? "svg-download-preview--bw" : ""
+                  }`}
+                >
+                  <img
+                    src={variant.iconUrl}
+                    alt={t.iconAlt.replace("{name}", icon.name)}
+                    loading="lazy"
+                  />
+                </div>
+                <div class="svg-download-details">
+                  <h3 class="svg-download-name">{icon.name}</h3>
+                  <p class="svg-download-handle">@{icon.handle}</p>
+                </div>
+                <a
+                  href={variant.iconUrl}
+                  download={variant.downloadFilename}
+                  class="badge-download-btn font-mono svg-download-button"
+                >
+                  {tab.value === "bw" ? t.downloadSvgBw : t.downloadSvg}
+                </a>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

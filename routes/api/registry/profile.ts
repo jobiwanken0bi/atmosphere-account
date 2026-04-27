@@ -80,6 +80,18 @@ interface ProfileFormPayload {
     size: number;
   } | null;
   iconUpload?: { dataBase64: string; mimeType: string };
+  /**
+   * Black-and-white companion icon. Same shape and contract as `icon`
+   * — gated behind the same per-project verification, sanitised before
+   * upload, and persisted via parallel `icon_bw_*` columns.
+   */
+  iconBw?: {
+    $type: "blob";
+    ref: { $link: string };
+    mimeType: string;
+    size: number;
+  } | null;
+  iconBwUpload?: { dataBase64: string; mimeType: string };
   /** Existing screenshots to keep plus new uploads to append. */
   screenshots?: ScreenshotEntry[];
   screenshotUploads?: { dataBase64: string; mimeType: string }[];
@@ -220,7 +232,8 @@ export const handler = define.handlers({
     }
 
     /**
-     * Developer-facing SVG icon. Two gates:
+     * Developer-facing SVG icons (colour + optional B/W companion).
+     * Two gates apply identically to both variants:
      *
      *   1. Per-project verification (`icon_access_status === 'granted'`).
      *      Uploads from unverified projects are refused outright. The
@@ -234,7 +247,12 @@ export const handler = define.handlers({
      * also requires verification — that handles the revoke→re-save case
      * where we want the icon to be dropped automatically.
      */
-    const wantsIcon = !!(body.iconUpload?.dataBase64 || body.icon);
+    const wantsIcon = !!(
+      body.iconUpload?.dataBase64 ||
+      body.icon ||
+      body.iconBwUpload?.dataBase64 ||
+      body.iconBw
+    );
     if (wantsIcon && existing?.iconAccessStatus !== "granted") {
       return new Response(
         JSON.stringify({
@@ -249,15 +267,30 @@ export const handler = define.handlers({
       );
     }
 
-    let icon = body.icon ?? undefined;
-    if (body.iconUpload?.dataBase64) {
-      const mime = body.iconUpload.mimeType;
+    /**
+     * Process one icon-variant upload. Centralised so the colour and
+     * B/W slots stay 1:1 — same MIME check, size cap, sanitiser, and
+     * PDS upload path.
+     *
+     * `userDid` and `pdsUrl` are captured up front because TS doesn't
+     * carry the `if (!user) ... if (!session)` narrowings into this
+     * inner closure.
+     */
+    const userDid = user.did;
+    const pdsUrl = session.pdsUrl;
+    async function processIconVariant(
+      label: "icon" | "iconBw",
+      keepRef: BlobRef | null | undefined,
+      upload: { dataBase64: string; mimeType: string } | undefined,
+    ): Promise<BlobRef | undefined | Response> {
+      if (!upload?.dataBase64) return keepRef ?? undefined;
+      const mime = upload.mimeType;
       if (mime !== "image/svg+xml") {
-        return new Response("icon must be image/svg+xml", { status: 400 });
+        return new Response(`${label} must be image/svg+xml`, { status: 400 });
       }
-      const raw = decodeBase64(body.iconUpload.dataBase64);
+      const raw = decodeBase64(upload.dataBase64);
       if (raw.byteLength > ICON_MAX_BYTES) {
-        return new Response(`icon exceeds ${ICON_MAX_BYTES} bytes`, {
+        return new Response(`${label} exceeds ${ICON_MAX_BYTES} bytes`, {
           status: 400,
         });
       }
@@ -266,20 +299,31 @@ export const handler = define.handlers({
         cleaned = sanitizeSvgBytes(raw);
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
-        return new Response(`invalid svg: ${m}`, { status: 400 });
+        return new Response(`invalid svg (${label}): ${m}`, { status: 400 });
       }
       try {
-        icon = await uploadBlob(
-          user.did,
-          session.pdsUrl,
-          cleaned,
-          "image/svg+xml",
-        );
+        return await uploadBlob(userDid, pdsUrl, cleaned, "image/svg+xml");
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
-        return new Response(`icon upload failed: ${m}`, { status: 502 });
+        return new Response(`${label} upload failed: ${m}`, { status: 502 });
       }
     }
+
+    const iconResult = await processIconVariant(
+      "icon",
+      body.icon ?? undefined,
+      body.iconUpload,
+    );
+    if (iconResult instanceof Response) return iconResult;
+    const icon = iconResult;
+
+    const iconBwResult = await processIconVariant(
+      "iconBw",
+      body.iconBw ?? undefined,
+      body.iconBwUpload,
+    );
+    if (iconBwResult instanceof Response) return iconBwResult;
+    const iconBw = iconBwResult;
 
     const screenshots: ScreenshotEntry[] = [];
     if (Array.isArray(body.screenshots)) {
@@ -365,6 +409,7 @@ export const handler = define.handlers({
       links: links.length > 0 ? links : undefined,
       avatar: avatar ?? undefined,
       icon: icon ?? undefined,
+      iconBw: iconBw ?? undefined,
       screenshots: screenshots.length > 0 ? screenshots : undefined,
       createdAt: new Date().toISOString(),
     };
@@ -412,6 +457,8 @@ export const handler = define.handlers({
         avatarMime: validation.value.avatar?.mimeType ?? null,
         iconCid: validation.value.icon?.ref.$link ?? null,
         iconMime: validation.value.icon?.mimeType ?? null,
+        iconBwCid: validation.value.iconBw?.ref.$link ?? null,
+        iconBwMime: validation.value.iconBw?.mimeType ?? null,
         pdsUrl: session.pdsUrl,
         recordCid: result.cid,
         recordRev: result.commit?.rev ?? result.cid,

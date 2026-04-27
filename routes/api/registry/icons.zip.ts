@@ -1,7 +1,10 @@
 import { define } from "../../../utils.ts";
 import { fetchBlobPublic } from "../../../lib/pds.ts";
 import { listApprovedSvgIconProfiles } from "../../../lib/registry.ts";
-import { uniqueZipFilename } from "../../../lib/svg-icon-downloads.ts";
+import {
+  type IconVariant,
+  uniqueZipFilename,
+} from "../../../lib/svg-icon-downloads.ts";
 import { withRateLimit } from "../../../lib/rate-limit.ts";
 import { createZip, type ZipEntry } from "../../../lib/zip.ts";
 
@@ -12,19 +15,29 @@ export const handler = define.handlers({
     const entries: ZipEntry[] = [];
 
     for (const profile of profiles) {
-      if (!profile.iconCid) continue;
-      const upstream = await fetchBlobPublic(
-        profile.pdsUrl,
-        profile.did,
-        profile.iconCid,
-      );
-      if (!upstream.ok) continue;
-      const bytes = new Uint8Array(await upstream.arrayBuffer());
-      entries.push({
-        name: uniqueZipFilename(profile, used),
-        data: bytes,
-        modifiedAt: new Date(profile.indexedAt),
-      });
+      // Both variants are optional and approved-only — listing already
+      // filtered for at least one approved variant per project.
+      const variants: Array<{ cid: string; variant: IconVariant }> = [];
+      if (profile.iconCid && profile.iconStatus === "approved") {
+        variants.push({ cid: profile.iconCid, variant: "color" });
+      }
+      if (profile.iconBwCid && profile.iconBwStatus === "approved") {
+        variants.push({ cid: profile.iconBwCid, variant: "bw" });
+      }
+      for (const { cid, variant } of variants) {
+        const upstream = await fetchBlobPublic(
+          profile.pdsUrl,
+          profile.did,
+          cid,
+        );
+        if (!upstream.ok) continue;
+        const bytes = new Uint8Array(await upstream.arrayBuffer());
+        entries.push({
+          name: uniqueZipFilename(profile, variant, used),
+          data: bytes,
+          modifiedAt: new Date(profile.indexedAt),
+        });
+      }
     }
 
     const zip = createZip(entries);

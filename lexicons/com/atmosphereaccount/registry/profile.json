@@ -59,6 +59,12 @@
             "maxSize": 200000,
             "description": "Optional vector icon (SVG) intended for developers building badges, app showcases, sign-in flows, etc. Not displayed on the public Explore profile. Sanitised on upload (script tags, event handlers, foreignObject and javascript:/data: hrefs are stripped)."
           },
+          "iconBw": {
+            "type": "blob",
+            "accept": ["image/svg+xml"],
+            "maxSize": 200000,
+            "description": "Optional black & white companion to `icon`. Same audience and sanitisation rules — published alongside the colour mark for monochrome contexts (light/dark badges, sign-in chrome, print)."
+          },
           "screenshots": {
             "type": "array",
             "maxLength": 4,

@@ -146,6 +146,12 @@ export interface ProfileRecord {
    * public profile. Must be `image/svg+xml`; we sanitise on upload.
    */
   icon?: BlobRef;
+  /**
+   * Optional black & white companion to `icon`. Same audience and
+   * sanitisation rules — surfaced for monochrome badge / dark-mode
+   * contexts via the developer downloads UI and `iconBwUrl` JSON.
+   */
+  iconBw?: BlobRef;
   /** Optional detail-page screenshots. Stored as PDS blobs and lazy-loaded
    *  only on the profile detail page. */
   screenshots?: ScreenshotEntry[];
@@ -476,6 +482,14 @@ export function validateProfile(
       return { ok: false, error: "icon: must be image/svg+xml" };
     }
   }
+  if (v.iconBw !== undefined) {
+    if (!isBlob(v.iconBw)) {
+      return { ok: false, error: "iconBw: invalid blob ref" };
+    }
+    if ((v.iconBw as BlobRef).mimeType !== "image/svg+xml") {
+      return { ok: false, error: "iconBw: must be image/svg+xml" };
+    }
+  }
   const screenshotsRes = validateScreenshots(v.screenshots);
   if (!screenshotsRes.ok) return { ok: false, error: screenshotsRes.error };
   const linksRes = normalizeLinks(v.links);
@@ -506,6 +520,7 @@ export function validateProfile(
       androidLink: normalizedAndroidLink,
       avatar: v.avatar as BlobRef | undefined,
       icon: v.icon as BlobRef | undefined,
+      iconBw: v.iconBw as BlobRef | undefined,
       screenshots: screenshotsRes.value.length > 0
         ? screenshotsRes.value
         : undefined,

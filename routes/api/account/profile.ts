@@ -117,6 +117,8 @@ export const handler = define.handlers({
         avatarMime: validation.value.avatar?.mimeType ?? null,
         iconCid: null,
         iconMime: null,
+        iconBwCid: null,
+        iconBwMime: null,
         pdsUrl: session.pdsUrl,
         recordCid: put.cid,
         recordRev: put.commit?.rev ?? put.cid,
