@@ -59,7 +59,9 @@ export default function ProfileCard({ profile }: Props) {
           )}
         </div>
         <p class="profile-card-handle">@{profile.handle}</p>
-        <p class="profile-card-description">{profile.description}</p>
+        {profile.description && (
+          <p class="profile-card-description">{profile.description}</p>
+        )}
         <p class="profile-card-meta">
           {cats.map((c) => (
             <span key={c} class="profile-card-category">

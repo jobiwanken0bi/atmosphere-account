@@ -8,7 +8,7 @@
       "key": "literal:self",
       "record": {
         "type": "object",
-        "required": ["name", "description", "categories", "createdAt"],
+        "required": ["name", "categories", "createdAt"],
         "properties": {
           "name": {
             "type": "string",
@@ -19,10 +19,9 @@
           },
           "description": {
             "type": "string",
-            "minLength": 1,
             "maxLength": 500,
             "maxGraphemes": 500,
-            "description": "Short description of the project."
+            "description": "Optional short description of the project."
           },
           "mainLink": {
             "type": "string",

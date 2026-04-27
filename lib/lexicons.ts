@@ -312,11 +312,11 @@ export function validateProfile(
   ) {
     return { ok: false, error: "name: 1..60 chars required" };
   }
-  if (
-    !isStr(v.description) || (v.description as string).length < 1 ||
-    (v.description as string).length > 500
-  ) {
-    return { ok: false, error: "description: 1..500 chars required" };
+  const normalizedDescription = typeof v.description === "string"
+    ? v.description.trim()
+    : "";
+  if (normalizedDescription.length > 500) {
+    return { ok: false, error: "description: must be <=500 chars" };
   }
   // mainLink: optional in the lexicon for backward compat, but if present
   // must parse as an http(s) URL <=512 chars. The registry UI / API both
@@ -410,7 +410,7 @@ export function validateProfile(
     value: {
       $type: PROFILE_NSID,
       name: v.name as string,
-      description: v.description as string,
+      description: normalizedDescription,
       mainLink: normalizedMainLink,
       iosLink: normalizedIosLink,
       androidLink: normalizedAndroidLink,

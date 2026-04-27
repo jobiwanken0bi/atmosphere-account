@@ -68,7 +68,9 @@ export default function ProfileHero({ profile }: Props) {
             </span>
           ))}
         </div>
-        <p class="profile-hero-description">{profile.description}</p>
+        {profile.description && (
+          <p class="profile-hero-description">{profile.description}</p>
+        )}
       </div>
     </div>
   );

@@ -724,10 +724,9 @@ export default function CreateProfileForm(
 
           <label class="profile-form-field">
             <span class="profile-form-label">
-              {tForm.descriptionLabel} <em class="profile-form-required">*</em>
+              {tForm.descriptionLabel}
             </span>
             <textarea
-              required
               maxLength={500}
               rows={3}
               placeholder={tForm.descriptionPlaceholder}
