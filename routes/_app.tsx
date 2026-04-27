@@ -254,6 +254,12 @@ export default define.page(function App(ctx) {
   const effectsOn = url.pathname === "/";
   const htmlClass = effectsOn ? "sky-effects" : "sky-static";
   const bodyClass = effectsOn ? "sky-bg" : "sky-bg explore-no-effects";
+  const socialImagePath = url.pathname.startsWith("/explore")
+    ? "/og-explore.png"
+    : "/og-hero.png";
+  const socialImageAlt = url.pathname.startsWith("/explore")
+    ? "Explore the Atmosphere registry: apps, profiles, reviews, and updates."
+    : t.meta.ogImageAlt;
   return (
     <html lang={locale} class={htmlClass}>
       <head>
@@ -265,13 +271,13 @@ export default define.page(function App(ctx) {
         <meta property="og:description" content={t.meta.ogDescription} />
         <meta property="og:locale" content={locale} />
         <meta property="og:type" content="website" />
-        <meta property="og:image" content={socialImageUrl("/og-hero.png")} />
+        <meta property="og:image" content={socialImageUrl(socialImagePath)} />
         <meta property="og:image:type" content="image/png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content={t.meta.ogImageAlt} />
+        <meta property="og:image:alt" content={socialImageAlt} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:image" content={socialImageUrl("/og-hero.png")} />
+        <meta name="twitter:image" content={socialImageUrl(socialImagePath)} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/svg+xml" href="/union.svg" />
         <link rel="apple-touch-icon" href="/union.svg" />

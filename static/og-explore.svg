@@ -1,0 +1,343 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1200"
+  height="630"
+  viewBox="0 0 1200 630"
+  fill="none"
+>
+  <defs>
+    <linearGradient
+      id="sky"
+      x1="600"
+      y1="0"
+      x2="600"
+      y2="630"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#e8f0fe" />
+      <stop offset="0.28" stop-color="#c9d8f5" />
+      <stop offset="0.58" stop-color="#a8c4f0" />
+      <stop offset="1" stop-color="#ebe4f5" />
+    </linearGradient>
+    <radialGradient
+      id="sun"
+      cx="0"
+      cy="0"
+      r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(250 115) rotate(90) scale(460 360)"
+    >
+      <stop stop-color="#fff7d8" stop-opacity="0.92" />
+      <stop offset="0.38" stop-color="#ffe5ac" stop-opacity="0.48" />
+      <stop offset="1" stop-color="#ffd8a0" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient
+      id="card"
+      x1="0"
+      y1="0"
+      x2="1"
+      y2="1"
+      gradientUnits="objectBoundingBox"
+    >
+      <stop stop-color="#ffffff" stop-opacity="0.78" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.42" />
+    </linearGradient>
+    <linearGradient
+      id="cloudStroke"
+      x1="0"
+      y1="0"
+      x2="0"
+      y2="1"
+      gradientUnits="objectBoundingBox"
+    >
+      <stop stop-color="#D0FCFF" />
+      <stop offset="0.78" stop-color="#E9FEFF" stop-opacity="0.55" />
+      <stop offset="1" stop-color="#E9FEFF" stop-opacity="0.42" />
+    </linearGradient>
+    <filter
+      id="blur"
+      x="-20%"
+      y="-20%"
+      width="140%"
+      height="140%"
+      color-interpolation-filters="sRGB"
+    >
+      <feGaussianBlur stdDeviation="10" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <filter
+      id="shadow"
+      x="-20%"
+      y="-20%"
+      width="140%"
+      height="140%"
+      color-interpolation-filters="sRGB"
+    >
+      <feDropShadow
+        dx="0"
+        dy="18"
+        stdDeviation="22"
+        flood-color="#0e1428"
+        flood-opacity="0.12"
+      />
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#sky)" />
+  <rect width="1200" height="630" fill="url(#sun)" />
+
+  <g opacity="0.78" filter="url(#blur)">
+    <g transform="translate(-90 245) scale(0.45)">
+      <path
+        fill="#79CFFF"
+        fill-opacity="0.16"
+        stroke="url(#cloudStroke)"
+        stroke-width="4"
+        stroke-linejoin="round"
+        d="M490 369.95C491.23 369.98 492.47 370 493.71 370C563.73 370 620 319.6 620 257.3C620 197 564.63 147.7 500.67 144.68C483.44 100.58 436.3 68.93 380.85 68.93C372.72 68.93 364.78 69.61 357.08 70.9C338.4 29.33 292.67 0 238.87 0C168.85 0 112 50.41 112 112.71C112 123.83 113.82 134.58 117.2 144.73C51.65 149.08 0 197.73 0 257.3C0 319.6 56.78 370 126.79 370C128.85 370 130.9 369.96 132.94 369.87V370H490V369.95Z"
+      />
+    </g>
+    <g transform="translate(790 50) scale(0.38)">
+      <path
+        fill="#79CFFF"
+        fill-opacity="0.17"
+        stroke="url(#cloudStroke)"
+        stroke-width="4"
+        stroke-linejoin="round"
+        d="M379 289.96C380 289.98 381.01 290 382.03 290C436.23 290 480 250.57 480 201.63C480 154.21 438.75 115.62 387.85 113.26C374.43 79.32 338 55 295.08 55C288.78 55 282.63 55.53 276.66 56.53C262.19 23.02 225.83 0 183.72 0C129.52 0 85.75 39.43 85.75 88.37C85.75 96.99 87.15 105.31 89.77 113.19C40.04 116.48 0 153.75 0 199.63C0 250.57 43.92 290 98.12 290C99.71 290 101.3 289.97 102.88 289.9V290H379V289.96Z"
+      />
+    </g>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect
+      x="96"
+      y="106"
+      width="1008"
+      height="418"
+      rx="42"
+      fill="url(#card)"
+      stroke="#ffffff"
+      stroke-opacity="0.64"
+    />
+    <rect
+      x="139"
+      y="151"
+      width="340"
+      height="255"
+      rx="28"
+      fill="#ffffff"
+      fill-opacity="0.48"
+      stroke="#ffffff"
+      stroke-opacity="0.7"
+    />
+    <rect x="169" y="181" width="92" height="92" rx="24" fill="#2a5aa8" />
+    <circle cx="215" cy="227" r="26" fill="#ffffff" fill-opacity="0.92" />
+    <rect
+      x="287"
+      y="183"
+      width="146"
+      height="16"
+      rx="8"
+      fill="#0e1428"
+      fill-opacity="0.72"
+    />
+    <rect
+      x="287"
+      y="215"
+      width="112"
+      height="12"
+      rx="6"
+      fill="#0e1428"
+      fill-opacity="0.34"
+    />
+    <rect
+      x="169"
+      y="310"
+      width="260"
+      height="13"
+      rx="7"
+      fill="#0e1428"
+      fill-opacity="0.32"
+    />
+    <rect
+      x="169"
+      y="340"
+      width="215"
+      height="13"
+      rx="7"
+      fill="#0e1428"
+      fill-opacity="0.24"
+    />
+    <rect
+      x="169"
+      y="377"
+      width="78"
+      height="28"
+      rx="14"
+      fill="#2a5aa8"
+      fill-opacity="0.15"
+    />
+    <rect
+      x="260"
+      y="377"
+      width="122"
+      height="28"
+      rx="14"
+      fill="#2a5aa8"
+      fill-opacity="0.15"
+    />
+
+    <rect
+      x="386"
+      y="247"
+      width="340"
+      height="255"
+      rx="28"
+      fill="#ffffff"
+      fill-opacity="0.38"
+      stroke="#ffffff"
+      stroke-opacity="0.58"
+    />
+    <rect x="416" y="278" width="92" height="92" rx="24" fill="#d89a23" />
+    <circle cx="462" cy="324" r="25" fill="#ffffff" fill-opacity="0.9" />
+    <rect
+      x="534"
+      y="280"
+      width="145"
+      height="16"
+      rx="8"
+      fill="#0e1428"
+      fill-opacity="0.64"
+    />
+    <rect
+      x="534"
+      y="312"
+      width="116"
+      height="12"
+      rx="6"
+      fill="#0e1428"
+      fill-opacity="0.28"
+    />
+    <rect
+      x="416"
+      y="405"
+      width="260"
+      height="13"
+      rx="7"
+      fill="#0e1428"
+      fill-opacity="0.28"
+    />
+    <rect
+      x="416"
+      y="435"
+      width="210"
+      height="13"
+      rx="7"
+      fill="#0e1428"
+      fill-opacity="0.22"
+    />
+
+    <rect
+      x="632"
+      y="151"
+      width="340"
+      height="255"
+      rx="28"
+      fill="#ffffff"
+      fill-opacity="0.5"
+      stroke="#ffffff"
+      stroke-opacity="0.72"
+    />
+    <rect x="662" y="181" width="92" height="92" rx="24" fill="#6b7fd7" />
+    <circle cx="708" cy="227" r="26" fill="#ffffff" fill-opacity="0.92" />
+    <rect
+      x="780"
+      y="183"
+      width="146"
+      height="16"
+      rx="8"
+      fill="#0e1428"
+      fill-opacity="0.72"
+    />
+    <rect
+      x="780"
+      y="215"
+      width="110"
+      height="12"
+      rx="6"
+      fill="#0e1428"
+      fill-opacity="0.34"
+    />
+    <rect
+      x="662"
+      y="310"
+      width="260"
+      height="13"
+      rx="7"
+      fill="#0e1428"
+      fill-opacity="0.32"
+    />
+    <rect
+      x="662"
+      y="340"
+      width="205"
+      height="13"
+      rx="7"
+      fill="#0e1428"
+      fill-opacity="0.24"
+    />
+    <rect
+      x="662"
+      y="377"
+      width="95"
+      height="28"
+      rx="14"
+      fill="#2a5aa8"
+      fill-opacity="0.15"
+    />
+  </g>
+
+  <text
+    x="600"
+    y="286"
+    text-anchor="middle"
+    fill="rgba(18,26,47,0.72)"
+    font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace"
+    font-size="22"
+    font-weight="700"
+    letter-spacing="0.38em"
+  >EXPLORE THE ATMOSPHERE</text>
+  <text
+    x="600"
+    y="350"
+    text-anchor="middle"
+    fill="#0e1428"
+    font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace"
+    font-size="52"
+    font-weight="650"
+    letter-spacing="-0.035em"
+  >Apps, profiles, reviews</text>
+  <text
+    x="600"
+    y="410"
+    text-anchor="middle"
+    fill="#0e1428"
+    font-family="ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace"
+    font-size="52"
+    font-weight="650"
+    letter-spacing="-0.035em"
+  >and updates.</text>
+  <text
+    x="600"
+    y="468"
+    text-anchor="middle"
+    fill="rgba(18,26,47,0.84)"
+    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
+    font-size="25"
+    font-weight="500"
+  >A registry for projects building across the ATmosphere.</text>
+</svg>
