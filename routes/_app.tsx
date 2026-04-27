@@ -254,10 +254,14 @@ export default define.page(function App(ctx) {
   const effectsOn = url.pathname === "/";
   const htmlClass = effectsOn ? "sky-effects" : "sky-static";
   const bodyClass = effectsOn ? "sky-bg" : "sky-bg explore-no-effects";
-  const socialImagePath = url.pathname.startsWith("/explore")
+  const socialImagePath = url.pathname.startsWith("/developer-resources")
+    ? "/og-developer.png"
+    : url.pathname.startsWith("/explore")
     ? "/og-explore.png"
     : "/og-hero.png";
-  const socialImageAlt = url.pathname.startsWith("/explore")
+  const socialImageAlt = url.pathname.startsWith("/developer-resources")
+    ? "Atmosphere developer resources: sign-in badges, project icons, and the registry API."
+    : url.pathname.startsWith("/explore")
     ? "Explore the Atmosphere registry: apps, profiles, reviews, and updates."
     : t.meta.ogImageAlt;
   return (
