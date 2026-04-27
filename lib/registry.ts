@@ -621,6 +621,35 @@ export async function countPendingIconAccess(): Promise<number> {
   });
 }
 
+/** Active profiles that are not verified and are not already in the request queue. */
+export async function listUnverifiedIconAccess(): Promise<
+  IconAccessLookupRow[]
+> {
+  return await withDb(async (c) => {
+    const r = await c.execute(`
+      SELECT did, handle, name, icon_access_status
+      FROM profile
+      WHERE takedown_status IS NULL
+        AND (icon_access_status IS NULL OR icon_access_status = 'denied')
+      ORDER BY indexed_at DESC
+    `);
+    return r.rows.map((row) => {
+      const x = row as unknown as {
+        did: string;
+        handle: string;
+        name: string;
+        icon_access_status: string | null;
+      };
+      return {
+        did: x.did,
+        handle: x.handle,
+        name: x.name,
+        status: x.icon_access_status,
+      };
+    });
+  });
+}
+
 /** Currently-verified projects, most-recently-granted first. */
 export async function listGrantedIconAccess(): Promise<GrantedIconAccessRow[]> {
   return await withDb(async (c) => {

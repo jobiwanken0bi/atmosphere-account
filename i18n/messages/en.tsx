@@ -418,7 +418,7 @@ const en = {
   categories: {
     app: "App",
     accountProvider: "Account Provider",
-    moderator: "Moderator",
+    moderator: "Moderation",
     infrastructure: "Infrastructure",
     developerTool: "Developer Tool",
     all: "All",
@@ -707,6 +707,11 @@ const en = {
       proactiveSuccessSuffix: "is now verified.",
       proactiveNotFound:
         "No active registry profile was found for that handle or DID.",
+      unverifiedHeading: "Not yet verified",
+      emptyUnverified:
+        "Every active profile is either verified or waiting in the request queue.",
+      unverifiedNeverRequestedStatus: "No verification request yet.",
+      unverifiedDeniedStatus: "Previously denied or revoked.",
       grantedHeading: "Currently verified",
       emptyPending: "No requests in the queue.",
       emptyGranted: "No projects are verified yet.",

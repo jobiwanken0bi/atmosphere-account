@@ -7,6 +7,7 @@ export default defineConfig({
     {
       name: "atmosphere-fresh-island-dev-imports",
       apply: "serve",
+      enforce: "post",
       transformIndexHtml(html) {
         /**
          * Fresh's dev SSR currently emits inline module imports like
