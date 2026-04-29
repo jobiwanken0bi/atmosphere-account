@@ -1,4 +1,5 @@
 import { useSignal } from "@preact/signals";
+import { createPortal } from "preact/compat";
 import type { ReviewRow } from "../lib/reviews.ts";
 
 interface Props {
@@ -124,7 +125,7 @@ export default function ProfileReviewComposer(
           )}
       </div>
 
-      {open.value && signedIn && !isOwner && (
+      {open.value && signedIn && !isOwner && createPortal(
         <div
           class="modal-backdrop"
           onClick={(e) => {
@@ -209,7 +210,8 @@ export default function ProfileReviewComposer(
               </p>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
