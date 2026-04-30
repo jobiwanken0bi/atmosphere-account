@@ -36,25 +36,22 @@ import {
 } from "./env.ts";
 
 /**
- * Minimum-permission scope.
+ * Scope requested during PAR.
  *
- * Composed of explicit granular scopes:
- *   - `atproto`                                                - identity
- *   - `repo:com.atmosphereaccount.registry.profile`            - profile writes
- *   - `repo:com.atmosphereaccount.registry.review`             - review writes
- *   - `repo:com.atmosphereaccount.registry.update`             - update writes
- *   - `blob:image/*`                                           - avatar +
- *                                                                SVG icon
- *                                                                uploads
+ * `com.atmosphereaccount.registry.fullPermissions` is a named permission set
+ * (lexicon type: permission-set, title: "Atmosphere Account") that maps to
+ * exactly the three direct repo scopes listed below. Including it as the
+ * first scope causes the PDS consent screen to display the branded
+ * "Atmosphere Account" label and description instead of raw NSID strings.
  *
- * We keep `com.atmosphereaccount.registry.fullPermissions` published as a
- * human-friendly permission set, but request direct repo scopes here so login
- * does not depend on every PDS correctly resolving DNS-backed permission sets.
+ * The explicit `repo:*` scopes are kept alongside it so that PDSes unable to
+ * resolve the DNS-backed permission set still grant the correct permissions,
+ * and sign-in never fails solely because of DNS.
  *
  * MUST stay in sync with `routes/oauth/client-metadata.json.ts`.
  */
 const DEFAULT_SCOPE =
-  "atproto repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*";
+  "atproto com.atmosphereaccount.registry.fullPermissions repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
 

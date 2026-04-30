@@ -4200,6 +4200,9 @@ body.explore-no-effects #nav-effects-bar {
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 10px 24px rgba(14, 20, 40, 0.12);
 }
+.account-menu-trigger--signed-out {
+  opacity: 0.7;
+}
 
 .account-menu-trigger:focus-visible {
   outline: 2px solid rgba(80, 130, 220, 0.6);

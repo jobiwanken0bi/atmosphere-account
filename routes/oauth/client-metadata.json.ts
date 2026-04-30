@@ -25,11 +25,13 @@ export const handler = define.handlers({
       redirect_uris: [redirectUri()],
       /**
        * MUST stay in sync with `DEFAULT_SCOPE` in `lib/oauth.ts`.
-       * Direct repo scopes avoid depending on every PDS correctly resolving
-       * DNS-backed permission sets during login.
+       *
+       * The named permission set comes first so PDS consent screens show the
+       * branded "Atmosphere Account" label. The direct `repo:*` scopes follow
+       * as a fallback grant for PDSes that cannot resolve the DNS-backed set.
        */
       scope:
-        "atproto repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*",
+        "atproto com.atmosphereaccount.registry.fullPermissions repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*",
       dpop_bound_access_tokens: true,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "ES256",

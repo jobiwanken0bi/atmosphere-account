@@ -37,6 +37,7 @@ const en = {
     account: {
       menuLabel: "Account menu",
       signedInAs: "Signed in as",
+      signedOut: "Signed out",
       signIn: "Sign in",
       signInHint: "Sign in with your Atmosphere account to publish a profile.",
       manageProfile: "Manage profile",
@@ -45,6 +46,7 @@ const en = {
       signOut: "Sign out",
       avatarAlt: "Account",
       switchHeading: "Switch account",
+      yourAccounts: "Your accounts",
       switchTo: (handle: string): string => `Switch to @${handle}`,
       addAccount: "Add another account",
       forget: "Forget",
