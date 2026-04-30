@@ -590,7 +590,7 @@ const en = {
       avatarHint: "PNG, JPEG, or WebP. 1MB max. Square works best.",
       avatarReplace: "Replace icon",
       avatarRemove: "Remove icon",
-      bannerLabel: "Project banner",
+      bannerLabel: "Add banner image",
       bannerHint:
         "Shown at the top of your project page and used as the share preview when your link is posted (Bluesky, Twitter, etc.). Recommended 1200×630, PNG/JPEG/WebP, 3MB max.",
       bannerReplace: "Replace banner",

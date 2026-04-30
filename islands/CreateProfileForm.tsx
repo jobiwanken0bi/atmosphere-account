@@ -928,50 +928,67 @@ export default function CreateProfileForm(
       </div>
 
       <div class="profile-form-banner">
-        <div
-          class={`profile-form-banner-preview${
-            bannerPreview.value ? "" : " profile-form-banner-preview--empty"
-          }`}
-          aria-hidden={bannerPreview.value ? undefined : "true"}
-        >
-          {bannerPreview.value
-            ? (
-              <img
-                src={bannerPreview.value}
-                alt=""
-                class="profile-form-banner-img"
-                onError={() => {
-                  bannerPreview.value = null;
-                }}
-              />
-            )
-            : (
-              <span class="profile-form-banner-placeholder">
-                {tForm.bannerLabel}
-              </span>
-            )}
-        </div>
-        <div class="profile-form-banner-controls">
-          <label class="profile-form-button-secondary">
-            {bannerPreview.value ? tForm.bannerReplace : tForm.bannerLabel}
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              hidden
-              onChange={onBannerChange}
-            />
-          </label>
-          {bannerPreview.value && (
-            <button
-              type="button"
-              class="profile-form-button-link"
-              onClick={removeBanner}
-            >
-              {tForm.bannerRemove}
-            </button>
+        {bannerPreview.value
+          ? (
+            /* Banner exists — compact thumbnail row */
+            <div class="profile-form-banner-row">
+              <label class="profile-form-banner-thumb-label">
+                <img
+                  src={bannerPreview.value}
+                  alt="Project banner"
+                  class="profile-form-banner-thumb"
+                  onError={() => {
+                    bannerPreview.value = null;
+                  }}
+                />
+                <span
+                  class="profile-form-banner-thumb-overlay"
+                  aria-hidden="true"
+                >
+                  {tForm.bannerReplace}
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  hidden
+                  onChange={onBannerChange}
+                />
+              </label>
+              <div class="profile-form-banner-thumb-actions">
+                <label class="profile-form-button-secondary profile-form-banner-thumb-replace">
+                  {tForm.bannerReplace}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    hidden
+                    onChange={onBannerChange}
+                  />
+                </label>
+                <button
+                  type="button"
+                  class="profile-form-button-link"
+                  onClick={removeBanner}
+                >
+                  {tForm.bannerRemove}
+                </button>
+              </div>
+            </div>
+          )
+          : (
+            /* No banner — just a small add button + hint */
+            <div class="profile-form-banner-empty">
+              <label class="profile-form-button-secondary">
+                + {tForm.bannerLabel}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  hidden
+                  onChange={onBannerChange}
+                />
+              </label>
+              <p class="profile-form-hint">{tForm.bannerHint}</p>
+            </div>
           )}
-        </div>
-        <p class="profile-form-hint">{tForm.bannerHint}</p>
       </div>
 
       <div class="profile-form-row">
