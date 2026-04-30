@@ -75,6 +75,17 @@ function ensureConfigured(): void {
   if (!isOAuthConfigured()) throw new OAuthNotConfiguredError();
 }
 
+/**
+ * Intent carried through the OAuth dance — tells the callback whether
+ * the user clicked a generic "Sign in" CTA (default = user account) or
+ * a "Submit your project" CTA (= project account). The callback uses
+ * this to auto-classify a freshly-signed-in DID instead of bouncing
+ * the user through a separate chooser screen.
+ *
+ * If the DID already has a type assigned, the intent is ignored.
+ */
+export type SignInIntent = "user" | "project";
+
 interface FlowState {
   state: string;
   pkceVerifier: string;
@@ -85,6 +96,7 @@ interface FlowState {
   handle: string;
   pdsUrl: string;
   returnTo?: string;
+  intent?: SignInIntent;
   asNonce?: string;
 }
 
@@ -225,6 +237,7 @@ export async function deleteSession(did: string): Promise<void> {
 export async function startLogin(
   handleOrDid: string,
   returnTo?: string | null,
+  intent?: SignInIntent | null,
 ): Promise<{ redirectUrl: string }> {
   ensureConfigured();
   const id = await resolveIdentity(handleOrDid);
@@ -244,6 +257,7 @@ export async function startLogin(
     handle: id.handle,
     pdsUrl: id.pdsUrl,
     returnTo: returnTo ?? undefined,
+    intent: intent ?? undefined,
   };
   await saveFlowState(flow);
 
@@ -323,6 +337,7 @@ export interface CallbackResult {
   handle: string;
   pdsUrl: string;
   returnTo?: string;
+  intent?: SignInIntent;
 }
 
 export async function completeCallback(params: {
@@ -370,6 +385,7 @@ export async function completeCallback(params: {
     handle: session.handle,
     pdsUrl: session.pdsUrl,
     returnTo: flow.returnTo,
+    intent: flow.intent,
   };
 }
 

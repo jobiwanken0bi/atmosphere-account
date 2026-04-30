@@ -7,28 +7,47 @@
  * and 302s the browser to the consent screen.
  */
 import { define } from "../../utils.ts";
-import { isOAuthConfigured, startLogin } from "../../lib/oauth.ts";
+import {
+  isOAuthConfigured,
+  type SignInIntent,
+  startLogin,
+} from "../../lib/oauth.ts";
 
 function safeNext(raw: string | null): string | null {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
   return raw;
 }
 
-async function getLoginInput(
-  req: Request,
-  url: URL,
-): Promise<{ handle: string | null; next: string | null }> {
+function safeIntent(raw: string | null | undefined): SignInIntent | null {
+  return raw === "user" || raw === "project" ? raw : null;
+}
+
+interface LoginInput {
+  handle: string | null;
+  next: string | null;
+  intent: SignInIntent | null;
+}
+
+async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
   const fromQs = url.searchParams.get("handle");
   const nextFromQs = safeNext(url.searchParams.get("next"));
-  if (fromQs) return { handle: fromQs.trim(), next: nextFromQs };
+  const intentFromQs = safeIntent(url.searchParams.get("intent"));
+  if (fromQs) {
+    return {
+      handle: fromQs.trim(),
+      next: nextFromQs,
+      intent: intentFromQs,
+    };
+  }
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => null) as
-      | { handle?: string; next?: string }
+      | { handle?: string; next?: string; intent?: string }
       | null;
     return {
       handle: body?.handle?.trim() ?? null,
-      next: safeNext(body?.next ?? null),
+      next: safeNext(body?.next ?? null) ?? nextFromQs,
+      intent: safeIntent(body?.intent) ?? intentFromQs,
     };
   }
   if (
@@ -36,15 +55,20 @@ async function getLoginInput(
     ct.includes("multipart/form-data")
   ) {
     const form = await req.formData().catch(() => null);
-    if (!form) return { handle: null, next: nextFromQs };
+    if (!form) {
+      return { handle: null, next: nextFromQs, intent: intentFromQs };
+    }
     const v = form.get("handle");
     const next = form.get("next");
+    const intent = form.get("intent");
     return {
       handle: typeof v === "string" ? v.trim() : null,
       next: safeNext(typeof next === "string" ? next : null) ?? nextFromQs,
+      intent: safeIntent(typeof intent === "string" ? intent : null) ??
+        intentFromQs,
     };
   }
-  return { handle: null, next: nextFromQs };
+  return { handle: null, next: nextFromQs, intent: intentFromQs };
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
@@ -54,7 +78,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       { status: 503 },
     );
   }
-  const { handle: handleStr, next: returnTo } = await getLoginInput(
+  const { handle: handleStr, next: returnTo, intent } = await getLoginInput(
     ctx.req,
     ctx.url,
   );
@@ -62,7 +86,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     return new Response("missing handle", { status: 400 });
   }
   try {
-    const { redirectUrl } = await startLogin(handleStr, returnTo);
+    const { redirectUrl } = await startLogin(handleStr, returnTo, intent);
     return new Response(null, {
       status: 303,
       headers: { location: redirectUrl },

@@ -17,7 +17,9 @@ export default function StoreHero({ initialQuery, signedIn }: Props) {
         <div class="explore-hero-actions">
           <ExploreSearch initialQuery={initialQuery} />
           <a
-            href={signedIn ? "/explore/manage" : "/explore/create"}
+            href={signedIn
+              ? "/explore/manage"
+              : "/explore/create?intent=project"}
             class="explore-cta-primary"
           >
             {signedIn ? t.manageYourProfile : t.submitYourProject}

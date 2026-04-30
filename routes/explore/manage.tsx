@@ -18,20 +18,23 @@ export const handler = define.handlers({
     if (!user) {
       return new Response(null, {
         status: 303,
-        headers: { location: "/explore/create" },
+        headers: { location: "/explore/create?intent=project" },
       });
     }
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
     if (accountType !== "project") {
+      /**
+       * Signed in with a non-project type. Send users to their dashboard
+       * with the upgrade modal pre-opened so they can either convert
+       * this account or sign in with a different one. Legacy untyped
+       * accounts (which the OAuth callback now always assigns) fall
+       * through to the user dashboard as well.
+       */
       return new Response(null, {
         status: 303,
-        headers: {
-          location: accountType === "user"
-            ? "/account/reviews"
-            : "/account/type",
-        },
+        headers: { location: "/account/reviews?upgrade=1" },
       });
     }
 

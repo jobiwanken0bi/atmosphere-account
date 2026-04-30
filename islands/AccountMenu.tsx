@@ -165,22 +165,16 @@ function SignedInMenu(
             </a>
           )}
           <a
-            href={accountType === "user"
-              ? "/account/reviews"
-              : accountType === "project"
+            href={accountType === "project"
               ? "/explore/manage"
-              : "/account/type"}
+              : "/account/reviews"}
             class="account-menu-item"
             role="menuitem"
             onClick={() => {
               open.value = false;
             }}
           >
-            {accountType === "user"
-              ? t.manageProfile
-              : accountType === "project"
-              ? t.manageProfile
-              : t.chooseAccountType}
+            {t.manageProfile}
           </a>
           <form
             method="POST"

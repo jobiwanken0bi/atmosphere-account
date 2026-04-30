@@ -14,20 +14,35 @@ export default define.page(async function ExploreCreate(ctx) {
   const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
     ? rawNext
     : null;
+  const rawIntent = ctx.url.searchParams.get("intent");
+  const intent: "user" | "project" | undefined =
+    rawIntent === "project" || rawIntent === "user" ? rawIntent : undefined;
 
   if (user) {
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
+    /**
+     * Already signed in:
+     *  - Project account → straight to manage.
+     *  - User account that hit "Submit your project" → bounce to the
+     *    dashboard with the upgrade modal pre-opened so they can either
+     *    convert this account or sign in with a different one.
+     *  - User account otherwise → their reviews dashboard.
+     *  - Unknown legacy state → user dashboard (callback now always
+     *    sets a type, so this branch should be unreachable).
+     */
+    let location: string;
+    if (accountType === "project") {
+      location = next ?? "/explore/manage";
+    } else if (accountType === "user" && intent === "project") {
+      location = "/account/reviews?upgrade=1";
+    } else {
+      location = next ?? "/account/reviews";
+    }
     return new Response(null, {
       status: 303,
-      headers: {
-        location: accountType === "project"
-          ? next ?? "/explore/manage"
-          : accountType === "user"
-          ? next ?? "/account/reviews"
-          : `/account/type${next ? `?next=${encodeURIComponent(next)}` : ""}`,
-      },
+      headers: { location },
     }) as unknown as preact.JSX.Element;
   }
 
@@ -58,7 +73,12 @@ export default define.page(async function ExploreCreate(ctx) {
               }}
             >
               {isOAuthConfigured()
-                ? <SignInForm returnTo={next ?? undefined} />
+                ? (
+                  <SignInForm
+                    returnTo={next ?? undefined}
+                    intent={intent}
+                  />
+                )
                 : <p class="text-body">{t.create.configError}</p>}
             </div>
           </div>

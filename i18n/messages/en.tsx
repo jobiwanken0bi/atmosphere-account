@@ -41,7 +41,6 @@ const en = {
       signInHint: "Sign in with your Atmosphere account to publish a profile.",
       manageProfile: "Manage profile",
       manageReviews: "Manage reviews",
-      chooseAccountType: "Choose account type",
       viewProfile: "View profile",
       signOut: "Sign out",
       avatarAlt: "Account",
@@ -985,6 +984,18 @@ const en = {
     deleting: "Deleting…",
     deleted: "Review deleted.",
     error: "Couldn't update the review",
+    upgrade: {
+      button: "Submit your project",
+      modalTitle: "Is this account a project?",
+      modalBody:
+        "Choosing yes converts this account into a project profile and unlocks the project dashboard. If this isn't your project's account,",
+      signInWithProjectLink: "sign in with your project's account here",
+      signInWithProjectSuffix: ".",
+      yes: "Yes, convert this account",
+      cancel: "Cancel",
+      submitting: "Converting…",
+      error: "Couldn't convert this account.",
+    },
   },
 
   userProfile: {

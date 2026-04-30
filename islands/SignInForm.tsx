@@ -3,8 +3,15 @@ import { useEffect, useRef } from "preact/hooks";
 import { useT } from "../i18n/mod.ts";
 
 interface Props {
-  /** Optional path to redirect to after successful login (defaults to /explore/manage) */
+  /** Optional path to redirect to after successful login (defaults to
+   *  `/account/reviews` for users and `/explore/manage` for projects). */
   returnTo?: string;
+  /**
+   * Account-type hint carried through OAuth. When `"project"` is set
+   * (typically via a "Submit your project" CTA), a freshly-signed-in
+   * DID is auto-classified as a project account. Defaults to user.
+   */
+  intent?: "user" | "project";
 }
 
 interface PreviewMatch {
@@ -26,7 +33,7 @@ interface PreviewMiss {
 
 type PreviewResponse = PreviewSuccess | PreviewMiss;
 
-export default function SignInForm({ returnTo }: Props) {
+export default function SignInForm({ returnTo, intent }: Props) {
   const t = useT();
   const handle = useSignal("");
   const submitting = useSignal(false);
@@ -124,6 +131,7 @@ export default function SignInForm({ returnTo }: Props) {
       class="signin-form"
     >
       {returnTo && <input type="hidden" name="next" value={returnTo} />}
+      {intent && <input type="hidden" name="intent" value={intent} />}
       <div class="signin-form-preview-wrap" ref={wrapRef}>
         <label class="signin-form-label" for="signin-handle">
           {t.explore.create.signInLabel}

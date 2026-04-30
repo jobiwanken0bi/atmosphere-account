@@ -3,6 +3,7 @@ import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import UserBskyClientPicker from "../../islands/UserBskyClientPicker.tsx";
 import UserReviewRow from "../../islands/UserReviewRow.tsx";
+import UpgradeToProjectModal from "../../islands/UpgradeToProjectModal.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
@@ -54,12 +55,22 @@ export const handler = define.handlers({
       }),
     );
 
+    /**
+     * `?upgrade=1` is set by entry points that want to nudge a user-typed
+     * account towards converting to a project (e.g. clicking "Submit
+     * your project" while already signed in as a user). The dashboard
+     * island opens the upgrade modal automatically when this flag is
+     * present and strips the param from the URL after mount.
+     */
+    const autoOpenUpgrade = ctx.url.searchParams.get("upgrade") === "1";
+
     return ctx.render(
       <AccountReviewsPage
         account={buildAccountMenuProps(ctx.state)}
         handle={user.handle}
         profile={appUser}
         reviews={enriched}
+        autoOpenUpgrade={autoOpenUpgrade}
         t={getMessages(ctx.state.locale)}
       />,
     );
@@ -71,12 +82,14 @@ interface AccountReviewsPageProps {
   handle: string;
   profile: Awaited<ReturnType<typeof getAppUser>>;
   reviews: ReviewWithTarget[];
+  autoOpenUpgrade: boolean;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
 function AccountReviewsPage(
-  { account, handle, profile, reviews, t }: AccountReviewsPageProps,
+  { account, handle, profile, reviews, autoOpenUpgrade, t }:
+    AccountReviewsPageProps,
 ) {
   const copy = t.accountReviews;
   const avatarUrl = profile?.avatarCid && profile.avatarMime
@@ -90,8 +103,16 @@ function AccountReviewsPage(
         <section class="account-reviews-section">
           <div class="container" style={{ maxWidth: "820px" }}>
             <header class="account-reviews-header">
-              <p class="text-eyebrow">{copy.eyebrow}</p>
-              <h1 class="text-section">{copy.headline}</h1>
+              <div class="account-reviews-header-row">
+                <div>
+                  <p class="text-eyebrow">{copy.eyebrow}</p>
+                  <h1 class="text-section">{copy.headline}</h1>
+                </div>
+                <UpgradeToProjectModal
+                  initiallyOpen={autoOpenUpgrade}
+                  copy={copy.upgrade}
+                />
+              </div>
               <p class="text-body mt-2">{copy.subhead(handle)}</p>
             </header>
 

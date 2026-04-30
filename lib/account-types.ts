@@ -243,7 +243,3 @@ export async function getEffectiveAccountType(
   }).catch(() => null);
   return profile?.profileType ?? null;
 }
-
-export async function requiresAccountTypeChoice(did: string): Promise<boolean> {
-  return (await getEffectiveAccountType(did)) == null;
-}

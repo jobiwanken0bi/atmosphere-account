@@ -1,9 +1,20 @@
+/**
+ * Legacy account-type chooser. The chooser modal has been retired —
+ * sign-in intent now classifies new accounts automatically (default
+ * sign-in = user; "Submit your project" = project) and existing users
+ * who want to convert to a project use the upgrade modal on
+ * /account/reviews.
+ *
+ * This route still exists so old bookmarks, hashed redirects from the
+ * OAuth callback (in case any are still in flight from older deploys),
+ * and any cached AccountMenu links resolve cleanly. It just routes
+ * the request to the appropriate dashboard.
+ */
 import { define } from "../../utils.ts";
-import Nav from "../../components/Nav.tsx";
-import Footer from "../../components/Footer.tsx";
-import { getMessages } from "../../i18n/mod.ts";
-import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getEffectiveAccountType } from "../../lib/account-types.ts";
+import {
+  getEffectiveAccountType,
+  setAppUserType,
+} from "../../lib/account-types.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -11,11 +22,7 @@ export const handler = define.handlers({
     if (!user) {
       return new Response(null, {
         status: 303,
-        headers: {
-          location: `/explore/create?next=${
-            encodeURIComponent("/account/type")
-          }`,
-        },
+        headers: { location: "/explore/create" },
       });
     }
 
@@ -24,77 +31,27 @@ export const handler = define.handlers({
       ? rawNext
       : null;
 
-    const existingType = await getEffectiveAccountType(user.did).catch(() =>
-      null
-    );
-    if (existingType === "project") {
-      return new Response(null, {
-        status: 303,
-        headers: { location: next ?? "/explore/manage" },
-      });
-    }
-    if (existingType === "user") {
-      return new Response(null, {
-        status: 303,
-        headers: { location: next ?? "/account/reviews" },
-      });
+    let accountType = await getEffectiveAccountType(user.did).catch(() => null);
+    /**
+     * Legacy DIDs that signed in before the auto-classification rollout
+     * may still be untyped. Default them to user, matching the new
+     * sign-in flow's default, and route them to their dashboard.
+     */
+    if (accountType == null) {
+      await setAppUserType({
+        did: user.did,
+        handle: user.handle,
+        accountType: "user",
+      }).catch(() => {});
+      accountType = "user";
     }
 
-    return ctx.render(
-      <AccountTypePage
-        account={buildAccountMenuProps(ctx.state)}
-        handle={user.handle}
-        next={next}
-        t={getMessages(ctx.state.locale)}
-      />,
-    );
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location: next ??
+          (accountType === "project" ? "/explore/manage" : "/account/reviews"),
+      },
+    });
   },
 });
-
-interface AccountTypePageProps {
-  account: ReturnType<typeof buildAccountMenuProps>;
-  handle: string;
-  next: string | null;
-  // deno-lint-ignore no-explicit-any
-  t: any;
-}
-
-function AccountTypePage({ account, handle, next, t }: AccountTypePageProps) {
-  const copy = t.accountType;
-  return (
-    <div id="page-top">
-      <div class="content-layer">
-        <Nav account={account} />
-        <section class="account-type-section">
-          <div class="modal-backdrop account-type-backdrop">
-            <div class="modal-card account-type-card">
-              <div class="modal-header">
-                <p class="modal-title">{copy.title}</p>
-                <p class="modal-body-text">{copy.body(handle)}</p>
-              </div>
-              <div class="account-type-options">
-                <form method="POST" action="/api/account/type">
-                  <input type="hidden" name="accountType" value="user" />
-                  {next && <input type="hidden" name="next" value={next} />}
-                  <button type="submit" class="account-type-option">
-                    <strong>{copy.userTitle}</strong>
-                    <span>{copy.userBody}</span>
-                  </button>
-                </form>
-                <form method="POST" action="/api/account/type">
-                  <input type="hidden" name="accountType" value="project" />
-                  {next && <input type="hidden" name="next" value={next} />}
-                  <button type="submit" class="account-type-option">
-                    <strong>{copy.projectTitle}</strong>
-                    <span>{copy.projectBody}</span>
-                  </button>
-                </form>
-              </div>
-            </div>
-          </div>
-        </section>
-        <Footer variant="compact" />
-      </div>
-    </div>
-  );
-}

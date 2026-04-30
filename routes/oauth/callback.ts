@@ -16,8 +16,9 @@ import {
   readRememberedAccountsFromHeader,
 } from "../../lib/remembered-accounts.ts";
 import {
+  type AccountType,
   getEffectiveAccountType,
-  requiresAccountTypeChoice,
+  setAppUserType,
   updateAppUserProfile,
 } from "../../lib/account-types.ts";
 import { type ProfileRecord, validateProfile } from "../../lib/lexicons.ts";
@@ -55,7 +56,6 @@ export const handler = define.handlers({
         handle: result.handle,
       });
 
-      const needsChoice = await requiresAccountTypeChoice(result.did);
       const bskyProfile = await getBskyProfile(result.pdsUrl, result.did).catch(
         () => null,
       );
@@ -67,9 +67,36 @@ export const handler = define.handlers({
         avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
         avatarMime: bskyProfile?.avatar?.mimeType ?? null,
       }).catch(() => {});
-      const accountType = await getEffectiveAccountType(result.did).catch(() =>
-        null
-      );
+
+      /**
+       * Auto-classify newly signed-in DIDs based on the sign-in intent
+       * carried through the OAuth flow:
+       *  - `intent === "project"` (clicked "Submit your project")
+       *      → mark as project, take them to the project dashboard.
+       *  - `intent === "user"` or unset (header sign-in, review CTAs)
+       *      → mark as user and publish a baseline user profile record.
+       *
+       * If the DID already has a type (re-sign-in or upgrade flows),
+       * the intent is ignored and the existing classification stands.
+       */
+      let accountType: AccountType | null = await getEffectiveAccountType(
+        result.did,
+      ).catch(() => null);
+      if (accountType == null) {
+        const desired: AccountType = result.intent === "project"
+          ? "project"
+          : "user";
+        await setAppUserType({
+          did: result.did,
+          handle: result.handle,
+          displayName: bskyProfile?.displayName ?? null,
+          bio: bskyProfile?.description ?? null,
+          avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
+          avatarMime: bskyProfile?.avatar?.mimeType ?? null,
+          accountType: desired,
+        }).catch(() => {});
+        accountType = desired;
+      }
       if (accountType === "user") {
         const now = new Date().toISOString();
         const draft: ProfileRecord = {
@@ -111,12 +138,11 @@ export const handler = define.handlers({
           !result.returnTo.startsWith("//")
         ? result.returnTo
         : null;
+      const defaultLanding = accountType === "project"
+        ? "/explore/manage"
+        : "/account/reviews";
       const headers = new Headers({
-        location: needsChoice
-          ? `/account/type${
-            returnTo ? `?next=${encodeURIComponent(returnTo)}` : ""
-          }`
-          : returnTo ?? "/explore/manage",
+        location: returnTo ?? defaultLanding,
       });
       headers.append("set-cookie", sessionCookie);
       headers.append("set-cookie", rememberedCookie);
