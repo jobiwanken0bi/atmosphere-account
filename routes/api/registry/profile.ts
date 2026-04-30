@@ -8,6 +8,7 @@
  *   PUT     /api/registry/profile   (create/update profile)
  *   DELETE  /api/registry/profile   (delete profile)
  */
+import { Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
 import { define } from "../../../utils.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import {
@@ -30,6 +31,24 @@ import {
 } from "../../../lib/registry.ts";
 import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
+
+const OG_W = 1200;
+const OG_H = 630;
+const OG_JPEG_QUALITY = 85;
+
+/** Resize `bytes` to a 1200×630 cover-crop JPEG for the og:image cache.
+ *  Returns null if ImageScript fails (e.g. unsupported format), so the
+ *  caller can proceed without crashing the whole profile save. */
+async function generateOgJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
+  try {
+    const img = await Image.decode(bytes);
+    const cropped = img.cover(OG_W, OG_H);
+    return new Uint8Array(await cropped.encodeJPEG(OG_JPEG_QUALITY));
+  } catch (err) {
+    console.warn("[profile] og-jpeg pre-generation failed:", err);
+    return null;
+  }
+}
 
 const ICON_MAX_BYTES = 200_000;
 const BANNER_MAX_BYTES = 3_000_000;
@@ -253,6 +272,7 @@ export const handler = define.handlers({
      * referenced from the project page meta tags.
      */
     let banner = body.banner ?? undefined;
+    let ogJpeg: Uint8Array | null = null;
     if (body.bannerUpload?.dataBase64) {
       if (!BANNER_MIME_TYPES.has(body.bannerUpload.mimeType)) {
         return new Response("banner must be png, jpeg, or webp", {
@@ -274,6 +294,9 @@ export const handler = define.handlers({
         const m = err instanceof Error ? err.message : String(err);
         return new Response(`banner upload failed: ${m}`, { status: 502 });
       }
+      // Pre-generate the 1200×630 JPEG for the og:image cache. This runs
+      // after the PDS upload succeeds so a resize failure never blocks saving.
+      ogJpeg = await generateOgJpeg(bytes);
     }
 
     /**
@@ -503,6 +526,7 @@ export const handler = define.handlers({
         avatarMime: validation.value.avatar?.mimeType ?? null,
         bannerCid: validation.value.banner?.ref.$link ?? null,
         bannerMime: validation.value.banner?.mimeType ?? null,
+        ogJpeg: ogJpeg ?? undefined,
         iconCid: validation.value.icon?.ref.$link ?? null,
         iconMime: validation.value.icon?.mimeType ?? null,
         iconBwCid: validation.value.iconBw?.ref.$link ?? null,

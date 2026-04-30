@@ -332,6 +332,10 @@ export interface UpsertProfileInput {
   avatarMime?: string | null;
   bannerCid?: string | null;
   bannerMime?: string | null;
+  /** Pre-generated 1200×630 JPEG for og:image, stored as raw bytes.
+   *  Generated at write time so the og-banner route can return it instantly
+   *  (< 10 ms) without fetching from the PDS on every request. */
+  ogJpeg?: Uint8Array | null;
   iconCid?: string | null;
   iconMime?: string | null;
   iconBwCid?: string | null;
@@ -377,7 +381,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         INSERT INTO profile (
           did, handle, profile_type, name, description, main_link, ios_link, android_link,
           categories, subcategories, links, screenshots,
-          avatar_cid, avatar_mime, banner_cid, banner_mime,
+          avatar_cid, avatar_mime, banner_cid, banner_mime, og_jpeg,
           icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
           icon_bw_cid, icon_bw_mime, icon_bw_status,
@@ -388,7 +392,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           takedown_status, takedown_reason, takedown_by, takedown_at,
           pds_url, record_cid, record_rev, created_at, indexed_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           NULL, NULL, NULL,
           ?, ?, ?,
           NULL, NULL, NULL,
@@ -412,6 +416,10 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           avatar_mime=excluded.avatar_mime,
           banner_cid=excluded.banner_cid,
           banner_mime=excluded.banner_mime,
+          og_jpeg=CASE
+            WHEN excluded.og_jpeg IS NOT NULL THEN excluded.og_jpeg
+            ELSE profile.og_jpeg
+          END,
           icon_cid=excluded.icon_cid,
           icon_mime=excluded.icon_mime,
           /**
@@ -521,6 +529,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         input.avatarMime ?? null,
         input.bannerCid ?? null,
         input.bannerMime ?? null,
+        input.ogJpeg ?? null,
         input.iconCid ?? null,
         input.iconMime ?? null,
         initialIconStatus,
@@ -534,6 +543,47 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         now,
       ],
     });
+  });
+}
+
+/**
+ * Update the pre-generated OG JPEG for a profile in-place.
+ * Called after a banner upload to cache the resized image so
+ * `/api/registry/og-banner/{did}` can respond instantly without
+ * touching the PDS or running ImageScript on every request.
+ */
+export async function storeOgJpeg(
+  did: string,
+  jpeg: Uint8Array,
+): Promise<void> {
+  await withDb((c) =>
+    c.execute({
+      sql: `UPDATE profile SET og_jpeg = ? WHERE did = ?`,
+      args: [jpeg, did],
+    })
+  );
+}
+
+/**
+ * Read the pre-generated OG JPEG bytes for a project, or null if none
+ * has been stored yet (e.g. profile pre-dates this feature).
+ */
+export async function getOgJpeg(did: string): Promise<Uint8Array | null> {
+  return withDb(async (c) => {
+    const r = await c.execute({
+      sql: `SELECT og_jpeg FROM profile WHERE did = ?`,
+      args: [did],
+    });
+    if (!r.rows.length) return null;
+    const raw = (r.rows[0] as unknown as { og_jpeg: unknown }).og_jpeg;
+    if (!raw) return null;
+    if (raw instanceof Uint8Array) return raw;
+    if (raw instanceof ArrayBuffer) return new Uint8Array(raw);
+    // libSQL may return a Buffer (Node-compat) on some client builds
+    if (typeof raw === "object" && "buffer" in raw) {
+      return new Uint8Array((raw as { buffer: ArrayBuffer }).buffer);
+    }
+    return null;
   });
 }
 

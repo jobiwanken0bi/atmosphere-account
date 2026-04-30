@@ -104,6 +104,7 @@ const SCHEMA_STATEMENTS: string[] = [
     avatar_mime TEXT,
     banner_cid TEXT,
     banner_mime TEXT,
+    og_jpeg BLOB,
     icon_cid TEXT,
     icon_mime TEXT,
     icon_status TEXT,
@@ -389,6 +390,11 @@ async function applyAdditiveMigrations(
         table: "profile",
         column: "banner_mime",
         ddl: "ALTER TABLE profile ADD COLUMN banner_mime TEXT",
+      },
+      {
+        table: "profile",
+        column: "og_jpeg",
+        ddl: "ALTER TABLE profile ADD COLUMN og_jpeg BLOB",
       },
       {
         table: "profile",
