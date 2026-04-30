@@ -85,7 +85,10 @@ export const handler = define.handlers({
       const pageDescription = profile.description ||
         messages.detail.missingProfile;
       const ogImageUrl = profile.bannerCid
-        ? `/api/registry/banner/${encodeURIComponent(profile.did)}`
+        ? new URL(
+          `/api/registry/banner/${encodeURIComponent(profile.did)}`,
+          ctx.url.origin,
+        ).href
         : undefined;
       ctx.state.pageMeta = {
         title: pageTitle,
