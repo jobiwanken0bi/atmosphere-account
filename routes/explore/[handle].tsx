@@ -18,6 +18,7 @@ import {
   getProfileByHandle,
   type ProfileRow,
 } from "../../lib/registry.ts";
+import { bskyCdnBannerUrl, isBlueskyPds } from "../../lib/avatar.ts";
 import {
   getOwnReview,
   getReviewSummary,
@@ -84,11 +85,21 @@ export const handler = define.handlers({
       const pageTitle = `${profile.name} on Atmosphere Account`;
       const pageDescription = profile.description ||
         messages.detail.missingProfile;
+      // Bluesky's link-preview crawler only proxies images from its own
+      // allowlisted domains. For accounts hosted on Bluesky's PDS, use
+      // cdn.bsky.app directly (always accessible). For custom-PDS accounts,
+      // fall back to our own proxy which fetches the blob from their PDS.
       const ogImageUrl = profile.bannerCid
-        ? new URL(
-          `/api/registry/banner/${encodeURIComponent(profile.did)}`,
-          ctx.url.origin,
-        ).href
+        ? isBlueskyPds(profile.pdsUrl)
+          ? bskyCdnBannerUrl(
+            profile.did,
+            profile.bannerCid,
+            profile.bannerMime ?? undefined,
+          )
+          : new URL(
+            `/api/registry/banner/${encodeURIComponent(profile.did)}`,
+            ctx.url.origin,
+          ).href
         : undefined;
       ctx.state.pageMeta = {
         title: pageTitle,
