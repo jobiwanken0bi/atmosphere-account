@@ -11,6 +11,7 @@ import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { listProfileUpdates } from "../../lib/profile-updates.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
+import ShareButton from "../../islands/ShareButton.tsx";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -139,6 +140,16 @@ export const handler = define.handlers({
       : null;
 
     const publicProfileHandle = takedown ? null : existing?.handle ?? null;
+    const shareUrl = publicProfileHandle
+      ? new URL(
+        `/explore/${encodeURIComponent(publicProfileHandle)}`,
+        ctx.url.origin,
+      ).href
+      : null;
+    const shareTitleName = (existing?.name?.trim() ||
+      initial?.name?.trim() ||
+      publicProfileHandle ||
+      user.handle).trim();
     const updates = existing
       ? await listProfileUpdates(user.did, { limit: 8 }).catch(() => [])
       : [];
@@ -150,6 +161,8 @@ export const handler = define.handlers({
         initialAvatarUrl={initialAvatarUrl}
         initialPublished={!!existing && !takedown}
         publicProfileHandle={publicProfileHandle}
+        shareUrl={shareUrl}
+        shareTitleName={shareTitleName}
         updates={updates.map((update) => ({
           rkey: update.rkey,
           title: update.title,
@@ -172,6 +185,10 @@ interface ManagePageProps {
   initialAvatarUrl: string | null;
   initialPublished: boolean;
   publicProfileHandle: string | null;
+  /** Absolute project page URL when published; null if no live listing yet. */
+  shareUrl: string | null;
+  /** Display name for native share / clipboard context. */
+  shareTitleName: string;
   updates: Parameters<typeof ProfileUpdateEditor>[0]["initialUpdates"];
   takedown: { reason: string; at: number | null } | null;
   // deno-lint-ignore no-explicit-any
@@ -186,12 +203,15 @@ function ManagePage(
     initialAvatarUrl,
     initialPublished,
     publicProfileHandle,
+    shareUrl,
+    shareTitleName,
     updates,
     takedown,
     t,
   }: ManagePageProps,
 ) {
   const explore = t.explore;
+  const shareCopy = explore.detail.share;
   const takedownCopy = t.manageTakedown;
   return (
     <div id="page-top">
@@ -204,6 +224,18 @@ function ManagePage(
                 <h1 class="text-section">{explore.manage.headline}</h1>
                 <p class="text-body mt-2">{explore.manage.subhead}</p>
               </div>
+              {shareUrl && (
+                <ShareButton
+                  url={shareUrl}
+                  title={shareCopy.shareTitle(shareTitleName)}
+                  copy={{
+                    button: shareCopy.button,
+                    copyLink: shareCopy.copyLink,
+                    copied: shareCopy.copied,
+                    copyFailed: shareCopy.copyFailed,
+                  }}
+                />
+              )}
             </div>
 
             {takedown && (
