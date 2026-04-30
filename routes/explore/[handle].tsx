@@ -18,7 +18,6 @@ import {
   getProfileByHandle,
   type ProfileRow,
 } from "../../lib/registry.ts";
-import { bskyCdnBannerUrl, isBlueskyPds } from "../../lib/avatar.ts";
 import {
   getOwnReview,
   getReviewSummary,
@@ -91,21 +90,17 @@ export const handler = define.handlers({
       const pageTitle = `${profile.name} on Atmosphere Account`;
       const pageDescription = profile.description ||
         messages.detail.missingProfile;
-      // Bluesky's link-preview crawler only proxies images from its own
-      // allowlisted domains. For accounts hosted on Bluesky's PDS, use
-      // cdn.bsky.app directly (always accessible). For custom-PDS accounts,
-      // fall back to our own proxy which fetches the blob from their PDS.
+      // Always use our own absolute banner URL for og:image (same origin as
+      // /og-hero.png on the homepage). Raw cdn.bsky.app banners can be ~650KB+
+      // and wide (e.g. 3000×1000); the homepage card uses a smaller static PNG
+      // and shows a thumbnail in the Bluesky composer, while the CDN URL often
+      // produced a text-only link card. Cardyb successfully fetches this proxy
+      // and normalizes dimensions for embeds.
       const ogImageUrl = profile.bannerCid
-        ? isBlueskyPds(profile.pdsUrl)
-          ? bskyCdnBannerUrl(
-            profile.did,
-            profile.bannerCid,
-            profile.bannerMime ?? undefined,
-          )
-          : new URL(
-            `/api/registry/banner/${encodeURIComponent(profile.did)}`,
-            ctx.url.origin,
-          ).href
+        ? new URL(
+          `/api/registry/banner/${encodeURIComponent(profile.did)}`,
+          ctx.url.origin,
+        ).href
         : undefined;
       ctx.state.pageMeta = {
         title: pageTitle,
