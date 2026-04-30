@@ -85,10 +85,7 @@ export const handler = define.handlers({
       const pageDescription = profile.description ||
         messages.detail.missingProfile;
       const ogImageUrl = profile.bannerCid
-        ? new URL(
-          `/api/registry/banner/${encodeURIComponent(profile.did)}`,
-          ctx.url.origin,
-        ).toString()
+        ? `/api/registry/banner/${encodeURIComponent(profile.did)}`
         : undefined;
       ctx.state.pageMeta = {
         title: pageTitle,
@@ -98,6 +95,9 @@ export const handler = define.handlers({
         imageAlt: profile.bannerCid
           ? messages.detail.share.bannerAlt(profile.name)
           : undefined,
+        imageType: profile.bannerMime ?? "image/jpeg",
+        imageWidth: 1200,
+        imageHeight: 630,
       };
     }
     /**

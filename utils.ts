@@ -23,6 +23,8 @@ export interface PageMeta {
   imageUrl?: string;
   /** Alt text for the share image. */
   imageAlt?: string;
+  /** MIME type for og:image:type (defaults to "image/jpeg"). */
+  imageType?: string;
   /** OG image dimensions, when known. Defaults match the site-wide OG image. */
   imageWidth?: number;
   imageHeight?: number;

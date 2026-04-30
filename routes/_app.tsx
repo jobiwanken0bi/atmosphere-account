@@ -4,6 +4,9 @@ import { getMessages, I18nProvider } from "../i18n/mod.ts";
 
 /** Open Graph / social crawlers prefer absolute image URLs. Set FRESH_PUBLIC_SITE_URL on Deno Deploy (e.g. https://atmosphereaccount.com). */
 function socialImageUrl(path: string): string {
+  // Already absolute — return as-is so callers that pass a full URL
+  // (e.g. pageMeta.imageUrl built with ctx.url.origin) don't get double-prefixed.
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
   const base = Deno.env.get("FRESH_PUBLIC_SITE_URL")?.replace(/\/$/, "");
   if (base) return `${base}${path.startsWith("/") ? path : `/${path}`}`;
   return path;
@@ -296,6 +299,11 @@ export default define.page(function App(ctx) {
         <meta property="og:locale" content={locale} />
         <meta property="og:type" content={pageOgType} />
         <meta property="og:image" content={pageOgImage} />
+        <meta property="og:image:secure_url" content={pageOgImage} />
+        <meta
+          property="og:image:type"
+          content={pageMeta.imageType ?? "image/jpeg"}
+        />
         <meta property="og:image:width" content={String(pageOgImageWidth)} />
         <meta property="og:image:height" content={String(pageOgImageHeight)} />
         <meta property="og:image:alt" content={pageOgImageAlt} />
