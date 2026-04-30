@@ -28,8 +28,13 @@ export interface PageMeta {
   /** OG image dimensions, when known. Defaults match the site-wide OG image. */
   imageWidth?: number;
   imageHeight?: number;
-  /** Override og:type (defaults to "website"; project pages use "profile"). */
+  /** Override og:type (defaults to "website"). */
   ogType?: string;
+  /**
+   * Canonical page URL for og:url and link[rel=canonical]. Use on share-heavy
+   * pages so crawlers dedupe trailing-slash vs non-slash variants.
+   */
+  canonicalUrl?: string;
 }
 
 export interface State {

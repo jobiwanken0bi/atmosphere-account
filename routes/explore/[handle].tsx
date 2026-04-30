@@ -73,6 +73,12 @@ export const handler = define.handlers({
         [] as ProfileUpdateRow[],
       ];
     const displayReviews = profile ? await enrichReviews(reviews) : [];
+    const shareUrl = profile
+      ? new URL(
+        `/explore/${encodeURIComponent(profile.handle)}`,
+        ctx.url.origin,
+      ).href
+      : ctx.url.href;
     /**
      * Per-page social meta. When the project has a banner, the
      * Bluesky CDN URL is used as the OG/Twitter image so the project
@@ -104,7 +110,10 @@ export const handler = define.handlers({
       ctx.state.pageMeta = {
         title: pageTitle,
         description: pageDescription,
-        ogType: "profile",
+        // "website" unfurls more reliably than "profile" (fewer parsers expect
+        // profile:* sub-properties). Same visible link card everywhere.
+        ogType: "website",
+        canonicalUrl: shareUrl,
         imageUrl: ogImageUrl,
         imageAlt: profile.bannerCid
           ? messages.detail.share.bannerAlt(profile.name)
@@ -114,18 +123,6 @@ export const handler = define.handlers({
         imageHeight: 630,
       };
     }
-    /**
-     * Build the absolute canonical URL once on the server. The Web
-     * Share API + clipboard fallback both want a fully-qualified URL,
-     * and computing it from the request keeps it correct across
-     * preview deployments / custom domains.
-     */
-    const shareUrl = profile
-      ? new URL(
-        `/explore/${encodeURIComponent(profile.handle)}`,
-        ctx.url.origin,
-      ).toString()
-      : ctx.url.toString();
     return ctx.render(
       <ProfileDetailPage
         profile={profile}

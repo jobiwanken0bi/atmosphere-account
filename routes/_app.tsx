@@ -298,6 +298,20 @@ export default define.page(function App(ctx) {
         />
         <meta property="og:locale" content={locale} />
         <meta property="og:type" content={pageOgType} />
+        {pageMeta.canonicalUrl && (
+          <>
+            <link rel="canonical" href={pageMeta.canonicalUrl} />
+            <meta property="og:url" content={pageMeta.canonicalUrl} />
+          </>
+        )}
+        <meta
+          name="twitter:title"
+          content={pageMeta.title ?? t.meta.ogTitle}
+        />
+        <meta
+          name="twitter:description"
+          content={pageMeta.description ?? t.meta.ogDescription}
+        />
         <meta property="og:image" content={pageOgImage} />
         <meta property="og:image:secure_url" content={pageOgImage} />
         <meta
