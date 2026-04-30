@@ -79,26 +79,19 @@ export const handler = define.handlers({
       ).href
       : ctx.url.href;
     /**
-     * Per-page social meta. When the project has a banner, the
-     * Bluesky CDN URL is used as the OG/Twitter image so the project
-     * banner becomes the link card preview anywhere the URL is
-     * shared. Project name + description fill the title and
-     * description so the card carries enough context on its own.
+     * Per-page social meta. When the project has a banner, use the
+     * dedicated OG JPEG route (~1200×630, tens of KB) for og:image so link
+     * unfurlers and the Bluesky composer get a small asset; full resolution
+     * stays on `/api/registry/banner/{did}` for the in-page banner <img>.
      */
     if (profile) {
       const messages = getMessages(ctx.state.locale).explore;
       const pageTitle = `${profile.name} on Atmosphere Account`;
       const pageDescription = profile.description ||
         messages.detail.missingProfile;
-      // Always use our own absolute banner URL for og:image (same origin as
-      // /og-hero.png on the homepage). Raw cdn.bsky.app banners can be ~650KB+
-      // and wide (e.g. 3000×1000); the homepage card uses a smaller static PNG
-      // and shows a thumbnail in the Bluesky composer, while the CDN URL often
-      // produced a text-only link card. Cardyb successfully fetches this proxy
-      // and normalizes dimensions for embeds.
       const ogImageUrl = profile.bannerCid
         ? new URL(
-          `/api/registry/banner/${encodeURIComponent(profile.did)}`,
+          `/api/registry/og-banner/${encodeURIComponent(profile.did)}`,
           ctx.url.origin,
         ).href
         : undefined;
@@ -113,7 +106,7 @@ export const handler = define.handlers({
         imageAlt: profile.bannerCid
           ? messages.detail.share.bannerAlt(profile.name)
           : undefined,
-        imageType: profile.bannerMime ?? "image/jpeg",
+        imageType: profile.bannerCid ? "image/jpeg" : undefined,
         imageWidth: 1200,
         imageHeight: 630,
       };
