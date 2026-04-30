@@ -141,6 +141,12 @@ export interface ProfileRecord {
   androidLink?: string;
   avatar?: BlobRef;
   /**
+   * Optional banner image rendered at the top of the project page.
+   * Doubles as the OpenGraph / Twitter card preview when the page is
+   * shared. Recommended 1200x630 (the standard 1.91:1 OG ratio).
+   */
+  banner?: BlobRef;
+  /**
    * Optional vector icon (SVG) intended for developer use — sign-in
    * badges, app showcases, programmatic listings. Not displayed on the
    * public profile. Must be `image/svg+xml`; we sanitise on upload.
@@ -474,6 +480,20 @@ export function validateProfile(
   if (v.avatar !== undefined && !isBlob(v.avatar)) {
     return { ok: false, error: "avatar: invalid blob ref" };
   }
+  if (v.banner !== undefined) {
+    if (!isBlob(v.banner)) {
+      return { ok: false, error: "banner: invalid blob ref" };
+    }
+    const mime = (v.banner as BlobRef).mimeType;
+    if (
+      mime !== "image/png" && mime !== "image/jpeg" && mime !== "image/webp"
+    ) {
+      return { ok: false, error: "banner: must be png, jpeg, or webp" };
+    }
+    if ((v.banner as BlobRef).size > 3_000_000) {
+      return { ok: false, error: "banner: max 3MB" };
+    }
+  }
   if (v.icon !== undefined) {
     if (!isBlob(v.icon)) {
       return { ok: false, error: "icon: invalid blob ref" };
@@ -519,6 +539,7 @@ export function validateProfile(
       iosLink: normalizedIosLink,
       androidLink: normalizedAndroidLink,
       avatar: v.avatar as BlobRef | undefined,
+      banner: v.banner as BlobRef | undefined,
       icon: v.icon as BlobRef | undefined,
       iconBw: v.iconBw as BlobRef | undefined,
       screenshots: screenshotsRes.value.length > 0

@@ -71,6 +71,11 @@ export interface ProfileRow {
   screenshots: ScreenshotEntry[];
   avatarCid: string | null;
   avatarMime: string | null;
+  /** Optional banner image rendered at the top of the project page and
+   *  used as the OG/Twitter card preview when the page is shared.
+   *  Recommended 1200x630 (1.91:1 OG ratio). */
+  bannerCid: string | null;
+  bannerMime: string | null;
   /** Optional developer-facing SVG icon. Not rendered on public profile.
    *  Approval state lives in `iconStatus`. */
   iconCid: string | null;
@@ -129,6 +134,8 @@ interface RawProfileRow {
   screenshots: string | null;
   avatar_cid: string | null;
   avatar_mime: string | null;
+  banner_cid: string | null;
+  banner_mime: string | null;
   icon_cid: string | null;
   icon_mime: string | null;
   icon_status: string | null;
@@ -257,6 +264,8 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     screenshots: safeJsonScreenshots(r.screenshots),
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
+    bannerCid: r.banner_cid,
+    bannerMime: r.banner_mime,
     iconCid: r.icon_cid,
     iconMime: r.icon_mime,
     iconStatus: normalizeIconStatus(r.icon_status),
@@ -321,6 +330,8 @@ export interface UpsertProfileInput {
   screenshots?: ScreenshotEntry[] | null;
   avatarCid?: string | null;
   avatarMime?: string | null;
+  bannerCid?: string | null;
+  bannerMime?: string | null;
   iconCid?: string | null;
   iconMime?: string | null;
   iconBwCid?: string | null;
@@ -366,7 +377,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         INSERT INTO profile (
           did, handle, profile_type, name, description, main_link, ios_link, android_link,
           categories, subcategories, links, screenshots,
-          avatar_cid, avatar_mime, icon_cid, icon_mime, icon_status,
+          avatar_cid, avatar_mime, banner_cid, banner_mime,
+          icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
           icon_bw_cid, icon_bw_mime, icon_bw_status,
           icon_bw_reviewed_by, icon_bw_reviewed_at, icon_bw_rejected_reason,
@@ -376,7 +388,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           takedown_status, takedown_reason, takedown_by, takedown_at,
           pds_url, record_cid, record_rev, created_at, indexed_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           NULL, NULL, NULL,
           ?, ?, ?,
           NULL, NULL, NULL,
@@ -398,6 +410,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           screenshots=excluded.screenshots,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
+          banner_cid=excluded.banner_cid,
+          banner_mime=excluded.banner_mime,
           icon_cid=excluded.icon_cid,
           icon_mime=excluded.icon_mime,
           /**
@@ -505,6 +519,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         JSON.stringify(input.screenshots ?? []),
         input.avatarCid ?? null,
         input.avatarMime ?? null,
+        input.bannerCid ?? null,
+        input.bannerMime ?? null,
         input.iconCid ?? null,
         input.iconMime ?? null,
         initialIconStatus,

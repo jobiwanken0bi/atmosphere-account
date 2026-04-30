@@ -36,6 +36,9 @@ interface ExistingProfile {
   links: LinkEntry[];
   screenshots: Array<{ ref: string; mime: string; size: number }>;
   avatar: { ref: string; mime: string } | null;
+  /** Optional project banner image. Rendered at the top of the project
+   *  page and used as the OG / share preview when the page is posted. */
+  banner: { ref: string; mime: string } | null;
   /** Optional developer-facing SVG icon. */
   icon:
     | {
@@ -332,6 +335,23 @@ export default function CreateProfileForm(
   const avatarFile = useSignal<File | null>(null);
   const avatarRemoved = useSignal(false);
 
+  /**
+   * Project banner. Mirrors the avatar contract — `bannerKeep` carries
+   * the existing BlobRef so saves without a new file pass it through;
+   * `bannerFile` holds a freshly-picked File before upload; `bannerPreview`
+   * is the URL the form renders. Cleared via `removeBanner`.
+   */
+  const bannerKeep = useSignal<BlobRefShape | null>(null);
+  const bannerPreview = useSignal<string | null>(
+    initial?.banner
+      ? `/api/registry/banner/${encodeURIComponent(did)}?v=${
+        encodeURIComponent(initial.banner.ref)
+      }`
+      : null,
+  );
+  const bannerFile = useSignal<File | null>(null);
+  const bannerRemoved = useSignal(false);
+
   const screenshots = useSignal<ScreenshotDraft[]>(
     (initial?.screenshots ?? []).slice(0, SCREENSHOT_MAX_COUNT).map((s, i) => ({
       id: `existing-${s.ref}-${i}`,
@@ -410,6 +430,16 @@ export default function CreateProfileForm(
       $type: "blob",
       ref: { $link: initial.avatar.ref },
       mimeType: initial.avatar.mime,
+      size: 0,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!initial?.banner) return;
+    bannerKeep.value = {
+      $type: "blob",
+      ref: { $link: initial.banner.ref },
+      mimeType: initial.banner.mime,
       size: 0,
     };
   }, []);
@@ -496,6 +526,36 @@ export default function CreateProfileForm(
     avatarKeep.value = null;
     avatarRemoved.value = true;
     avatarPreview.value = null;
+  };
+
+  const onBannerChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (
+      file.type !== "image/png" &&
+      file.type !== "image/jpeg" &&
+      file.type !== "image/webp"
+    ) {
+      message.value = { kind: "error", text: tForm.bannerInvalidType };
+      input.value = "";
+      return;
+    }
+    if (file.size > 3_000_000) {
+      message.value = { kind: "error", text: tForm.bannerTooLarge };
+      input.value = "";
+      return;
+    }
+    bannerFile.value = file;
+    bannerRemoved.value = false;
+    bannerPreview.value = URL.createObjectURL(file);
+  };
+
+  const removeBanner = () => {
+    bannerFile.value = null;
+    bannerKeep.value = null;
+    bannerRemoved.value = true;
+    bannerPreview.value = null;
   };
 
   const onScreenshotsChange = (event: Event) => {
@@ -742,6 +802,17 @@ export default function CreateProfileForm(
         payload.avatar = null;
       }
 
+      if (bannerFile.value) {
+        payload.bannerUpload = {
+          dataBase64: await readFileAsBase64(bannerFile.value),
+          mimeType: bannerFile.value.type,
+        };
+      } else if (!bannerRemoved.value && bannerKeep.value) {
+        payload.banner = bannerKeep.value;
+      } else {
+        payload.banner = null;
+      }
+
       if (iconFile.value) {
         payload.iconUpload = {
           dataBase64: await readFileAsBase64(iconFile.value),
@@ -854,6 +925,53 @@ export default function CreateProfileForm(
               : tManage.statusInactiveSub}
           </span>
         </span>
+      </div>
+
+      <div class="profile-form-banner">
+        <div
+          class={`profile-form-banner-preview${
+            bannerPreview.value ? "" : " profile-form-banner-preview--empty"
+          }`}
+          aria-hidden={bannerPreview.value ? undefined : "true"}
+        >
+          {bannerPreview.value
+            ? (
+              <img
+                src={bannerPreview.value}
+                alt=""
+                class="profile-form-banner-img"
+                onError={() => {
+                  bannerPreview.value = null;
+                }}
+              />
+            )
+            : (
+              <span class="profile-form-banner-placeholder">
+                {tForm.bannerLabel}
+              </span>
+            )}
+        </div>
+        <div class="profile-form-banner-controls">
+          <label class="profile-form-button-secondary">
+            {bannerPreview.value ? tForm.bannerReplace : tForm.bannerLabel}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+              onChange={onBannerChange}
+            />
+          </label>
+          {bannerPreview.value && (
+            <button
+              type="button"
+              class="profile-form-button-link"
+              onClick={removeBanner}
+            >
+              {tForm.bannerRemove}
+            </button>
+          )}
+        </div>
+        <p class="profile-form-hint">{tForm.bannerHint}</p>
       </div>
 
       <div class="profile-form-row">

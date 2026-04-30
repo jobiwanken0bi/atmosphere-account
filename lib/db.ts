@@ -102,6 +102,8 @@ const SCHEMA_STATEMENTS: string[] = [
     screenshots TEXT NOT NULL DEFAULT '[]',
     avatar_cid TEXT,
     avatar_mime TEXT,
+    banner_cid TEXT,
+    banner_mime TEXT,
     icon_cid TEXT,
     icon_mime TEXT,
     icon_status TEXT,
@@ -377,6 +379,16 @@ async function applyAdditiveMigrations(
         column: "screenshots",
         ddl:
           "ALTER TABLE profile ADD COLUMN screenshots TEXT NOT NULL DEFAULT '[]'",
+      },
+      {
+        table: "profile",
+        column: "banner_cid",
+        ddl: "ALTER TABLE profile ADD COLUMN banner_cid TEXT",
+      },
+      {
+        table: "profile",
+        column: "banner_mime",
+        ddl: "ALTER TABLE profile ADD COLUMN banner_mime TEXT",
       },
       {
         table: "profile",

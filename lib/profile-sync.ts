@@ -46,6 +46,8 @@ export async function upsertProfileFromRecord(input: {
     screenshots: r.screenshots ?? [],
     avatarCid: r.avatar?.ref.$link ?? null,
     avatarMime: r.avatar?.mimeType ?? null,
+    bannerCid: r.banner?.ref.$link ?? null,
+    bannerMime: r.banner?.mimeType ?? null,
     iconCid: r.icon?.ref.$link ?? null,
     iconMime: r.icon?.mimeType ?? null,
     iconBwCid: r.iconBw?.ref.$link ?? null,

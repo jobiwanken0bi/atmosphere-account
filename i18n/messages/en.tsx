@@ -508,7 +508,7 @@ const en = {
     browseBy: "Browse by",
     nothingHere: "Nothing here yet.",
     nothingHereSubtle: "Be the first to add a project in this category.",
-    viewProfile: "View profile",
+    viewProfile: "View project page",
     by: "by",
     poweredByYou:
       "Powered by you — every entry is created and signed by the project's own Atmosphere account.",
@@ -516,8 +516,8 @@ const en = {
       openOn: "Open on",
       lastUpdated: "Last updated",
       hostedOn: "Account Provider",
-      editProfile: "Edit this profile",
-      missingProfile: "We couldn't find a profile for that handle.",
+      editProfile: "Edit this project page",
+      missingProfile: "We couldn't find a project page for that handle.",
       backToExplore: "Back to Explore",
       categoryLabel: "Category",
       whatsNew: {
@@ -528,7 +528,15 @@ const en = {
         readFullUpdate: "Read full update",
       },
       notFoundTitle: "404",
-      notFoundBody: "We couldn't find a profile for that handle.",
+      notFoundBody: "We couldn't find a project page for that handle.",
+      share: {
+        button: "Share",
+        copyLink: "Copy link",
+        copied: "Link copied",
+        copyFailed: "Couldn't copy. Long-press the URL bar to copy it.",
+        shareTitle: (name: string) => `${name} on Atmosphere Account`,
+        bannerAlt: (name: string) => `${name} project banner`,
+      },
     },
     create: {
       eyebrow: "Add to Explore",
@@ -562,7 +570,7 @@ const en = {
         "Publish to add this profile to Explore. Nothing is shared until you do.",
       signOut: "Sign out",
       signedInAs: "Signed in as",
-      viewPublicProfile: "View public profile",
+      viewPublicProfile: "View project page",
     },
   },
 
@@ -582,6 +590,13 @@ const en = {
       avatarHint: "PNG, JPEG, or WebP. 1MB max. Square works best.",
       avatarReplace: "Replace icon",
       avatarRemove: "Remove icon",
+      bannerLabel: "Project banner",
+      bannerHint:
+        "Shown at the top of your project page and used as the share preview when your link is posted (Bluesky, Twitter, etc.). Recommended 1200×630, PNG/JPEG/WebP, 3MB max.",
+      bannerReplace: "Replace banner",
+      bannerRemove: "Remove banner",
+      bannerInvalidType: "Banner must be PNG, JPEG, or WebP.",
+      bannerTooLarge: "Banner must be 3MB or smaller.",
       requiredHint: "Required",
       avatarTooLarge: "Avatar must be 1MB or smaller.",
       confirmDelete: "Remove your project from Explore?",
@@ -667,7 +682,7 @@ const en = {
       icon: {
         sectionLabel: "Developer icon (SVG, optional)",
         hint:
-          "Vector marks for developers — sign-in badges, app showcases, programmatic listings. Not shown on your public profile. SVG only, 200KB max per variant. Both variants are optional and can be uploaded independently.",
+          "Vector marks for developers — sign-in badges, app showcases, programmatic listings. Not shown on your project page. SVG only, 200KB max per variant. Both variants are optional and can be uploaded independently.",
         upload: "Upload SVG",
         replace: "Replace SVG",
         remove: "Remove SVG",
@@ -726,7 +741,7 @@ const en = {
         eyebrow: "What's New",
         title: "Project updates",
         body:
-          "Post release notes for your public profile. Each update is saved as its own record on your project account.",
+          "Post release notes for your project page. Each update is saved as its own record on your project account.",
         titleLabel: "Update title",
         titlePlaceholder: "e.g. New beta release",
         versionLabel: "Version (optional)",
@@ -812,7 +827,7 @@ const en = {
       requestedAtLabel: "Requested",
       grantedAtLabel: "Verified",
       emailLabel: "Contact email",
-      viewProfile: "View profile",
+      viewProfile: "View project page",
     },
     reports: {
       headline: "Open reports",

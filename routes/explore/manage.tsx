@@ -68,6 +68,9 @@ export const handler = define.handlers({
         avatar: existing.avatarCid && existing.avatarMime
           ? { ref: existing.avatarCid, mime: existing.avatarMime }
           : null,
+        banner: existing.bannerCid && existing.bannerMime
+          ? { ref: existing.bannerCid, mime: existing.bannerMime }
+          : null,
         icon: existing.iconCid && existing.iconMime
           ? {
             ref: existing.iconCid,
@@ -107,6 +110,7 @@ export const handler = define.handlers({
                 mime: bsky.avatar.mimeType,
               }
               : null,
+            banner: null,
             icon: null,
             iconBw: null,
             iconAccessStatus: null,

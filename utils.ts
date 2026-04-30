@@ -8,6 +8,28 @@ export interface SessionUser {
   handle: string;
 }
 
+/**
+ * Per-page social/Open Graph overrides. Routes can set `state.pageMeta`
+ * inside their handler to make `_app.tsx` emit page-specific OG tags
+ * (page title, description, share image). Used by project pages so the
+ * project's banner becomes the link-card preview when the URL is shared.
+ */
+export interface PageMeta {
+  /** Replaces the document <title>. */
+  title?: string;
+  /** Replaces meta[name=description] and og:description. */
+  description?: string;
+  /** Absolute (or root-relative) URL of the share image. */
+  imageUrl?: string;
+  /** Alt text for the share image. */
+  imageAlt?: string;
+  /** OG image dimensions, when known. Defaults match the site-wide OG image. */
+  imageWidth?: number;
+  imageHeight?: number;
+  /** Override og:type (defaults to "website"; project pages use "profile"). */
+  ogType?: string;
+}
+
 export interface State {
   /** Active locale for this request. Set by the locale middleware. */
   locale: Locale;
@@ -19,6 +41,8 @@ export interface State {
    *  most-recently-used order. Populated by sessionMiddleware so
    *  routes can hand the list to AccountMenu for the switcher. */
   rememberedAccounts: RememberedAccount[];
+  /** Optional per-page social/OG meta overrides; see {@link PageMeta}. */
+  pageMeta?: PageMeta;
   // deno-lint-ignore no-explicit-any
   [key: string]: any;
 }

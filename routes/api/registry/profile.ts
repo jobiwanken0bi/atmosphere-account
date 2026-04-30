@@ -32,6 +32,7 @@ import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
 
 const ICON_MAX_BYTES = 200_000;
+const BANNER_MAX_BYTES = 3_000_000;
 const SCREENSHOT_MAX_BYTES = 5_000_000;
 const SCREENSHOT_MAX_COUNT = 4;
 const SCREENSHOT_MIME_TYPES = new Set([
@@ -39,6 +40,7 @@ const SCREENSHOT_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
 ]);
+const BANNER_MIME_TYPES = SCREENSHOT_MIME_TYPES;
 
 interface LinkPayload {
   kind?: string;
@@ -68,6 +70,19 @@ interface ProfileFormPayload {
     size: number;
   } | null;
   avatarUpload?: { dataBase64: string; mimeType: string };
+  /**
+   * Project banner image. Same shape as `avatar`: pass the existing
+   * BlobRef back to keep, `null` to clear, or `bannerUpload` to replace.
+   * Rendered at the top of the project page and used as the OG/Twitter
+   * card preview when the URL is shared. Recommended 1200x630.
+   */
+  banner?: {
+    $type: "blob";
+    ref: { $link: string };
+    mimeType: string;
+    size: number;
+  } | null;
+  bannerUpload?: { dataBase64: string; mimeType: string };
   /**
    * Developer-facing SVG icon. Same shape as `avatar`: pass the
    * existing BlobRef to keep, `null` to clear, or `iconUpload` to
@@ -228,6 +243,36 @@ export const handler = define.handlers({
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
         return new Response(`avatar upload failed: ${m}`, { status: 502 });
+      }
+    }
+
+    /**
+     * Banner upload mirrors the avatar contract — pass the existing
+     * BlobRef back to keep it, `null` to clear, or `bannerUpload` to
+     * replace. The PDS blob doubles as the OG/Twitter card image
+     * referenced from the project page meta tags.
+     */
+    let banner = body.banner ?? undefined;
+    if (body.bannerUpload?.dataBase64) {
+      if (!BANNER_MIME_TYPES.has(body.bannerUpload.mimeType)) {
+        return new Response("banner must be png, jpeg, or webp", {
+          status: 400,
+        });
+      }
+      const bytes = decodeBase64(body.bannerUpload.dataBase64);
+      if (bytes.byteLength > BANNER_MAX_BYTES) {
+        return new Response("banner exceeds 3MB", { status: 400 });
+      }
+      try {
+        banner = await uploadBlob(
+          user.did,
+          session.pdsUrl,
+          bytes,
+          body.bannerUpload.mimeType,
+        );
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(`banner upload failed: ${m}`, { status: 502 });
       }
     }
 
@@ -408,6 +453,7 @@ export const handler = define.handlers({
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
       avatar: avatar ?? undefined,
+      banner: banner ?? undefined,
       icon: icon ?? undefined,
       iconBw: iconBw ?? undefined,
       screenshots: screenshots.length > 0 ? screenshots : undefined,
@@ -455,6 +501,8 @@ export const handler = define.handlers({
         screenshots: validation.value.screenshots ?? [],
         avatarCid: validation.value.avatar?.ref.$link ?? null,
         avatarMime: validation.value.avatar?.mimeType ?? null,
+        bannerCid: validation.value.banner?.ref.$link ?? null,
+        bannerMime: validation.value.banner?.mimeType ?? null,
         iconCid: validation.value.icon?.ref.$link ?? null,
         iconMime: validation.value.icon?.mimeType ?? null,
         iconBwCid: validation.value.iconBw?.ref.$link ?? null,

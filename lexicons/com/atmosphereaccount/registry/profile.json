@@ -53,6 +53,12 @@
             "maxSize": 1000000,
             "description": "Project icon. Recommended 512x512 square."
           },
+          "banner": {
+            "type": "blob",
+            "accept": ["image/png", "image/jpeg", "image/webp"],
+            "maxSize": 3000000,
+            "description": "Optional project banner image. Rendered at the top of the project page and used as the OpenGraph / Twitter card preview when the page is shared. Recommended 1200x630 (1.91:1 OG ratio)."
+          },
           "icon": {
             "type": "blob",
             "accept": ["image/svg+xml"],

@@ -10,6 +10,7 @@ import ProfileReviewList, {
 } from "../../components/explore/ProfileReviewList.tsx";
 import ProfileReviewComposer from "../../islands/ProfileReviewComposer.tsx";
 import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
+import ShareButton from "../../islands/ShareButton.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import type { Locale } from "../../i18n/mod.ts";
 import {
@@ -27,7 +28,7 @@ import {
 import { accountProviderName } from "../../lib/account-providers.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUser } from "../../lib/account-types.ts";
-import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
+import { bskyCdnAvatarUrl, bskyCdnBannerUrl } from "../../lib/avatar.ts";
 import {
   listProfileUpdates,
   type ProfileUpdateRow,
@@ -71,6 +72,43 @@ export const handler = define.handlers({
         [] as ProfileUpdateRow[],
       ];
     const displayReviews = profile ? await enrichReviews(reviews) : [];
+    /**
+     * Per-page social meta. When the project has a banner, the
+     * Bluesky CDN URL is used as the OG/Twitter image so the project
+     * banner becomes the link card preview anywhere the URL is
+     * shared. Project name + description fill the title and
+     * description so the card carries enough context on its own.
+     */
+    if (profile) {
+      const messages = getMessages(ctx.state.locale).explore;
+      const pageTitle = `${profile.name} on Atmosphere Account`;
+      const pageDescription = profile.description ||
+        messages.detail.missingProfile;
+      const ogImageUrl = profile.bannerCid
+        ? bskyCdnBannerUrl(profile.did, profile.bannerCid)
+        : undefined;
+      ctx.state.pageMeta = {
+        title: pageTitle,
+        description: pageDescription,
+        ogType: "profile",
+        imageUrl: ogImageUrl,
+        imageAlt: profile.bannerCid
+          ? messages.detail.share.bannerAlt(profile.name)
+          : undefined,
+      };
+    }
+    /**
+     * Build the absolute canonical URL once on the server. The Web
+     * Share API + clipboard fallback both want a fully-qualified URL,
+     * and computing it from the request keeps it correct across
+     * preview deployments / custom domains.
+     */
+    const shareUrl = profile
+      ? new URL(
+        `/explore/${encodeURIComponent(profile.handle)}`,
+        ctx.url.origin,
+      ).toString()
+      : ctx.url.toString();
     return ctx.render(
       <ProfileDetailPage
         profile={profile}
@@ -82,6 +120,7 @@ export const handler = define.handlers({
         account={buildAccountMenuProps(ctx.state, ownerProfile?.handle ?? null)}
         ownerHandle={ownerProfile?.handle ?? null}
         locale={ctx.state.locale}
+        shareUrl={shareUrl}
       />,
       { status: profile ? 200 : 404 },
     );
@@ -98,6 +137,9 @@ interface DetailProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   ownerHandle: string | null;
   locale: Locale;
+  /** Absolute URL of this project page; passed to the Share button so
+   *  copy-to-clipboard / Web Share API both get the canonical link. */
+  shareUrl: string;
 }
 
 function ProfileDetailPage(
@@ -111,6 +153,7 @@ function ProfileDetailPage(
     account,
     ownerHandle: _ownerHandle,
     locale,
+    shareUrl,
   }: DetailProps,
 ) {
   const messages = getMessages(locale);
@@ -130,18 +173,44 @@ function ProfileDetailPage(
    *  which isn't useful in UI. Collapse known umbrella PDSes to their
    *  brand name (Bluesky, etc.) and fall back to the bare host. */
   const providerName = accountProviderName(profile.pdsUrl);
+  const bannerUrl = profile.bannerCid
+    ? bskyCdnBannerUrl(profile.did, profile.bannerCid)
+    : null;
+  const shareCopy = t.detail.share;
   return (
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
         <section class="explore-profile-detail">
           <div class="container" style={{ maxWidth: "880px" }}>
-            <p>
+            <div class="project-page-toolbar">
               <a href="/explore" class="text-link-button">
                 ← {t.detail.backToExplore}
               </a>
-            </p>
-            <div style={{ marginTop: "1rem" }}>
+              <ShareButton
+                url={shareUrl}
+                title={shareCopy.shareTitle(profile.name)}
+                text={profile.description}
+                copy={{
+                  button: shareCopy.button,
+                  copyLink: shareCopy.copyLink,
+                  copied: shareCopy.copied,
+                  copyFailed: shareCopy.copyFailed,
+                }}
+              />
+            </div>
+            {bannerUrl && (
+              <div class="project-page-banner" aria-hidden={false}>
+                <img
+                  src={bannerUrl}
+                  alt={shareCopy.bannerAlt(profile.name)}
+                  class="project-page-banner-img"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+            )}
+            <div style={{ marginTop: bannerUrl ? "0" : "1rem" }}>
               <ProfileHero profile={profile} />
             </div>
             <ProfileScreenshots profile={profile} />

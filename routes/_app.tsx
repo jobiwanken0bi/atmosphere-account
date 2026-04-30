@@ -259,29 +259,48 @@ export default define.page(function App(ctx) {
     : url.pathname.startsWith("/explore")
     ? "/og-explore.png"
     : "/og-hero.png";
-  const socialImageAlt = url.pathname.startsWith("/developer-resources")
+  const defaultSocialImageAlt = url.pathname.startsWith("/developer-resources")
     ? "Atmosphere developer resources: tools to make the Atmosphere easier to understand."
     : url.pathname.startsWith("/explore")
     ? "Explore the Atmosphere registry: apps, profiles, reviews, and updates."
     : t.meta.ogImageAlt;
+  /**
+   * Per-page OG overrides set by route handlers via `ctx.state.pageMeta`.
+   * Used by project pages so the project's banner becomes the share-card
+   * image (instead of the generic `/og-explore.png`) and the title /
+   * description match the project. We still fall back to the site-wide
+   * defaults for any field a page doesn't override.
+   */
+  const pageMeta = state.pageMeta ?? {};
+  const pageTitle = pageMeta.title ?? t.meta.title;
+  const pageDescription = pageMeta.description ?? t.meta.description;
+  const pageOgType = pageMeta.ogType ?? "website";
+  const pageOgImage = pageMeta.imageUrl
+    ? socialImageUrl(pageMeta.imageUrl)
+    : socialImageUrl(socialImagePath);
+  const pageOgImageAlt = pageMeta.imageAlt ?? defaultSocialImageAlt;
+  const pageOgImageWidth = pageMeta.imageWidth ?? 1200;
+  const pageOgImageHeight = pageMeta.imageHeight ?? 630;
   return (
     <html lang={locale} class={htmlClass}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>{t.meta.title}</title>
-        <meta name="description" content={t.meta.description} />
-        <meta property="og:title" content={t.meta.ogTitle} />
-        <meta property="og:description" content={t.meta.ogDescription} />
+        <title>{pageTitle}</title>
+        <meta name="description" content={pageDescription} />
+        <meta property="og:title" content={pageMeta.title ?? t.meta.ogTitle} />
+        <meta
+          property="og:description"
+          content={pageMeta.description ?? t.meta.ogDescription}
+        />
         <meta property="og:locale" content={locale} />
-        <meta property="og:type" content="website" />
-        <meta property="og:image" content={socialImageUrl(socialImagePath)} />
-        <meta property="og:image:type" content="image/png" />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content={socialImageAlt} />
+        <meta property="og:type" content={pageOgType} />
+        <meta property="og:image" content={pageOgImage} />
+        <meta property="og:image:width" content={String(pageOgImageWidth)} />
+        <meta property="og:image:height" content={String(pageOgImageHeight)} />
+        <meta property="og:image:alt" content={pageOgImageAlt} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:image" content={socialImageUrl(socialImagePath)} />
+        <meta name="twitter:image" content={pageOgImage} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/svg+xml" href="/union.svg" />
         <link rel="apple-touch-icon" href="/union.svg" />
