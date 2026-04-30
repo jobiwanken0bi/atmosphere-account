@@ -42,6 +42,9 @@ export const handler = define.handlers({
         "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
       );
       headers.set("etag", profile.bannerCid);
+      headers.set("content-disposition", "inline");
+      headers.set("access-control-allow-origin", "*");
+      headers.set("cross-origin-resource-policy", "cross-origin");
       return new Response(upstream.body, { status: 200, headers });
     } catch (err) {
       console.warn("[banner] proxy error:", err);

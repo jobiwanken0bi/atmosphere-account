@@ -37,16 +37,18 @@ export const handler = define.handlers({
         const img = await Image.decode(buf);
         const cov = img.cover(OG_W, OG_H);
         const jpeg = await cov.encodeJPEG(JPEG_QUALITY);
+        const headers = new Headers({
+          "content-type": "image/jpeg",
+          "cache-control":
+            "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
+          "etag": `${profile.bannerCid}-og`,
+          "content-disposition": 'inline; filename="og-banner.jpg"',
+          "access-control-allow-origin": "*",
+          "cross-origin-resource-policy": "cross-origin",
+        });
         return new Response(
           new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }),
-          {
-            status: 200,
-            headers: {
-              "cache-control":
-                "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
-              "etag": `${profile.bannerCid}-og`,
-            },
-          },
+          { status: 200, headers },
         );
       } catch (err) {
         console.warn("[og-banner] resize failed, serving raw bytes:", err);
@@ -58,6 +60,9 @@ export const handler = define.handlers({
             "cache-control":
               "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
             "etag": profile.bannerCid,
+            "content-disposition": "inline",
+            "access-control-allow-origin": "*",
+            "cross-origin-resource-policy": "cross-origin",
           },
         });
       }
