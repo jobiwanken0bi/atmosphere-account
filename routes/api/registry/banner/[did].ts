@@ -1,30 +1,51 @@
 /**
- * Compatibility endpoint for registry profile banners. Mirrors the
- * avatar route — primary UI paths can hit Bluesky's CDN directly via
- * `bskyCdnBannerUrl`; this route exists so external link unfurlers,
- * old embeds, or any consumer that just knows the DID can resolve the
- * banner without first looking up the cid.
+ * Proxies a project's banner blob from the owner's PDS. Used as the
+ * canonical banner URL for both the in-page <img> and the OG/Twitter
+ * meta image so link-unfurlers (Bluesky, Slack, Twitter, iMessage, etc.)
+ * can fetch it directly without cross-origin PDS restrictions.
+ *
+ * The response is aggressively cached — the cache key includes the DID
+ * (stable) but not the CID, so cache-control is bounded the same way as
+ * the screenshot proxy: long enough to be useful, short enough that a
+ * banner replacement shows up within a day.
  */
 import { define } from "../../../../utils.ts";
-import { bskyCdnBannerUrl } from "../../../../lib/avatar.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
+import { fetchBlobPublic } from "../../../../lib/pds.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
     const did = decodeURIComponent(ctx.params.did);
     const profile = await getProfileByDid(did).catch(() => null);
-    const bannerCid = profile?.bannerCid;
-    if (!bannerCid) {
+    if (!profile?.bannerCid) {
       return new Response("not found", { status: 404 });
     }
-    return new Response(null, {
-      status: 302,
-      headers: {
-        location: bskyCdnBannerUrl(did, bannerCid),
-        "cache-control":
-          "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600",
-      },
-    });
+    try {
+      const upstream = await fetchBlobPublic(
+        profile.pdsUrl,
+        did,
+        profile.bannerCid,
+      );
+      if (!upstream.ok) {
+        return new Response("not found", { status: 404 });
+      }
+      const headers = new Headers();
+      headers.set(
+        "content-type",
+        upstream.headers.get("content-type") ??
+          profile.bannerMime ??
+          "image/jpeg",
+      );
+      headers.set(
+        "cache-control",
+        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
+      );
+      headers.set("etag", profile.bannerCid);
+      return new Response(upstream.body, { status: 200, headers });
+    } catch (err) {
+      console.warn("[banner] proxy error:", err);
+      return new Response("upstream error", { status: 502 });
+    }
   }),
 });

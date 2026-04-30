@@ -28,7 +28,7 @@ import {
 import { accountProviderName } from "../../lib/account-providers.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUser } from "../../lib/account-types.ts";
-import { bskyCdnAvatarUrl, bskyCdnBannerUrl } from "../../lib/avatar.ts";
+import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import {
   listProfileUpdates,
   type ProfileUpdateRow,
@@ -85,7 +85,10 @@ export const handler = define.handlers({
       const pageDescription = profile.description ||
         messages.detail.missingProfile;
       const ogImageUrl = profile.bannerCid
-        ? bskyCdnBannerUrl(profile.did, profile.bannerCid)
+        ? new URL(
+          `/api/registry/banner/${encodeURIComponent(profile.did)}`,
+          ctx.url.origin,
+        ).toString()
         : undefined;
       ctx.state.pageMeta = {
         title: pageTitle,
@@ -174,7 +177,7 @@ function ProfileDetailPage(
    *  brand name (Bluesky, etc.) and fall back to the bare host. */
   const providerName = accountProviderName(profile.pdsUrl);
   const bannerUrl = profile.bannerCid
-    ? bskyCdnBannerUrl(profile.did, profile.bannerCid)
+    ? `/api/registry/banner/${encodeURIComponent(profile.did)}`
     : null;
   const shareCopy = t.detail.share;
   return (
@@ -190,7 +193,6 @@ function ProfileDetailPage(
               <ShareButton
                 url={shareUrl}
                 title={shareCopy.shareTitle(profile.name)}
-                text={profile.description}
                 copy={{
                   button: shareCopy.button,
                   copyLink: shareCopy.copyLink,
