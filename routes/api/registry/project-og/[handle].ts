@@ -1,17 +1,17 @@
 /**
- * Social / link-preview sized banner for `og:image` (~1200×630 JPEG), keyed by DID.
- * Prefer `/api/registry/project-og/{handle}` in page meta (shorter URL, no encoded
- * colons). This route remains for bookmarks, API clients, and back-compat.
+ * Same bytes as `/api/registry/og-banner/{did}`, but keyed by registry handle.
+ * Used in HTML `og:image` so unfurlers see a short URL without `%3A` / DID
+ * encoding (Cardyb double-encodes the inner URL).
  */
 import { define } from "../../../../utils.ts";
-import { getProfileByDid } from "../../../../lib/registry.ts";
+import { getProfileByHandle } from "../../../../lib/registry.ts";
 import { buildOgBannerResponse } from "../../../../lib/og-banner-serve.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
-    const did = decodeURIComponent(ctx.params.did);
-    const profile = await getProfileByDid(did).catch(() => null);
+    const handle = decodeURIComponent(ctx.params.handle).toLowerCase();
+    const profile = await getProfileByHandle(handle).catch(() => null);
     if (!profile?.bannerCid) {
       return new Response("not found", { status: 404 });
     }

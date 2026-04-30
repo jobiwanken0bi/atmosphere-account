@@ -1,8 +1,8 @@
 /**
  * Proxies a project's banner blob from the owner's PDS for the in-page
  * `<img>` (full resolution). Open Graph / Twitter meta images use
- * `/api/registry/og-banner/{did}` instead — a small 1200×630 JPEG for embed
- * pipelines (e.g. Bluesky composer) that struggle with large PNGs.
+ * `/api/registry/project-og/{handle}` (or `og-banner/{did}`) — a small
+ * 1200×630 JPEG for embed pipelines that struggle with large PNGs.
  *
  * The response is aggressively cached — the cache key includes the DID
  * (stable) but not the CID, so cache-control is bounded the same way as

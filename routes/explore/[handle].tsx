@@ -91,7 +91,7 @@ export const handler = define.handlers({
         messages.detail.missingProfile;
       const ogImageUrl = profile.bannerCid
         ? new URL(
-          `/api/registry/og-banner/${encodeURIComponent(profile.did)}`,
+          `/api/registry/project-og/${encodeURIComponent(profile.handle)}`,
           ctx.url.origin,
         ).href
         : undefined;

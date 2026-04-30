@@ -57,9 +57,10 @@ export const handler = define.handlers({
         }
         const buf = new Uint8Array(await upstream.arrayBuffer());
         const img = await Image.decode(buf);
-        const jpeg = new Uint8Array(
+        const jpegLoose = new Uint8Array(
           await img.cover(OG_W, OG_H).encodeJPEG(JPEG_QUALITY),
         );
+        const jpeg = jpegLoose.slice();
         await storeOgJpeg(row.did, jpeg);
         processed++;
       } catch (err) {

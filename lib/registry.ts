@@ -568,7 +568,7 @@ export async function storeOgJpeg(
  * Read the pre-generated OG JPEG bytes for a project, or null if none
  * has been stored yet (e.g. profile pre-dates this feature).
  */
-export async function getOgJpeg(did: string): Promise<Uint8Array | null> {
+export function getOgJpeg(did: string): Promise<Uint8Array | null> {
   return withDb(async (c) => {
     const r = await c.execute({
       sql: `SELECT og_jpeg FROM profile WHERE did = ?`,

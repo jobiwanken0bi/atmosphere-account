@@ -296,7 +296,8 @@ export const handler = define.handlers({
       }
       // Pre-generate the 1200×630 JPEG for the og:image cache. This runs
       // after the PDS upload succeeds so a resize failure never blocks saving.
-      ogJpeg = await generateOgJpeg(bytes);
+      const rawOg = await generateOgJpeg(bytes);
+      ogJpeg = rawOg ? rawOg.slice() : null;
     }
 
     /**
