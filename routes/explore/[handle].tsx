@@ -102,7 +102,7 @@ export const handler = define.handlers({
      */
     if (profile) {
       const messages = getMessages(ctx.state.locale).explore;
-      const pageTitle = `${profile.name} on Atmosphere Account`;
+      const pageTitle = `${profile.name} on Atmosphere Explore`;
       const pageDescription = profile.description ||
         messages.detail.missingProfile;
       const ogImageUrl = profile.bannerCid

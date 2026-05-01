@@ -534,7 +534,7 @@ const en = {
         copyLink: "Copy link",
         copied: "Link copied",
         copyFailed: "Couldn't copy. Long-press the URL bar to copy it.",
-        shareTitle: (name: string) => `${name} on Atmosphere Account`,
+        shareTitle: (name: string) => `${name} on Atmosphere Explore`,
         bannerAlt: (name: string) => `${name} project banner`,
       },
     },
