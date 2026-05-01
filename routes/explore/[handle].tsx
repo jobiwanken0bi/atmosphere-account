@@ -72,9 +72,25 @@ export const handler = define.handlers({
         [] as ProfileUpdateRow[],
       ];
     const displayReviews = profile ? await enrichReviews(reviews) : [];
+    /**
+     * Share URL intentionally ends in `/`. Bluesky's composer runs a
+     * client-side `getLikelyType` over the pasted URL: it splits the path
+     * by `.`, takes the last segment, and looks it up in a MIME-type
+     * table. For handles like `foo.com` the "extension" is `com`, mapped
+     * to `application/x-msdownload` (a Windows executable!), so the
+     * composer treats the URL as a non-HTML resource and refuses to call
+     * Cardyb at all — the link card has no preview image. Adding the
+     * trailing slash makes the parsed extension `com/`, which is not in
+     * the table, so the composer falls through to its `LikelyType.HTML`
+     * default and unfurls the page. Cardyb / our redirect middleware
+     * round-trip to the canonical no-slash URL, so the post link still
+     * resolves correctly.
+     *
+     * Bluesky source: https://github.com/bluesky-social/social-app/blob/main/src/lib/link-meta/link-meta.ts
+     */
     const shareUrl = profile
       ? new URL(
-        `/explore/${encodeURIComponent(profile.handle)}`,
+        `/explore/${encodeURIComponent(profile.handle)}/`,
         ctx.url.origin,
       ).href
       : ctx.url.href;

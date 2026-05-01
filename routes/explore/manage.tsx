@@ -140,9 +140,14 @@ export const handler = define.handlers({
       : null;
 
     const publicProfileHandle = takedown ? null : existing?.handle ?? null;
+    /**
+     * Trailing slash is intentional — see the long comment in
+     * routes/explore/[handle].tsx. Bluesky's composer otherwise treats
+     * `/explore/foo.com` as a Windows executable and skips the unfurl.
+     */
     const shareUrl = publicProfileHandle
       ? new URL(
-        `/explore/${encodeURIComponent(publicProfileHandle)}`,
+        `/explore/${encodeURIComponent(publicProfileHandle)}/`,
         ctx.url.origin,
       ).href
       : null;
