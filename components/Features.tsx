@@ -49,13 +49,58 @@ const icons = {
   ),
 };
 
+function PersonalDomainDemo() {
+  return (
+    <span
+      class="personal-domain-demo"
+      aria-label="You change your handle from you.bsky.social to you.com"
+    >
+      <span class="personal-domain-demo-glow" aria-hidden="true" />
+      <span class="personal-domain-demo-avatar" aria-hidden="true">
+        <svg
+          width="26"
+          height="26"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.55"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="8" r="3.4" />
+          <path d="M5.4 19.2c1.18-3.02 3.48-4.52 6.6-4.52s5.42 1.5 6.6 4.52" />
+        </svg>
+      </span>
+      <span class="personal-domain-demo-route" aria-hidden="true">
+        <span class="personal-domain-demo-prefix">you.</span>
+        <span class="personal-domain-demo-handle-window">
+          <span class="personal-domain-demo-handle personal-domain-demo-handle--old">
+            bsky.social
+          </span>
+          <span class="personal-domain-demo-handle personal-domain-demo-handle--new">
+            com
+          </span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
 export default function Features() {
   const t = useT();
   const features = [
-    { icon: icons.globe, ...t.features.items.universalIdentity },
-    { icon: icons.key, ...t.features.items.ownAccount },
-    { icon: icons.blocks, ...t.features.items.anyoneBuilds },
-    { icon: icons.domain, ...t.features.items.personalSites },
+    {
+      icon: icons.globe,
+      handleDemo: false,
+      ...t.features.items.universalIdentity,
+    },
+    { icon: icons.key, handleDemo: false, ...t.features.items.ownAccount },
+    {
+      icon: icons.blocks,
+      handleDemo: false,
+      ...t.features.items.anyoneBuilds,
+    },
+    { icon: icons.domain, handleDemo: true, ...t.features.items.personalSites },
   ];
 
   return (
@@ -67,12 +112,24 @@ export default function Features() {
         </div>
         <div class="feature-grid">
           {features.map((f) => (
-            <div key={f.title} class="glass feature-card">
+            <div
+              key={f.title}
+              class={`glass feature-card${
+                f.handleDemo ? " feature-card--with-demo" : ""
+              }`}
+            >
               <div class="feature-card-title-row">
                 {f.icon}
                 <h3 class="text-subsection">{f.title}</h3>
               </div>
-              <p class="text-body-sm">{f.description}</p>
+              <p
+                class={`text-body-sm${
+                  f.handleDemo ? " feature-card-body--with-inline-demo" : ""
+                }`}
+              >
+                {f.handleDemo && <PersonalDomainDemo />}
+                {f.description}
+              </p>
             </div>
           ))}
         </div>

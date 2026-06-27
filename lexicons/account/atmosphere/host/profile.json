@@ -1,0 +1,96 @@
+{
+  "lexicon": 1,
+  "id": "account.atmosphere.host.profile",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "description": "The canonical self-published profile for an AT Protocol account host or host operator. This record describes the public host brand; individual PDS hostnames, endpoints, signup posture, and account-control capabilities belong in account.atmosphere.host.service records.",
+      "record": {
+        "type": "object",
+        "required": ["name", "createdAt"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "maxGraphemes": 100,
+            "description": "The display name of the host or host operator."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 3000,
+            "maxGraphemes": 300,
+            "description": "A short public description of who this host is for."
+          },
+          "operatorType": {
+            "type": "string",
+            "maxLength": 64,
+            "knownValues": [
+              "account.atmosphere.host.defs#operatorIndividual",
+              "account.atmosphere.host.defs#operatorCommunity",
+              "account.atmosphere.host.defs#operatorCooperative",
+              "account.atmosphere.host.defs#operatorCompany",
+              "account.atmosphere.host.defs#operatorPublicBenefit",
+              "account.atmosphere.host.defs#operatorNonprofit",
+              "account.atmosphere.host.defs#operatorGovernment",
+              "account.atmosphere.host.defs#operatorUnknown"
+            ],
+            "description": "Self-declared broad operator type. Other string values may be valid."
+          },
+          "links": {
+            "type": "array",
+            "maxLength": 12,
+            "items": {
+              "type": "ref",
+              "ref": "account.atmosphere.host.defs#link"
+            },
+            "description": "Relevant public destinations for the host. The first homepage or signup link should be treated as the primary destination."
+          },
+          "images": {
+            "type": "array",
+            "maxLength": 12,
+            "items": {
+              "type": "ref",
+              "ref": "account.atmosphere.host.defs#image"
+            },
+            "description": "Visual assets for host cards and rich host pages, such as avatars, logos, banners, hero images, and social cards."
+          },
+          "contact": {
+            "type": "ref",
+            "ref": "account.atmosphere.host.defs#contact",
+            "description": "Optional public support or operator contact metadata."
+          },
+          "serviceRefs": {
+            "type": "array",
+            "maxLength": 32,
+            "items": {
+              "type": "ref",
+              "ref": "account.atmosphere.host.defs#serviceRef"
+            },
+            "description": "Optional references to account.atmosphere.host.service records controlled by this operator account. AppViews should also index service records directly by author DID."
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "maxGraphemes": 32
+            },
+            "description": "Open discovery tags for filtering and search, preferably lowercase. Do not use tags for signup status, capabilities, or verification state."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared timestamp when this profile was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared timestamp when this profile was last updated."
+          }
+        }
+      }
+    }
+  }
+}

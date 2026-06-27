@@ -3,6 +3,8 @@
  * One thin function per XRPC method we actually call from the registry.
  */
 import { authedFetch } from "./oauth.ts";
+import { normalizeServiceEndpoint } from "./identity.ts";
+import { ATPROTO_FETCH_TIMEOUT_MS } from "./env.ts";
 import {
   type BlobRef,
   PROFILE_NSID,
@@ -20,12 +22,24 @@ export interface PutRecordResult {
   validationStatus?: string;
 }
 
+function fetchWithTimeout(
+  input: string | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    signal: init.signal ?? AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
+  });
+}
+
 export async function putProfileRecord(
   did: string,
   pdsUrl: string,
   record: ProfileRecord,
 ): Promise<PutRecordResult> {
-  const url = `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.putRecord`;
+  const url = `${
+    normalizeServiceEndpoint(pdsUrl)
+  }/xrpc/com.atproto.repo.putRecord`;
   const res = await authedFetch(did, url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -48,7 +62,7 @@ export async function getProfileRecord(
   pdsUrl: string,
 ): Promise<ProfileRecord | null> {
   const url = new URL(
-    `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.getRecord`,
+    `${normalizeServiceEndpoint(pdsUrl)}/xrpc/com.atproto.repo.getRecord`,
   );
   url.searchParams.set("repo", did);
   url.searchParams.set("collection", PROFILE_NSID);
@@ -106,7 +120,9 @@ export async function putRecord(
   rkey: string,
   record: Record<string, unknown>,
 ): Promise<PutRecordResult> {
-  const url = `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.putRecord`;
+  const url = `${
+    normalizeServiceEndpoint(pdsUrl)
+  }/xrpc/com.atproto.repo.putRecord`;
   const res = await authedFetch(did, url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -159,7 +175,9 @@ export async function deleteRecord(
   collection: string,
   rkey: string,
 ): Promise<void> {
-  const url = `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.deleteRecord`;
+  const url = `${
+    normalizeServiceEndpoint(pdsUrl)
+  }/xrpc/com.atproto.repo.deleteRecord`;
   const res = await authedFetch(did, url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -178,7 +196,9 @@ export async function uploadBlob(
   bytes: Uint8Array,
   mimeType: string,
 ): Promise<BlobRef> {
-  const url = `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.uploadBlob`;
+  const url = `${
+    normalizeServiceEndpoint(pdsUrl)
+  }/xrpc/com.atproto.repo.uploadBlob`;
   const buf = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buf).set(bytes);
   const res = await authedFetch(did, url, {
@@ -202,12 +222,12 @@ export async function getRecordPublic(
   rkey: string,
 ): Promise<{ uri: string; cid: string; value: unknown } | null> {
   const url = new URL(
-    `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.getRecord`,
+    `${normalizeServiceEndpoint(pdsUrl)}/xrpc/com.atproto.repo.getRecord`,
   );
   url.searchParams.set("repo", did);
   url.searchParams.set("collection", collection);
   url.searchParams.set("rkey", rkey);
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout(url.toString());
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getRecord failed: HTTP ${res.status}`);
   return await res.json() as { uri: string; cid: string; value: unknown };
@@ -217,7 +237,7 @@ export async function listRecordsPublic(
   pdsUrl: string,
   did: string,
   collection: string,
-  opts: { limit?: number; reverse?: boolean } = {},
+  opts: { limit?: number; reverse?: boolean; cursor?: string } = {},
 ): Promise<
   {
     cursor?: string;
@@ -225,7 +245,7 @@ export async function listRecordsPublic(
   }
 > {
   const url = new URL(
-    `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.repo.listRecords`,
+    `${normalizeServiceEndpoint(pdsUrl)}/xrpc/com.atproto.repo.listRecords`,
   );
   url.searchParams.set("repo", did);
   url.searchParams.set("collection", collection);
@@ -234,7 +254,8 @@ export async function listRecordsPublic(
     String(Math.max(1, Math.min(opts.limit ?? 25, 100))),
   );
   if (opts.reverse) url.searchParams.set("reverse", "true");
-  const res = await fetch(url.toString());
+  if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
+  const res = await fetchWithTimeout(url.toString());
   if (res.status === 404) return { records: [] };
   if (!res.ok) throw new Error(`listRecords failed: HTTP ${res.status}`);
   return await res.json() as {

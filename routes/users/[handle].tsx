@@ -1,12 +1,15 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
+import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
+import WebsiteIcon from "../../components/icons/WebsiteIcon.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUserByHandle } from "../../lib/account-types.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
-import { getBskyClient } from "../../lib/bsky-clients.ts";
+import { getProfileMicroblogViewer } from "../../lib/bsky-clients.ts";
 import { getProfileByHandle } from "../../lib/registry.ts";
+import { safePublicProfileWebsiteUrl } from "../../lib/user-profile-links.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -49,7 +52,7 @@ function UserProfilePage(
     return (
       <div id="page-top">
         <div class="content-layer">
-          <Nav account={account} showEffects={false} />
+          <Nav account={account} />
           <section class="user-public-section">
             <div class="container" style={{ maxWidth: "640px" }}>
               <div class="glass user-public-card">
@@ -68,15 +71,16 @@ function UserProfilePage(
   const avatarUrl = profile.avatarCid && profile.avatarMime
     ? bskyCdnAvatarUrl(profile.did, profile.avatarCid)
     : null;
-  const client = getBskyClient(bskyClientId);
+  const client = getProfileMicroblogViewer(bskyClientId);
+  const websiteUrl = safePublicProfileWebsiteUrl(profile.mainLink);
   return (
     <div id="page-top">
       <div class="content-layer">
-        <Nav account={account} showEffects={false} />
+        <Nav account={account} />
         <section class="user-public-section">
           <div class="container" style={{ maxWidth: "720px" }}>
             <p>
-              <a href="/explore" class="text-link-button">
+              <a href="/apps" class="text-link-button">
                 ← {copy.backToExplore}
               </a>
             </p>
@@ -108,11 +112,30 @@ function UserProfilePage(
               </div>
               <div class="user-public-body">
                 <h1 class="text-section">{displayName}</h1>
-                <p class="user-profile-handle">@{profile.handle}</p>
+                <p class="user-profile-handle">
+                  <AtmosphereHandle handle={profile.handle} />
+                </p>
                 {profile.description && (
                   <p class="text-body user-profile-bio">
                     {profile.description}
                   </p>
+                )}
+                {websiteUrl && (
+                  <div class="profile-actions user-public-actions">
+                    <a
+                      href={websiteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="profile-action"
+                    >
+                      <span class="profile-action-icon profile-action-icon--brand">
+                        <WebsiteIcon class="profile-action-icon-svg" />
+                      </span>
+                      <span class="profile-action-label">
+                        <span class="profile-action-title">Website</span>
+                      </span>
+                    </a>
+                  </div>
                 )}
               </div>
             </div>

@@ -1,3 +1,5 @@
+import { ATMOSPHERE_DID, IS_DEV } from "./env.ts";
+
 /**
  * atproto identity helpers: resolve handles to DIDs, fetch DID documents,
  * and locate the PDS service endpoint for an account.
@@ -7,6 +9,8 @@
 
 const PUBLIC_RESOLVER = "https://public.api.bsky.app";
 const PLC_DIRECTORY = "https://plc.directory";
+const ATMOSPHERE_ACCOUNT_HANDLE = "atmosphereaccount.com";
+const ATMOSPHERE_ACCOUNT_DID = "did:plc:ab7uvkn4kyf7l7prl26pz4r2";
 
 export interface DidDocument {
   id: string;
@@ -25,16 +29,80 @@ export interface ResolvedIdentity {
   doc: DidDocument;
 }
 
-const handleRe =
-  /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
 const didRe = /^did:[a-z]+:[a-zA-Z0-9._:%-]+$/;
+const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 export function isHandle(s: string): boolean {
-  return handleRe.test(s);
+  if (s.length < 3 || s.length > 253) return false;
+  if (s !== s.toLowerCase()) return false;
+  if (s.startsWith(".") || s.endsWith(".")) return false;
+  const labels = s.split(".");
+  if (labels.length < 2) return false;
+  const labelRe = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+  for (const label of labels) {
+    if (label.length < 1 || label.length > 63) return false;
+    if (!labelRe.test(label)) return false;
+  }
+  const tld = labels[labels.length - 1];
+  if (!tld || /^[0-9]/.test(tld)) return false;
+  return true;
 }
 
 export function isDid(s: string): boolean {
   return didRe.test(s);
+}
+
+function isPrivateOrLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (
+    host === "localhost" || host === "0.0.0.0" || host === "::1" ||
+    host.endsWith(".localhost")
+  ) return true;
+  const v6 = host.startsWith("[") && host.endsWith("]")
+    ? host.slice(1, -1)
+    : host.includes(":")
+    ? host
+    : null;
+  if (v6) {
+    return v6 === "::1" || v6.startsWith("fc") || v6.startsWith("fd") ||
+      v6.startsWith("fe80:");
+  }
+  if (!IPV4_RE.test(host)) return false;
+  const parts = host.split(".").map(Number);
+  if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return true;
+  }
+  const [a, b] = parts;
+  return a === 10 || a === 127 || a === 0 || a === 169 && b === 254 ||
+    a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168;
+}
+
+export function normalizeServiceEndpoint(endpoint: string): string {
+  const url = new URL(endpoint);
+  if (url.protocol !== "https:" && !(IS_DEV && url.protocol === "http:")) {
+    throw new Error(`unsafe service endpoint protocol: ${endpoint}`);
+  }
+  if (!IS_DEV && isPrivateOrLocalHostname(url.hostname)) {
+    throw new Error(`unsafe service endpoint host: ${endpoint}`);
+  }
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
+
+function normalizeDnsTxtValue(data: string): string {
+  const matches = [...data.matchAll(/"((?:\\.|[^"])*)"/g)];
+  if (matches.length === 0) return data.trim();
+  return matches
+    .map((match) =>
+      match[1].replace(/\\(["\\])/g, "$1").replace(
+        /\\(\d{3})/g,
+        (_, code) => String.fromCharCode(Number(code)),
+      )
+    )
+    .join("")
+    .trim();
 }
 
 /**
@@ -45,22 +113,14 @@ export function isDid(s: string): boolean {
 export async function resolveHandle(handle: string): Promise<string> {
   const lower = handle.toLowerCase();
   if (!isHandle(lower)) throw new Error(`invalid handle: ${handle}`);
-
-  // 1. Well-known HTTPS endpoint on the handle's domain
-  try {
-    const r = await fetch(`https://${lower}/.well-known/atproto-did`, {
-      headers: { accept: "text/plain" },
-      signal: AbortSignal.timeout(4000),
-    });
-    if (r.ok) {
-      const text = (await r.text()).trim();
-      if (isDid(text)) return text;
-    }
-  } catch {
-    // fall through
+  if (lower === ATMOSPHERE_ACCOUNT_HANDLE) {
+    return ATMOSPHERE_DID || ATMOSPHERE_ACCOUNT_DID;
+  }
+  if (!IS_DEV && isPrivateOrLocalHostname(lower)) {
+    throw new Error(`unsafe handle host: ${handle}`);
   }
 
-  // 2. DNS-over-HTTPS TXT record at _atproto.<handle>
+  // 1. DNS-over-HTTPS TXT record at _atproto.<handle>
   try {
     const r = await fetch(
       `https://cloudflare-dns.com/dns-query?name=_atproto.${
@@ -76,10 +136,24 @@ export async function resolveHandle(handle: string): Promise<string> {
         Answer?: Array<{ data: string }>;
       };
       for (const ans of json.Answer ?? []) {
-        const data = ans.data.replace(/^"|"$/g, "");
-        const m = data.match(/did=([^"]+)/);
+        const data = normalizeDnsTxtValue(ans.data);
+        const m = data.match(/^did=(.+)$/);
         if (m && isDid(m[1])) return m[1];
       }
+    }
+  } catch {
+    // fall through
+  }
+
+  // 2. Well-known HTTPS endpoint on the handle's domain
+  try {
+    const r = await fetch(`https://${lower}/.well-known/atproto-did`, {
+      headers: { accept: "text/plain" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (r.ok) {
+      const text = (await r.text()).trim();
+      if (isDid(text)) return text;
     }
   } catch {
     // fall through
@@ -116,6 +190,10 @@ export async function resolveDidDocument(did: string): Promise<DidDocument> {
     const url = target.includes("/")
       ? `https://${target}/did.json`
       : `https://${target}/.well-known/did.json`;
+    const parsed = new URL(url);
+    if (!IS_DEV && isPrivateOrLocalHostname(parsed.hostname)) {
+      throw new Error(`unsafe did:web host: ${parsed.hostname}`);
+    }
     const r = await fetch(url, {
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(6000),
@@ -132,7 +210,7 @@ export function findPdsEndpoint(doc: DidDocument): string {
     s.id === "#atproto_pds" || s.type === "AtprotoPersonalDataServer"
   );
   if (!svc) throw new Error(`no atproto PDS in DID doc for ${doc.id}`);
-  return svc.serviceEndpoint;
+  return normalizeServiceEndpoint(svc.serviceEndpoint);
 }
 
 /**
@@ -174,6 +252,102 @@ export interface AuthServerMetadata {
   dpop_signing_alg_values_supported?: string[];
 }
 
+function jsonRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} was not a JSON object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function stringField(
+  record: Record<string, unknown>,
+  field: string,
+  label: string,
+): string {
+  const value = record[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} missing ${field}`);
+  }
+  return value;
+}
+
+function normalizeAuthServerUrl(raw: string, field: string): string {
+  try {
+    return normalizeServiceEndpoint(raw);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`invalid authorization server ${field}: ${message}`);
+  }
+}
+
+function parseAuthServerMetadata(
+  value: unknown,
+  expectedOrigin: string,
+): AuthServerMetadata {
+  const record = jsonRecord(value, "authorization server metadata");
+  const issuer = normalizeAuthServerUrl(
+    stringField(record, "issuer", "authorization server metadata"),
+    "issuer",
+  );
+  const issuerOrigin = new URL(issuer).origin;
+  if (issuerOrigin !== expectedOrigin) {
+    throw new Error(
+      `authorization server issuer origin mismatch: ${issuerOrigin} vs ${expectedOrigin}`,
+    );
+  }
+  const authorizationEndpoint = normalizeAuthServerUrl(
+    stringField(
+      record,
+      "authorization_endpoint",
+      "authorization server metadata",
+    ),
+    "authorization_endpoint",
+  );
+  const tokenEndpoint = normalizeAuthServerUrl(
+    stringField(record, "token_endpoint", "authorization server metadata"),
+    "token_endpoint",
+  );
+  const parEndpoint = normalizeAuthServerUrl(
+    stringField(
+      record,
+      "pushed_authorization_request_endpoint",
+      "authorization server metadata",
+    ),
+    "pushed_authorization_request_endpoint",
+  );
+  for (
+    const [field, endpoint] of [
+      ["authorization_endpoint", authorizationEndpoint],
+      ["token_endpoint", tokenEndpoint],
+      ["pushed_authorization_request_endpoint", parEndpoint],
+    ] as const
+  ) {
+    if (new URL(endpoint).origin !== issuerOrigin) {
+      throw new Error(
+        `authorization server ${field} origin does not match issuer`,
+      );
+    }
+  }
+  return {
+    issuer,
+    authorization_endpoint: authorizationEndpoint,
+    token_endpoint: tokenEndpoint,
+    pushed_authorization_request_endpoint: parEndpoint,
+    scopes_supported: Array.isArray(record.scopes_supported)
+      ? record.scopes_supported.filter((v): v is string =>
+        typeof v === "string"
+      )
+      : undefined,
+    dpop_signing_alg_values_supported: Array.isArray(
+        record.dpop_signing_alg_values_supported,
+      )
+      ? record.dpop_signing_alg_values_supported.filter((v): v is string =>
+        typeof v === "string"
+      )
+      : undefined,
+  };
+}
+
 /**
  * Discover the authorization server for a PDS. Per the OAuth spec, the
  * PDS publishes a protected-resource metadata file pointing at one or
@@ -182,7 +356,7 @@ export interface AuthServerMetadata {
 export async function discoverAuthServer(
   pdsUrl: string,
 ): Promise<AuthServerMetadata> {
-  const pdsOrigin = new URL(pdsUrl).origin;
+  const pdsOrigin = new URL(normalizeServiceEndpoint(pdsUrl)).origin;
   let asOrigin = pdsOrigin;
   try {
     const prRes = await fetch(
@@ -193,9 +367,19 @@ export async function discoverAuthServer(
       },
     );
     if (prRes.ok) {
-      const pr = await prRes.json() as { authorization_servers?: string[] };
-      if (pr.authorization_servers && pr.authorization_servers.length > 0) {
-        asOrigin = new URL(pr.authorization_servers[0]).origin;
+      const pr = jsonRecord(
+        await prRes.json(),
+        "protected-resource metadata",
+      );
+      const authorizationServers = Array.isArray(pr.authorization_servers)
+        ? pr.authorization_servers.filter((v): v is string =>
+          typeof v === "string" && v.length > 0
+        )
+        : [];
+      if (authorizationServers.length > 0) {
+        asOrigin = new URL(
+          normalizeServiceEndpoint(authorizationServers[0]),
+        ).origin;
       }
     }
   } catch {
@@ -213,5 +397,5 @@ export async function discoverAuthServer(
       `could not fetch authorization server metadata at ${asOrigin}`,
     );
   }
-  return await asRes.json() as AuthServerMetadata;
+  return parseAuthServerMetadata(await asRes.json(), asOrigin);
 }

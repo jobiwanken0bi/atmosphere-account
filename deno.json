@@ -4,12 +4,26 @@
   "tasks": {
     "check": "deno fmt --check . && deno lint . && deno check",
     "dev": "vite",
-    "build": "deno install && vite build",
+    "build": "deno install && deno run -A npm:vite@^7.1.3 build",
     "gen:images": "deno run -A --node-modules-dir=auto scripts/generate-static-images.ts",
     "gen:oauth-key": "deno run scripts/generate-oauth-key.ts",
     "extract:lottie-assets": "deno run -A scripts/extract-lottie-assets.ts",
+    "db:migrate": "deno run -A scripts/migrate-db.ts",
+    "db:migrate:neon": "deno run -A scripts/migrate-neon.ts",
+    "db:backfill:neon": "deno run -A scripts/backfill-neon.ts",
+    "db:diff:neon": "deno run -A scripts/diff-neon.ts",
+    "db:smoke": "deno run -A scripts/smoke-db-runtime.ts",
+    "db:maintain": "deno run -A scripts/maintain-db.ts",
+    "railway:seed-secrets": "deno run -A scripts/seed-railway-secrets.ts",
     "indexer": "deno run -A worker/indexer.ts",
+    "backfill:atstore": "deno run -A scripts/backfill-atstore.ts",
+    "backfill:hosts": "deno run -A scripts/backfill-host-records.ts",
+    "backfill:og-jpegs": "deno run -A scripts/backfill-og-jpegs.ts",
+    "app-directory:run-jobs": "deno run -A scripts/run-app-directory-jobs.ts",
+    "migrate:atstore": "deno run -A scripts/migrate-atmosphere-apps-to-atstore.ts",
+    "rescore:app-trending": "deno run -A scripts/rescore-app-trending.ts",
     "publish:featured": "deno run -A scripts/publish-featured.ts",
+    "host:dashboard:check": "deno run -A scripts/check-host-dashboard.ts",
     "lex:lint": "goat lex lint lexicons/",
     "lex:check-dns": "goat lex check-dns --example-did did:plc:ab7uvkn4kyf7l7prl26pz4r2 lexicons/",
     "lex:status": "goat lex status lexicons/",
@@ -36,7 +50,9 @@
     "@preact/signals": "npm:@preact/signals@^2.5.0",
     "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.0.8",
     "vite": "npm:vite@^7.1.3",
-    "@libsql/client": "npm:@libsql/client@^0.15.0"
+    "@libsql/client": "npm:@libsql/client@^0.15.0",
+    "@neon/serverless": "jsr:@neon/serverless@^1.0.1",
+    "@types/pg": "npm:@types/pg@^8.15.6"
   },
   "compilerOptions": {
     "lib": [
@@ -66,5 +82,9 @@
     "types": [
       "vite/client"
     ]
+  },
+  "deploy": {
+    "org": "atmospheremoney",
+    "app": "atmosphere-account"
   }
 }

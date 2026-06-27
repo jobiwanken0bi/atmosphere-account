@@ -1,0 +1,119 @@
+{
+  "lexicon": 1,
+  "id": "account.atmosphere.host.service",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "A public declaration of a PDS host or host cluster for the Atmosphere host directory. This is self-asserted by the record author; AppViews should still apply independent claim, verification, moderation, and availability checks.",
+      "record": {
+        "type": "object",
+        "required": ["host", "displayName", "serviceEndpoint", "createdAt"],
+        "properties": {
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "description": "Canonical public host address shown to users, such as bsky.social, pckt.cafe, or tangled.org."
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "maxGraphemes": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 600,
+            "maxGraphemes": 600
+          },
+          "serviceEndpoint": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Canonical PDS service endpoint for this host or cluster."
+          },
+          "accountManagementUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Optional host-owned account management page. If omitted, clients should derive it as /account on serviceEndpoint."
+          },
+          "hostPatterns": {
+            "type": "array",
+            "maxLength": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 253
+            },
+            "description": "Optional exact or wildcard host patterns that should resolve to this service in friendly UI, such as bsky.network or *.bsky.network."
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 32,
+            "knownValues": [
+              "account.atmosphere.host.defs#statusActive",
+              "account.atmosphere.host.defs#statusPreview",
+              "account.atmosphere.host.defs#statusDeprecated",
+              "account.atmosphere.host.defs#statusOffline",
+              "account.atmosphere.host.defs#statusUnknown"
+            ]
+          },
+          "signup": {
+            "type": "ref",
+            "ref": "account.atmosphere.host.defs#signup"
+          },
+          "capabilities": {
+            "type": "array",
+            "maxLength": 32,
+            "items": {
+              "type": "ref",
+              "ref": "account.atmosphere.host.defs#capability"
+            }
+          },
+          "dashboardManifestUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Optional URL for an extended Atmosphere host capability manifest. The PDS account management page remains the primary user-facing control surface."
+          },
+          "regions": {
+            "type": "array",
+            "maxLength": 24,
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "Public geographic or jurisdictional hints such as EU, US, or Australia. These are informational, not a compliance guarantee."
+          },
+          "software": {
+            "type": "ref",
+            "ref": "account.atmosphere.host.defs#software"
+          },
+          "contact": {
+            "type": "ref",
+            "ref": "account.atmosphere.host.defs#contact"
+          },
+          "links": {
+            "type": "array",
+            "maxLength": 12,
+            "items": {
+              "type": "ref",
+              "ref": "account.atmosphere.host.defs#link"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "maxLength": 64
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "maxLength": 64
+          }
+        }
+      }
+    }
+  }
+}

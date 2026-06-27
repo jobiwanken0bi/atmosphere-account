@@ -19,6 +19,7 @@ interface Props {
   errorLabel: string;
   cancelLabel: string;
   doneLabel: string;
+  onSaved?: () => void;
 }
 
 export default function UserBskyClientPicker(
@@ -38,16 +39,14 @@ export default function UserBskyClientPicker(
     savingLabel,
     savedLabel,
     errorLabel,
-    cancelLabel,
-    doneLabel,
+    onSaved,
   }: Props,
 ) {
   const displayName = useSignal(initialDisplayName);
   const bio = useSignal(initialBio);
   const selected = useSignal(getBskyClient(selectedClientId).id);
-  const draftSelected = useSignal(selected.value);
   const buttonVisible = useSignal(visible);
-  const modalOpen = useSignal(false);
+  const viewerOpen = useSignal(false);
   const submitting = useSignal(false);
   const message = useSignal<{ kind: "ok" | "error"; text: string } | null>(
     null,
@@ -69,6 +68,7 @@ export default function UserBskyClientPicker(
         throw new Error(text || errorLabel);
       }
       message.value = { kind: "ok", text: savedLabel };
+      onSaved?.();
     } catch (err) {
       message.value = {
         kind: "error",
@@ -84,7 +84,7 @@ export default function UserBskyClientPicker(
       method="POST"
       action="/api/account/profile"
       class={`user-profile-client-form ${
-        modalOpen.value ? "is-modal-open" : ""
+        viewerOpen.value ? "is-viewer-open" : ""
       }`}
       onSubmit={onSubmit}
     >
@@ -152,62 +152,49 @@ export default function UserBskyClientPicker(
           <span class="atmosphere-row-meta">
             <span class="atmosphere-row-name">{displayLabel}</span>
             <span class="atmosphere-row-desc">
-              {active.name} · {active.domain}
+              Opens with {active.name} · {active.domain}
             </span>
           </span>
         </div>
         <button
           type="button"
-          class="atmosphere-row-gear"
+          class="atmosphere-row-gear user-bsky-viewer-trigger"
           aria-label={settingsLabel}
           title={settingsLabel}
-          onClick={() => {
-            draftSelected.value = selected.value;
-            modalOpen.value = true;
-          }}
+          aria-expanded={viewerOpen.value}
+          aria-controls="user-bsky-viewer-panel"
+          onClick={() => viewerOpen.value = !viewerOpen.value}
         >
-          ⚙
+          Viewer
         </button>
-      </div>
-
-      {modalOpen.value && (
-        <div
-          class="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="user-bsky-picker-title"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) modalOpen.value = false;
-          }}
-        >
-          <div class="modal-card">
-            <header class="modal-header">
-              <h2 id="user-bsky-picker-title" class="modal-title">
-                {settingsLabel}
-              </h2>
-            </header>
-            <ul
-              class="bsky-client-list"
-              role="listbox"
-              aria-labelledby="user-bsky-picker-title"
-            >
+        {viewerOpen.value && (
+          <div
+            id="user-bsky-viewer-panel"
+            class="user-bsky-viewer-panel"
+            role="radiogroup"
+            aria-labelledby="user-bsky-viewer-title"
+          >
+            <h3 id="user-bsky-viewer-title">{settingsLabel}</h3>
+            <ul class="bsky-client-list">
               {BSKY_CLIENTS.map((client) => {
-                const isSelected = client.id === draftSelected.value;
+                const isSelected = client.id === selected.value;
                 return (
                   <li key={client.id}>
                     <label
                       class={`bsky-client-row ${
                         isSelected ? "is-selected" : ""
                       }`}
-                      role="option"
-                      aria-selected={isSelected}
                     >
                       <input
                         type="radio"
                         name="draftBskyClient"
                         value={client.id}
                         checked={isSelected}
-                        onChange={() => draftSelected.value = client.id}
+                        onChange={() => {
+                          selected.value = client.id;
+                          buttonVisible.value = true;
+                          viewerOpen.value = false;
+                        }}
                       />
                       <img
                         src={client.iconUrl}
@@ -226,29 +213,9 @@ export default function UserBskyClientPicker(
                 );
               })}
             </ul>
-            <footer class="modal-footer">
-              <button
-                type="button"
-                class="profile-form-button-secondary"
-                onClick={() => modalOpen.value = false}
-              >
-                {cancelLabel}
-              </button>
-              <button
-                type="button"
-                class="profile-form-button-primary"
-                onClick={() => {
-                  selected.value = draftSelected.value;
-                  buttonVisible.value = true;
-                  modalOpen.value = false;
-                }}
-              >
-                {doneLabel}
-              </button>
-            </footer>
           </div>
-        </div>
-      )}
+        )}
+      </div>
       <div class="user-profile-save-row">
         <button
           type="submit"

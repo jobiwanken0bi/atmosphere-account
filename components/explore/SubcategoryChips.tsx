@@ -10,7 +10,7 @@ function buildHref(sub: string | null, query?: string): string {
   const params = new URLSearchParams({ category: "app" });
   if (sub) params.set("subcategory", sub);
   if (query) params.set("q", query);
-  return `/explore?${params.toString()}`;
+  return `/apps?${params.toString()}`;
 }
 
 export default function SubcategoryChips({ active, query }: Props) {

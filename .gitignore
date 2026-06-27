@@ -4,10 +4,10 @@
 .env.test.local
 .env.production.local
 .env.local
+local.db
 
 # Fresh build directory
 _fresh/
 # npm + other dependencies
 node_modules/
 vendor/
-

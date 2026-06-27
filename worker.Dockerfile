@@ -13,9 +13,10 @@ WORKDIR /app
 
 # Bring in just enough of the project to run worker/indexer.ts.
 COPY deno.json deno.lock ./
-COPY worker ./worker
 COPY lib ./lib
 COPY lexicons ./lexicons
+COPY scripts ./scripts
+COPY worker ./worker
 COPY utils.ts ./utils.ts
 
 # `deno.json` declares `"nodeModulesDir": "manual"` (which assumes a
@@ -28,7 +29,7 @@ COPY utils.ts ./utils.ts
 # Same flag at build time (cache) and runtime (run); without it at
 # runtime, Deno re-checks `nodeModulesDir: manual` and refuses to use
 # the node_modules we just created.
-RUN deno cache --node-modules-dir=auto worker/indexer.ts
+RUN deno cache --node-modules-dir=auto worker/indexer.ts scripts/migrate-db.ts
 
 ENV DENO_ENV=production
 

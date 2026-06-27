@@ -8,6 +8,9 @@ interface Props {
   isOwner: boolean;
   loginHref: string;
   ownReview: Pick<ReviewRow, "id" | "rating" | "body"> | null;
+  submitEndpoint?: string;
+  deleteEndpoint?: string;
+  maxBodyLength?: number;
   copy: {
     heading: string;
     modalBody: string;
@@ -32,8 +35,19 @@ interface Props {
 const MAX_BODY = 300;
 
 export default function ProfileReviewComposer(
-  { targetId, signedIn, isOwner, loginHref, ownReview, copy }: Props,
+  {
+    targetId,
+    signedIn,
+    isOwner,
+    loginHref,
+    ownReview,
+    submitEndpoint,
+    deleteEndpoint,
+    maxBodyLength,
+    copy,
+  }: Props,
 ) {
+  const maxBody = maxBodyLength ?? MAX_BODY;
   const rating = useSignal<1 | 2 | 3 | 4 | 5>(ownReview?.rating ?? 5);
   const body = useSignal(ownReview?.body ?? "");
   const open = useSignal(false);
@@ -49,7 +63,8 @@ export default function ProfileReviewComposer(
     status.value = { kind: "idle" };
     try {
       const r = await fetch(
-        `/api/registry/profile/${encodeURIComponent(targetId)}/reviews`,
+        submitEndpoint ??
+          `/api/registry/profile/${encodeURIComponent(targetId)}/reviews`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -77,7 +92,8 @@ export default function ProfileReviewComposer(
     status.value = { kind: "idle" };
     try {
       const r = await fetch(
-        `/api/registry/profile/${encodeURIComponent(targetId)}/reviews/me`,
+        deleteEndpoint ??
+          `/api/registry/profile/${encodeURIComponent(targetId)}/reviews/me`,
         { method: "DELETE" },
       );
       if (!r.ok) throw new Error(await r.text());
@@ -156,7 +172,7 @@ export default function ProfileReviewComposer(
             <label class="profile-review-body-field">
               <span>{copy.bodyLabel}</span>
               <textarea
-                maxLength={MAX_BODY}
+                maxLength={maxBody}
                 value={body.value}
                 placeholder={copy.bodyPlaceholder}
                 onInput={(e) =>
@@ -164,7 +180,7 @@ export default function ProfileReviewComposer(
               />
             </label>
             <p class="profile-review-char-count">
-              {MAX_BODY - body.value.length} {copy.charsRemainingSuffix}
+              {maxBody - body.value.length} {copy.charsRemainingSuffix}
             </p>
             <div class="profile-review-composer-actions">
               <button

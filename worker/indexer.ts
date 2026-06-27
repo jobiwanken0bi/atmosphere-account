@@ -10,10 +10,12 @@
  * Run locally:
  *   TURSO_DATABASE_URL=file:./local.db deno task indexer
  *
- * Run on Fly.io: see worker/Dockerfile + fly.toml.
+ * Run on Fly.io: see worker.Dockerfile + fly.indexer.toml.
  */
 import {
   FEATURED_NSID,
+  HOST_PROFILE_NSID,
+  HOST_SERVICE_NSID,
   PROFILE_NSID,
   REVIEW_NSID,
   UPDATE_NSID,
@@ -40,8 +42,41 @@ import {
 } from "../lib/profile-updates.ts";
 import { findPdsEndpoint, resolveDidDocument } from "../lib/identity.ts";
 import { getRecordPublic } from "../lib/pds.ts";
-import { JETSTREAM_URL } from "../lib/env.ts";
+import { COMMUNITY_APP_LEXICON_ENABLED, JETSTREAM_URL } from "../lib/env.ts";
 import { upsertProfileFromRecord } from "../lib/profile-sync.ts";
+import {
+  deleteAppFavorite,
+  deleteAppRecord,
+  deleteAppReview,
+  upsertAppFavorite,
+  upsertAppRecordFromDraft,
+  upsertAppReview,
+} from "../lib/app-directory.ts";
+import {
+  APP_DIRECTORY_COLLECTIONS,
+  ATSTORE_FAVORITE_NSID,
+  ATSTORE_LISTING_NSID,
+  ATSTORE_REVIEW_NSID,
+  COMMUNITY_APP_ENTRY_NSID,
+  COMMUNITY_APP_PROFILE_NSID,
+  parseAtstoreFavorite,
+  parseAtstoreListing,
+  parseAtstoreReview,
+  parseCommunityAppRecord,
+} from "../lib/app-lexicons.ts";
+import {
+  clearAppRecordFailure,
+  recordAppRecordFailure,
+} from "../lib/app-directory-failures.ts";
+import {
+  releaseWorkerLease,
+  renewWorkerLease,
+  tryAcquireWorkerLease,
+} from "../lib/worker-lease.ts";
+import {
+  markHostProtocolRecordDeleted,
+  upsertHostProtocolRecord,
+} from "../lib/host-record-indexing.ts";
 
 interface JetstreamCommit {
   rev: string;
@@ -59,9 +94,53 @@ interface JetstreamEvent {
   commit?: JetstreamCommit;
 }
 
-const COLLECTIONS = [PROFILE_NSID, REVIEW_NSID, UPDATE_NSID, FEATURED_NSID];
+const COLLECTIONS: string[] = [
+  PROFILE_NSID,
+  REVIEW_NSID,
+  UPDATE_NSID,
+  FEATURED_NSID,
+  HOST_PROFILE_NSID,
+  HOST_SERVICE_NSID,
+  ...APP_DIRECTORY_COLLECTIONS.filter((collection) =>
+    COMMUNITY_APP_LEXICON_ENABLED ||
+    !collection.startsWith("community.lexicon.app.")
+  ),
+];
 const RECONNECT_DELAY_MS = 5_000;
 const CURSOR_PERSIST_INTERVAL_MS = 5_000;
+const LEASE_NAME = "jetstream-indexer";
+const LEASE_TTL_MS = 45_000;
+const LEASE_RENEW_INTERVAL_MS = 15_000;
+
+class LeaseUnavailableError extends Error {
+  constructor() {
+    super("another indexer owns the Jetstream lease");
+    this.name = "LeaseUnavailableError";
+  }
+}
+
+const workerId = crypto.randomUUID();
+let shuttingDown = false;
+let activeSocket: WebSocket | null = null;
+
+function requestShutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[indexer] received ${signal}; shutting down`);
+  try {
+    activeSocket?.close(1001, "shutdown");
+  } catch {
+    // Already closed.
+  }
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  try {
+    Deno.addSignalListener(signal, () => requestShutdown(signal));
+  } catch {
+    // Signal listeners are not available in every runtime.
+  }
+}
 
 // Lightweight in-memory cache so we don't re-resolve every author's
 // DID document for every event.
@@ -259,6 +338,192 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
   console.log(`[indexer] upsert update ${event.did}/${commit.rkey}`);
 }
 
+function recordUri(event: JetstreamEvent): string | null {
+  const commit = event.commit;
+  return commit
+    ? `at://${event.did}/${commit.collection}/${commit.rkey}`
+    : null;
+}
+
+async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
+  const commit = event.commit;
+  if (!commit) return;
+  const uri = recordUri(event);
+  if (!uri) return;
+
+  if (commit.operation === "delete") {
+    if (commit.collection === ATSTORE_REVIEW_NSID) {
+      await deleteAppReview(uri);
+    } else if (commit.collection === ATSTORE_FAVORITE_NSID) {
+      await deleteAppFavorite(uri);
+    } else {
+      await deleteAppRecord(uri);
+    }
+    await clearAppRecordFailure(uri);
+    return;
+  }
+
+  const pdsUrl = await resolvePdsForDid(event.did);
+  const fetched = await getRecordPublic(
+    pdsUrl,
+    event.did,
+    commit.collection,
+    commit.rkey,
+  );
+  if (!fetched) {
+    await recordAppRecordFailure({
+      uri,
+      collection: commit.collection,
+      sourceType: appDirectorySourceType(commit.collection),
+      repoDid: event.did,
+      rkey: commit.rkey,
+      reason: "record_not_found",
+    });
+    return;
+  }
+
+  if (commit.collection === ATSTORE_LISTING_NSID) {
+    const draft = parseAtstoreListing({
+      uri,
+      cid: fetched.cid,
+      repoDid: event.did,
+      rkey: commit.rkey,
+      value: fetched.value,
+    });
+    if (!draft) {
+      console.warn(`[indexer] invalid ATStore listing ${uri}`);
+      await recordAppRecordFailure({
+        uri,
+        collection: commit.collection,
+        sourceType: "atstore_listing",
+        repoDid: event.did,
+        rkey: commit.rkey,
+        reason: "invalid_atstore_listing",
+      });
+      return;
+    }
+    await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
+    await clearAppRecordFailure(uri);
+    console.log(`[indexer] upsert app listing ${uri}`);
+  } else if (commit.collection === ATSTORE_REVIEW_NSID) {
+    const draft = parseAtstoreReview({
+      uri,
+      cid: fetched.cid,
+      repoDid: event.did,
+      rkey: commit.rkey,
+      value: fetched.value,
+    });
+    if (draft) {
+      await upsertAppReview(draft);
+      await clearAppRecordFailure(uri);
+    } else {
+      await recordAppRecordFailure({
+        uri,
+        collection: commit.collection,
+        sourceType: "atstore_review",
+        repoDid: event.did,
+        rkey: commit.rkey,
+        reason: "invalid_atstore_review",
+      });
+    }
+  } else if (commit.collection === ATSTORE_FAVORITE_NSID) {
+    const draft = parseAtstoreFavorite({
+      uri,
+      cid: fetched.cid,
+      repoDid: event.did,
+      rkey: commit.rkey,
+      value: fetched.value,
+    });
+    if (draft) {
+      await upsertAppFavorite(draft);
+      await clearAppRecordFailure(uri);
+    } else {
+      await recordAppRecordFailure({
+        uri,
+        collection: commit.collection,
+        sourceType: "atstore_favorite",
+        repoDid: event.did,
+        rkey: commit.rkey,
+        reason: "invalid_atstore_favorite",
+      });
+    }
+  } else if (
+    COMMUNITY_APP_LEXICON_ENABLED &&
+    (commit.collection === COMMUNITY_APP_PROFILE_NSID ||
+      commit.collection === COMMUNITY_APP_ENTRY_NSID)
+  ) {
+    const draft = parseCommunityAppRecord({
+      uri,
+      cid: fetched.cid,
+      repoDid: event.did,
+      rkey: commit.rkey,
+      collection: commit.collection,
+      value: fetched.value,
+    });
+    if (!draft) {
+      await recordAppRecordFailure({
+        uri,
+        collection: commit.collection,
+        sourceType: appDirectorySourceType(commit.collection),
+        repoDid: event.did,
+        rkey: commit.rkey,
+        reason: "invalid_community_app_record",
+      });
+      return;
+    }
+    await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
+    await clearAppRecordFailure(uri);
+    console.log(`[indexer] upsert community app ${uri}`);
+  }
+}
+
+async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
+  const commit = event.commit;
+  if (!commit) return;
+  const uri = recordUri(event);
+  if (!uri) return;
+
+  if (commit.operation === "delete") {
+    await markHostProtocolRecordDeleted(uri);
+    console.log(`[indexer] deleted host record ${uri}`);
+    return;
+  }
+
+  const pdsUrl = await resolvePdsForDid(event.did);
+  const fetched = await getRecordPublic(
+    pdsUrl,
+    event.did,
+    commit.collection,
+    commit.rkey,
+  );
+  if (!fetched) return;
+
+  const authorHandle = await resolveHandleFromDoc(event.did);
+  const parsed = await upsertHostProtocolRecord({
+    uri,
+    cid: fetched.cid,
+    collection: commit.collection,
+    repoDid: event.did,
+    rkey: commit.rkey,
+    authorHandle,
+    value: fetched.value,
+  });
+  if (parsed) {
+    console.log(`[indexer] upsert host ${parsed.kind} ${uri}`);
+  } else {
+    console.warn(`[indexer] invalid host record ${uri}`);
+  }
+}
+
+function appDirectorySourceType(collection: string): string {
+  if (collection === ATSTORE_LISTING_NSID) return "atstore_listing";
+  if (collection === ATSTORE_REVIEW_NSID) return "atstore_review";
+  if (collection === ATSTORE_FAVORITE_NSID) return "atstore_favorite";
+  if (collection === COMMUNITY_APP_PROFILE_NSID) return "community_profile";
+  if (collection === COMMUNITY_APP_ENTRY_NSID) return "community_entry";
+  return "unknown";
+}
+
 async function processEvent(event: JetstreamEvent): Promise<void> {
   if (event.kind !== "commit" || !event.commit) return;
   const collection = event.commit.collection;
@@ -271,9 +536,16 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
       await handleUpdateEvent(event);
     } else if (collection === FEATURED_NSID) {
       await handleFeaturedEvent(event);
+    } else if (
+      collection === HOST_PROFILE_NSID || collection === HOST_SERVICE_NSID
+    ) {
+      await handleHostProtocolEvent(event);
+    } else if (COLLECTIONS.includes(collection)) {
+      await handleAppDirectoryEvent(event);
     }
   } catch (err) {
     console.error(`[indexer] handler error for ${collection}:`, err);
+    throw err;
   }
 }
 
@@ -289,56 +561,105 @@ function buildJetstreamUrl(cursor: number | null): string {
 }
 
 async function runOnce(): Promise<never> {
+  const acquired = await tryAcquireWorkerLease(
+    LEASE_NAME,
+    workerId,
+    LEASE_TTL_MS,
+  );
+  if (!acquired) throw new LeaseUnavailableError();
+
   const cursor = await getJetstreamCursor();
   const url = buildJetstreamUrl(cursor);
-  console.log(`[indexer] connecting to ${url}`);
+  console.log(`[indexer] connecting as ${workerId} to ${url}`);
 
   const ws = new WebSocket(url);
+  activeSocket = ws;
   let lastPersistedAt = 0;
-  let highestSeen = cursor ?? 0;
+  let processedCursor = cursor ?? 0;
+  let renewTimer: number | undefined;
 
-  return await new Promise<never>((_, reject) => {
-    ws.addEventListener("open", () => {
-      console.log("[indexer] connected");
-    });
-    ws.addEventListener("message", async (msg) => {
-      try {
-        const event = JSON.parse(msg.data as string) as JetstreamEvent;
-        if (event.time_us > highestSeen) highestSeen = event.time_us;
-        await processEvent(event);
-        if (Date.now() - lastPersistedAt > CURSOR_PERSIST_INTERVAL_MS) {
-          lastPersistedAt = Date.now();
-          await setJetstreamCursor(highestSeen).catch((e) =>
-            console.warn("[indexer] cursor persist failed:", e)
-          );
+  try {
+    return await new Promise<never>((_, reject) => {
+      let stopped = false;
+      let queue = Promise.resolve();
+
+      const stopWithError = (err: unknown) => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          ws.close(1011, "handler error");
+        } catch {
+          // The socket may already be closed.
         }
-      } catch (err) {
-        console.error("[indexer] message error:", err);
-      }
+        reject(err instanceof Error ? err : new Error(String(err)));
+      };
+
+      renewTimer = setInterval(() => {
+        renewWorkerLease(LEASE_NAME, workerId, LEASE_TTL_MS).then((ok) => {
+          if (!ok) stopWithError(new Error("lost Jetstream worker lease"));
+        }).catch(stopWithError);
+      }, LEASE_RENEW_INTERVAL_MS);
+
+      ws.addEventListener("open", () => {
+        console.log("[indexer] connected");
+      });
+      ws.addEventListener("message", (msg) => {
+        if (stopped) return;
+        queue = queue.then(async () => {
+          const event = JSON.parse(String(msg.data)) as JetstreamEvent;
+          await processEvent(event);
+          if (event.time_us > processedCursor) processedCursor = event.time_us;
+          if (Date.now() - lastPersistedAt > CURSOR_PERSIST_INTERVAL_MS) {
+            lastPersistedAt = Date.now();
+            await setJetstreamCursor(processedCursor).catch((e) =>
+              console.warn("[indexer] cursor persist failed:", e)
+            );
+          }
+        }).catch((err) => {
+          console.error("[indexer] message error:", err);
+          stopWithError(err);
+        });
+      });
+      ws.addEventListener("close", (ev) => {
+        stopped = true;
+        reject(new Error(`websocket closed: ${ev.code} ${ev.reason}`));
+      });
+      ws.addEventListener("error", (ev) => {
+        stopped = true;
+        reject(
+          new Error(
+            `websocket error: ${(ev as ErrorEvent).message ?? "unknown"}`,
+          ),
+        );
+      });
     });
-    ws.addEventListener("close", (ev) => {
-      reject(new Error(`websocket closed: ${ev.code} ${ev.reason}`));
+  } finally {
+    if (renewTimer !== undefined) clearInterval(renewTimer);
+    if (activeSocket === ws) activeSocket = null;
+    await releaseWorkerLease(LEASE_NAME, workerId).catch((err) => {
+      console.warn("[indexer] lease release failed:", err);
     });
-    ws.addEventListener("error", (ev) => {
-      reject(
-        new Error(
-          `websocket error: ${(ev as ErrorEvent).message ?? "unknown"}`,
-        ),
-      );
-    });
-  });
+  }
 }
 
 async function main(): Promise<void> {
-  while (true) {
+  while (!shuttingDown) {
     try {
       await runOnce();
     } catch (err) {
-      console.error("[indexer]", err);
+      if (shuttingDown) break;
+      if (err instanceof LeaseUnavailableError) {
+        console.warn(`[indexer] ${err.message}; retrying soon`);
+      } else {
+        console.error("[indexer]", err);
+      }
     }
+    if (shuttingDown) break;
     console.log(`[indexer] reconnecting in ${RECONNECT_DELAY_MS}ms...`);
     await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS));
   }
+  await releaseWorkerLease(LEASE_NAME, workerId).catch(() => {});
+  console.log("[indexer] stopped");
 }
 
 if (import.meta.main) {

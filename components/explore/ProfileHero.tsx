@@ -6,6 +6,7 @@ import {
   resolveLink,
 } from "../../lib/atmosphere-links.ts";
 import { useT } from "../../i18n/mod.ts";
+import AtmosphereHandle from "../AtmosphereHandle.tsx";
 import VerifiedBadge from "../VerifiedBadge.tsx";
 import WebsiteIcon from "../icons/WebsiteIcon.tsx";
 import { AndroidIcon, AppleIcon } from "../icons/PlatformIcons.tsx";
@@ -120,7 +121,9 @@ export default function ProfileHero({ profile }: Props) {
             </span>
           )}
         </div>
-        <p class="profile-hero-handle">@{profile.handle}</p>
+        <p class="profile-hero-handle">
+          <AtmosphereHandle handle={profile.handle} />
+        </p>
         {(publicCategories.length > 0 || appSubcategories.length > 0) && (
           <div class="profile-hero-meta">
             {publicCategories.length > 0 && (

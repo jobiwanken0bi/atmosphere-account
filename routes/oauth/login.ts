@@ -12,10 +12,12 @@ import {
   type SignInIntent,
   startLogin,
 } from "../../lib/oauth.ts";
+import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
+
+const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
 
 function safeNext(raw: string | null): string | null {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
-  return raw;
+  return isSafeRelativePath(raw) ? raw : null;
 }
 
 function safeIntent(raw: string | null | undefined): SignInIntent | null {
@@ -72,29 +74,53 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
+  if (ctx.req.method !== "GET") {
+    const large = rejectLargeRequest(ctx.req, MAX_OAUTH_LOGIN_BODY_BYTES);
+    if (large) return large;
+  }
+  const wantsJson = ctx.req.headers.get("x-atmosphere-login") === "1" ||
+    (ctx.req.headers.get("accept") ?? "").includes("application/json");
   if (!isOAuthConfigured()) {
-    return new Response(
-      "OAuth is not configured on this deployment. Run `deno task gen:oauth-key` and set OAUTH_PRIVATE_JWK + OAUTH_KID + OAUTH_PUBLIC_JWK.",
-      { status: 503 },
-    );
+    const message =
+      "OAuth is not configured on this deployment. Run `deno task gen:oauth-key` and set OAUTH_PRIVATE_JWK + OAUTH_KID + OAUTH_PUBLIC_JWK.";
+    return wantsJson ? jsonError(message, 503) : new Response(message, {
+      status: 503,
+    });
   }
   const { handle: handleStr, next: returnTo, intent } = await getLoginInput(
     ctx.req,
     ctx.url,
   );
   if (!handleStr) {
-    return new Response("missing handle", { status: 400 });
+    return wantsJson
+      ? jsonError("missing handle", 400)
+      : new Response("missing handle", { status: 400 });
   }
   try {
     const { redirectUrl } = await startLogin(handleStr, returnTo, intent);
+    if (wantsJson) {
+      return new Response(JSON.stringify({ redirectUrl }), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
     return new Response(null, {
       status: 303,
       headers: { location: redirectUrl },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return new Response(`login failed: ${message}`, { status: 400 });
+    return wantsJson
+      ? jsonError(`login failed: ${message}`, 400)
+      : new Response(`login failed: ${message}`, { status: 400 });
   }
 }
 
 export const handler = define.handlers({ GET: handle, POST: handle });
+
+function jsonError(message: string, status: number): Response {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}

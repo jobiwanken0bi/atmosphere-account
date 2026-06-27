@@ -18,6 +18,8 @@ export interface AppUserRow {
   avatarMime: string | null;
   bskyClientId: string;
   bskyButtonVisible: boolean;
+  websiteUrl: string | null;
+  websiteVisible: boolean;
   accountType: AccountType;
   createdAt: number;
   updatedAt: number;
@@ -32,6 +34,8 @@ interface RawAppUserRow {
   avatar_mime: string | null;
   bsky_client_id: string | null;
   bsky_button_visible: number | null;
+  website_url: string | null;
+  website_visible: number | null;
   account_type: string;
   created_at: number;
   updated_at: number;
@@ -50,7 +54,9 @@ function rowToAppUser(row: RawAppUserRow): AppUserRow {
     avatarCid: row.avatar_cid,
     avatarMime: row.avatar_mime,
     bskyClientId: getBskyClient(row.bsky_client_id).id,
-    bskyButtonVisible: row.bsky_button_visible !== 0,
+    bskyButtonVisible: Number(row.bsky_button_visible ?? 1) !== 0,
+    websiteUrl: row.website_url,
+    websiteVisible: Number(row.website_visible ?? 0) === 1,
     accountType: normalizeAccountType(row.account_type),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -62,7 +68,8 @@ export async function getAppUser(did: string): Promise<AppUserRow | null> {
     const r = await c.execute({
       sql: `
         SELECT did, handle, display_name, avatar_cid, avatar_mime,
-               bio, bsky_client_id, bsky_button_visible, account_type,
+               bio, bsky_client_id, bsky_button_visible,
+               website_url, website_visible, account_type,
                created_at, updated_at
         FROM app_user
         WHERE did = ?
@@ -82,7 +89,8 @@ export async function getAppUserByHandle(
     const r = await c.execute({
       sql: `
         SELECT did, handle, display_name, avatar_cid, avatar_mime,
-               bio, bsky_client_id, bsky_button_visible, account_type,
+               bio, bsky_client_id, bsky_button_visible,
+               website_url, website_visible, account_type,
                created_at, updated_at
         FROM app_user
         WHERE lower(handle) = lower(?)
@@ -202,6 +210,10 @@ export async function updateAppUserSettings(input: {
   bio: string;
   bskyClientId: string;
   bskyButtonVisible: boolean;
+  websiteUrl?: string | null;
+  websiteVisible?: boolean;
+  avatarCid?: string | null;
+  avatarMime?: string | null;
 }): Promise<void> {
   const client = getBskyClient(input.bskyClientId);
   await withDb(async (c) => {
@@ -212,6 +224,10 @@ export async function updateAppUserSettings(input: {
           bio = ?,
           bsky_client_id = ?,
           bsky_button_visible = ?,
+          website_url = ?,
+          website_visible = ?,
+          avatar_cid = COALESCE(?, avatar_cid),
+          avatar_mime = COALESCE(?, avatar_mime),
           updated_at = ?
         WHERE did = ? AND account_type = 'user'
       `,
@@ -220,6 +236,10 @@ export async function updateAppUserSettings(input: {
         input.bio.trim(),
         client.id,
         input.bskyButtonVisible ? 1 : 0,
+        input.websiteUrl?.trim() || null,
+        input.websiteVisible ? 1 : 0,
+        input.avatarCid ?? null,
+        input.avatarMime ?? null,
         Date.now(),
         input.did,
       ],

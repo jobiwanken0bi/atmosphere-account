@@ -2,10 +2,10 @@
  * Shared logic for project link-preview JPEGs (1200×630).
  * Used by `/api/registry/og-banner/{did}` and `/api/registry/project-og/{handle}`.
  */
-import { Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
 import type { ProfileRow } from "./registry.ts";
 import { getOgJpeg, storeOgJpeg } from "./registry.ts";
 import { fetchBlobPublic } from "./pds.ts";
+import { coverJpeg } from "./image-processing.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
@@ -77,11 +77,7 @@ export async function buildOgBannerResponse(
 
   const buf = new Uint8Array(await upstream.arrayBuffer());
   try {
-    const img = await Image.decode(buf);
-    const jpegLoose = new Uint8Array(
-      await img.cover(OG_W, OG_H).encodeJPEG(JPEG_QUALITY),
-    );
-    const jpeg = jpegLoose.slice();
+    const jpeg = await coverJpeg(buf, OG_W, OG_H, JPEG_QUALITY);
     storeOgJpeg(profile.did, jpeg).catch((err) =>
       console.warn("[og-banner] failed to cache og_jpeg:", err)
     );

@@ -21,6 +21,8 @@ export interface BskyClient {
   name: string;
   /** Bare hostname (used in UI subtitles + as the profile URL host). */
   domain: string;
+  /** Short user-facing description for viewer preference pickers. */
+  description?: string;
   /**
    * URL for the small button-icon. By default we route through Google's
    * S2 favicon CDN so each client's real favicon comes through without
@@ -45,6 +47,7 @@ export const BSKY_CLIENTS: BskyClient[] = [
     id: "bluesky",
     name: "Bluesky",
     domain: "bsky.app",
+    description: "Default Bluesky microblogging app",
     iconUrl: faviconFor("bsky.app"),
     profileUrl: profileUrlAt("bsky.app"),
   },
@@ -52,8 +55,17 @@ export const BSKY_CLIENTS: BskyClient[] = [
     id: "blacksky",
     name: "Blacksky",
     domain: "blacksky.community",
+    description: "Independent community-driven app",
     iconUrl: faviconFor("blacksky.community"),
     profileUrl: profileUrlAt("blacksky.community"),
+  },
+  {
+    id: "mu",
+    name: "Mu",
+    domain: "mu.social",
+    description: "European microblogging app",
+    iconUrl: "/atmosphere-apps/mu-social.webp",
+    profileUrl: profileUrlAt("mu.social"),
   },
   {
     id: "anisota",
@@ -86,6 +98,34 @@ export const BSKY_CLIENT_IDS = BSKY_CLIENTS.map((c) => c.id);
 export type BskyClientId = typeof BSKY_CLIENT_IDS[number];
 export const DEFAULT_BSKY_CLIENT_ID = "bluesky";
 
+export const PROFILE_MICROBLOG_VIEWER_IDS = [
+  "bluesky",
+  "blacksky",
+  "mu",
+] as const;
+
+export const PROFILE_MICROBLOG_VIEWERS = PROFILE_MICROBLOG_VIEWER_IDS
+  .map((id) => BSKY_CLIENTS.find((client) => client.id === id))
+  .filter((client): client is BskyClient => Boolean(client));
+
 export function getBskyClient(id: string | null | undefined): BskyClient {
   return BSKY_CLIENTS.find((c) => c.id === id) ?? BSKY_CLIENTS[0];
+}
+
+export function isProfileMicroblogViewerId(
+  id: string | null | undefined,
+): id is typeof PROFILE_MICROBLOG_VIEWER_IDS[number] {
+  return Boolean(
+    id &&
+      PROFILE_MICROBLOG_VIEWER_IDS.includes(
+        id as typeof PROFILE_MICROBLOG_VIEWER_IDS[number],
+      ),
+  );
+}
+
+export function getProfileMicroblogViewer(
+  id: string | null | undefined,
+): BskyClient {
+  return PROFILE_MICROBLOG_VIEWERS.find((client) => client.id === id) ??
+    PROFILE_MICROBLOG_VIEWERS[0];
 }

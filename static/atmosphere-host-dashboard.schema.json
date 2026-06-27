@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atmosphereaccount.com/atmosphere-host-dashboard.schema.json",
+  "title": "Atmosphere Host Dashboard Manifest",
+  "type": "object",
+  "required": ["version", "host"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "atmosphere.hostDashboard.v0.1"
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "dashboardUrl": {
+      "type": "string",
+      "format": "uri"
+    },
+    "supportUrl": {
+      "type": "string",
+      "format": "uri"
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accountOverview": { "$ref": "#/$defs/capability" },
+        "connectedApps": { "$ref": "#/$defs/capability" },
+        "devices": { "$ref": "#/$defs/capability" },
+        "password": { "$ref": "#/$defs/capability" },
+        "accountDeletion": { "$ref": "#/$defs/capability" },
+        "rotationKeys": { "$ref": "#/$defs/capability" },
+        "repoExport": { "$ref": "#/$defs/capability" },
+        "blobExport": { "$ref": "#/$defs/capability" },
+        "backupStatus": { "$ref": "#/$defs/capability" },
+        "restore": { "$ref": "#/$defs/capability" },
+        "migration": { "$ref": "#/$defs/capability" },
+        "support": { "$ref": "#/$defs/capability" }
+      }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": ["supported", "host_owned", "planned", "unknown"]
+        },
+        "href": {
+          "type": "string",
+          "format": "uri"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

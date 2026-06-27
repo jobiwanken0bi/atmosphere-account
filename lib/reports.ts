@@ -8,8 +8,8 @@
  * raw address. Authenticated reports additionally record the
  * reporter's DID.
  */
-import { withDb } from "./db.ts";
-import { REPORT_IP_SECRET } from "./env.ts";
+import { dbBackend, withDb } from "./db.ts";
+import { reportIpSecret } from "./env.ts";
 
 export const REPORT_REASONS = [
   "not_a_project",
@@ -84,7 +84,7 @@ export function callerIp(req: Request): string {
 }
 
 export async function hashIp(ip: string): Promise<string> {
-  const data = new TextEncoder().encode(`${ip}|${REPORT_IP_SECRET}`);
+  const data = new TextEncoder().encode(`${ip}|${reportIpSecret()}`);
   const buf = await crypto.subtle.digest("SHA-256", data);
   const bytes = new Uint8Array(buf);
   let hex = "";
@@ -110,6 +110,7 @@ export async function createReport(
   input: CreateReportInput,
 ): Promise<CreateReportResult> {
   return await withDb(async (c) => {
+    const backend = dbBackend();
     if (input.ipHash) {
       const since = Date.now() - DEDUP_WINDOW_MS;
       const dup = await c.execute({
@@ -130,6 +131,7 @@ export async function createReport(
           target_did, reporter_did, reporter_ip_hash, reason, details,
           status, created_at
         ) VALUES (?, ?, ?, ?, ?, 'open', ?)
+        ${backend === "neon" ? "RETURNING id" : ""}
       `,
       args: [
         input.targetDid,
@@ -140,7 +142,9 @@ export async function createReport(
         Date.now(),
       ],
     });
-    const id = Number(r.lastInsertRowid ?? 0);
+    const id = backend === "neon"
+      ? Number(r.rows[0]?.id ?? 0)
+      : Number(r.lastInsertRowid ?? 0);
     return { ok: true, id };
   });
 }

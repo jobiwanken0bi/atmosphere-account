@@ -1,18 +1,19 @@
 /**
- * Authenticated registry profile mutations. The session must hold a
- * valid OAuth session for the authoring DID; we then write the profile
- * record directly to the user's PDS via DPoP-bound XRPC and mirror it
- * into the local index. The Jetstream-fed indexer picks up the same
- * write shortly after for any other consumers of the registry.
+ * Authenticated app/profile mutations. The session must hold a valid
+ * OAuth session for the authoring DID; new app listings publish to the
+ * shared ATStore collection, while existing legacy listings keep writing
+ * the Atmosphere profile record for compatibility. Both paths mirror into
+ * the local index immediately, and the Jetstream-fed indexer picks up the
+ * same write shortly after for any other consumers of the registry.
  *
  *   PUT     /api/registry/profile   (create/update profile)
  *   DELETE  /api/registry/profile   (delete profile)
  */
-import { Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
 import { define } from "../../../utils.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import {
   deleteProfileRecord,
+  deleteRecord,
   putProfileRecord,
   uploadBlob,
 } from "../../../lib/pds.ts";
@@ -31,19 +32,38 @@ import {
 } from "../../../lib/registry.ts";
 import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
+import {
+  deleteAppRecord,
+  upsertLegacyProfileAsApp,
+} from "../../../lib/app-directory.ts";
+import { coverJpeg } from "../../../lib/image-processing.ts";
+import {
+  atmosphereProfileAtUri,
+  findExistingAtstoreListingForProfile,
+  publishAtstoreListingFromProfileRecord,
+} from "../../../lib/atstore-migration.ts";
+import {
+  ATSTORE_LISTING_NSID,
+  COMMUNITY_APP_PROFILE_NSID,
+} from "../../../lib/app-lexicons.ts";
+import {
+  communityAppProfileAtUri,
+  findExistingCommunityAppProfile,
+  publishCommunityAppProfileFromProfileRecord,
+} from "../../../lib/community-app-profile.ts";
+import { resolveAppListingWriteTarget } from "../../../lib/app-listing-lifecycle.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
 const OG_JPEG_QUALITY = 85;
+const PROFILE_JSON_MAX_BYTES = 36_000_000;
 
 /** Resize `bytes` to a 1200×630 cover-crop JPEG for the og:image cache.
  *  Returns null if ImageScript fails (e.g. unsupported format), so the
  *  caller can proceed without crashing the whole profile save. */
 async function generateOgJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
   try {
-    const img = await Image.decode(bytes);
-    const cropped = img.cover(OG_W, OG_H);
-    return new Uint8Array(await cropped.encodeJPEG(OG_JPEG_QUALITY));
+    return await coverJpeg(bytes, OG_W, OG_H, OG_JPEG_QUALITY);
   } catch (err) {
     console.warn("[profile] og-jpeg pre-generation failed:", err);
     return null;
@@ -51,6 +71,7 @@ async function generateOgJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
 }
 
 const ICON_MAX_BYTES = 200_000;
+const AVATAR_MAX_BYTES = 1_000_000;
 const BANNER_MAX_BYTES = 3_000_000;
 const SCREENSHOT_MAX_BYTES = 5_000_000;
 const SCREENSHOT_MAX_COUNT = 4;
@@ -60,6 +81,29 @@ const SCREENSHOT_MIME_TYPES = new Set([
   "image/webp",
 ]);
 const BANNER_MIME_TYPES = SCREENSHOT_MIME_TYPES;
+const JSON_BODY_TOO_LARGE = Symbol("jsonBodyTooLarge");
+
+async function tryPublishCommunityProfile(input: {
+  did: string;
+  handle: string;
+  pdsUrl: string;
+  record: ProfileRecord;
+}): Promise<{ uri: string; cid: string } | null> {
+  if (!input.record.categories?.includes("app")) return null;
+  try {
+    const existing = await findExistingCommunityAppProfile(
+      input.did,
+      input.pdsUrl,
+    ).catch(() => null);
+    return await publishCommunityAppProfileFromProfileRecord({
+      ...input,
+      existingRecord: existing,
+    });
+  } catch (err) {
+    console.warn("[registry] community app profile publish skipped:", err);
+    return null;
+  }
+}
 
 interface LinkPayload {
   kind?: string;
@@ -183,10 +227,81 @@ function normalizeLinksPayload(input: unknown): LinkEntry[] {
   return out;
 }
 
-function decodeBase64(b64: string): Uint8Array {
-  const binary = atob(b64);
+async function readJsonBodyLimited<T>(
+  req: Request,
+  maxBytes: number,
+): Promise<T | null | typeof JSON_BODY_TOO_LARGE> {
+  const contentLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    return JSON_BODY_TOO_LARGE;
+  }
+  if (!req.body) return null;
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return JSON_BODY_TOO_LARGE;
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  } catch {
+    return null;
+  }
+}
+
+function normalizedBase64(b64: string, label: string): string {
+  const normalized = b64.replace(/\s/g, "");
+  if (
+    normalized.length % 4 === 1 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+  ) {
+    throw new Error(`${label} must be valid base64`);
+  }
+  return normalized;
+}
+
+function estimateBase64DecodedBytes(b64: string): number {
+  const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+}
+
+function decodeBase64Limited(
+  b64: string,
+  maxBytes: number,
+  label: string,
+): Uint8Array {
+  const normalized = normalizedBase64(b64, label);
+  if (estimateBase64DecodedBytes(normalized) > maxBytes) {
+    throw new Error(`${label} exceeds ${maxBytes} bytes`);
+  }
+
+  let binary: string;
+  try {
+    binary = atob(normalized);
+  } catch {
+    throw new Error(`${label} must be valid base64`);
+  }
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  if (out.byteLength > maxBytes) {
+    throw new Error(`${label} exceeds ${maxBytes} bytes`);
+  }
   return out;
 }
 
@@ -235,22 +350,33 @@ export const handler = define.handlers({
       .catch(() => null);
     if (existing?.takedownStatus === "taken_down") {
       return new Response(
-        "This profile has been taken down by an Atmosphere admin. " +
+        "This app listing has been taken down by an Atmosphere admin. " +
           "You can delete it from your PDS, but you can't update it.",
         { status: 403 },
       );
     }
 
-    const body = await ctx.req.json().catch(() => null) as
-      | ProfileFormPayload
-      | null;
+    const body = await readJsonBodyLimited<ProfileFormPayload>(
+      ctx.req,
+      PROFILE_JSON_MAX_BYTES,
+    );
+    if (body === JSON_BODY_TOO_LARGE) {
+      return new Response("request body too large", { status: 413 });
+    }
     if (!body) return new Response("invalid JSON body", { status: 400 });
 
     let avatar = body.avatar ?? undefined;
     if (body.avatarUpload?.dataBase64) {
-      const bytes = decodeBase64(body.avatarUpload.dataBase64);
-      if (bytes.byteLength > 1_000_000) {
-        return new Response("avatar exceeds 1MB", { status: 400 });
+      let bytes: Uint8Array;
+      try {
+        bytes = decodeBase64Limited(
+          body.avatarUpload.dataBase64,
+          AVATAR_MAX_BYTES,
+          "avatar",
+        );
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(m, { status: 400 });
       }
       try {
         avatar = await uploadBlob(
@@ -279,9 +405,16 @@ export const handler = define.handlers({
           status: 400,
         });
       }
-      const bytes = decodeBase64(body.bannerUpload.dataBase64);
-      if (bytes.byteLength > BANNER_MAX_BYTES) {
-        return new Response("banner exceeds 3MB", { status: 400 });
+      let bytes: Uint8Array;
+      try {
+        bytes = decodeBase64Limited(
+          body.bannerUpload.dataBase64,
+          BANNER_MAX_BYTES,
+          "banner",
+        );
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(m, { status: 400 });
       }
       try {
         banner = await uploadBlob(
@@ -327,7 +460,7 @@ export const handler = define.handlers({
         JSON.stringify({
           error: "icon_access_required",
           detail:
-            "This project hasn't been verified yet. SVG icon uploads unlock once an admin verifies the project — request verification from your profile page.",
+            "This app listing hasn't been verified yet. SVG icon uploads unlock once an admin verifies the listing.",
         }),
         {
           status: 403,
@@ -357,11 +490,12 @@ export const handler = define.handlers({
       if (mime !== "image/svg+xml") {
         return new Response(`${label} must be image/svg+xml`, { status: 400 });
       }
-      const raw = decodeBase64(upload.dataBase64);
-      if (raw.byteLength > ICON_MAX_BYTES) {
-        return new Response(`${label} exceeds ${ICON_MAX_BYTES} bytes`, {
-          status: 400,
-        });
+      let raw: Uint8Array;
+      try {
+        raw = decodeBase64Limited(upload.dataBase64, ICON_MAX_BYTES, label);
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(m, { status: 400 });
       }
       let cleaned: Uint8Array;
       try {
@@ -417,9 +551,16 @@ export const handler = define.handlers({
           status: 400,
         });
       }
-      const bytes = decodeBase64(upload.dataBase64);
-      if (bytes.byteLength > SCREENSHOT_MAX_BYTES) {
-        return new Response("screenshot exceeds 5MB", { status: 400 });
+      let bytes: Uint8Array;
+      try {
+        bytes = decodeBase64Limited(
+          upload.dataBase64,
+          SCREENSHOT_MAX_BYTES,
+          "screenshot",
+        );
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        return new Response(m, { status: 400 });
       }
       try {
         const image = await uploadBlob(
@@ -486,9 +627,64 @@ export const handler = define.handlers({
 
     const validation = validateProfile(draft);
     if (!validation.ok || !validation.value) {
-      return new Response(`invalid profile: ${validation.error}`, {
+      return new Response(`invalid app listing: ${validation.error}`, {
         status: 400,
       });
+    }
+
+    const existingAtstore = await findExistingAtstoreListingForProfile(
+      user.did,
+      session.pdsUrl,
+    ).catch(() => null);
+    const writeTarget = resolveAppListingWriteTarget({
+      hasLegacyProfile: !!existing,
+      hasAtstoreListing: !!existingAtstore,
+      categories: validation.value.categories,
+    });
+    if (writeTarget === "atstore_listing") {
+      try {
+        const atstoreResult = await publishAtstoreListingFromProfileRecord({
+          did: user.did,
+          handle: user.handle,
+          pdsUrl: session.pdsUrl,
+          record: validation.value,
+          existingRecord: existingAtstore,
+        });
+        const communityResult = await tryPublishCommunityProfile({
+          did: user.did,
+          handle: user.handle,
+          pdsUrl: session.pdsUrl,
+          record: validation.value,
+        });
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            uri: atstoreResult.uri,
+            cid: atstoreResult.cid,
+            atstoreListingUri: atstoreResult.uri,
+            communityProfileUri: communityResult?.uri ?? null,
+            slug: atstoreResult.slug,
+            publicPath: atstoreResult.slug
+              ? `/apps/${encodeURIComponent(atstoreResult.slug)}`
+              : null,
+            writeTarget,
+            icon: null,
+            iconBw: null,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        if (m === "missing_icon") {
+          return new Response(
+            "ATStore app listings require an app icon/avatar",
+            { status: 400 },
+          );
+        }
+        return new Response(`ATStore listing publish failed: ${m}`, {
+          status: 502,
+        });
+      }
     }
 
     let result: Awaited<ReturnType<typeof putProfileRecord>>;
@@ -537,21 +733,37 @@ export const handler = define.handlers({
         recordRev: result.commit?.rev ?? result.cid,
         createdAt: Date.parse(validation.value.createdAt) || Date.now(),
       });
+      const latest = await getProfileByDid(user.did, {
+        includeTakenDown: true,
+      });
+      if (latest?.categories.includes("app")) {
+        await upsertLegacyProfileAsApp(latest);
+      }
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
       console.error("[registry] inline index after putRecord failed:", err);
       return new Response(
-        `Profile saved to your PDS, but indexing it for Explore failed: ${m}. ` +
+        `App listing saved to your PDS, but indexing it for Apps failed: ${m}. ` +
           `Press Publish again to retry.`,
         { status: 502 },
       );
     }
+
+    const communityResult = await tryPublishCommunityProfile({
+      did: user.did,
+      handle: user.handle,
+      pdsUrl: session.pdsUrl,
+      record: validation.value,
+    });
 
     return new Response(
       JSON.stringify({
         ok: true,
         uri: result.uri,
         cid: result.cid,
+        communityProfileUri: communityResult?.uri ?? null,
+        publicPath: `/apps/${encodeURIComponent(user.handle)}`,
+        writeTarget,
         icon: validation.value.icon ?? null,
         iconBw: validation.value.iconBw ?? null,
       }),
@@ -579,11 +791,45 @@ export const handler = define.handlers({
       return new Response(`deleteRecord failed: ${m}`, { status: 502 });
     }
 
+    try {
+      const existingAtstore = await findExistingAtstoreListingForProfile(
+        user.did,
+        session.pdsUrl,
+      );
+      if (existingAtstore?.rkey) {
+        await deleteRecord(
+          user.did,
+          session.pdsUrl,
+          ATSTORE_LISTING_NSID,
+          existingAtstore.rkey,
+        );
+        await deleteAppRecord(existingAtstore.uri);
+      }
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      return new Response(`ATStore listing delete failed: ${m}`, {
+        status: 502,
+      });
+    }
+
+    try {
+      await deleteRecord(
+        user.did,
+        session.pdsUrl,
+        COMMUNITY_APP_PROFILE_NSID,
+        "self",
+      );
+      await deleteAppRecord(communityAppProfileAtUri(user.did));
+    } catch (err) {
+      console.warn("[registry] community app profile delete skipped:", err);
+    }
+
     /** Mirror the delete in our local index so /explore stops listing it
      *  immediately. The Jetstream worker would eventually do this too,
      *  but we don't want to wait. */
     try {
       await deleteProfile(user.did);
+      await deleteAppRecord(atmosphereProfileAtUri(user.did));
     } catch (err) {
       console.error("[registry] inline delete-from-index failed:", err);
     }

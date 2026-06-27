@@ -1,0 +1,433 @@
+{
+  "lexicon": 1,
+  "id": "account.atmosphere.host.defs",
+  "defs": {
+    "link": {
+      "type": "object",
+      "required": ["role", "url"],
+      "description": "A host-owned public link. AppViews may choose icons and labels from the role, while preserving unknown roles as plain outbound links.",
+      "properties": {
+        "role": {
+          "type": "string",
+          "maxLength": 64,
+          "knownValues": [
+            "account.atmosphere.host.defs#linkRoleHomepage",
+            "account.atmosphere.host.defs#linkRoleSignup",
+            "account.atmosphere.host.defs#linkRoleLogin",
+            "account.atmosphere.host.defs#linkRoleSupport",
+            "account.atmosphere.host.defs#linkRoleTerms",
+            "account.atmosphere.host.defs#linkRolePrivacy",
+            "account.atmosphere.host.defs#linkRoleStatus",
+            "account.atmosphere.host.defs#linkRoleDashboard",
+            "account.atmosphere.host.defs#linkRoleRepository",
+            "account.atmosphere.host.defs#linkRoleOther"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 64,
+          "maxGraphemes": 64,
+          "description": "Optional human label. Recommended when role is linkRoleOther."
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["purpose", "image"],
+      "description": "A visual asset for a host profile or host service listing.",
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "maxLength": 64,
+          "knownValues": [
+            "account.atmosphere.host.defs#purposeAvatar",
+            "account.atmosphere.host.defs#purposeLogo",
+            "account.atmosphere.host.defs#purposeBanner",
+            "account.atmosphere.host.defs#purposeHero",
+            "account.atmosphere.host.defs#purposeSocialCard",
+            "account.atmosphere.host.defs#purposeOther"
+          ],
+          "description": "How this image is intended to be used. Other string values may be valid."
+        },
+        "image": {
+          "type": "blob",
+          "accept": ["image/png", "image/jpeg", "image/webp"],
+          "maxSize": 3000000,
+          "description": "Image blob. Use square images for avatar/logo purposes and wide images for banner/hero/social-card purposes."
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 1000,
+          "maxGraphemes": 100,
+          "description": "Accessible alt text for the image."
+        },
+        "aspectRatio": {
+          "type": "ref",
+          "ref": "account.atmosphere.host.defs#aspectRatio"
+        }
+      }
+    },
+    "aspectRatio": {
+      "type": "object",
+      "required": ["width", "height"],
+      "description": "width:height represents an image aspect ratio. It may be approximate.",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "serviceRef": {
+      "type": "object",
+      "required": ["uri"],
+      "description": "A reference from an operator profile to one of its account.atmosphere.host.service records.",
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "AT URI of an account.atmosphere.host.service record."
+        },
+        "host": {
+          "type": "string",
+          "maxLength": 253,
+          "description": "Optional normalized public host address for easier display before the referenced service record is hydrated."
+        }
+      }
+    },
+    "signup": {
+      "type": "object",
+      "required": ["status"],
+      "description": "Public signup posture for a host. This is self-declared by the host operator and can be overridden or annotated by local AppView moderation.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "maxLength": 64,
+          "knownValues": [
+            "account.atmosphere.host.defs#signupOpen",
+            "account.atmosphere.host.defs#signupInviteOnly",
+            "account.atmosphere.host.defs#signupWaitlist",
+            "account.atmosphere.host.defs#signupClosed",
+            "account.atmosphere.host.defs#signupUnknown"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512,
+          "description": "Where a person can create or request an account."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 240,
+          "maxGraphemes": 240
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": ["id", "status"],
+      "description": "A public account-control or portability capability exposed by the host. Dangerous actions remain host-authoritative; Atmosphere should link or embed host-owned flows.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 80,
+          "knownValues": [
+            "account.atmosphere.host.defs#capabilityDashboard",
+            "account.atmosphere.host.defs#capabilityOAuthGrantManagement",
+            "account.atmosphere.host.defs#capabilityActiveSessions",
+            "account.atmosphere.host.defs#capabilityAppPasswords",
+            "account.atmosphere.host.defs#capabilityPasswordManagement",
+            "account.atmosphere.host.defs#capabilityRotationKeys",
+            "account.atmosphere.host.defs#capabilityRepoExport",
+            "account.atmosphere.host.defs#capabilityBlobExport",
+            "account.atmosphere.host.defs#capabilityBackups",
+            "account.atmosphere.host.defs#capabilityRestore",
+            "account.atmosphere.host.defs#capabilityMigration",
+            "account.atmosphere.host.defs#capabilitySupport",
+            "account.atmosphere.host.defs#capabilityAccountDeletion"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 64,
+          "knownValues": [
+            "account.atmosphere.host.defs#capabilitySupported",
+            "account.atmosphere.host.defs#capabilityExternal",
+            "account.atmosphere.host.defs#capabilityPlanned",
+            "account.atmosphere.host.defs#capabilityUnsupported",
+            "account.atmosphere.host.defs#capabilityUnknown"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512,
+          "description": "Optional host-owned page or API documentation for this capability."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 240,
+          "maxGraphemes": 240
+        }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "description": "Public operator contact metadata. Avoid putting private contact details in public records.",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 254
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512
+        },
+        "handle": {
+          "type": "string",
+          "maxLength": 253,
+          "description": "Optional public AT Protocol handle for support or operator contact."
+        }
+      }
+    },
+    "software": {
+      "type": "object",
+      "description": "Optional public implementation metadata for the host's PDS or hosting stack.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "maxGraphemes": 80
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "sourceUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512
+        }
+      }
+    },
+    "operatorIndividual": {
+      "type": "token",
+      "description": "The host is operated by an individual."
+    },
+    "operatorCommunity": {
+      "type": "token",
+      "description": "The host is operated by a community or informal group."
+    },
+    "operatorCooperative": {
+      "type": "token",
+      "description": "The host is operated by a cooperative."
+    },
+    "operatorCompany": {
+      "type": "token",
+      "description": "The host is operated by a company."
+    },
+    "operatorPublicBenefit": {
+      "type": "token",
+      "description": "The host is operated by a public-benefit organization."
+    },
+    "operatorNonprofit": {
+      "type": "token",
+      "description": "The host is operated by a nonprofit."
+    },
+    "operatorGovernment": {
+      "type": "token",
+      "description": "The host is operated by a government or public institution."
+    },
+    "operatorUnknown": {
+      "type": "token",
+      "description": "The host operator type is not declared."
+    },
+    "purposeAvatar": {
+      "type": "token",
+      "description": "A square avatar used on host cards and account-host identity surfaces."
+    },
+    "purposeLogo": {
+      "type": "token",
+      "description": "A logo or wordmark for the host."
+    },
+    "purposeBanner": {
+      "type": "token",
+      "description": "A wide banner image for a host profile or listing page."
+    },
+    "purposeHero": {
+      "type": "token",
+      "description": "A large promotional or feature image for a rich host page."
+    },
+    "purposeSocialCard": {
+      "type": "token",
+      "description": "An image sized and formatted for social sharing previews."
+    },
+    "purposeOther": {
+      "type": "token",
+      "description": "Another host image purpose."
+    },
+    "linkRoleHomepage": {
+      "type": "token",
+      "description": "The host's primary homepage."
+    },
+    "linkRoleSignup": {
+      "type": "token",
+      "description": "A page where people can create or request an account."
+    },
+    "linkRoleLogin": {
+      "type": "token",
+      "description": "A page where existing users can sign in."
+    },
+    "linkRoleSupport": {
+      "type": "token",
+      "description": "A support, help, or contact page."
+    },
+    "linkRoleTerms": {
+      "type": "token",
+      "description": "Terms of service or acceptable-use policy."
+    },
+    "linkRolePrivacy": {
+      "type": "token",
+      "description": "Privacy policy."
+    },
+    "linkRoleStatus": {
+      "type": "token",
+      "description": "Public service status page."
+    },
+    "linkRoleDashboard": {
+      "type": "token",
+      "description": "Host-owned account-control dashboard."
+    },
+    "linkRoleRepository": {
+      "type": "token",
+      "description": "Source repository or implementation project."
+    },
+    "linkRoleOther": {
+      "type": "token",
+      "description": "Another public link role."
+    },
+    "signupOpen": {
+      "type": "token",
+      "description": "Anyone can create an account."
+    },
+    "signupInviteOnly": {
+      "type": "token",
+      "description": "Signup requires an invite."
+    },
+    "signupWaitlist": {
+      "type": "token",
+      "description": "Signup is available through a waitlist."
+    },
+    "signupClosed": {
+      "type": "token",
+      "description": "The host is not currently accepting new accounts."
+    },
+    "signupUnknown": {
+      "type": "token",
+      "description": "Signup availability is not declared."
+    },
+    "statusActive": {
+      "type": "token",
+      "description": "The host service is active."
+    },
+    "statusPreview": {
+      "type": "token",
+      "description": "The host service is in preview, beta, or early access."
+    },
+    "statusDeprecated": {
+      "type": "token",
+      "description": "The host service is deprecated or being phased out."
+    },
+    "statusOffline": {
+      "type": "token",
+      "description": "The host service is offline or unavailable."
+    },
+    "statusUnknown": {
+      "type": "token",
+      "description": "The host service status is not declared."
+    },
+    "capabilityDashboard": {
+      "type": "token",
+      "description": "The host exposes a standard account dashboard."
+    },
+    "capabilityOAuthGrantManagement": {
+      "type": "token",
+      "description": "The host lets users view or manage OAuth grants and connected apps."
+    },
+    "capabilityActiveSessions": {
+      "type": "token",
+      "description": "The host lets users view or manage active sessions and devices."
+    },
+    "capabilityAppPasswords": {
+      "type": "token",
+      "description": "The host lets users manage app passwords or equivalent delegated credentials."
+    },
+    "capabilityPasswordManagement": {
+      "type": "token",
+      "description": "The host lets users manage password or primary authentication settings."
+    },
+    "capabilityRotationKeys": {
+      "type": "token",
+      "description": "The host exposes rotation-key education, status, or management."
+    },
+    "capabilityRepoExport": {
+      "type": "token",
+      "description": "The host supports repository export."
+    },
+    "capabilityBlobExport": {
+      "type": "token",
+      "description": "The host supports blob export."
+    },
+    "capabilityBackups": {
+      "type": "token",
+      "description": "The host offers backup status or backup management."
+    },
+    "capabilityRestore": {
+      "type": "token",
+      "description": "The host offers account restore tooling."
+    },
+    "capabilityMigration": {
+      "type": "token",
+      "description": "The host offers account migration tooling."
+    },
+    "capabilitySupport": {
+      "type": "token",
+      "description": "The host exposes user support workflows."
+    },
+    "capabilityAccountDeletion": {
+      "type": "token",
+      "description": "The host lets users request or manage account deletion."
+    },
+    "capabilitySupported": {
+      "type": "token",
+      "description": "The capability is supported directly by the host."
+    },
+    "capabilityExternal": {
+      "type": "token",
+      "description": "The capability is available through a linked external host-owned flow."
+    },
+    "capabilityPlanned": {
+      "type": "token",
+      "description": "The capability is planned but not currently available."
+    },
+    "capabilityUnsupported": {
+      "type": "token",
+      "description": "The capability is not supported."
+    },
+    "capabilityUnknown": {
+      "type": "token",
+      "description": "Capability support is not declared."
+    }
+  }
+}

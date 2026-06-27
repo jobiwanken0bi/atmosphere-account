@@ -14,6 +14,7 @@ import {
 import { bskyCdnAvatarUrl } from "../lib/avatar.ts";
 import { BSKY_CLIENTS, getBskyClient } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
+import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import BskyClientPickerModal from "./BskyClientPickerModal.tsx";
 import LinkUrlOverrideModal from "./LinkUrlOverrideModal.tsx";
 
@@ -34,11 +35,16 @@ interface ExistingProfile {
   categories: string[];
   subcategories: string[];
   links: LinkEntry[];
-  screenshots: Array<{ ref: string; mime: string; size: number }>;
-  avatar: { ref: string; mime: string } | null;
+  screenshots: Array<{
+    ref: string;
+    mime: string;
+    size: number;
+    previewUrl?: string;
+  }>;
+  avatar: { ref: string; mime: string; size?: number } | null;
   /** Optional project banner image. Rendered at the top of the project
    *  page and used as the OG / share preview when the page is posted. */
-  banner: { ref: string; mime: string } | null;
+  banner: { ref: string; mime: string; size?: number } | null;
   /** Optional developer-facing SVG icon. */
   icon:
     | {
@@ -101,6 +107,8 @@ interface Props {
   /** Direct image URL to show in the avatar slot before any registry record
    *  exists (e.g. the user's PDS-hosted Bluesky avatar). */
   initialAvatarUrl?: string | null;
+  /** Direct image URL to show for non-registry banner blobs. */
+  initialBannerUrl?: string | null;
   /** Whether the registry currently has a published record for this user.
    *  Drives the live/inactive status pill at the top of the form. */
   initialPublished: boolean;
@@ -159,6 +167,18 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+async function responseErrorText(res: Response): Promise<string> {
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const body = await res.json().catch(() => null) as
+      | { detail?: string; error?: string; issues?: string[] }
+      | null;
+    return body?.issues?.join(" ") || body?.detail || body?.error ||
+      `HTTP ${res.status}`;
+  }
+  return await res.text().catch(() => "") || `HTTP ${res.status}`;
 }
 
 interface CustomLinkRow {
@@ -251,6 +271,7 @@ export default function CreateProfileForm(
     handle,
     initial,
     initialAvatarUrl,
+    initialBannerUrl,
     initialPublished,
     publicProfileHandle,
   }: Props,
@@ -316,7 +337,15 @@ export default function CreateProfileForm(
 
   const tIcon = tForm.icon;
 
-  const avatarKeep = useSignal<BlobRefShape | null>(null);
+  const initialAvatarBlob: BlobRefShape | null = initial?.avatar
+    ? {
+      $type: "blob",
+      ref: { $link: initial.avatar.ref },
+      mimeType: initial.avatar.mime,
+      size: initial.avatar.size ?? 0,
+    }
+    : null;
+  const avatarKeep = useSignal<BlobRefShape | null>(initialAvatarBlob);
   /**
    * Preview URL precedence:
    *   1. Locally-picked file (set in `onAvatarChange`).
@@ -343,11 +372,12 @@ export default function CreateProfileForm(
    */
   const bannerKeep = useSignal<BlobRefShape | null>(null);
   const bannerPreview = useSignal<string | null>(
-    initial?.banner
-      ? `/api/registry/banner/${encodeURIComponent(did)}?v=${
-        encodeURIComponent(initial.banner.ref)
-      }`
-      : null,
+    initialBannerUrl ??
+      (initial?.banner
+        ? `/api/registry/banner/${encodeURIComponent(did)}?v=${
+          encodeURIComponent(initial.banner.ref)
+        }`
+        : null),
   );
   const bannerFile = useSignal<File | null>(null);
   const bannerRemoved = useSignal(false);
@@ -355,7 +385,8 @@ export default function CreateProfileForm(
   const screenshots = useSignal<ScreenshotDraft[]>(
     (initial?.screenshots ?? []).slice(0, SCREENSHOT_MAX_COUNT).map((s, i) => ({
       id: `existing-${s.ref}-${i}`,
-      previewUrl: `/api/registry/screenshot/${encodeURIComponent(did)}/${i}`,
+      previewUrl: s.previewUrl ??
+        `/api/registry/screenshot/${encodeURIComponent(did)}/${i}`,
       blob: {
         $type: "blob",
         ref: { $link: s.ref },
@@ -419,19 +450,14 @@ export default function CreateProfileForm(
   const message = useSignal<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
+  const publicPath = useSignal<string | null>(
+    publicProfileHandle
+      ? `/apps/${encodeURIComponent(publicProfileHandle)}`
+      : null,
+  );
 
   useEffect(() => {
     hydrated.value = true;
-  }, []);
-
-  useEffect(() => {
-    if (!initial?.avatar) return;
-    avatarKeep.value = {
-      $type: "blob",
-      ref: { $link: initial.avatar.ref },
-      mimeType: initial.avatar.mime,
-      size: 0,
-    };
   }, []);
 
   useEffect(() => {
@@ -440,7 +466,7 @@ export default function CreateProfileForm(
       $type: "blob",
       ref: { $link: initial.banner.ref },
       mimeType: initial.banner.mime,
-      size: 0,
+      size: initial.banner.size ?? 0,
     };
   }, []);
 
@@ -747,6 +773,12 @@ export default function CreateProfileForm(
     const trimmedMainLink = mainLink.value.trim();
     const trimmedIosLink = iosLink.value.trim();
     const trimmedAndroidLink = androidLink.value.trim();
+    const appSelected = categories.value.includes("app");
+    const hasAppIcon = !!avatarFile.value || !!avatarKeep.value;
+    if (appSelected && !hasAppIcon) {
+      message.value = { kind: "error", text: tForm.avatarRequiredForAtstore };
+      return;
+    }
     if (!trimmedMainLink && !trimmedIosLink && !trimmedAndroidLink) {
       message.value = { kind: "error", text: tMainLink.required };
       return;
@@ -774,6 +806,13 @@ export default function CreateProfileForm(
     if (trimmedAndroidLink && !isHttpUrl(trimmedAndroidLink)) {
       message.value = { kind: "error", text: tAppLinks.androidInvalid };
       return;
+    }
+    for (const row of customLinks.value) {
+      const url = row.url.trim();
+      if (url && !isHttpUrl(url)) {
+        message.value = { kind: "error", text: tCustom.urlInvalid };
+        return;
+      }
     }
     submitting.value = true;
     message.value = null;
@@ -853,12 +892,15 @@ export default function CreateProfileForm(
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const text = await res.text();
+        const text = await responseErrorText(res);
         throw new Error(text || `HTTP ${res.status}`);
       }
       const saved = await res.json() as {
         icon?: BlobRefShape | null;
         iconBw?: BlobRefShape | null;
+        publicPath?: string | null;
+        slug?: string | null;
+        writeTarget?: "atstore_listing" | "legacy_profile";
       };
       iconKeep.value = saved.icon ?? null;
       iconPreviewUrl.value = saved.icon
@@ -873,7 +915,15 @@ export default function CreateProfileForm(
       iconBwFile.value = null;
       iconBwRemoved.value = false;
       published.value = true;
-      message.value = { kind: "ok", text: tManage.savedToast };
+      publicPath.value = saved.publicPath ??
+        (saved.slug ? `/apps/${encodeURIComponent(saved.slug)}` : null) ??
+        publicPath.value;
+      message.value = {
+        kind: "ok",
+        text: saved.writeTarget === "atstore_listing"
+          ? tManage.savedAtstoreToast
+          : tManage.savedToast,
+      };
     } catch (err) {
       message.value = {
         kind: "error",
@@ -890,8 +940,9 @@ export default function CreateProfileForm(
     message.value = null;
     try {
       const res = await fetch("/api/registry/profile", { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await responseErrorText(res));
       published.value = false;
+      publicPath.value = null;
       message.value = { kind: "ok", text: tManage.deletedToast };
     } catch (err) {
       message.value = {
@@ -1030,7 +1081,11 @@ export default function CreateProfileForm(
               {tForm.avatarRemove}
             </button>
           )}
-          <p class="profile-form-hint">{tForm.avatarHint}</p>
+          <p class="profile-form-hint">
+            {categories.value.includes("app")
+              ? tForm.avatarAtstoreHint
+              : tForm.avatarHint}
+          </p>
         </div>
 
         <div class="profile-form-fields">
@@ -1045,7 +1100,9 @@ export default function CreateProfileForm(
           <div class="profile-form-handle-row">
             <div class="profile-form-handle-info">
               <span class="profile-form-label">{tForm.handleLabel}</span>
-              <span class="profile-form-handle-value">@{handle}</span>
+              <span class="profile-form-handle-value">
+                <AtmosphereHandle handle={handle} />
+              </span>
             </div>
             <button
               type="submit"
@@ -1160,6 +1217,7 @@ export default function CreateProfileForm(
         <label class="profile-form-field">
           <span class="profile-form-label">
             {tMainLink.sectionLabel}
+            <em class="profile-form-required">*</em>
           </span>
           <input
             type="url"
@@ -1481,9 +1539,9 @@ export default function CreateProfileForm(
           page reload.
          */
         }
-        {published.value && publicProfileHandle && (
+        {published.value && publicPath.value && (
           <a
-            href={`/explore/${encodeURIComponent(publicProfileHandle)}`}
+            href={publicPath.value}
             class="profile-form-button-secondary profile-form-button-secondary--lg"
           >
             {tManage.viewPublicProfile}

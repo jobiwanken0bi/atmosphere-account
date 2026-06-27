@@ -1,263 +1,271 @@
-import { useSignal } from "@preact/signals";
-import { useEffect, useRef } from "preact/hooks";
+import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import { useT } from "../i18n/mod.ts";
 
 interface Props {
   /** Optional path to redirect to after successful login (defaults to
-   *  `/account/reviews` for users and `/explore/manage` for projects). */
+   *  `/account` for users and `/apps/manage` for projects). */
   returnTo?: string;
   /**
    * Account-type hint carried through OAuth. When `"project"` is set
-   * (typically via a "Submit your project" CTA), a freshly-signed-in
+   * (typically via a "Register an app" CTA), a freshly-signed-in
    * DID is auto-classified as a project account. Defaults to user.
    */
   intent?: "user" | "project";
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
+  rich?: boolean;
+  initialHandle?: string;
 }
 
-interface PreviewMatch {
-  did: string;
-  handle: string;
-  displayName?: string;
-  avatarUrl?: string;
-}
+const HOST_OPTIONS = [
+  {
+    name: "Bluesky",
+    href: "https://bsky.app",
+    tag: "Popular",
+    description: "The first Atmosphere app and the easiest place to start.",
+  },
+  {
+    name: "Blacksky",
+    href: "https://blacksky.community/",
+    tag: "Community",
+    description: "A community-run path into the Atmosphere.",
+  },
+  {
+    name: "selfhosted.social",
+    href: "https://selfhosted.social",
+    tag: "Independent",
+    description: "A community-run host with open signup.",
+  },
+  {
+    name: "Tangled",
+    href: "https://tangled.org/signup",
+    tag: "Developer-friendly",
+    description: "Create an account with Tangled's host.",
+  },
+] as const;
 
-interface PreviewSuccess {
-  found: true;
-  matches: PreviewMatch[];
-}
-
-interface PreviewMiss {
-  found: false;
-  reason: "invalid_handle" | "not_found";
-}
-
-type PreviewResponse = PreviewSuccess | PreviewMiss;
-
-export default function SignInForm({ returnTo, intent }: Props) {
+export default function SignInForm(
+  {
+    returnTo,
+    intent,
+    rememberedAccounts = [],
+    rich = false,
+    initialHandle,
+  }: Props,
+) {
   const t = useT();
-  const handle = useSignal("");
-  const submitting = useSignal(false);
-  const error = useSignal<string | null>(null);
-  const matches = useSignal<PreviewMatch[]>([]);
-  const previewLoading = useSignal(false);
-  const missReason = useSignal<PreviewMiss["reason"] | null>(null);
-  const showPreview = useSignal(false);
-
-  const debounceRef = useRef<number | null>(null);
-  const requestSeq = useRef(0);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const formRef = useRef<HTMLFormElement | null>(null);
-
-  useEffect(() => {
-    function onDocPointerDown(e: PointerEvent) {
-      if (!wrapRef.current) return;
-      const node = e.target;
-      if (node instanceof Node && !wrapRef.current.contains(node)) {
-        showPreview.value = false;
-      }
-    }
-    document.addEventListener("pointerdown", onDocPointerDown);
-    return () => document.removeEventListener("pointerdown", onDocPointerDown);
-  }, []);
-
-  function schedulePreview(value: string) {
-    if (debounceRef.current !== null) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    const trimmed = value.trim().replace(/^@/, "").toLowerCase();
-    if (!trimmed) {
-      matches.value = [];
-      missReason.value = null;
-      previewLoading.value = false;
-      showPreview.value = false;
-      return;
-    }
-    matches.value = [];
-    missReason.value = null;
-    previewLoading.value = true;
-    showPreview.value = true;
-    const mySeq = ++requestSeq.current;
-    debounceRef.current = setTimeout(() => {
-      fetch(`/api/identity/preview?handle=${encodeURIComponent(trimmed)}`)
-        .then((r) => r.json() as Promise<PreviewResponse>)
-        .then((data) => {
-          if (mySeq !== requestSeq.current) return;
-          previewLoading.value = false;
-          if (data.found) {
-            matches.value = data.matches;
-            missReason.value = null;
-          } else {
-            matches.value = [];
-            missReason.value = data.reason;
-          }
-        })
-        .catch(() => {
-          if (mySeq !== requestSeq.current) return;
-          previewLoading.value = false;
-          matches.value = [];
-          missReason.value = "not_found";
-        });
-    }, 150);
-  }
-
-  const onSubmit = (event: Event) => {
-    event.preventDefault();
-    if (!handle.value.trim()) return;
-    submitting.value = true;
-    error.value = null;
-    const form = event.currentTarget as HTMLFormElement;
-    form.submit();
-  };
-
-  const onSelectMatch = (m: PreviewMatch) => {
-    handle.value = m.handle;
-    showPreview.value = false;
-    submitting.value = true;
-    error.value = null;
-    /** Defer one tick so the controlled <input> reflects the new value
-     *  before the native form submission serialises it. */
-    setTimeout(() => {
-      formRef.current?.submit();
-    }, 0);
-  };
+  const hasRememberedAccounts = rememberedAccounts.length > 0;
+  const manualInitiallyVisible = !hasRememberedAccounts || !!initialHandle;
+  const enhanceFlow = rich || hasRememberedAccounts;
 
   return (
-    <form
-      ref={formRef}
-      method="POST"
-      action="/oauth/login"
-      onSubmit={onSubmit}
-      class="signin-form"
+    <div
+      class={`signin-flow ${rich ? "signin-flow--rich" : ""}`}
+      data-signin-flow={enhanceFlow ? "true" : undefined}
+      data-initial-mode="signin"
+      data-remembered-count={String(rememberedAccounts.length)}
     >
-      {returnTo && <input type="hidden" name="next" value={returnTo} />}
-      {intent && <input type="hidden" name="intent" value={intent} />}
-      <div class="signin-form-preview-wrap" ref={wrapRef}>
-        <label class="signin-form-label" for="signin-handle">
-          {t.explore.create.signInLabel}
-        </label>
-        <div class="signin-form-row">
-          <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-            <input
-              id="signin-handle"
-              name="handle"
-              type="text"
-              inputMode="email"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellcheck={false}
-              autoComplete="off"
-              required
-              placeholder={t.explore.create.handlePlaceholder}
-              value={handle.value}
-              onInput={(e) => {
-                const v = (e.currentTarget as HTMLInputElement).value;
-                handle.value = v;
-                schedulePreview(v);
-              }}
-              onFocus={() => {
-                const v = handle.value;
-                if (v.trim()) schedulePreview(v);
-              }}
-              class="signin-form-input"
-              style={{ width: "100%" }}
-              aria-autocomplete="list"
-              aria-expanded={showPreview.value}
-              aria-controls="signin-handle-preview"
-            />
-            {showPreview.value && (
-              <div
-                id="signin-handle-preview"
-                class="signin-form-preview glass"
-                role="listbox"
-              >
-                {previewLoading.value && (
-                  <div class="signin-form-preview-status">
-                    <span
-                      class="signin-form-preview-spinner"
-                      aria-hidden="true"
-                    />
-                    <span>{t.explore.create.previewLoading}</span>
-                  </div>
-                )}
-                {!previewLoading.value && missReason.value !== null && (
-                  <div class="signin-form-preview-status">
-                    <span>{t.explore.create.previewNotFound}</span>
-                  </div>
-                )}
-                {!previewLoading.value &&
-                  missReason.value === null &&
-                  matches.value.length > 0 && (
-                  <div class="signin-form-preview-list">
-                    {matches.value.map((m) => (
-                      <button
-                        key={m.did}
-                        type="button"
-                        class="signin-form-preview-row"
-                        role="option"
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          onSelectMatch(m);
-                        }}
-                      >
-                        {m.avatarUrl
-                          ? (
-                            <img
-                              class="signin-form-preview-avatar"
-                              src={m.avatarUrl}
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                            />
-                          )
-                          : (
-                            <span
-                              class="signin-form-preview-avatar"
-                              aria-hidden="true"
-                            />
-                          )}
-                        <span class="signin-form-preview-meta">
-                          {m.displayName
-                            ? (
-                              <>
-                                <span class="signin-form-preview-name">
-                                  {m.displayName}
-                                </span>
-                                <span class="signin-form-preview-handle">
-                                  @{m.handle}
-                                </span>
-                              </>
-                            )
-                            : (
-                              <span class="signin-form-preview-name">
-                                @{m.handle}
-                              </span>
-                            )}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {!previewLoading.value &&
-                  missReason.value === null &&
-                  matches.value.length === 0 && (
-                  <div class="signin-form-preview-status">
-                    <span>{t.explore.create.previewNotFound}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+      {rich && (
+        <div class="signin-tabs" role="tablist" aria-label="Sign in options">
           <button
-            type="submit"
-            class="signin-form-submit"
-            disabled={submitting.value}
+            type="button"
+            class="signin-tab is-active"
+            role="tab"
+            aria-selected="true"
+            data-signin-tab="signin"
           >
-            {submitting.value ? "…" : t.explore.create.signIn}
+            Sign in
+          </button>
+          <button
+            type="button"
+            class="signin-tab"
+            role="tab"
+            aria-selected="false"
+            data-signin-tab="create"
+          >
+            Create account
           </button>
         </div>
-      </div>
-      {error.value && <p class="signin-form-error">{error.value}</p>}
-    </form>
+      )}
+
+      <section data-signin-panel="signin">
+        {rich && (
+          <div class="signin-rich-header">
+            <h2>Connect your Atmosphere account</h2>
+            <p>
+              Use the handle you already have from Bluesky, Blacksky, Tangled,
+              or any other account host.
+            </p>
+          </div>
+        )}
+
+        {hasRememberedAccounts && (
+          <div class="signin-account-list" aria-label="Saved accounts">
+            <p class="signin-account-list-label">Saved accounts</p>
+            {rememberedAccounts.map((account) => (
+              <form
+                key={account.did}
+                method="POST"
+                action="/oauth/switch"
+                class="signin-account-switch-form"
+              >
+                <input type="hidden" name="did" value={account.did} />
+                {returnTo && (
+                  <input type="hidden" name="next" value={returnTo} />
+                )}
+                <button type="submit" class="signin-account-row">
+                  <span class="signin-account-avatar" aria-hidden="true">
+                    <span class="signin-account-avatar-fallback">
+                      {account.handle.slice(0, 1).toUpperCase()}
+                    </span>
+                    <img
+                      src={`/api/registry/avatar/${
+                        encodeURIComponent(account.did)
+                      }`}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      onError={(event) => {
+                        event.currentTarget.remove();
+                      }}
+                    />
+                  </span>
+                  <span class="signin-account-copy">
+                    <strong>
+                      <AtmosphereHandle handle={account.handle} />
+                    </strong>
+                    <span>Saved on this device</span>
+                  </span>
+                  <span class="signin-account-status">Continue</span>
+                </button>
+              </form>
+            ))}
+            <button
+              type="button"
+              class="signin-account-row signin-account-row--other"
+              data-signin-show-manual="true"
+            >
+              <span
+                class="signin-account-avatar signin-account-avatar--plus"
+                aria-hidden="true"
+              >
+                +
+              </span>
+              <span class="signin-account-copy">
+                <strong>Other account</strong>
+                <span>Use a different Atmosphere account</span>
+              </span>
+              <span class="signin-account-status">Type handle</span>
+            </button>
+          </div>
+        )}
+
+        <form
+          method="POST"
+          action="/oauth/login"
+          class="signin-form"
+          data-signin-preview="true"
+          data-preview-loading={t.explore.create.previewLoading}
+          data-preview-not-found={t.explore.create.previewNotFound}
+          data-submit-label={rich ? "Continue" : t.explore.create.signIn}
+          data-submitting-label="Redirecting..."
+          hidden={rich && !manualInitiallyVisible}
+        >
+          {returnTo && <input type="hidden" name="next" value={returnTo} />}
+          {intent && <input type="hidden" name="intent" value={intent} />}
+          <div class="signin-form-preview-wrap">
+            <label class="signin-form-label" for="signin-handle">
+              {rich
+                ? "Sign in with another account"
+                : t.explore.create.signInLabel}
+            </label>
+            <div class="signin-form-row">
+              <div class="signin-handle-field">
+                <span class="signin-handle-prefix" aria-hidden="true">
+                  <img src="/union.svg" alt="" />
+                </span>
+                <input
+                  id="signin-handle"
+                  name="handle"
+                  type="text"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellcheck={false}
+                  autoComplete="off"
+                  required
+                  value={initialHandle ?? ""}
+                  placeholder={rich
+                    ? "search by handle..."
+                    : t.explore.create.handlePlaceholder}
+                  class="signin-form-input"
+                  aria-autocomplete="list"
+                  aria-expanded="false"
+                  aria-controls="signin-handle-preview"
+                  data-signin-preview-input="true"
+                />
+                <div
+                  class="signin-selected"
+                  data-signin-selected="true"
+                  hidden
+                />
+              </div>
+              <button type="submit" class="signin-form-submit">
+                {rich ? "Continue" : t.explore.create.signIn}
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {rich && (
+          <p class="signin-info-line">
+            New to the Atmosphere? Create an account with a host, then come back
+            and sign in with your handle.
+          </p>
+        )}
+      </section>
+
+      {rich && (
+        <section data-signin-panel="create" hidden>
+          <div class="signin-rich-header">
+            <h2>Create an Atmosphere account</h2>
+            <p>
+              Choose a host for your account. You can use that same account
+              across Atmosphere apps.
+            </p>
+          </div>
+          <div class="signin-host-list">
+            {HOST_OPTIONS.map((host) => (
+              <a
+                key={host.name}
+                class="signin-host-row"
+                href={host.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span class="signin-host-mark" aria-hidden="true">
+                  {host.name.slice(0, 1)}
+                </span>
+                <span class="signin-host-copy">
+                  <strong>
+                    {host.name}
+                    <span>{host.tag}</span>
+                  </strong>
+                  <em>{host.description}</em>
+                </span>
+                <span class="signin-account-status">Open</span>
+              </a>
+            ))}
+            <a class="signin-host-row signin-host-row--all" href="/hosts">
+              <span class="signin-host-mark" aria-hidden="true">+</span>
+              <span class="signin-host-copy">
+                <strong>Explore all hosts</strong>
+                <em>Compare more account hosts before choosing.</em>
+              </span>
+              <span class="signin-account-status">Hosts</span>
+            </a>
+          </div>
+        </section>
+      )}
+    </div>
   );
 }

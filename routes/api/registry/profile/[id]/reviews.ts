@@ -26,11 +26,14 @@ import {
   type ReviewRecord,
   validateReview,
 } from "../../../../../lib/lexicons.ts";
+import { rejectLargeRequest } from "../../../../../lib/security.ts";
 
 interface ReviewPayload {
   rating?: unknown;
   body?: unknown;
 }
+
+const MAX_REVIEW_REQUEST_BYTES = 16_384;
 
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
@@ -62,6 +65,9 @@ export const handler = define.handlers({
   }),
 
   POST: withRateLimit(async (ctx) => {
+    const large = rejectLargeRequest(ctx.req, MAX_REVIEW_REQUEST_BYTES);
+    if (large) return large;
+
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
 

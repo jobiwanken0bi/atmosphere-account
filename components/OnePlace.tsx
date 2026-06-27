@@ -1,5 +1,20 @@
 import LottieSection from "./LottieSection.tsx";
 import { useT } from "../i18n/mod.ts";
+import ContentVisualIcon, {
+  type ContentVisualIconName,
+} from "./icons/ContentVisualIcon.tsx";
+
+const onePlaceIcons: ContentVisualIconName[] = [
+  "post",
+  "like",
+  "follow",
+  "comment",
+  "list",
+  "video",
+  "photo",
+  "blog",
+  "review",
+];
 
 export default function OnePlace() {
   const t = useT();
@@ -15,12 +30,23 @@ export default function OnePlace() {
           {t.onePlace.examplesLabel}
         </p>
         <div class="hub-visual">
-          {t.onePlace.items.map((item) => (
+          {t.onePlace.items.map((item, index) => (
             <span key={item} class="hub-tag">
-              {item}
+              <span class="hub-tag-icon">
+                <ContentVisualIcon
+                  name={onePlaceIcons[index] ?? "new"}
+                  class="hub-tag-icon-svg"
+                />
+              </span>
+              <span class="hub-tag-label">{item}</span>
             </span>
           ))}
-          <span class="hub-tag hub-tag-more">{t.onePlace.moreTag}</span>
+          <span class="hub-tag hub-tag-more">
+            <span class="hub-tag-icon">
+              <ContentVisualIcon name="new" class="hub-tag-icon-svg" />
+            </span>
+            <span class="hub-tag-label">{t.onePlace.moreTag}</span>
+          </span>
         </div>
       </div>
     </section>

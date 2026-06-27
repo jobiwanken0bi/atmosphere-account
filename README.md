@@ -43,7 +43,7 @@ gets `node_modules` before Vite runs. `start` serves from `_fresh/server.js`.
 ## Deploy (Deno Deploy)
 
 1. Push this repository to GitHub (or GitLab).
-2. In [Deno Deploy](https://dash.deno.com/), create a project from the repo.
+2. In [Deno Deploy](https://console.deno.com/), create an app from the repo.
 3. Set **Root directory** to the repository root (this folder).
 4. **Build step:** `deno task build` (installs npm deps, then runs Vite —
    required on Deploy)
@@ -54,7 +54,45 @@ Remote Turso (`libsql://…`) uses `@libsql/client/web` so the deploy runtime do
 not need native `@libsql/*` platform binaries. Local `file:./local.db` still
 uses the full client when running `deno task dev`.
 
+If production is still on Deploy Classic (`dash.deno.com` / `alias.deno.net`),
+migrate it to the new Deno Deploy platform before the Classic shutdown. See
+[docs/DENO_DEPLOY_MIGRATION.md](./docs/DENO_DEPLOY_MIGRATION.md).
+
 Adjust if your host uses different entrypoints.
+
+## Infrastructure
+
+See [docs/INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md) for the current
+production shape:
+
+- Fresh/Deno web app
+- Railway-targeted always-on Jetstream indexer
+- Turso/libSQL appview database
+
+The Railway cutover runbook is in
+[docs/RAILWAY_MIGRATION.md](./docs/RAILWAY_MIGRATION.md). The old Fly indexer
+has been scaled to zero; Railway now owns the worker lease.
+
+Useful operational commands:
+
+```sh
+deno task db:migrate
+deno task db:migrate:neon
+deno task db:backfill:neon
+deno task db:diff:neon
+deno task db:smoke
+deno task db:maintain
+deno task backfill:atstore
+deno task rescore:app-trending
+```
+
+The Neon migration/backfill/diff commands load `.env` automatically for Turso
+source credentials, while preserving any `NEON_*` URL exported in the shell.
+
+Health endpoints:
+
+- `/api/health` — liveness, no DB dependency
+- `/api/health/ready` — DB readiness and indexer heartbeat
 
 ## Contributing
 

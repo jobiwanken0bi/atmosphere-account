@@ -1,7 +1,9 @@
 import { useT } from "../i18n/mod.ts";
+import HostHandleDemo from "../islands/HostHandleDemo.tsx";
 
 export default function BlueskySection() {
   const t = useT();
+  const handleExplainer = t.providers.handleExplainer;
   const blueskyLink = (
     <a
       href="https://bsky.app"
@@ -113,6 +115,22 @@ export default function BlueskySection() {
           </div>
         </div>
 
+        <div class="host-handle-explainer glass">
+          <div class="host-handle-explainer-copy">
+            <p class="text-eyebrow">{handleExplainer.eyebrow}</p>
+            <h3 class="host-handle-explainer-title font-mono">
+              {handleExplainer.title}
+            </h3>
+            <p class="text-body-sm">{handleExplainer.body}</p>
+          </div>
+
+          <HostHandleDemo
+            examples={handleExplainer.examples}
+            demoAriaLabel={handleExplainer.demoAriaLabel}
+            demoButton={handleExplainer.demoButton}
+          />
+        </div>
+
         <p
           class="text-body-sm text-center mt-3"
           style={{
@@ -123,6 +141,28 @@ export default function BlueskySection() {
         >
           {t.providers.footnote}
         </p>
+        <div class="home-section-cta-row">
+          <a
+            href="/hosts"
+            class="explore-cta-primary home-section-cta-button"
+          >
+            {t.providers.exploreHosts}
+            <svg
+              class="home-explore-cta-arrow"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+          </a>
+        </div>
       </div>
     </section>
   );

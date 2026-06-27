@@ -11,10 +11,14 @@
 
 import { define } from "../../../utils.ts";
 import { isDid, isHandle, resolveIdentity } from "../../../lib/identity.ts";
+import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
 import { getBskyProfile } from "../../../lib/pds.ts";
 
 const BSKY_SEARCH =
   "https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors";
+const MAX_QUERY_LENGTH = 253;
+const SEARCH_LIMIT = "8";
+const SEARCH_TIMEOUT_MS = 4_000;
 
 export interface PreviewMatch {
   did: string;
@@ -85,9 +89,9 @@ function rankMatches(query: string, matches: PreviewMatch[]): PreviewMatch[] {
 async function searchActors(query: string): Promise<PreviewMatch[]> {
   const url = new URL(BSKY_SEARCH);
   url.searchParams.set("q", query);
-  url.searchParams.set("limit", "12");
+  url.searchParams.set("limit", SEARCH_LIMIT);
   const res = await fetch(url.toString(), {
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     headers: { accept: "application/json" },
   });
   if (!res.ok) {
@@ -107,7 +111,7 @@ export const handler = define.handlers({
     const raw = (ctx.url.searchParams.get("handle") ??
       ctx.url.searchParams.get("q") ?? "").trim()
       .replace(/^@/, "");
-    if (!raw) {
+    if (!raw || raw.length > MAX_QUERY_LENGTH) {
       return json({ found: false, reason: "invalid_handle" });
     }
 
@@ -119,14 +123,7 @@ export const handler = define.handlers({
         let avatarUrl: string | undefined;
         const cid = profile?.avatar?.ref?.$link;
         if (cid) {
-          const u = new URL(
-            `${
-              identity.pdsUrl.replace(/\/$/, "")
-            }/xrpc/com.atproto.sync.getBlob`,
-          );
-          u.searchParams.set("did", identity.did);
-          u.searchParams.set("cid", cid);
-          avatarUrl = u.toString();
+          avatarUrl = bskyCdnAvatarUrl(identity.did, cid);
         }
         return json({
           found: true,
@@ -145,23 +142,19 @@ export const handler = define.handlers({
     }
 
     try {
+      const normalizedHandle = raw.toLowerCase();
       let matches = rankMatches(raw, await searchActors(raw));
-      const exact = matches.some((m) => m.handle.toLowerCase() === raw);
-      if (!exact && isHandle(raw)) {
+      const exact = matches.some((m) =>
+        m.handle.toLowerCase() === normalizedHandle
+      );
+      if (!exact && isHandle(normalizedHandle)) {
         try {
           const identity = await resolveIdentity(raw);
           const profile = await getBskyProfile(identity.pdsUrl, identity.did);
           let avatarUrl: string | undefined;
           const cid = profile?.avatar?.ref?.$link;
           if (cid) {
-            const u = new URL(
-              `${
-                identity.pdsUrl.replace(/\/$/, "")
-              }/xrpc/com.atproto.sync.getBlob`,
-            );
-            u.searchParams.set("did", identity.did);
-            u.searchParams.set("cid", cid);
-            avatarUrl = u.toString();
+            avatarUrl = bskyCdnAvatarUrl(identity.did, cid);
           }
           matches = rankMatches(raw, [
             {

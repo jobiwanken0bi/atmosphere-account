@@ -1,7 +1,7 @@
 /**
  * Legacy account-type chooser. The chooser modal has been retired —
  * sign-in intent now classifies new accounts automatically (default
- * sign-in = user; "Submit your project" = project) and existing users
+ * sign-in = user; "Register an app" = project) and existing users
  * who want to convert to a project use the upgrade modal on
  * /account/reviews.
  *
@@ -22,7 +22,7 @@ export const handler = define.handlers({
     if (!user) {
       return new Response(null, {
         status: 303,
-        headers: { location: "/explore/create" },
+        headers: { location: "/signin?next=/account" },
       });
     }
 
@@ -50,7 +50,7 @@ export const handler = define.handlers({
       status: 303,
       headers: {
         location: next ??
-          (accountType === "project" ? "/explore/manage" : "/account/reviews"),
+          (accountType === "project" ? "/apps/manage" : "/account"),
       },
     });
   },

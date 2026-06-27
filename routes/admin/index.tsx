@@ -14,6 +14,7 @@ import {
 import { countOpenReports } from "../../lib/reports.ts";
 import { countOpenReviewReports } from "../../lib/reviews.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { countLoginAppsForTrustReview } from "../../lib/atmosphere-login.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -24,6 +25,7 @@ export const handler = define.handlers({
         countOpenReviewReports().catch(() => 0),
         countTakenDownProfiles().catch(() => 0),
       ]);
+    const loginAppReviews = await countLoginAppsForTrustReview().catch(() => 0);
     return ctx.render(
       <AdminHome
         account={buildAccountMenuProps(ctx.state)}
@@ -31,6 +33,7 @@ export const handler = define.handlers({
         openReports={openReports}
         openReviewReports={openReviewReports}
         takenDown={takenDown}
+        loginAppReviews={loginAppReviews}
         locale={ctx.state.locale}
       />,
     );
@@ -43,6 +46,7 @@ interface AdminHomeProps {
   openReports: number;
   openReviewReports: number;
   takenDown: number;
+  loginAppReviews: number;
   locale: Locale;
 }
 
@@ -53,6 +57,7 @@ function AdminHome(
     openReports,
     openReviewReports,
     takenDown,
+    loginAppReviews,
     locale,
   }: AdminHomeProps,
 ) {
@@ -90,6 +95,22 @@ function AdminHome(
                 <p class="admin-card-count">★</p>
                 <h2 class="admin-card-title">{t.overview.featuredTitle}</h2>
                 <p class="admin-card-body">{t.overview.featuredBody}</p>
+              </a>
+              <a href="/admin/login-apps" class="admin-card">
+                <p class="admin-card-count">{loginAppReviews}</p>
+                <h2 class="admin-card-title">Login app trust</h2>
+                <p class="admin-card-body">
+                  Review Atmosphere Login app identity, domains, logos, and
+                  return URI allow-lists.
+                </p>
+              </a>
+              <a href="/admin/app-directory" class="admin-card">
+                <p class="admin-card-count">↻</p>
+                <h2 class="admin-card-title">App directory data</h2>
+                <p class="admin-card-body">
+                  Inspect ATStore listings, reviews, favorites, trending, and
+                  migration readiness.
+                </p>
               </a>
               <a href="/admin/takedowns" class="admin-card">
                 <p class="admin-card-count">{takenDown}</p>

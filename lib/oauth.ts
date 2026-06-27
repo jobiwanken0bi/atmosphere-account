@@ -25,35 +25,22 @@ import {
 import {
   type AuthServerMetadata,
   discoverAuthServer,
+  normalizeServiceEndpoint,
   resolveIdentity,
 } from "./identity.ts";
 import {
-  clientId,
+  ATPROTO_FETCH_TIMEOUT_MS,
+  clientId as defaultMetadataClientId,
   IS_DEV,
   OAUTH_KID,
   OAUTH_PRIVATE_JWK,
-  redirectUri,
+  redirectUri as defaultRedirectUri,
 } from "./env.ts";
+import { DEFAULT_OAUTH_SCOPE } from "./oauth-scopes.ts";
 
-/**
- * Scope requested during PAR.
- *
- * `com.atmosphereaccount.registry.fullPermissions` is a named permission set
- * (lexicon type: permission-set, title: "Atmosphere Account") that maps to
- * exactly the three direct repo scopes listed below. Including it as the
- * first scope causes the PDS consent screen to display the branded
- * "Atmosphere Account" label and description instead of raw NSID strings.
- *
- * The explicit `repo:*` scopes are kept alongside it so that PDSes unable to
- * resolve the DNS-backed permission set still grant the correct permissions,
- * and sign-in never fails solely because of DNS.
- *
- * MUST stay in sync with `routes/oauth/client-metadata.json.ts`.
- */
-const DEFAULT_SCOPE =
-  "atproto com.atmosphereaccount.registry.fullPermissions repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
+const IDENTITY_RECHECK_INTERVAL_MS = 10 * 60 * 1000;
 
 export class OAuthNotConfiguredError extends Error {
   constructor() {
@@ -64,12 +51,82 @@ export class OAuthNotConfiguredError extends Error {
   }
 }
 
-export function isOAuthConfigured(): boolean {
-  return !!(OAUTH_PRIVATE_JWK && OAUTH_KID);
+export interface OAuthClientOptions {
+  clientId?: string;
+  redirectUri?: string;
+  scope?: string;
+  persistSession?: boolean;
 }
 
-function ensureConfigured(): void {
-  if (!isOAuthConfigured()) throw new OAuthNotConfiguredError();
+interface OAuthClientConfig {
+  metadataClientId: string;
+  redirectUri: string;
+  scope: string;
+}
+
+function oauthClientConfig(
+  options: OAuthClientOptions | null = null,
+): OAuthClientConfig {
+  return {
+    metadataClientId: options?.clientId ?? defaultMetadataClientId(),
+    redirectUri: options?.redirectUri ?? defaultRedirectUri(),
+    scope: options?.scope ?? DEFAULT_OAUTH_SCOPE,
+  };
+}
+
+function isLoopbackRedirectUri(uri: string): boolean {
+  if (!IS_DEV) return false;
+  try {
+    const url = new URL(uri);
+    return url.protocol === "http:" &&
+      (url.hostname === "127.0.0.1" || url.hostname === "::1" ||
+        url.hostname === "[::1]");
+  } catch {
+    return false;
+  }
+}
+
+function isPublicLocalhostOAuthClient(config: OAuthClientConfig): boolean {
+  return isLoopbackRedirectUri(config.redirectUri);
+}
+
+function isPublicLocalhostOAuthClientId(clientId: string): boolean {
+  try {
+    const id = new URL(clientId);
+    return id.protocol === "http:" && id.hostname === "localhost";
+  } catch {
+    return false;
+  }
+}
+
+function oauthClientId(config: OAuthClientConfig): string {
+  if (!isPublicLocalhostOAuthClient(config)) return config.metadataClientId;
+
+  /**
+   * AT Protocol has a special development-only client_id escape hatch:
+   * `http://localhost` with no port/path, plus query params declaring
+   * redirect URI and scope. The redirect URI itself should be loopback IP
+   * based (`127.0.0.1`) to satisfy RFC 8252.
+   *
+   * This is a public/native OAuth client, so PAR and token requests must not
+   * include private_key_jwt client assertions in this mode.
+   */
+  const id = new URL("http://localhost/");
+  id.searchParams.set("redirect_uri", config.redirectUri);
+  id.searchParams.set("scope", config.scope);
+  return id.toString();
+}
+
+export function isOAuthConfigured(
+  options: OAuthClientOptions | null = null,
+): boolean {
+  const config = oauthClientConfig(options);
+  return isPublicLocalhostOAuthClient(config) ||
+    !!(OAUTH_PRIVATE_JWK && OAUTH_KID);
+}
+
+function ensureConfigured(options: OAuthClientOptions | null = null): void {
+  if (!isOAuthConfigured(options)) throw new OAuthNotConfiguredError();
 }
 
 /**
@@ -88,6 +145,10 @@ interface FlowState {
   pkceVerifier: string;
   dpopPrivateJwk: JsonWebKey;
   dpopPublicJwk: JsonWebKey;
+  oauthClientId?: string;
+  redirectUri?: string;
+  scope?: string;
+  persistSession?: boolean;
   asMeta: AuthServerMetadata;
   did: string;
   handle: string;
@@ -109,6 +170,7 @@ interface SessionData {
   dpopPublicJwk: JsonWebKey;
   asNonce?: string;
   pdsNonce?: string;
+  identityCheckedAt?: number;
 }
 
 /* ---------------- DPoP ---------------- */
@@ -141,17 +203,25 @@ async function buildDpopProof(opts: DpopProofOptions): Promise<string> {
 
 /* ---------------- Client assertion (private_key_jwt) ---------------- */
 
-async function buildClientAssertion(audience: string): Promise<string> {
-  ensureConfigured();
+async function buildClientAssertion(
+  audience: string,
+  clientId: string,
+): Promise<string> {
+  if (isPublicLocalhostOAuthClientId(clientId)) {
+    throw new Error("local OAuth client does not use client assertions");
+  }
+  if (!OAUTH_PRIVATE_JWK || !OAUTH_KID) throw new OAuthNotConfiguredError();
   const privateKey = await loadClientPrivateKey(OAUTH_PRIVATE_JWK!);
+  const iat = Math.floor(Date.now() / 1000);
   return signEs256({
     header: { kid: OAUTH_KID! },
     payload: {
-      iss: clientId(),
-      sub: clientId(),
+      iss: clientId,
+      sub: clientId,
       aud: audience,
       jti: randomB64u(16),
-      iat: Math.floor(Date.now() / 1000),
+      iat,
+      exp: iat + 300,
     },
     privateKey,
   });
@@ -162,8 +232,11 @@ async function buildClientAssertion(audience: string): Promise<string> {
 async function saveFlowState(state: FlowState): Promise<void> {
   await withDb(async (c) => {
     await c.execute({
-      sql:
-        `INSERT OR REPLACE INTO oauth_state (key, value, expires_at) VALUES (?, ?, ?)`,
+      sql: `INSERT INTO oauth_state (key, value, expires_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           expires_at = excluded.expires_at`,
       args: [state.state, JSON.stringify(state), Date.now() + STATE_TTL_MS],
     });
   });
@@ -200,8 +273,11 @@ async function deleteFlowState(stateKey: string): Promise<void> {
 async function saveSession(session: SessionData): Promise<void> {
   await withDb(async (c) => {
     await c.execute({
-      sql:
-        `INSERT OR REPLACE INTO oauth_session (did, value, expires_at) VALUES (?, ?, ?)`,
+      sql: `INSERT INTO oauth_session (did, value, expires_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(did) DO UPDATE SET
+           value = excluded.value,
+           expires_at = excluded.expires_at`,
       args: [session.did, JSON.stringify(session), session.expiresAt],
     });
   });
@@ -235,10 +311,13 @@ export async function startLogin(
   handleOrDid: string,
   returnTo?: string | null,
   intent?: SignInIntent | null,
+  options: OAuthClientOptions | null = null,
 ): Promise<{ redirectUrl: string }> {
-  ensureConfigured();
+  const config = oauthClientConfig(options);
+  ensureConfigured(options);
   const id = await resolveIdentity(handleOrDid);
   const asMeta = await discoverAuthServer(id.pdsUrl);
+  const clientId = oauthClientId(config);
 
   const dpop = await generateEs256KeyPair();
   const state = randomB64u(24);
@@ -249,6 +328,10 @@ export async function startLogin(
     pkceVerifier,
     dpopPrivateJwk: dpop.privateJwk,
     dpopPublicJwk: dpop.publicJwk,
+    oauthClientId: clientId,
+    redirectUri: config.redirectUri,
+    scope: config.scope,
+    persistSession: options?.persistSession !== false,
     asMeta,
     did: id.did,
     handle: id.handle,
@@ -260,7 +343,7 @@ export async function startLogin(
 
   const parRes = await pushParRequest(flow);
   const authUrl = new URL(asMeta.authorization_endpoint);
-  authUrl.searchParams.set("client_id", clientId());
+  authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("request_uri", parRes.requestUri);
 
   return { redirectUrl: authUrl.toString() };
@@ -275,19 +358,29 @@ async function pushParRequest(
   flow: FlowState,
   attempt = 0,
 ): Promise<ParResponse> {
+  const clientId = flow.oauthClientId ?? oauthClientId(oauthClientConfig());
+  const flowRedirectUri = flow.redirectUri ?? defaultRedirectUri();
+  const scope = flow.scope ?? DEFAULT_OAUTH_SCOPE;
   const body = new URLSearchParams({
     response_type: "code",
-    client_id: clientId(),
-    redirect_uri: redirectUri(),
-    scope: DEFAULT_SCOPE,
+    client_id: clientId,
+    redirect_uri: flowRedirectUri,
+    scope,
     state: flow.state,
     code_challenge: await sha256B64u(flow.pkceVerifier),
     code_challenge_method: "S256",
     login_hint: flow.handle,
-    client_assertion_type:
-      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-    client_assertion: await buildClientAssertion(flow.asMeta.issuer),
   });
+  if (!isPublicLocalhostOAuthClientId(clientId)) {
+    body.set(
+      "client_assertion_type",
+      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    );
+    body.set(
+      "client_assertion",
+      await buildClientAssertion(flow.asMeta.issuer, clientId),
+    );
+  }
 
   const dpopProof = await buildDpopProof({
     privateJwk: flow.dpopPrivateJwk,
@@ -304,6 +397,7 @@ async function pushParRequest(
       dpop: dpopProof,
     },
     body,
+    signal: AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
   });
 
   const newNonce = res.headers.get("dpop-nonce");
@@ -342,17 +436,29 @@ export async function completeCallback(params: {
   code: string;
   iss: string;
 }): Promise<CallbackResult> {
-  ensureConfigured();
   const flow = await loadFlowState(params.state);
   if (!flow) throw new Error("invalid or expired state");
-  if (flow.asMeta.issuer !== params.iss) {
-    throw new Error(`issuer mismatch: ${params.iss} vs ${flow.asMeta.issuer}`);
+  ensureConfigured({
+    clientId: flow.oauthClientId,
+    redirectUri: flow.redirectUri,
+    scope: flow.scope,
+  });
+  let callbackIssuer: string;
+  try {
+    callbackIssuer = normalizeServiceEndpoint(params.iss);
+  } catch {
+    throw new Error("invalid callback issuer");
+  }
+  if (flow.asMeta.issuer !== callbackIssuer) {
+    throw new Error(
+      `issuer mismatch: ${callbackIssuer} vs ${flow.asMeta.issuer}`,
+    );
   }
 
   const tokenRes = await tokenRequest(flow, {
     grant_type: "authorization_code",
     code: params.code,
-    redirect_uri: redirectUri(),
+    redirect_uri: flow.redirectUri ?? defaultRedirectUri(),
     code_verifier: flow.pkceVerifier,
   });
 
@@ -362,25 +468,31 @@ export async function completeCallback(params: {
     );
   }
 
-  const session: SessionData = {
-    did: flow.did,
-    handle: flow.handle,
-    pdsUrl: flow.pdsUrl,
-    asIssuer: flow.asMeta.issuer,
-    accessToken: tokenRes.access_token,
-    refreshToken: tokenRes.refresh_token,
-    expiresAt: Date.now() + tokenRes.expires_in * 1000,
-    dpopPrivateJwk: flow.dpopPrivateJwk,
-    dpopPublicJwk: flow.dpopPublicJwk,
-    asNonce: flow.asNonce,
-  };
-  await saveSession(session);
+  if (flow.persistSession !== false) {
+    if (!tokenRes.refresh_token) {
+      throw new Error("token response missing refresh_token");
+    }
+    const session: SessionData = {
+      did: flow.did,
+      handle: flow.handle,
+      pdsUrl: flow.pdsUrl,
+      asIssuer: flow.asMeta.issuer,
+      accessToken: tokenRes.access_token,
+      refreshToken: tokenRes.refresh_token,
+      expiresAt: Date.now() + tokenRes.expires_in * 1000,
+      dpopPrivateJwk: flow.dpopPrivateJwk,
+      dpopPublicJwk: flow.dpopPublicJwk,
+      asNonce: flow.asNonce,
+      identityCheckedAt: Date.now(),
+    };
+    await saveSession(session);
+  }
   await deleteFlowState(params.state);
 
   return {
-    did: session.did,
-    handle: session.handle,
-    pdsUrl: session.pdsUrl,
+    did: flow.did,
+    handle: flow.handle,
+    pdsUrl: flow.pdsUrl,
     returnTo: flow.returnTo,
     intent: flow.intent,
   };
@@ -388,11 +500,73 @@ export async function completeCallback(params: {
 
 interface TokenResponse {
   access_token: string;
-  refresh_token: string;
+  refresh_token?: string;
   token_type: string;
   expires_in: number;
   scope?: string;
+  scopes?: string;
   sub: string;
+}
+
+function parseTokenResponse(
+  value: unknown,
+  options: { requireRefreshToken: boolean },
+): TokenResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("token response was not a JSON object");
+  }
+  const record = value as Record<string, unknown>;
+  const accessToken = record.access_token;
+  const refreshToken = record.refresh_token;
+  const tokenType = record.token_type;
+  const expiresIn = record.expires_in;
+  const scopes = typeof record.scopes === "string"
+    ? record.scopes
+    : typeof record.scope === "string"
+    ? record.scope
+    : null;
+  const sub = record.sub;
+
+  if (typeof accessToken !== "string" || !accessToken) {
+    throw new Error("token response missing access_token");
+  }
+  if (
+    options.requireRefreshToken &&
+    (typeof refreshToken !== "string" || !refreshToken)
+  ) {
+    throw new Error("token response missing refresh_token");
+  }
+  if (
+    refreshToken !== undefined &&
+    (typeof refreshToken !== "string" || !refreshToken)
+  ) {
+    throw new Error("token response has invalid refresh_token");
+  }
+  if (typeof tokenType !== "string" || tokenType.toLowerCase() !== "dpop") {
+    throw new Error("token response token_type must be DPoP");
+  }
+  if (
+    typeof expiresIn !== "number" || !Number.isFinite(expiresIn) ||
+    expiresIn <= 0
+  ) {
+    throw new Error("token response missing expires_in");
+  }
+  if (typeof sub !== "string" || !sub.startsWith("did:")) {
+    throw new Error("token response missing account DID");
+  }
+  if (!scopes || !scopes.split(/\s+/).includes("atproto")) {
+    throw new Error("token response scopes must include atproto");
+  }
+
+  return {
+    access_token: accessToken,
+    refresh_token: typeof refreshToken === "string" ? refreshToken : undefined,
+    token_type: tokenType,
+    expires_in: expiresIn,
+    scope: typeof record.scope === "string" ? record.scope : scopes,
+    scopes,
+    sub,
+  };
 }
 
 async function tokenRequest(
@@ -400,18 +574,27 @@ async function tokenRequest(
     asMeta: AuthServerMetadata;
     dpopPrivateJwk: JsonWebKey;
     dpopPublicJwk: JsonWebKey;
+    oauthClientId?: string;
     asNonce?: string;
   },
   bodyParams: Record<string, string>,
   attempt = 0,
 ): Promise<TokenResponse> {
+  const clientId = flow.oauthClientId ?? oauthClientId(oauthClientConfig());
   const body = new URLSearchParams({
     ...bodyParams,
-    client_id: clientId(),
-    client_assertion_type:
-      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-    client_assertion: await buildClientAssertion(flow.asMeta.issuer),
+    client_id: clientId,
   });
+  if (!isPublicLocalhostOAuthClientId(clientId)) {
+    body.set(
+      "client_assertion_type",
+      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    );
+    body.set(
+      "client_assertion",
+      await buildClientAssertion(flow.asMeta.issuer, clientId),
+    );
+  }
 
   const dpopProof = await buildDpopProof({
     privateJwk: flow.dpopPrivateJwk,
@@ -428,6 +611,7 @@ async function tokenRequest(
       dpop: dpopProof,
     },
     body,
+    signal: AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
   });
 
   const newNonce = res.headers.get("dpop-nonce");
@@ -446,46 +630,98 @@ async function tokenRequest(
     throw new Error(`token request failed: HTTP ${res.status}`);
   }
 
-  return await res.json() as TokenResponse;
+  const tokenBody = await res.json().catch(() => null);
+  return parseTokenResponse(tokenBody, {
+    requireRefreshToken: bodyParams.grant_type === "authorization_code",
+  });
 }
 
 /* ---------------- Refresh + valid-session retrieval ---------------- */
 
 async function refreshSession(session: SessionData): Promise<SessionData> {
   const asMeta = await discoverAuthServer(session.pdsUrl);
+  if (asMeta.issuer !== session.asIssuer) {
+    await deleteSession(session.did);
+    throw new Error("authorization server issuer changed for session");
+  }
+  const tokenFlow = {
+    asMeta,
+    dpopPrivateJwk: session.dpopPrivateJwk,
+    dpopPublicJwk: session.dpopPublicJwk,
+    asNonce: session.asNonce,
+  };
   const tokenRes = await tokenRequest(
-    {
-      asMeta,
-      dpopPrivateJwk: session.dpopPrivateJwk,
-      dpopPublicJwk: session.dpopPublicJwk,
-      asNonce: session.asNonce,
-    },
+    tokenFlow,
     { grant_type: "refresh_token", refresh_token: session.refreshToken },
   );
+  if (tokenRes.sub !== session.did) {
+    await deleteSession(session.did);
+    throw new Error(
+      `sub mismatch on refresh: token sub=${tokenRes.sub} session did=${session.did}`,
+    );
+  }
   const updated: SessionData = {
     ...session,
     accessToken: tokenRes.access_token,
     refreshToken: tokenRes.refresh_token ?? session.refreshToken,
     expiresAt: Date.now() + tokenRes.expires_in * 1000,
-    asNonce: session.asNonce,
+    asNonce: tokenFlow.asNonce,
   };
   await saveSession(updated);
   return updated;
 }
 
+async function refreshSessionIdentity(
+  session: SessionData,
+): Promise<SessionData | null> {
+  if (
+    session.identityCheckedAt &&
+    Date.now() - session.identityCheckedAt < IDENTITY_RECHECK_INTERVAL_MS
+  ) {
+    return session;
+  }
+  try {
+    const identity = await resolveIdentity(session.did);
+    let asIssuer = session.asIssuer;
+    if (identity.pdsUrl !== session.pdsUrl) {
+      const asMeta = await discoverAuthServer(identity.pdsUrl);
+      if (asMeta.issuer !== session.asIssuer) {
+        await deleteSession(session.did);
+        return null;
+      }
+      asIssuer = asMeta.issuer;
+    }
+    const updated: SessionData = {
+      ...session,
+      handle: identity.handle,
+      pdsUrl: identity.pdsUrl,
+      asIssuer,
+      identityCheckedAt: Date.now(),
+    };
+    await saveSession(updated);
+    return updated;
+  } catch (err) {
+    if (IS_DEV) console.warn("session identity refresh failed:", err);
+    return session;
+  }
+}
+
 export async function getValidSession(
   did: string,
+  options: { quiet?: boolean } = {},
 ): Promise<SessionData | null> {
   let session = await loadSession(did);
+  if (!session) return null;
+  session = await refreshSessionIdentity(session);
   if (!session) return null;
   if (session.expiresAt - ACCESS_TOKEN_REFRESH_THRESHOLD_MS > Date.now()) {
     return session;
   }
   try {
     session = await refreshSession(session);
-    return session;
+    return await refreshSessionIdentity(session);
   } catch (err) {
-    if (IS_DEV) console.warn("session refresh failed:", err);
+    if (IS_DEV && !options.quiet) console.warn("session refresh failed:", err);
     return null;
   }
 }
@@ -518,6 +754,7 @@ export async function authedFetch(
   const res = await fetch(url, {
     ...init,
     method,
+    signal: init.signal ?? AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
     headers: {
       ...(init.headers ?? {}),
       authorization: `DPoP ${session.accessToken}`,

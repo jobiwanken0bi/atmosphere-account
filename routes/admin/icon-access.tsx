@@ -122,9 +122,7 @@ function Page({ account, pending, unverified, granted, locale }: PageProps) {
                           <strong>{row.name}</strong>
                           <span class="admin-icon-row-handle">
                             <a
-                              href={`/explore/${
-                                encodeURIComponent(row.handle)
-                              }`}
+                              href={`/apps/${encodeURIComponent(row.handle)}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               class="text-link-button"
@@ -170,9 +168,7 @@ function Page({ account, pending, unverified, granted, locale }: PageProps) {
                             <strong>{row.name}</strong>
                             <span class="admin-icon-row-handle">
                               <a
-                                href={`/explore/${
-                                  encodeURIComponent(row.handle)
-                                }`}
+                                href={`/apps/${encodeURIComponent(row.handle)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 class="text-link-button"

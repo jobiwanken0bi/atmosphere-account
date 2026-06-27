@@ -15,16 +15,19 @@
 
 app = 'atmosphere-registry-indexer'
 primary_region = 'iad'
+kill_signal = 'SIGTERM'
+kill_timeout = 30
 
 [build]
   dockerfile = 'worker.Dockerfile'
 
 [deploy]
-  strategy = 'immediate'
+  strategy = 'rolling'
+  release_command = 'deno run -A --node-modules-dir=auto scripts/migrate-db.ts'
 
 # Single always-on background process.
 [processes]
-  worker = 'deno run -A worker/indexer.ts'
+  worker = 'deno run -A --node-modules-dir=auto worker/indexer.ts'
 
 [[restart]]
   policy = 'always'

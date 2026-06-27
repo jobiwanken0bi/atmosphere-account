@@ -12,6 +12,7 @@ import {
   REVIEW_REPORT_REASONS,
   type ReviewReportReason,
 } from "../../../../../lib/reviews.ts";
+import { rejectLargeRequest } from "../../../../../lib/security.ts";
 
 interface ReportPayload {
   reason?: unknown;
@@ -19,9 +20,13 @@ interface ReportPayload {
 }
 
 const MAX_DETAILS_LEN = 500;
+const MAX_REPORT_REQUEST_BYTES = 4_096;
 
 export const handler = define.handlers({
   POST: withRateLimit(async (ctx) => {
+    const large = rejectLargeRequest(ctx.req, MAX_REPORT_REQUEST_BYTES);
+    if (large) return large;
+
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
 

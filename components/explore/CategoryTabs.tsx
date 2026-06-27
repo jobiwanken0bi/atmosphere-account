@@ -11,7 +11,7 @@ function buildHref(category: string | null, query?: string): string {
   if (category) params.set("category", category);
   if (query) params.set("q", query);
   const qs = params.toString();
-  return `/explore${qs ? `?${qs}` : ""}`;
+  return `/apps${qs ? `?${qs}` : ""}`;
 }
 
 export default function CategoryTabs({ active, query }: Props) {

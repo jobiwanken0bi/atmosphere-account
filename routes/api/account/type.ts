@@ -7,12 +7,21 @@ import {
   setAppUserType,
 } from "../../../lib/account-types.ts";
 import { loadSession } from "../../../lib/oauth.ts";
-import { getBskyProfile, putProfileRecord } from "../../../lib/pds.ts";
-import { getProfileByDid, upsertProfile } from "../../../lib/registry.ts";
-import { type ProfileRecord, validateProfile } from "../../../lib/lexicons.ts";
+import { getBskyProfile } from "../../../lib/pds.ts";
+import { getProfileByDid } from "../../../lib/registry.ts";
+import {
+  isSafeRelativePath,
+  rejectLargeRequest,
+} from "../../../lib/security.ts";
+import { ensureUserProfileRecord } from "../../../lib/user-profile-records.ts";
+
+const MAX_ACCOUNT_TYPE_FORM_BYTES = 8_192;
 
 export const handler = define.handlers({
   async POST(ctx) {
+    const large = rejectLargeRequest(ctx.req, MAX_ACCOUNT_TYPE_FORM_BYTES);
+    if (large) return large;
+
     const user = ctx.state.user;
     if (!user) {
       return new Response("not authenticated", { status: 401 });
@@ -20,8 +29,7 @@ export const handler = define.handlers({
     const form = await ctx.req.formData().catch(() => null);
     const raw = form?.get("accountType");
     const rawNext = form?.get("next");
-    const next = typeof rawNext === "string" && rawNext.startsWith("/") &&
-        !rawNext.startsWith("//")
+    const next = typeof rawNext === "string" && isSafeRelativePath(rawNext)
       ? rawNext
       : null;
     const accountType = raw === "project" || raw === "user"
@@ -64,57 +72,29 @@ export const handler = define.handlers({
     });
 
     if (accountType === "user" && session) {
-      const now = new Date().toISOString();
-      const draft: ProfileRecord = {
-        profileType: "user",
-        name: bskyProfile?.displayName?.trim() || user.handle,
-        description: bskyProfile?.description?.trim() ?? "",
-        avatar: bskyProfile?.avatar,
-        createdAt: now,
-      };
-      const validation = validateProfile(draft);
-      if (!validation.ok || !validation.value) {
-        return new Response(`invalid user profile: ${validation.error}`, {
-          status: 400,
-        });
-      }
-      const result = await putProfileRecord(
-        user.did,
-        session.pdsUrl,
-        validation.value,
-      ).then((value) => value).catch((err) =>
+      const result = await ensureUserProfileRecord({
+        did: user.did,
+        handle: user.handle,
+        pdsUrl: session.pdsUrl,
+        fallbackName: bskyProfile?.displayName ?? null,
+        fallbackDescription: bskyProfile?.description ?? null,
+        fallbackAvatar: bskyProfile?.avatar ?? null,
+      }).then(() => null).catch((err) =>
         err instanceof Error ? err : new Error(String(err))
       );
-      if (result instanceof Error) {
-        return new Response(`putRecord failed: ${result.message}`, {
+      if (result) {
+        return new Response(`user profile setup failed: ${result.message}`, {
           status: 502,
         });
       }
-      await upsertProfile({
-        did: user.did,
-        handle: user.handle,
-        profileType: "user",
-        name: validation.value.name,
-        description: validation.value.description,
-        categories: [],
-        subcategories: [],
-        links: [],
-        screenshots: [],
-        avatarCid: validation.value.avatar?.ref.$link ?? null,
-        avatarMime: validation.value.avatar?.mimeType ?? null,
-        pdsUrl: session.pdsUrl,
-        recordCid: result.cid,
-        recordRev: result.commit?.rev ?? result.cid,
-        createdAt: Date.parse(validation.value.createdAt) || Date.now(),
-      });
     }
 
     return new Response(null, {
       status: 303,
       headers: {
         location: accountType === "project"
-          ? next ?? "/explore/manage"
-          : next ?? "/account/reviews",
+          ? next ?? "/apps/manage"
+          : next ?? "/account",
       },
     });
   },

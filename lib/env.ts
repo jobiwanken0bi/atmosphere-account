@@ -12,12 +12,18 @@ function safeGet(key: string): string | undefined {
   }
 }
 
-/** True when this process is running on hosted infrastructure
- *  (Deno Deploy / Vercel / similar). Used to override misconfigured
- *  local URLs that may have been pasted into hosted env panels. */
-const IS_HOSTED = !!(safeGet("DENO_DEPLOYMENT_ID") ??
+/** True when this process is running on hosted infrastructure.
+ *  Used to reject dev fallbacks that would silently create local-only state
+ *  in production. */
+export const IS_HOSTED_RUNTIME = !!(safeGet("DENO_DEPLOYMENT_ID") ??
   safeGet("DENO_REGION") ??
-  safeGet("VERCEL"));
+  safeGet("VERCEL") ??
+  safeGet("FLY_APP_NAME") ??
+  safeGet("RAILWAY_PROJECT_ID") ??
+  safeGet("RAILWAY_ENVIRONMENT_ID") ??
+  safeGet("RENDER") ??
+  safeGet("NETLIFY") ??
+  safeGet("K_SERVICE"));
 
 const RAW_SITE_URL = safeGet("FRESH_PUBLIC_SITE_URL");
 
@@ -37,10 +43,10 @@ function isLocalhostUrl(u: string | undefined): boolean {
 }
 
 export const SITE_URL: string = (() => {
-  if (RAW_SITE_URL && !(IS_HOSTED && isLocalhostUrl(RAW_SITE_URL))) {
+  if (RAW_SITE_URL && !(IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_SITE_URL))) {
     return RAW_SITE_URL;
   }
-  if (IS_HOSTED && isLocalhostUrl(RAW_SITE_URL)) {
+  if (IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_SITE_URL)) {
     console.warn(
       `[env] FRESH_PUBLIC_SITE_URL is set to ${RAW_SITE_URL} on a hosted ` +
         `deployment. Ignoring and falling back to https://atmosphereaccount.com. ` +
@@ -51,7 +57,7 @@ export const SITE_URL: string = (() => {
   return "https://atmosphereaccount.com";
 })();
 
-export const IS_DEV = !IS_HOSTED &&
+export const IS_DEV = !IS_HOSTED_RUNTIME &&
   safeGet("DENO_ENV") !== "production" &&
   !SITE_URL.startsWith("https://atmosphereaccount.com");
 
@@ -59,8 +65,18 @@ export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");
 export const OAUTH_PUBLIC_JWK = safeGet("OAUTH_PUBLIC_JWK");
 export const OAUTH_KID = safeGet("OAUTH_KID");
 
-export const SESSION_SECRET = safeGet("SESSION_SECRET") ??
-  "dev-only-not-secret";
+function hostedSecret(key: string, devFallback: string): string {
+  const value = safeGet(key);
+  if (value) return value;
+  if (IS_HOSTED_RUNTIME || safeGet("DENO_ENV") === "production") {
+    throw new Error(`${key} is required in hosted/production environments.`);
+  }
+  return devFallback;
+}
+
+export function sessionSecret(): string {
+  return hostedSecret("SESSION_SECRET", "dev-only-not-secret");
+}
 
 export const ATMOSPHERE_DID = safeGet("ATMOSPHERE_DID");
 
@@ -83,13 +99,39 @@ export const ADMIN_DIDS: string[] = (safeGet("ADMIN_DIDS") ?? "")
  * set a dedicated value so rotating one secret doesn't break the
  * other.
  */
-export const REPORT_IP_SECRET = safeGet("REPORT_IP_SECRET") ?? SESSION_SECRET;
+export function reportIpSecret(): string {
+  return safeGet("REPORT_IP_SECRET") ?? sessionSecret();
+}
 
 export const TURSO_DATABASE_URL = safeGet("TURSO_DATABASE_URL");
 export const TURSO_AUTH_TOKEN = safeGet("TURSO_AUTH_TOKEN");
 
 export const JETSTREAM_URL = safeGet("JETSTREAM_URL") ??
   "wss://jetstream2.us-east.bsky.network/subscribe";
+
+function positiveIntEnv(key: string, fallback: number): number {
+  const value = safeGet(key);
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export const ATPROTO_FETCH_TIMEOUT_MS = positiveIntEnv(
+  "ATPROTO_FETCH_TIMEOUT_MS",
+  10_000,
+);
+
+export const ATSTORE_REPO_DID = safeGet("ATSTORE_REPO_DID");
+
+export const ATSTORE_SOCIAL_REPO_DIDS: string[] =
+  (safeGet("ATSTORE_SOCIAL_REPO_DIDS") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+export const COMMUNITY_APP_LEXICON_ENABLED =
+  safeGet("COMMUNITY_APP_LEXICON_ENABLED") === "1" ||
+  safeGet("COMMUNITY_APP_LEXICON_ENABLED") === "true";
 
 export function siteOrigin(): string {
   return SITE_URL.replace(/\/$/, "");

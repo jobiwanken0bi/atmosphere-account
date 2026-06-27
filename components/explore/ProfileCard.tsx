@@ -2,6 +2,7 @@ import type { ProfileRow } from "../../lib/registry.ts";
 import { PUBLIC_CATEGORIES } from "../../lib/lexicons.ts";
 import { useT } from "../../i18n/mod.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
+import AtmosphereHandle from "../AtmosphereHandle.tsx";
 import VerifiedBadge from "../VerifiedBadge.tsx";
 
 interface Props {
@@ -10,7 +11,7 @@ interface Props {
 
 /**
  * Listing-grid card. Clicking the card opens the project's profile
- * detail page (/explore/<handle>) — visitors get the description,
+ * detail page (/apps/<handle>) — visitors get the description,
  * Atmosphere services, Web / iOS / Android links, and any custom buttons
  * on the detail page.
  */
@@ -27,7 +28,7 @@ export default function ProfileCard({ profile }: Props) {
 
   return (
     <a
-      href={`/explore/${encodeURIComponent(profile.handle)}`}
+      href={`/apps/${encodeURIComponent(profile.handle)}`}
       class="glass profile-card"
     >
       <div class="profile-card-avatar">
@@ -66,7 +67,9 @@ export default function ProfileCard({ profile }: Props) {
             </span>
           )}
         </div>
-        <p class="profile-card-handle">@{profile.handle}</p>
+        <p class="profile-card-handle">
+          <AtmosphereHandle handle={profile.handle} />
+        </p>
         {profile.description && (
           <p class="profile-card-description">{profile.description}</p>
         )}

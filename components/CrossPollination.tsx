@@ -1,4 +1,27 @@
 import { useT } from "../i18n/mod.ts";
+import ContentVisualIcon, {
+  type ContentVisualIconName,
+} from "./icons/ContentVisualIcon.tsx";
+
+const contentTypeIcons: ContentVisualIconName[] = [
+  "blog",
+  "photo",
+  "music",
+  "video",
+  "calendar",
+  "review",
+  "new",
+];
+
+const destinationIcons: ContentVisualIconName[] = [
+  "feed",
+  "gallery",
+  "profile",
+  "player",
+  "calendar",
+  "reader",
+  "app",
+];
 
 export default function CrossPollination() {
   const t = useT();
@@ -33,7 +56,13 @@ export default function CrossPollination() {
                 }`}
                 style={{ animationDelay: `${i * 0.12}s` }}
               >
-                {label}
+                <span class="flow-node-icon">
+                  <ContentVisualIcon
+                    name={contentTypeIcons[i] ?? "new"}
+                    class="flow-node-icon-svg"
+                  />
+                </span>
+                <span class="flow-node-label">{label}</span>
               </div>
             ))}
           </div>
@@ -85,7 +114,13 @@ export default function CrossPollination() {
                 }`}
                 style={{ animationDelay: `${i * 0.12 + 0.3}s` }}
               >
-                {label}
+                <span class="flow-node-icon">
+                  <ContentVisualIcon
+                    name={destinationIcons[i] ?? "app"}
+                    class="flow-node-icon-svg"
+                  />
+                </span>
+                <span class="flow-node-label">{label}</span>
               </div>
             ))}
           </div>

@@ -7,8 +7,11 @@
  * for that handle.
  *
  * Accepts the target DID via either:
- *   - POST form body  (form-urlencoded `did=…`) — used by the menu form
- *   - POST JSON body  (`{ "did": "…" }`)        — used by JS callers
+ *   - POST form body  (form-urlencoded `did=...`) — used by the menu form
+ *   - POST JSON body  (`{ "did": "..." }`)        — used by JS callers
+ *
+ * A safe relative `next` path can optionally preserve deep-link flows
+ * such as host claiming.
  *
  * The switch is gated on the DID being present in the device's
  * remembered-accounts cookie. That keeps random DIDs from being
@@ -24,23 +27,70 @@ import {
 } from "../../lib/session.ts";
 import { readRememberedAccountsFromHeader } from "../../lib/remembered-accounts.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
+import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
 
-async function readDid(req: Request): Promise<string | null> {
+const SWITCH_SESSION_TIMEOUT_MS = 5_000;
+const MAX_SWITCH_BODY_BYTES = 8_192;
+
+function safeNext(raw: string | null | undefined): string | null {
+  return raw && isSafeRelativePath(raw) ? raw : null;
+}
+
+async function readInput(
+  req: Request,
+): Promise<{ did: string | null; next: string | null }> {
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => null) as
-      | { did?: string }
+      | { did?: string; next?: string }
       | null;
-    return body?.did?.trim() ?? null;
+    return {
+      did: body?.did?.trim() ?? null,
+      next: safeNext(body?.next),
+    };
   }
   const form = await req.formData().catch(() => null);
-  if (!form) return null;
+  if (!form) return { did: null, next: null };
   const v = form.get("did");
-  return typeof v === "string" ? v.trim() : null;
+  const next = form.get("next");
+  return {
+    did: typeof v === "string" ? v.trim() : null,
+    next: safeNext(typeof next === "string" ? next : null),
+  };
+}
+
+function redirectToReauth(handle: string, next: string | null): Response {
+  const location = new URLSearchParams({ handle });
+  if (next) location.set("next", next);
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location: `/account?${location.toString()}`,
+    },
+  });
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T | null> {
+  let timer = 0;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function handle(ctx: { req: Request }): Promise<Response> {
-  const did = await readDid(ctx.req);
+  const large = rejectLargeRequest(ctx.req, MAX_SWITCH_BODY_BYTES);
+  if (large) return large;
+  const { did, next } = await readInput(ctx.req);
   if (!did) return new Response("missing did", { status: 400 });
 
   const remembered = await readRememberedAccountsFromHeader(
@@ -57,14 +107,12 @@ async function handle(ctx: { req: Request }): Promise<Response> {
    *  wrong (revoked refresh token, server-side row evicted, PDS
    *  unreachable) bounce to /oauth/login with a login_hint so the
    *  user gets a one-step re-auth instead of a confusing error. */
-  const oauthSession = await getValidSession(did).catch(() => null);
+  const oauthSession = await withTimeout(
+    getValidSession(did, { quiet: true }).catch(() => null),
+    SWITCH_SESSION_TIMEOUT_MS,
+  );
   if (!oauthSession) {
-    return new Response(null, {
-      status: 303,
-      headers: {
-        location: `/oauth/login?handle=${encodeURIComponent(target.handle)}`,
-      },
-    });
+    return redirectToReauth(target.handle, next);
   }
 
   /** Drop the previous app session row (if any) so we don't leak
@@ -82,11 +130,12 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   return new Response(null, {
     status: 303,
     headers: {
-      location: accountType === "project"
-        ? "/explore/manage"
-        : accountType === "user"
-        ? "/account/reviews"
-        : "/account/type",
+      location: next ??
+        (accountType === "project"
+          ? "/apps/manage"
+          : accountType === "user"
+          ? "/account"
+          : "/account/type"),
       "set-cookie": buildSessionCookie(cookieValue),
     },
   });

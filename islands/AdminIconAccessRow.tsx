@@ -111,7 +111,7 @@ export default function AdminIconAccessRow(p: Props) {
           <strong>{p.name}</strong>
           <span class="admin-icon-row-handle">
             <a
-              href={`/explore/${encodeURIComponent(p.handle)}`}
+              href={`/apps/${encodeURIComponent(p.handle)}`}
               target="_blank"
               rel="noopener noreferrer"
               class="text-link-button"

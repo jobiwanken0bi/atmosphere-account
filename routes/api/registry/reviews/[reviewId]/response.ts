@@ -13,13 +13,22 @@ import {
   normalizeReviewResponseBody,
   upsertReviewResponse,
 } from "../../../../../lib/reviews.ts";
+import { rejectLargeRequest } from "../../../../../lib/security.ts";
 
 interface ResponsePayload {
   body?: unknown;
 }
 
+const MAX_REVIEW_RESPONSE_REQUEST_BYTES = 8_192;
+
 export const handler = define.handlers({
   PUT: withRateLimit(async (ctx) => {
+    const large = rejectLargeRequest(
+      ctx.req,
+      MAX_REVIEW_RESPONSE_REQUEST_BYTES,
+    );
+    if (large) return large;
+
     const gate = await ownerGate(ctx.params.reviewId, ctx.state.user?.did);
     if (!gate.ok) return gate.response;
 

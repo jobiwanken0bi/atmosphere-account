@@ -95,7 +95,7 @@
                 "developerTool"
               ]
             },
-            "description": "All categories that apply to the project. A project can be both an app and an account provider, etc. The first item is treated as the primary category for sort/grouping. New values can be added to knownValues over time without breaking existing records."
+            "description": "All categories that apply to the project. A project can be both an app and an account host, etc. The first item is treated as the primary category for sort/grouping. New values can be added to knownValues over time without breaking existing records."
           },
           "subcategories": {
             "type": "array",

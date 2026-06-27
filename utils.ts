@@ -2,6 +2,7 @@ import { createDefine } from "fresh";
 import type { Locale } from "./i18n/locales.ts";
 import type { RememberedAccount } from "./lib/remembered-accounts.ts";
 import type { AccountType } from "./lib/account-types.ts";
+import type { HostVerificationStatus } from "./lib/account-hosts.ts";
 
 export interface SessionUser {
   did: string;
@@ -44,6 +45,13 @@ export interface State {
   user: SessionUser | null;
   /** Local account role: users manage reviews, projects manage registry profiles. */
   accountType: AccountType | null;
+  /** Friendly host context for the active account, derived from its OAuth session. */
+  accountHost: {
+    host: string;
+    displayName: string;
+    endpoint: string;
+    verificationStatus: HostVerificationStatus;
+  } | null;
   /** Accounts that have completed OAuth on this device, in
    *  most-recently-used order. Populated by sessionMiddleware so
    *  routes can hand the list to AccountMenu for the switcher. */

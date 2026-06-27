@@ -17,6 +17,7 @@ import {
   upsertProfileUpdate,
 } from "../../../../lib/profile-updates.ts";
 import { type UpdateRecord, validateUpdate } from "../../../../lib/lexicons.ts";
+import { rejectLargeRequest } from "../../../../lib/security.ts";
 
 interface UpdatePayload {
   rkey?: unknown;
@@ -26,8 +27,13 @@ interface UpdatePayload {
   tangledCommitUrl?: unknown;
 }
 
+const MAX_PROFILE_UPDATE_BODY_BYTES = 32_768;
+
 export const handler = define.handlers({
   async POST(ctx) {
+    const large = rejectLargeRequest(ctx.req, MAX_PROFILE_UPDATE_BODY_BYTES);
+    if (large) return large;
+
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
 

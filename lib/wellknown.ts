@@ -8,7 +8,7 @@
  * and NSIDs themselves contain dots that would be parsed as extensions.
  */
 import { define } from "../utils.ts";
-import { loadLexiconJson, REGISTRY_NSIDS } from "./lexicons.ts";
+import { loadLexiconJson, PUBLISHED_LEXICON_NSIDS } from "./lexicons.ts";
 
 const WELL_KNOWN_PREFIX = "/.well-known/atproto-lexicon/";
 const LEXICONS_PREFIX = "/lexicons/";
@@ -27,7 +27,7 @@ export const wellKnownMiddleware = define.middleware(async (ctx) => {
     return ctx.next();
   }
 
-  if (!(REGISTRY_NSIDS as readonly string[]).includes(nsid)) {
+  if (!(PUBLISHED_LEXICON_NSIDS as readonly string[]).includes(nsid)) {
     return new Response("not found", { status: 404 });
   }
 

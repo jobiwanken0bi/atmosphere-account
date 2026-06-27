@@ -26,6 +26,7 @@ import {
   REPORT_REASONS,
   type ReportReason,
 } from "../../../../../lib/reports.ts";
+import { rejectLargeRequest } from "../../../../../lib/security.ts";
 
 interface ReportPayload {
   reason?: unknown;
@@ -33,9 +34,13 @@ interface ReportPayload {
 }
 
 const MAX_DETAILS_LEN = 500;
+const MAX_REPORT_REQUEST_BYTES = 4_096;
 
 export const handler = define.handlers({
   POST: withRateLimit(async (ctx) => {
+    const large = rejectLargeRequest(ctx.req, MAX_REPORT_REQUEST_BYTES);
+    if (large) return large;
+
     const raw = decodeURIComponent(ctx.params.id ?? "").trim();
     if (!raw) return jsonError(400, "missing_id");
 

@@ -36,6 +36,95 @@ export default function DeveloperResources() {
             </a>
           </div>
           <p class="text-body-sm mt-3">{t.developerResources.badgeFootnote}</p>
+          <div class="badge-downloads">
+            <a href="/docs" class="badge-download-btn font-mono">
+              Open full docs
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-sm" id="atmosphere-login">
+        <div class="container-narrow">
+          <div class="developer-login-card glass">
+            <div>
+              <p class="text-eyebrow">Atmosphere Login</p>
+              <h2 class="text-subsection">A shared account picker for apps</h2>
+              <p class="text-body mt-2">
+                Add the branded button, send users to the hosted Atmosphere
+                picker, then start your own AT Protocol OAuth flow with the
+                selected handle.
+              </p>
+            </div>
+            <pre class="developer-code-block"><code>{`<button
+  data-atmosphere-login
+  data-client-id="https://app.example.com/oauth/client-metadata.json"
+  data-return-uri="https://app.example.com/auth/atmosphere/selected"
+></button>
+<script src="https://atmosphereaccount.com/atmosphere-login.js"></script>`}</code></pre>
+            <p class="text-body-sm">
+              Selection tokens are ES256 JWTs. Verify them with
+              <code>/login/jwks.json</code>, then complete your app's own
+              atproto OAuth flow using the returned handle as the login hint.
+            </p>
+            <pre class="developer-code-block"><code>{`const result = await verifyAtmosphereSelectionToken({
+  token,
+  publicJwk,
+  expectedIssuer: "https://atmosphereaccount.com",
+  expectedAudience: "https://app.example.com/oauth/client-metadata.json",
+  expectedState: state,
+  expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
+});`}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-sm" id="host-account-routing">
+        <div class="container-narrow">
+          <div class="developer-login-card glass">
+            <div>
+              <p class="text-eyebrow">Host Account Routing</p>
+              <h2 class="text-subsection">
+                Send users to PDS-owned account controls
+              </h2>
+              <p class="text-body mt-2">
+                Hosts publish their PDS service endpoint so Atmosphere can send
+                users to the host-owned account page for apps, devices,
+                passwords, keys, backups, restore, and migration.
+              </p>
+            </div>
+            <pre class="developer-code-block"><code>{`{
+  "host": "host.example",
+  "displayName": "Example Host",
+  "serviceEndpoint": "https://pds.host.example",
+  "accountManagementUrl": "https://pds.host.example/account",
+  "createdAt": "2026-06-26T00:00:00.000Z"
+}`}</code></pre>
+            <pre class="developer-code-block"><code>{`deno task host:dashboard:check host.example
+curl "https://atmosphereaccount.com/api/hosts/dashboard/validate?host=host.example"`}</code></pre>
+            <div class="badge-downloads badge-downloads--left">
+              <a
+                href="/atmosphere-host-dashboard.schema.json"
+                class="badge-download-btn font-mono"
+              >
+                Manifest schema
+              </a>
+              <a
+                href="/examples/atmosphere-host-dashboard.example.json"
+                class="badge-download-btn font-mono"
+              >
+                Example manifest
+              </a>
+              <a href="/hosts" class="badge-download-btn font-mono">
+                Host directory
+              </a>
+            </div>
+            <p class="text-body-sm">
+              Optional capability metadata can describe what a host supports,
+              but Atmosphere does not own passwords, grants, rotation keys,
+              backup custody, account deletion, or migration.
+            </p>
+          </div>
         </div>
       </section>
 

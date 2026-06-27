@@ -1,6 +1,6 @@
 /**
  * OAuth redirect target. Exchanges the authorization code for tokens,
- * persists the session, and bounces the user into /explore/manage.
+ * persists the session, and bounces the user into the account/app dashboard.
  *
  * Also appends the freshly-authenticated account to the per-device
  * `atmo_accounts` cookie so the AccountMenu switcher can offer
@@ -10,7 +10,7 @@
 import { define } from "../../utils.ts";
 import { completeCallback, isOAuthConfigured } from "../../lib/oauth.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
-import { getBskyProfile, putProfileRecord } from "../../lib/pds.ts";
+import { getBskyProfile } from "../../lib/pds.ts";
 import {
   addRememberedAccountCookie,
   readRememberedAccountsFromHeader,
@@ -21,8 +21,8 @@ import {
   setAppUserType,
   updateAppUserProfile,
 } from "../../lib/account-types.ts";
-import { type ProfileRecord, validateProfile } from "../../lib/lexicons.ts";
-import { upsertProfile } from "../../lib/registry.ts";
+import { observeAccountHost } from "../../lib/account-hosts.ts";
+import { ensureUserProfileRecord } from "../../lib/user-profile-records.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -41,6 +41,7 @@ export const handler = define.handlers({
     }
     try {
       const result = await completeCallback({ state, code, iss });
+      await observeAccountHost(result.pdsUrl).catch(() => {});
       const sessionCookie = buildSessionCookie(
         await createSession({ did: result.did, handle: result.handle }),
       );
@@ -54,6 +55,7 @@ export const handler = define.handlers({
       const rememberedCookie = await addRememberedAccountCookie(remembered, {
         did: result.did,
         handle: result.handle,
+        pdsUrl: result.pdsUrl,
       });
 
       const bskyProfile = await getBskyProfile(result.pdsUrl, result.did).catch(
@@ -71,7 +73,7 @@ export const handler = define.handlers({
       /**
        * Auto-classify newly signed-in DIDs based on the sign-in intent
        * carried through the OAuth flow:
-       *  - `intent === "project"` (clicked "Submit your project")
+       *  - `intent === "project"` (clicked "Register an app")
        *      → mark as project, take them to the project dashboard.
        *  - `intent === "user"` or unset (header sign-in, review CTAs)
        *      → mark as user and publish a baseline user profile record.
@@ -98,49 +100,22 @@ export const handler = define.handlers({
         accountType = desired;
       }
       if (accountType === "user") {
-        const now = new Date().toISOString();
-        const draft: ProfileRecord = {
-          profileType: "user",
-          name: bskyProfile?.displayName?.trim() || result.handle,
-          description: bskyProfile?.description?.trim() ?? "",
-          avatar: bskyProfile?.avatar,
-          createdAt: now,
-        };
-        const validation = validateProfile(draft);
-        if (validation.ok && validation.value) {
-          const put = await putProfileRecord(
-            result.did,
-            result.pdsUrl,
-            validation.value,
-          ).catch(() => null);
-          if (put) {
-            await upsertProfile({
-              did: result.did,
-              handle: result.handle,
-              profileType: "user",
-              name: validation.value.name,
-              description: validation.value.description,
-              categories: [],
-              subcategories: [],
-              links: [],
-              screenshots: [],
-              avatarCid: validation.value.avatar?.ref.$link ?? null,
-              avatarMime: validation.value.avatar?.mimeType ?? null,
-              pdsUrl: result.pdsUrl,
-              recordCid: put.cid,
-              recordRev: put.commit?.rev ?? put.cid,
-              createdAt: Date.parse(validation.value.createdAt) || Date.now(),
-            }).catch(() => {});
-          }
-        }
+        await ensureUserProfileRecord({
+          did: result.did,
+          handle: result.handle,
+          pdsUrl: result.pdsUrl,
+          fallbackName: bskyProfile?.displayName ?? null,
+          fallbackDescription: bskyProfile?.description ?? null,
+          fallbackAvatar: bskyProfile?.avatar ?? null,
+        }).catch(() => {});
       }
       const returnTo = result.returnTo && result.returnTo.startsWith("/") &&
           !result.returnTo.startsWith("//")
         ? result.returnTo
         : null;
       const defaultLanding = accountType === "project"
-        ? "/explore/manage"
-        : "/account/reviews";
+        ? "/apps/manage"
+        : "/account";
       const headers = new Headers({
         location: returnTo ?? defaultLanding,
       });

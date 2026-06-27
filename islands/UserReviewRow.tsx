@@ -1,4 +1,5 @@
 import { useSignal } from "@preact/signals";
+import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 
 interface Props {
   reviewId: number;
@@ -50,8 +51,8 @@ export default function UserReviewRow(p: Props) {
         <div>
           <h2>{p.targetName}</h2>
           <p>
-            <a href={`/explore/${encodeURIComponent(p.targetHandle)}`}>
-              @{p.targetHandle}
+            <a href={`/apps/${encodeURIComponent(p.targetHandle)}`}>
+              <AtmosphereHandle handle={p.targetHandle} />
             </a>
           </p>
         </div>
@@ -65,7 +66,7 @@ export default function UserReviewRow(p: Props) {
         <span>{new Date(p.updatedAt).toISOString().slice(0, 10)}</span>
         <a
           class="profile-form-button-secondary"
-          href={`/explore/${encodeURIComponent(p.targetHandle)}`}
+          href={`/apps/${encodeURIComponent(p.targetHandle)}`}
         >
           {p.copy.viewProject}
         </a>

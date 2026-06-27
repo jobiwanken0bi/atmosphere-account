@@ -13,15 +13,36 @@
  * **Deploy note:** The default `@libsql/client` entry pulls native bindings
  * (`@libsql/linux-x64-gnu`, etc.) that break on Linux/serverless when the
  * bundle was resolved for another OS. Remote Turso URLs use
- * `@libsql/client/web` (HTTP only, no natives). Local `file:` URLs still
- * use the full client in dev only.
+ * `@libsql/client/web` (HTTP only, no natives). Local `file:` URLs use the
+ * full client because the web client cannot open local files.
  */
-import type { Client } from "@libsql/client/web";
+import {
+  createNeonExecuteClient,
+  type DbExecuteClient,
+  neonRuntimeDatabaseUrl,
+} from "./neon.ts";
 
-let _client: Client | null = null;
-let _clientPromise: Promise<Client> | null = null;
-let _migrated = false;
-let _migrationPromise: Promise<void> | null = null;
+export type DatabaseBackend = "turso" | "neon";
+
+export type DbClient = DbExecuteClient;
+
+interface DbRuntimeState {
+  client: DbClient | null;
+  clientPromise: Promise<DbClient> | null;
+  migrated: boolean;
+  migrationPromise: Promise<void> | null;
+  backend: DatabaseBackend | null;
+}
+
+const dbRuntimeState = ((globalThis as typeof globalThis & {
+  __ATMOSPHERE_DB_RUNTIME_STATE__?: DbRuntimeState;
+}).__ATMOSPHERE_DB_RUNTIME_STATE__ ??= {
+  client: null,
+  clientPromise: null,
+  migrated: false,
+  migrationPromise: null,
+  backend: null,
+});
 
 function getEnv(key: string): string | undefined {
   try {
@@ -31,6 +52,19 @@ function getEnv(key: string): string | undefined {
   }
 }
 
+export function dbBackend(): DatabaseBackend {
+  const raw = getEnv("ATMOSPHERE_DB_BACKEND")?.trim().toLowerCase();
+  if (!raw || raw === "turso" || raw === "libsql" || raw === "sqlite") {
+    return "turso";
+  }
+  if (raw === "neon" || raw === "postgres" || raw === "postgresql") {
+    return "neon";
+  }
+  throw new Error(
+    `Unsupported ATMOSPHERE_DB_BACKEND=${raw}. Expected "turso" or "neon".`,
+  );
+}
+
 /** Hosted runtimes must have an explicit Turso URL. Falling back to a
  * local file database is useful for `deno task dev`, but on Deno Deploy
  * it masks configuration mistakes as an empty registry and broken OAuth
@@ -38,7 +72,13 @@ function getEnv(key: string): string | undefined {
 function isHostedRuntime(): boolean {
   return !!(getEnv("DENO_DEPLOYMENT_ID") ??
     getEnv("DENO_REGION") ??
-    getEnv("VERCEL"));
+    getEnv("VERCEL") ??
+    getEnv("FLY_APP_NAME") ??
+    getEnv("RAILWAY_PROJECT_ID") ??
+    getEnv("RAILWAY_ENVIRONMENT_ID") ??
+    getEnv("RENDER") ??
+    getEnv("NETLIFY") ??
+    getEnv("K_SERVICE"));
 }
 
 function resolveDbUrl(): string {
@@ -52,20 +92,35 @@ function resolveDbUrl(): string {
   return "file:./local.db";
 }
 
-/**
- * Production / `deno task start` must not load the native libsql binary; only
- * the web client. Vite sets import.meta.env.DEV in dev; omitting env is
- * treated as production (Deploy).
- */
 function shouldLoadNativeFileClient(url: string): boolean {
-  if (!url.startsWith("file:")) return false;
-  return import.meta.env?.DEV === true;
+  return url.startsWith("file:");
 }
 
-function getClient(): Promise<Client> {
-  if (_client) return Promise.resolve(_client);
-  if (!_clientPromise) {
-    _clientPromise = (async () => {
+function shouldRunRequestMigrations(): boolean {
+  if (dbBackend() === "neon") return false;
+  const setting = getEnv("ATMOSPHERE_REQUEST_MIGRATIONS");
+  if (setting) return /^(1|true|yes)$/i.test(setting);
+  return shouldLoadNativeFileClient(resolveDbUrl());
+}
+
+function getClient(): Promise<DbClient> {
+  const backend = dbBackend();
+  if (dbRuntimeState.backend && dbRuntimeState.backend !== backend) {
+    dbRuntimeState.client = null;
+    dbRuntimeState.clientPromise = null;
+    dbRuntimeState.migrated = false;
+    dbRuntimeState.migrationPromise = null;
+  }
+  dbRuntimeState.backend = backend;
+  if (dbRuntimeState.client) return Promise.resolve(dbRuntimeState.client);
+  if (!dbRuntimeState.clientPromise) {
+    dbRuntimeState.clientPromise = (async () => {
+      if (backend === "neon") {
+        dbRuntimeState.client = createNeonExecuteClient(
+          neonRuntimeDatabaseUrl(),
+        );
+        return dbRuntimeState.client;
+      }
       const url = resolveDbUrl();
       const authToken = getEnv("TURSO_AUTH_TOKEN");
       if (/^(libsql|https?):\/\//.test(url) && !authToken) {
@@ -75,15 +130,21 @@ function getClient(): Promise<Client> {
       }
       if (shouldLoadNativeFileClient(url)) {
         const { createClient } = await import("@libsql/client");
-        _client = createClient({ url, authToken }) as unknown as Client;
-        return _client;
+        dbRuntimeState.client = createClient({
+          url,
+          authToken,
+        }) as unknown as DbClient;
+        return dbRuntimeState.client;
       }
       const { createClient } = await import("@libsql/client/web");
-      _client = createClient({ url, authToken });
-      return _client;
+      dbRuntimeState.client = createClient({
+        url,
+        authToken,
+      }) as unknown as DbClient;
+      return dbRuntimeState.client;
     })();
   }
-  return _clientPromise;
+  return dbRuntimeState.clientPromise;
 }
 
 const SCHEMA_STATEMENTS: string[] = [
@@ -199,6 +260,8 @@ const SCHEMA_STATEMENTS: string[] = [
     avatar_mime TEXT,
     bsky_client_id TEXT NOT NULL DEFAULT 'bluesky',
     bsky_button_visible INTEGER NOT NULL DEFAULT 1,
+    website_url TEXT,
+    website_visible INTEGER NOT NULL DEFAULT 0,
     account_type TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -302,6 +365,266 @@ const SCHEMA_STATEMENTS: string[] = [
     updated_at INTEGER NOT NULL,
     indexed_at INTEGER NOT NULL
   )`,
+  /**
+   * Account hosts are services that hold Atmosphere accounts. Seeded rows
+   * describe known umbrella hosts (for example Bluesky); observed rows are
+   * discovered from signed-in account PDS endpoints and can be claimed later.
+   */
+  `CREATE TABLE IF NOT EXISTS account_host (
+    host TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    homepage_url TEXT,
+    service_endpoint TEXT,
+    account_management_url TEXT,
+    dashboard_url TEXT,
+    capability_manifest_url TEXT,
+    capabilities_json TEXT,
+    support_url TEXT,
+    profile_handle TEXT,
+    profile_did TEXT,
+    bsky_profile_visible INTEGER NOT NULL DEFAULT 1,
+    avatar_url TEXT,
+    claim_handle TEXT,
+    claim_did TEXT,
+    signup_status TEXT NOT NULL DEFAULT 'unknown',
+    verification_status TEXT NOT NULL DEFAULT 'observed',
+    source TEXT NOT NULL DEFAULT 'observed',
+    match_patterns TEXT NOT NULL DEFAULT '[]',
+    service_record_uri TEXT,
+    service_record_cid TEXT,
+    service_observed_at INTEGER,
+    profile_checked_at INTEGER,
+    last_checked_at INTEGER,
+    last_observed_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS account_host_claim (
+    host TEXT PRIMARY KEY,
+    claimant_did TEXT NOT NULL,
+    claimant_handle TEXT NOT NULL,
+    method TEXT NOT NULL,
+    claimed_at INTEGER NOT NULL,
+    verified_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  /**
+   * Source records from account.atmosphere.host.* lexicons. The public
+   * `account_host` table is the merged read model; these rows preserve the
+   * protocol record that produced or enriched the host listing.
+   */
+  `CREATE TABLE IF NOT EXISTS host_record (
+    uri TEXT PRIMARY KEY,
+    cid TEXT,
+    collection TEXT NOT NULL,
+    repo_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    author_handle TEXT,
+    raw_json TEXT NOT NULL,
+    parsed_json TEXT NOT NULL,
+    host TEXT,
+    display_name TEXT,
+    service_endpoint TEXT,
+    indexed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  )`,
+  /**
+   * Source records from app-directory lexicons. These rows preserve the
+   * original AT Protocol record and a parsed projection so the public app
+   * directory can be recomputed when merge rules change.
+   */
+  `CREATE TABLE IF NOT EXISTS app_record (
+    uri TEXT PRIMARY KEY,
+    cid TEXT NOT NULL,
+    collection TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    repo_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    listing_id TEXT,
+    raw_json TEXT NOT NULL,
+    parsed_json TEXT NOT NULL,
+    record_created_at INTEGER,
+    record_updated_at INTEGER,
+    indexed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_listing (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    tagline TEXT NOT NULL DEFAULT '',
+    app_status TEXT,
+    primary_url TEXT,
+    icon_url TEXT,
+    hero_url TEXT,
+    screenshot_urls TEXT NOT NULL DEFAULT '[]',
+    links_json TEXT NOT NULL DEFAULT '[]',
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    platforms_json TEXT NOT NULL DEFAULT '[]',
+    category_slugs_json TEXT NOT NULL DEFAULT '[]',
+    lexicons_json TEXT NOT NULL DEFAULT '{}',
+    account_indicators_json TEXT NOT NULL DEFAULT '[]',
+    source_refs_json TEXT NOT NULL DEFAULT '{}',
+    canonical_source TEXT NOT NULL,
+    canonical_uri TEXT NOT NULL,
+    product_did TEXT,
+    profile_did TEXT,
+    legacy_profile_did TEXT,
+    atstore_listing_uri TEXT,
+    community_profile_uri TEXT,
+    community_entry_uri TEXT,
+    review_count INTEGER NOT NULL DEFAULT 0,
+    average_rating REAL,
+    favorite_count INTEGER NOT NULL DEFAULT 0,
+    mention_count_24h INTEGER NOT NULL DEFAULT 0,
+    mention_count_7d INTEGER NOT NULL DEFAULT 0,
+    trending_score REAL,
+    published_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    indexed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_alias (
+    alias_key TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    source_uri TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_review (
+    uri TEXT PRIMARY KEY,
+    listing_uri TEXT NOT NULL,
+    listing_id TEXT,
+    author_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    cid TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+    body TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    indexed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_favorite (
+    uri TEXT PRIMARY KEY,
+    listing_uri TEXT NOT NULL,
+    listing_id TEXT,
+    author_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    cid TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    indexed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_mention (
+    id TEXT PRIMARY KEY,
+    listing_uri TEXT NOT NULL,
+    listing_id TEXT,
+    post_uri TEXT NOT NULL,
+    post_cid TEXT,
+    author_did TEXT NOT NULL,
+    author_handle TEXT,
+    post_text TEXT,
+    post_created_at INTEGER NOT NULL,
+    match_type TEXT NOT NULL,
+    match_confidence REAL NOT NULL DEFAULT 1,
+    match_evidence_json TEXT,
+    indexed_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_record_failure (
+    uri TEXT PRIMARY KEY,
+    collection TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    repo_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    first_seen_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    count INTEGER NOT NULL DEFAULT 1
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_directory_job (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    progress_label TEXT,
+    listings_imported INTEGER NOT NULL DEFAULT 0,
+    reviews_imported INTEGER NOT NULL DEFAULT 0,
+    favorites_imported INTEGER NOT NULL DEFAULT 0,
+    records_seen INTEGER NOT NULL DEFAULT 0,
+    records_failed INTEGER NOT NULL DEFAULT 0,
+    rescored INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_featured (
+    listing_id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL DEFAULT 0,
+    label TEXT,
+    added_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_moderation (
+    listing_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'visible',
+    reason TEXT,
+    updated_at INTEGER NOT NULL,
+    updated_by TEXT
+  )`,
+  /**
+   * Atmosphere Login app registrations. Apps can use the hosted account
+   * picker without becoming OAuth token clients of Atmosphere; this table
+   * controls which return URLs and origins are trusted for selection tokens.
+   */
+  `CREATE TABLE IF NOT EXISTS login_app (
+    client_id TEXT PRIMARY KEY,
+    app_name TEXT NOT NULL,
+    app_uri TEXT,
+    logo_uri TEXT,
+    allowed_return_uris TEXT NOT NULL DEFAULT '[]',
+    allowed_origins TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'unverified',
+    contact_did TEXT,
+    review_status TEXT NOT NULL DEFAULT 'none',
+    review_requested_at INTEGER,
+    review_notes TEXT,
+    review_decision_at INTEGER,
+    review_decision_by TEXT,
+    review_decision_reason TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  /**
+   * Audit/read model for accounts selected through Atmosphere Login. This
+   * is not proof that the destination app completed OAuth; it records that
+   * the user chose this account for that app via the universal picker.
+   */
+  `CREATE TABLE IF NOT EXISTS login_app_connection (
+    client_id TEXT NOT NULL,
+    did TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    selected_count INTEGER NOT NULL DEFAULT 1,
+    first_selected_at INTEGER NOT NULL,
+    last_selected_at INTEGER NOT NULL,
+    PRIMARY KEY (client_id, did)
+  )`,
+  /**
+   * Coarse-grained operational leases. The Jetstream indexer is idempotent,
+   * but running two long-lived consumers wastes relay/PDS/DB capacity and can
+   * move the shared cursor in surprising ways during deploy overlap. A short
+   * DB-backed lease gives us one active consumer without adding Redis.
+   */
+  `CREATE TABLE IF NOT EXISTS worker_lease (
+    name TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    heartbeat_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
 ];
 
 /**
@@ -327,6 +650,45 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE UNIQUE INDEX IF NOT EXISTS review_uri_unique ON review(review_uri) WHERE review_uri IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS profile_update_project_status_created ON profile_update(project_did, status, created_at)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS profile_update_project_rkey ON profile_update(project_did, rkey)`,
+  `CREATE INDEX IF NOT EXISTS account_host_verification ON account_host(verification_status)`,
+  `CREATE INDEX IF NOT EXISTS account_host_signup ON account_host(signup_status)`,
+  `CREATE INDEX IF NOT EXISTS account_host_source ON account_host(source)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did)`,
+  `CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS host_record_repo_rkey ON host_record(repo_did, collection, rkey)`,
+  `CREATE INDEX IF NOT EXISTS app_record_collection ON app_record(collection, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS app_record_listing ON app_record(listing_id, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS app_record_repo_rkey ON app_record(repo_did, collection, rkey)`,
+  `CREATE INDEX IF NOT EXISTS app_alias_listing ON app_alias(listing_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS app_listing_slug ON app_listing(slug)`,
+  `CREATE INDEX IF NOT EXISTS app_listing_canonical ON app_listing(canonical_source, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS app_listing_atstore ON app_listing(atstore_listing_uri)`,
+  `CREATE INDEX IF NOT EXISTS app_listing_legacy ON app_listing(legacy_profile_did)`,
+  `CREATE INDEX IF NOT EXISTS app_listing_trending ON app_listing(trending_score, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS app_listing_public_trending ON app_listing(deleted_at, trending_score DESC, updated_at DESC, published_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS app_listing_public_newest ON app_listing(deleted_at, published_at DESC, updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS app_listing_public_name ON app_listing(deleted_at, name COLLATE NOCASE)`,
+  `CREATE INDEX IF NOT EXISTS app_review_listing ON app_review(listing_id, deleted_at, created_at)`,
+  `CREATE INDEX IF NOT EXISTS app_review_subject ON app_review(listing_uri, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS app_favorite_listing ON app_favorite(listing_id, deleted_at, created_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS app_mention_listing_post ON app_mention(listing_id, post_uri)`,
+  `CREATE INDEX IF NOT EXISTS app_mention_listing ON app_mention(listing_id, deleted_at, post_created_at)`,
+  `CREATE INDEX IF NOT EXISTS app_mention_subject ON app_mention(listing_uri, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS app_record_failure_seen ON app_record_failure(last_seen_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS app_record_failure_source ON app_record_failure(source_type, collection)`,
+  `CREATE INDEX IF NOT EXISTS app_directory_job_status ON app_directory_job(status, created_at)`,
+  `CREATE INDEX IF NOT EXISTS app_directory_job_kind_created ON app_directory_job(kind, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS app_featured_position ON app_featured(position)`,
+  `CREATE INDEX IF NOT EXISTS app_moderation_status ON app_moderation(status)`,
+  `CREATE INDEX IF NOT EXISTS login_app_status ON login_app(status)`,
+  `CREATE INDEX IF NOT EXISTS login_app_review_status ON login_app(review_status, review_requested_at)`,
+  `CREATE INDEX IF NOT EXISTS login_app_contact_did ON login_app(contact_did, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS login_app_connection_did ON login_app_connection(did, last_selected_at)`,
+  `CREATE INDEX IF NOT EXISTS oauth_state_expires ON oauth_state(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS oauth_session_expires ON oauth_session(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS app_session_expires ON app_session(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS worker_lease_expires ON worker_lease(expires_at)`,
 ];
 
 /**
@@ -553,6 +915,134 @@ async function applyAdditiveMigrations(
         ddl:
           "ALTER TABLE app_user ADD COLUMN bsky_button_visible INTEGER NOT NULL DEFAULT 1",
       },
+      {
+        table: "app_user",
+        column: "website_url",
+        ddl: "ALTER TABLE app_user ADD COLUMN website_url TEXT",
+      },
+      {
+        table: "app_user",
+        column: "website_visible",
+        ddl:
+          "ALTER TABLE app_user ADD COLUMN website_visible INTEGER NOT NULL DEFAULT 0",
+      },
+      {
+        table: "account_host",
+        column: "service_endpoint",
+        ddl: "ALTER TABLE account_host ADD COLUMN service_endpoint TEXT",
+      },
+      {
+        table: "account_host",
+        column: "account_management_url",
+        ddl: "ALTER TABLE account_host ADD COLUMN account_management_url TEXT",
+      },
+      {
+        table: "account_host",
+        column: "dashboard_url",
+        ddl: "ALTER TABLE account_host ADD COLUMN dashboard_url TEXT",
+      },
+      {
+        table: "account_host",
+        column: "capability_manifest_url",
+        ddl: "ALTER TABLE account_host ADD COLUMN capability_manifest_url TEXT",
+      },
+      {
+        table: "account_host",
+        column: "capabilities_json",
+        ddl: "ALTER TABLE account_host ADD COLUMN capabilities_json TEXT",
+      },
+      {
+        table: "account_host",
+        column: "support_url",
+        ddl: "ALTER TABLE account_host ADD COLUMN support_url TEXT",
+      },
+      {
+        table: "account_host",
+        column: "profile_handle",
+        ddl: "ALTER TABLE account_host ADD COLUMN profile_handle TEXT",
+      },
+      {
+        table: "account_host",
+        column: "profile_did",
+        ddl: "ALTER TABLE account_host ADD COLUMN profile_did TEXT",
+      },
+      {
+        table: "account_host",
+        column: "bsky_profile_visible",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN bsky_profile_visible INTEGER NOT NULL DEFAULT 1",
+      },
+      {
+        table: "account_host",
+        column: "avatar_url",
+        ddl: "ALTER TABLE account_host ADD COLUMN avatar_url TEXT",
+      },
+      {
+        table: "account_host",
+        column: "service_record_uri",
+        ddl: "ALTER TABLE account_host ADD COLUMN service_record_uri TEXT",
+      },
+      {
+        table: "account_host",
+        column: "service_record_cid",
+        ddl: "ALTER TABLE account_host ADD COLUMN service_record_cid TEXT",
+      },
+      {
+        table: "account_host",
+        column: "service_observed_at",
+        ddl: "ALTER TABLE account_host ADD COLUMN service_observed_at INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "profile_checked_at",
+        ddl: "ALTER TABLE account_host ADD COLUMN profile_checked_at INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "claim_handle",
+        ddl: "ALTER TABLE account_host ADD COLUMN claim_handle TEXT",
+      },
+      {
+        table: "account_host",
+        column: "claim_did",
+        ddl: "ALTER TABLE account_host ADD COLUMN claim_did TEXT",
+      },
+      {
+        table: "login_app",
+        column: "review_status",
+        ddl:
+          "ALTER TABLE login_app ADD COLUMN review_status TEXT NOT NULL DEFAULT 'none'",
+      },
+      {
+        table: "login_app",
+        column: "review_requested_at",
+        ddl: "ALTER TABLE login_app ADD COLUMN review_requested_at INTEGER",
+      },
+      {
+        table: "login_app",
+        column: "review_notes",
+        ddl: "ALTER TABLE login_app ADD COLUMN review_notes TEXT",
+      },
+      {
+        table: "login_app",
+        column: "review_decision_at",
+        ddl: "ALTER TABLE login_app ADD COLUMN review_decision_at INTEGER",
+      },
+      {
+        table: "login_app",
+        column: "review_decision_by",
+        ddl: "ALTER TABLE login_app ADD COLUMN review_decision_by TEXT",
+      },
+      {
+        table: "login_app",
+        column: "review_decision_reason",
+        ddl: "ALTER TABLE login_app ADD COLUMN review_decision_reason TEXT",
+      },
+      {
+        table: "app_listing",
+        column: "app_status",
+        ddl: "ALTER TABLE app_listing ADD COLUMN app_status TEXT",
+      },
     ];
   for (const m of additiveColumns) {
     try {
@@ -569,9 +1059,14 @@ async function applyAdditiveMigrations(
 }
 
 export function migrate(): Promise<void> {
-  if (_migrated) return Promise.resolve();
-  if (_migrationPromise) return _migrationPromise;
-  _migrationPromise = (async () => {
+  if (dbBackend() === "neon") {
+    throw new Error(
+      "SQLite request migrations cannot run against Neon. Use `deno task db:migrate:neon` before running with ATMOSPHERE_DB_BACKEND=neon.",
+    );
+  }
+  if (dbRuntimeState.migrated) return Promise.resolve();
+  if (dbRuntimeState.migrationPromise) return dbRuntimeState.migrationPromise;
+  dbRuntimeState.migrationPromise = (async () => {
     const c = await getClient();
     for (const stmt of SCHEMA_STATEMENTS) {
       await c.execute(stmt);
@@ -580,14 +1075,40 @@ export function migrate(): Promise<void> {
     for (const stmt of POST_MIGRATION_INDEX_STATEMENTS) {
       await c.execute(stmt);
     }
-    _migrated = true;
+    dbRuntimeState.migrated = true;
   })();
-  return _migrationPromise;
+  return dbRuntimeState.migrationPromise;
 }
 
 /** Convenience: ensure schema is in place before running a callback. */
-export async function withDb<T>(fn: (c: Client) => Promise<T>): Promise<T> {
-  await migrate();
+export async function withDb<T>(fn: (c: DbClient) => Promise<T>): Promise<T> {
+  if (shouldRunRequestMigrations()) {
+    await migrate();
+  }
   const c = await getClient();
   return fn(c);
+}
+
+export async function checkDbHealth(): Promise<
+  {
+    ok: true;
+    latencyMs: number;
+    databaseKind: "file" | "remote" | "neon";
+    backend: DatabaseBackend;
+  }
+> {
+  const started = performance.now();
+  await withDb(async (c) => {
+    await c.execute("SELECT 1 AS ok");
+  });
+  return {
+    ok: true,
+    latencyMs: Math.max(0, Math.round(performance.now() - started)),
+    databaseKind: dbBackend() === "neon"
+      ? "neon"
+      : resolveDbUrl().startsWith("file:")
+      ? "file"
+      : "remote",
+    backend: dbBackend(),
+  };
 }

@@ -6,6 +6,7 @@
  */
 import { define } from "../../utils.ts";
 import { clientId, jwksUri, redirectUri } from "../../lib/env.ts";
+import { DEFAULT_OAUTH_SCOPE } from "../../lib/oauth-scopes.ts";
 
 export const handler = define.handlers({
   GET(): Response {
@@ -23,15 +24,7 @@ export const handler = define.handlers({
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       redirect_uris: [redirectUri()],
-      /**
-       * MUST stay in sync with `DEFAULT_SCOPE` in `lib/oauth.ts`.
-       *
-       * The named permission set comes first so PDS consent screens show the
-       * branded "Atmosphere Account" label. The direct `repo:*` scopes follow
-       * as a fallback grant for PDSes that cannot resolve the DNS-backed set.
-       */
-      scope:
-        "atproto com.atmosphereaccount.registry.fullPermissions repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*",
+      scope: DEFAULT_OAUTH_SCOPE,
       dpop_bound_access_tokens: true,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "ES256",

@@ -8,9 +8,11 @@
 import { define } from "../utils.ts";
 import { withDb } from "./db.ts";
 import { hmacSign, hmacVerify, randomB64u } from "./jose.ts";
-import { IS_DEV, SESSION_SECRET } from "./env.ts";
+import { IS_DEV, sessionSecret } from "./env.ts";
 import { readRememberedAccounts } from "./remembered-accounts.ts";
 import { getEffectiveAccountType } from "./account-types.ts";
+import { lookupAccountHost } from "./account-hosts.ts";
+import { loadSession } from "./oauth.ts";
 
 export interface SessionUser {
   did: string;
@@ -19,6 +21,20 @@ export interface SessionUser {
 
 const SESSION_COOKIE = "atmo_sid";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function readCookieValue(req: Request, name: string): string | null {
+  const cookieHeader = req.headers.get("cookie");
+  if (!cookieHeader) return null;
+  const target = cookieHeader.split(";").map((c) => c.trim()).find((c) =>
+    c.startsWith(`${name}=`)
+  );
+  if (!target) return null;
+  try {
+    return decodeURIComponent(target.slice(name.length + 1));
+  } catch {
+    return null;
+  }
+}
 
 export async function createSession(user: SessionUser): Promise<string> {
   const sid = randomB64u(24);
@@ -30,7 +46,7 @@ export async function createSession(user: SessionUser): Promise<string> {
       args: [sid, user.did, user.handle, Date.now(), expiresAt],
     });
   });
-  const sig = await hmacSign(SESSION_SECRET, sid);
+  const sig = await hmacSign(sessionSecret(), sid);
   return `${sid}.${sig}`;
 }
 
@@ -48,16 +64,11 @@ export async function peekSessionUser(
 }
 
 async function readSessionCookie(req: Request): Promise<SessionUser | null> {
-  const cookieHeader = req.headers.get("cookie");
-  if (!cookieHeader) return null;
-  const target = cookieHeader.split(";").map((c) => c.trim()).find((c) =>
-    c.startsWith(`${SESSION_COOKIE}=`)
-  );
-  if (!target) return null;
-  const value = decodeURIComponent(target.slice(SESSION_COOKIE.length + 1));
+  const value = readCookieValue(req, SESSION_COOKIE);
+  if (!value) return null;
   const [sid, sig] = value.split(".");
   if (!sid || !sig) return null;
-  const ok = await hmacVerify(SESSION_SECRET, sid, sig);
+  const ok = await hmacVerify(sessionSecret(), sid, sig);
   if (!ok) return null;
 
   return await withDb(async (c) => {
@@ -79,15 +90,12 @@ async function readSessionCookie(req: Request): Promise<SessionUser | null> {
 }
 
 export async function destroySession(req: Request): Promise<void> {
-  const cookieHeader = req.headers.get("cookie");
-  if (!cookieHeader) return;
-  const target = cookieHeader.split(";").map((c) => c.trim()).find((c) =>
-    c.startsWith(`${SESSION_COOKIE}=`)
-  );
-  if (!target) return;
-  const value = decodeURIComponent(target.slice(SESSION_COOKIE.length + 1));
-  const [sid] = value.split(".");
-  if (!sid) return;
+  const value = readCookieValue(req, SESSION_COOKIE);
+  if (!value) return;
+  const [sid, sig] = value.split(".");
+  if (!sid || !sig) return;
+  const ok = await hmacVerify(sessionSecret(), sid, sig);
+  if (!ok) return;
   await withDb(async (c) => {
     await c.execute({
       sql: `DELETE FROM app_session WHERE id = ?`,
@@ -119,21 +127,36 @@ export function clearSessionCookie(): string {
  * being present.
  */
 export const sessionMiddleware = define.middleware(async (ctx) => {
+  const rememberedAccountsPromise = readRememberedAccounts(ctx.req).catch(
+    (err) => {
+      if (IS_DEV) console.warn("remembered accounts read failed:", err);
+      return [];
+    },
+  );
   try {
     ctx.state.user = await readSessionCookie(ctx.req);
-    ctx.state.accountType = ctx.state.user
-      ? await getEffectiveAccountType(ctx.state.user.did).catch(() => null)
-      : null;
+    const accountTypePromise = ctx.state.user
+      ? getEffectiveAccountType(ctx.state.user.did).catch(() => null)
+      : Promise.resolve(null);
+    const accountHostPromise = ctx.state.user
+      ? loadSession(ctx.state.user.did)
+        .then((oauthSession) =>
+          oauthSession ? lookupAccountHost(oauthSession.pdsUrl) : null
+        )
+        .catch(() => null)
+      : Promise.resolve(null);
+    const [accountType, accountHost] = await Promise.all([
+      accountTypePromise,
+      accountHostPromise,
+    ]);
+    ctx.state.accountType = accountType;
+    ctx.state.accountHost = accountHost;
   } catch (err) {
     if (IS_DEV) console.warn("session read failed:", err);
     ctx.state.user = null;
     ctx.state.accountType = null;
+    ctx.state.accountHost = null;
   }
-  try {
-    ctx.state.rememberedAccounts = await readRememberedAccounts(ctx.req);
-  } catch (err) {
-    if (IS_DEV) console.warn("remembered accounts read failed:", err);
-    ctx.state.rememberedAccounts = [];
-  }
+  ctx.state.rememberedAccounts = await rememberedAccountsPromise;
   return await ctx.next();
 });

@@ -1,5 +1,6 @@
 import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
+import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import { useT } from "../i18n/mod.ts";
 
 interface IconVariant {
@@ -172,7 +173,9 @@ export default function SvgIconDownloads() {
                 </div>
                 <div class="svg-download-details">
                   <h3 class="svg-download-name">{icon.name}</h3>
-                  <p class="svg-download-handle">@{icon.handle}</p>
+                  <p class="svg-download-handle">
+                    <AtmosphereHandle handle={icon.handle} />
+                  </p>
                 </div>
                 <a
                   href={variant.iconUrl}

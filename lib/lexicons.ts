@@ -11,6 +11,9 @@ export const PROFILE_NSID = "com.atmosphereaccount.registry.profile";
 export const REVIEW_NSID = "com.atmosphereaccount.registry.review";
 export const UPDATE_NSID = "com.atmosphereaccount.registry.update";
 export const FEATURED_NSID = "com.atmosphereaccount.registry.featured";
+export const HOST_DEFS_NSID = "account.atmosphere.host.defs";
+export const HOST_PROFILE_NSID = "account.atmosphere.host.profile";
+export const HOST_SERVICE_NSID = "account.atmosphere.host.service";
 /**
  * Permission-set lexicon NSID requested via the OAuth `include:` scope.
  * The set itself only references the profile collection + image blobs;
@@ -25,6 +28,17 @@ export const REGISTRY_NSIDS = [
   UPDATE_NSID,
   FEATURED_NSID,
   PERMISSION_SET_NSID,
+] as const;
+
+export const HOST_NSIDS = [
+  HOST_DEFS_NSID,
+  HOST_PROFILE_NSID,
+  HOST_SERVICE_NSID,
+] as const;
+
+export const PUBLISHED_LEXICON_NSIDS = [
+  ...REGISTRY_NSIDS,
+  ...HOST_NSIDS,
 ] as const;
 
 export const PROFILE_TYPES = ["project", "user"] as const;
@@ -723,21 +737,27 @@ export function validateUpdate(
  * by tooling that wants to introspect them.
  */
 export async function loadLexiconJson(nsid: string): Promise<unknown | null> {
-  if (!REGISTRY_NSIDS.includes(nsid as typeof REGISTRY_NSIDS[number])) {
+  if (
+    !PUBLISHED_LEXICON_NSIDS.includes(
+      nsid as typeof PUBLISHED_LEXICON_NSIDS[number],
+    )
+  ) {
     return null;
   }
   const fileMap: Record<string, string> = {
-    [PROFILE_NSID]: "profile.json",
-    [REVIEW_NSID]: "review.json",
-    [UPDATE_NSID]: "update.json",
-    [FEATURED_NSID]: "featured.json",
-    [PERMISSION_SET_NSID]: "fullPermissions.json",
+    [PROFILE_NSID]: "lexicons/com/atmosphereaccount/registry/profile.json",
+    [REVIEW_NSID]: "lexicons/com/atmosphereaccount/registry/review.json",
+    [UPDATE_NSID]: "lexicons/com/atmosphereaccount/registry/update.json",
+    [FEATURED_NSID]: "lexicons/com/atmosphereaccount/registry/featured.json",
+    [PERMISSION_SET_NSID]:
+      "lexicons/com/atmosphereaccount/registry/fullPermissions.json",
+    [HOST_DEFS_NSID]: "lexicons/account/atmosphere/host/defs.json",
+    [HOST_PROFILE_NSID]: "lexicons/account/atmosphere/host/profile.json",
+    [HOST_SERVICE_NSID]: "lexicons/account/atmosphere/host/service.json",
   };
-  const filename = fileMap[nsid];
+  const path = fileMap[nsid];
   try {
-    const text = await Deno.readTextFile(
-      `lexicons/com/atmosphereaccount/registry/${filename}`,
-    );
+    const text = await Deno.readTextFile(path);
     return JSON.parse(text);
   } catch (_) {
     return null;

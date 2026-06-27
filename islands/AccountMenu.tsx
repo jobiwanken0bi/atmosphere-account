@@ -1,5 +1,6 @@
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
+import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import { useT } from "../i18n/mod.ts";
 
 interface RememberedAccount {
@@ -24,9 +25,14 @@ interface Props {
   /**
    * If we already know the user has a registry profile, link to the
    * public profile page from the menu so they can preview what others
-   * see. Otherwise we just show "Manage profile".
+   * see. Kept for compatibility with callers; the account-first menu routes
+   * through /account and lets that page show app/profile links.
    */
   publicProfileHandle?: string | null;
+  accountHost?: {
+    displayName: string;
+    endpoint: string;
+  } | null;
   /**
    * Accounts that have completed OAuth on this device. Drives the
    * switcher list inside the menu — accounts other than the current
@@ -39,9 +45,8 @@ interface Props {
 export default function AccountMenu(
   {
     user,
-    accountType,
     avatarUrl,
-    publicProfileHandle,
+    accountHost,
     rememberedAccounts,
   }: Props,
 ) {
@@ -62,7 +67,7 @@ export default function AccountMenu(
     /** Fully signed out, no remembered accounts — plain link. */
     return (
       <a
-        href="/explore/create"
+        href="/signin"
         class="nav-btn nav-btn-ghost account-menu-signin"
       >
         {t.signIn}
@@ -73,9 +78,8 @@ export default function AccountMenu(
   return (
     <SignedInMenu
       user={user}
-      accountType={accountType ?? null}
       avatarUrl={avatarUrl ?? null}
-      publicProfileHandle={publicProfileHandle ?? null}
+      accountHost={accountHost ?? null}
       rememberedAccounts={accounts}
     />
   );
@@ -154,7 +158,7 @@ function SignedOutMenu(
           ))}
           <div class="account-menu-divider" aria-hidden="true" />
           <a
-            href="/explore/create"
+            href="/signin"
             class="account-menu-item account-menu-item-add"
             role="menuitem"
             onClick={() => {
@@ -172,15 +176,13 @@ function SignedOutMenu(
 
 interface SignedInMenuProps {
   user: { did: string; handle: string };
-  accountType: "user" | "project" | null;
   avatarUrl: string | null;
-  publicProfileHandle: string | null;
+  accountHost: { displayName: string; endpoint: string } | null;
   rememberedAccounts: RememberedAccount[];
 }
 
 function SignedInMenu(
-  { user, accountType, avatarUrl, publicProfileHandle, rememberedAccounts }:
-    SignedInMenuProps,
+  { user, avatarUrl, accountHost, rememberedAccounts }: SignedInMenuProps,
 ) {
   const t = useT().nav.account;
   const open = useSignal(false);
@@ -235,6 +237,9 @@ function SignedInMenu(
           url={avatarUrl}
           handle={user.handle}
         />
+        <span class="account-menu-trigger-label">
+          <AtmosphereHandle handle={user.handle} />
+        </span>
         <span class="account-menu-chevron" aria-hidden="true">▾</span>
       </button>
 
@@ -245,33 +250,24 @@ function SignedInMenu(
               {t.signedInAs}
             </span>
             <span class="account-menu-header-handle">
-              @{user.handle}
+              <AtmosphereHandle handle={user.handle} />
             </span>
+            {accountHost && (
+              <span class="account-menu-header-host">
+                {t.hostedBy(accountHost.displayName)}
+              </span>
+            )}
           </div>
           <div class="account-menu-divider" aria-hidden="true" />
-          {publicProfileHandle && (
-            <a
-              href={`/explore/${encodeURIComponent(publicProfileHandle)}`}
-              class="account-menu-item"
-              role="menuitem"
-              onClick={() => {
-                open.value = false;
-              }}
-            >
-              {t.viewProfile}
-            </a>
-          )}
           <a
-            href={accountType === "project"
-              ? "/explore/manage"
-              : "/account/reviews"}
+            href="/account"
             class="account-menu-item"
             role="menuitem"
             onClick={() => {
               open.value = false;
             }}
           >
-            {t.manageProfile}
+            {t.manageAccount}
           </a>
           <form
             method="POST"
@@ -307,9 +303,8 @@ function SignedInMenu(
           ))}
           {
             /* POST so the server can clear the live session and route
-           *  the browser to /explore/create even when the user is
-           *  currently signed in (a normal /explore/create GET would
-           *  redirect them back to /explore/manage). */
+           *  the browser to /signin even when the user is currently
+           *  signed in (a normal /signin GET would redirect to /account). */
           }
           <form
             method="POST"
@@ -360,7 +355,9 @@ function SwitchRow(
             url={`/api/registry/avatar/${encodeURIComponent(account.did)}`}
             handle={account.handle}
           />
-          <span class="account-menu-switch-handle">@{account.handle}</span>
+          <span class="account-menu-switch-handle">
+            <AtmosphereHandle handle={account.handle} />
+          </span>
         </button>
       </form>
       <form

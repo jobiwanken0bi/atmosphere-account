@@ -26,23 +26,23 @@ const en = {
   nav: {
     logoAlt: "Atmosphere",
     brand: "Atmosphere",
-    explore: "Explore",
+    explore: "Apps",
+    hosts: "Hosts",
+    apps: "Apps",
     exploreComingSoon: "Coming soon",
     protocol: "Protocol",
-    effects: "Effects",
-    effectsOn:
-      "Effects on. Turn off to keep colors and clouds fixed like the first screen.",
-    effectsOff:
-      "Effects off. Sky matches the first-load colors and cloud positions.",
     account: {
       menuLabel: "Account menu",
       signedInAs: "Signed in as",
       signedOut: "Signed out",
       signIn: "Sign in",
-      signInHint: "Sign in with your Atmosphere account to publish a profile.",
-      manageProfile: "Manage profile",
+      signInHint:
+        "Sign in with your Atmosphere account to publish an app listing.",
+      hostedBy: (host: string): string => `Hosted by ${host}`,
+      manageAccount: "Manage account",
+      manageProfile: "Manage app listing",
       manageReviews: "Manage reviews",
-      viewProfile: "View profile",
+      viewProfile: "View app listing",
       signOut: "Sign out",
       avatarAlt: "Account",
       switchHeading: "Switch account",
@@ -59,7 +59,7 @@ const en = {
     eyebrow: "Atmosphere Account",
     headline: (): VNode => (
       <>
-        The last social account<br />you'll ever need.
+        The last social account <br />you'll ever need.
       </>
     ),
     subhead: "One account for all your apps. Yours to keep, wherever you go.",
@@ -92,6 +92,13 @@ const en = {
         </>
       ),
     ],
+    blueskyNote: (icon: ComponentChildren): VNode => (
+      <>
+        You might have heard of Bluesky {icon}{" "}
+        — that's the first Atmosphere app, but there are many more. Anyone can
+        build one, and new ones appear every day.
+      </>
+    ),
     footnote: (): VNode => (
       <>
         Of course, you can have <strong>multiple accounts</strong>{" "}
@@ -116,6 +123,7 @@ const en = {
       "Videos",
       "Photos",
       "Blogs",
+      "Reviews",
     ],
     moreTag: "…and many more",
   },
@@ -147,14 +155,15 @@ const en = {
   },
 
   providers: {
-    heading: "Choose your provider.",
+    heading: "Choose your account host.",
+    exploreHosts: "Explore hosts",
     intro: (): VNode => (
       <>
-        Your Atmosphere account lives with a <strong>provider</strong>{" "}
+        Your Atmosphere account lives with an <strong>account host</strong>{" "}
         — a service that stores your data in your personal data storage and
-        keeps it available across every app. That provider might be an app you
-        already use, or a host that only holds accounts. You pick who hosts your
-        account, and you can switch any time.
+        keeps it available across every app. That host might be an app you
+        already use, or a service that only holds accounts. You pick who hosts
+        your account, and you can switch any time.
       </>
     ),
     apps: {
@@ -163,26 +172,46 @@ const en = {
       body: (blueskyLink: ComponentChildren): VNode => (
         <>
           Apps such as Bluesky {blueskyLink}{" "}
-          are also account providers. When you sign up, they provide an account
-          for you and your data is hosted by them. Some apps are not account
-          providers: they are just apps, and you sign in with an account hosted
-          somewhere else.
+          are also account hosts. When you sign up, they create an account for
+          you and host your data. Some apps are only apps: you sign in with an
+          account hosted somewhere else.
         </>
       ),
       blueskyAriaLabel: "Bluesky website",
     },
     independent: {
-      name: "Independent providers",
+      name: "Independent hosts",
       body:
-        "Independent providers are account hosts — they are not apps themselves, they only hold your account and data. A growing number of them offer Atmosphere accounts: some are community-run, some focus on privacy or geographic location.",
+        "Independent account hosts are not apps themselves; they only hold your account and data. A growing number of them offer Atmosphere accounts: some are community-run, some focus on privacy or geographic location.",
     },
     selfHost: {
       name: "Self-host",
       body:
-        "Technical users can run their own provider. Full control over your data, on your own infrastructure. The Atmosphere is open — anyone can be a provider.",
+        "Technical users can host their own account. Full control over your data, on your own infrastructure. The Atmosphere is open — anyone can host an account.",
     },
     footnote:
-      "No matter which provider you choose, your account works everywhere and you can move to a different provider at any time — no data lost.",
+      "No matter which account host you choose, your account works everywhere and you can move to a different host at any time — no data lost.",
+    handleExplainer: {
+      eyebrow: "Your handle travels with you",
+      title: "Your host can show up right in your handle.",
+      body:
+        "By default, your handle ends with your account host, like @you.bsky.social or @you.sprk.so. If you have your own domain, you can use that instead, like @you.com.",
+      demoButton: "Continue with Atmosphere",
+      demoAriaLabel:
+        "Animated examples of handles on different account hosts and a custom domain",
+      examples: [
+        { label: "Bluesky handle", prefix: "you.", suffix: "bsky.social" },
+        { label: "Blacksky handle", prefix: "you.", suffix: "blacksky.app" },
+        {
+          label: "Selfhosted handle",
+          prefix: "you.",
+          suffix: "selfhosted.social",
+        },
+        { label: "Eurosky handle", prefix: "you.", suffix: "eurosky.social" },
+        { label: "Sprk handle", prefix: "you.", suffix: "sprk.so" },
+        { label: "Custom domain", prefix: "you.", suffix: "com" },
+      ],
+    },
   },
 
   crossPollination: {
@@ -196,6 +225,7 @@ const en = {
       "Music",
       "Videos",
       "Events",
+      "Reviews",
       "Anything new",
     ],
     destinations: [
@@ -204,6 +234,7 @@ const en = {
       "Profiles",
       "Players",
       "Calendars",
+      "Readers",
       "Apps not yet built",
     ],
     hubLabel: "Your Atmosphere Account",
@@ -230,25 +261,20 @@ const en = {
       portability: {
         title: "Portability",
         body:
-          "Move between apps and providers while keeping your connections, posts, and followers — no more starting over. Creators can leave an app without losing their audience; your followers are yours, not rented from a platform.",
+          "Move between apps and hosts while keeping your connections, posts, and followers — no more starting over. Creators can leave an app without losing their audience; your followers are yours, not rented from a platform.",
       },
     },
     footnote:
       "Account ownership, moderation, and algorithmic choice — the system is locked open by design.",
   },
 
-  homeCta: {
-    headline: "See what's been built.",
-    body: "Browse apps and services in the Atmosphere.",
-    button: "Explore Apps",
-  },
-
   footer: {
     logoAlt: "Atmosphere",
-    tagline: "Building a better internet, owned by the people.",
+    tagline: "Building a better internet for everyone.",
     links: {
       atProtocol: "AT Protocol",
-      exploreApps: "Explore Apps",
+      exploreHosts: "Hosts",
+      exploreApps: "Apps",
       exploreAppsTitle: "Coming soon",
       developerResources: "Developer resources",
     },
@@ -289,9 +315,9 @@ const en = {
     downloadLogo: "Download logo (SVG)",
     badgeFootnote:
       "Add this badge to your sign-in page to help users understand the Atmosphere.",
-    lottieHeading: "Homepage hero animation",
+    lottieHeading: "Atmosphere Lottie animation",
     lottieIntro:
-      "The Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
+      "The original Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
     downloadLottie: "Download Lottie (JSON)",
     downloadIcons: "Download icons (ZIP)",
     icons: {
@@ -424,6 +450,8 @@ const en = {
 
   lottie: {
     logoAlt: "Atmosphere logo",
+    networkAlt: "Atmosphere logo surrounded by app icons",
+    exploreApps: "Explore apps",
   },
 
   localeSwitcher: {
@@ -435,12 +463,12 @@ const en = {
 
   /**
    * Category labels are intentionally singular — they tag *one* project
-   * ("App", "Account provider", etc.). The Explore tabs use the same
+   * ("App", "Account host", etc.). The Explore tabs use the same
    * labels for consistency; "All" stays as the catch-all entry.
    */
   categories: {
     app: "App",
-    accountProvider: "Account Provider",
+    accountProvider: "Account Host",
     moderator: "Moderation",
     infrastructure: "Infrastructure",
     developerTool: "Developer Tool",
@@ -493,17 +521,20 @@ const en = {
   },
 
   explore: {
-    metaTitle: "Explore — Atmosphere Account",
-    metaDescription:
-      "Discover apps, account providers, moderators, and infrastructure built for the Atmosphere.",
-    heroEyebrow: "Explore",
-    heroHeadline: "The Atmosphere, all in one place.",
+    metaTitle: "Apps — Atmosphere Account",
+    metaDescription: "Discover apps built for the Atmosphere.",
+    heroEyebrow: "Apps",
+    heroHeadline: "Atmosphere apps, all in one place.",
     heroSubhead:
-      "Apps and services in the Atmosphere — built by the community, listed by the people who make them.",
-    searchPlaceholder: "Search apps, providers, moderators…",
+      "Apps in the Atmosphere — built by the community, listed by the people who make them.",
+    searchPlaceholder: "Search apps…",
     searchSubmit: "Search",
-    submitYourProject: "Submit your project",
-    manageYourProfile: "Manage your profile",
+    appFilterLabel: "Collection",
+    appFilterAll: "All apps",
+    appFilterSubmit: "Apply",
+    clearFilter: "Clear filter",
+    submitYourProject: "Register an app",
+    manageYourProfile: "Manage app listing",
     featured: "Featured",
     browseBy: "Browse by",
     nothingHere: "Nothing here yet.",
@@ -511,14 +542,14 @@ const en = {
     viewProfile: "View project page",
     by: "by",
     poweredByYou:
-      "Powered by you — every entry is created and signed by the project's own Atmosphere account.",
+      "Powered by you — every entry is created and signed by the app's own Atmosphere account.",
     detail: {
       openOn: "Open on",
       lastUpdated: "Last updated",
-      hostedOn: "Account Provider",
-      editProfile: "Edit this project page",
+      hostedOn: "Account Host",
+      editProfile: "Edit app listing",
       missingProfile: "We couldn't find a project page for that handle.",
-      backToExplore: "Back to Explore",
+      backToExplore: "Back to Apps",
       categoryLabel: "Category",
       whatsNew: {
         heading: "What's New",
@@ -534,15 +565,15 @@ const en = {
         copyLink: "Copy link",
         copied: "Link copied",
         copyFailed: "Couldn't copy. Long-press the URL bar to copy it.",
-        shareTitle: (name: string) => `${name} on Atmosphere Explore`,
+        shareTitle: (name: string) => `${name} on Atmosphere Apps`,
         bannerAlt: (name: string) => `${name} project banner`,
       },
     },
     create: {
-      eyebrow: "Add to Explore",
-      headline: "Sign in with your Atmosphere account",
+      eyebrow: "Add to Apps",
+      headline: "Register an app",
       body:
-        "Use this page to sign in, write reviews, or submit a project. If you're submitting a project, sign in with that project's Atmosphere account so the right account can publish and update it.",
+        "Sign in with the app's Atmosphere account. New app listings publish as shared ATStore records so reviews, favorites, and discovery can work across compatible directories.",
       signInLabel: "Sign in with your Atmosphere handle",
       handlePlaceholder: "yourhandle.com",
       signIn: "Sign in",
@@ -552,22 +583,24 @@ const en = {
       previewNotFound: "No account found for that handle.",
     },
     manage: {
-      headline: "Your registry profile",
+      headline: "Your app listing",
       subhead:
-        "Your entry shows up across Explore. The form is pre-filled from your Bluesky profile if you have one — change anything you like.",
+        "Your listing appears in Apps and is published as a shared ATStore app record. The form is pre-filled from your Bluesky profile if you have one — change anything you like.",
       pulledFromBsky: "Pulled in from your Bluesky profile.",
-      publishButton: "Publish profile",
-      updateButton: "Update profile",
+      publishButton: "Publish app listing",
+      updateButton: "Update app listing",
       savingButton: "Publishing…",
-      savedToast: "Saved. It'll appear in the registry shortly.",
-      deleteButton: "Remove from Explore",
+      savedToast: "Saved. It'll appear in Apps shortly.",
+      savedAtstoreToast:
+        "Published as a shared ATStore app record. It'll appear in Apps shortly.",
+      deleteButton: "Remove from Apps",
       deletingButton: "Removing…",
-      deletedToast: "Removed from the Explore registry.",
-      statusLiveTitle: "Live in Explore",
-      statusLiveSub: "Your profile is on the registry and visible to everyone.",
-      statusInactiveTitle: "Not on the registry",
+      deletedToast: "Removed from Apps.",
+      statusLiveTitle: "Live in Apps",
+      statusLiveSub: "Your app listing is visible to everyone.",
+      statusInactiveTitle: "Not listed yet",
       statusInactiveSub:
-        "Publish to add this profile to Explore. Nothing is shared until you do.",
+        "Publish to add this app listing to Apps. Nothing is shared until you do.",
       signOut: "Sign out",
       signedInAs: "Signed in as",
       viewPublicProfile: "View project page",
@@ -577,19 +610,23 @@ const en = {
   forms: {
     profile: {
       handleLabel: "Signed in as",
-      nameLabel: "Project name",
+      nameLabel: "App name",
       namePlaceholder: "e.g. Bluesky",
       descriptionLabel: "Short description",
       descriptionPlaceholder: "What does it do? Who's it for?",
       categoryLabel: "Category",
       categoryHint:
-        "Choose App, Account Provider, or both. Selected categories are shown as primary badges.",
+        "Choose App, Account Host, or both. Selected categories are shown as primary badges.",
       subcategoriesLabel: "Subcategories (optional)",
       subcategoriesHint: "For apps. Pick up to a few.",
-      avatarLabel: "Project icon",
+      avatarLabel: "App icon",
       avatarHint: "PNG, JPEG, or WebP. 1MB max. Square works best.",
+      avatarAtstoreHint:
+        "Required for app listings. PNG, JPEG, or WebP. 1MB max. Square works best.",
       avatarReplace: "Replace icon",
       avatarRemove: "Remove icon",
+      avatarRequiredForAtstore:
+        "Add an app icon before publishing. Shared ATStore app listings require one.",
       bannerLabel: "Add banner image",
       bannerHint:
         "Shown at the top of your project page and used as the share preview when your link is posted (Bluesky, Twitter, etc.). Recommended 1200×630, PNG/JPEG/WebP, 3MB max.",
@@ -599,7 +636,7 @@ const en = {
       bannerTooLarge: "Banner must be 3MB or smaller.",
       requiredHint: "Required",
       avatarTooLarge: "Avatar must be 1MB or smaller.",
-      confirmDelete: "Remove your project from Explore?",
+      confirmDelete: "Remove this app listing from Apps?",
       categoryRequired: "Pick at least one category.",
       atmosphereLinks: {
         sectionLabel: "Atmosphere links",
@@ -631,7 +668,7 @@ const en = {
       bskyPicker: {
         title: "Bluesky clients",
         body:
-          "Pick the client(s) that open when visitors click the Bluesky button on your profile. Your handle works on all of them — you can show more than one.",
+          "Pick the client(s) that open when visitors click the Bluesky button on your app listing. Your handle works on all of them — you can show more than one.",
         empty: "Pick at least one client to keep the Bluesky toggle enabled.",
         done: "Done",
         cancel: "Cancel",
@@ -663,7 +700,7 @@ const en = {
         added: (n: number) =>
           `${n} screenshot${
             n === 1 ? "" : "s"
-          } ready. Click Update profile to save.`,
+          } ready. Click Update app listing to save.`,
         partialAdded: (added: number, skipped: number) =>
           `${added} screenshot${added === 1 ? "" : "s"} ready. ${skipped} file${
             skipped === 1 ? " was" : "s were"
@@ -677,6 +714,7 @@ const en = {
         addButton: "Add custom link",
         labelPlaceholder: "Label",
         urlPlaceholder: "https://…",
+        urlInvalid: "Custom link URLs must be valid http(s) URLs.",
         removeAriaLabel: "Remove link",
       },
       icon: {
@@ -705,7 +743,7 @@ const en = {
           requestButton: "Request Verification",
           /** Disabled-button text shown before the user has published their profile. */
           requestDisabledHint:
-            "Publish your profile first, then come back here to request verification.",
+            "Publish your app listing first, then come back here to request verification.",
           /** Gate state while a request is sitting in the admin queue. */
           pendingTitle: "Verification request pending",
           pendingBody: (email: string): string =>
@@ -975,25 +1013,24 @@ const en = {
   },
 
   accountReviews: {
-    eyebrow: "User account",
-    headline: "Your Profile",
-    subhead: (handle: string): string =>
-      `Signed in as @${handle}. Your user profile comes from Bluesky; reviews are managed here.`,
-    reviewsHeading: "Your reviews",
-    empty: "You haven't reviewed any projects yet.",
-    explore: "Explore projects",
+    eyebrow: "Reviews",
+    headline: "Your reviews",
+    subhead: (handle: string): string => `Reviews written from @${handle}.`,
+    reviewsHeading: "Review history",
+    empty: "You haven't reviewed any apps yet.",
+    explore: "Browse apps",
     viewProfile: "View public profile",
     nameLabel: "Display name",
     namePlaceholder: "Your name",
     bioLabel: "Bio",
     bioPlaceholder: "A short note about you",
-    clientLabel: "Bluesky button",
-    displayBskyButton: "Display Bluesky button",
-    configureBskyClient: "Choose Bluesky client",
-    saveClient: "Save",
-    saving: "Saving…",
+    clientLabel: "Microblog profile",
+    displayBskyButton: "Display microblog profile",
+    configureBskyClient: "Choose microblog viewer",
+    saveClient: "Save profile",
+    saving: "Saving...",
     saved: "Profile saved.",
-    saveError: "Couldn't save your profile.",
+    saveError: "Could not save your profile.",
     cancel: "Cancel",
     done: "Done",
     viewProject: "View project",
@@ -1002,7 +1039,7 @@ const en = {
     deleted: "Review deleted.",
     error: "Couldn't update the review",
     upgrade: {
-      button: "Submit your project",
+      button: "Register an app",
       modalTitle: "Is this account a project?",
       modalBody:
         "Choosing yes converts this account into a project profile and unlocks the project dashboard. If this isn't your project's account,",
@@ -1016,7 +1053,7 @@ const en = {
   },
 
   userProfile: {
-    backToExplore: "Back to Explore",
+    backToExplore: "Back to Apps",
     notFoundTitle: "User not found",
     notFoundBody: "That user profile is not available.",
     openIn: (clientName: string): string => `Open in ${clientName}`,

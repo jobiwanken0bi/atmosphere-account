@@ -18,12 +18,14 @@ import { loadSession } from "../../../lib/oauth.ts";
 import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
 import { getBskyProfile } from "../../../lib/pds.ts";
 
-const NOT_FOUND = new Response("not found", { status: 404 });
+function notFound(): Response {
+  return new Response("not found", { status: 404 });
+}
 
 export const handler = define.handlers({
   async GET(ctx) {
     const user = ctx.state.user;
-    if (!user) return NOT_FOUND;
+    if (!user) return notFound();
 
     /** Prefer the registry avatar. This route stays per-session for cache
      *  busting, but the image bytes come from Bluesky's CDN. */
@@ -41,12 +43,12 @@ export const handler = define.handlers({
     /** No registry profile yet — fall back to the user's Bluesky avatar so
      *  the menu still shows something familiar after their first sign-in. */
     const session = await loadSession(user.did).catch(() => null);
-    if (!session) return NOT_FOUND;
+    if (!session) return notFound();
     const bsky = await getBskyProfile(session.pdsUrl, user.did).catch(() =>
       null
     );
     const cid = bsky?.avatar?.ref.$link;
-    if (!bsky || !cid) return NOT_FOUND;
+    if (!bsky || !cid) return notFound();
     return new Response(null, {
       status: 302,
       headers: {

@@ -16,11 +16,12 @@
  * Cookie name:   `atmo_accounts`
  */
 import { hmacSign, hmacVerify } from "./jose.ts";
-import { IS_DEV, SESSION_SECRET } from "./env.ts";
+import { IS_DEV, sessionSecret } from "./env.ts";
 
 export interface RememberedAccount {
   did: string;
   handle: string;
+  pdsUrl?: string | null;
 }
 
 const COOKIE_NAME = "atmo_accounts";
@@ -102,7 +103,7 @@ async function parseSignedValue(value: string): Promise<RememberedAccount[]> {
   const sig = value.slice(dot + 1);
   if (!payload || !sig) return [];
 
-  const ok = await hmacVerify(SESSION_SECRET, payload, sig).catch(() => false);
+  const ok = await hmacVerify(sessionSecret(), payload, sig).catch(() => false);
   if (!ok) return [];
 
   let parsed: unknown;
@@ -119,11 +120,16 @@ async function parseSignedValue(value: string): Promise<RememberedAccount[]> {
     if (!item || typeof item !== "object") continue;
     const did = (item as Record<string, unknown>).did;
     const handle = (item as Record<string, unknown>).handle;
+    const pdsUrl = (item as Record<string, unknown>).pdsUrl;
     if (typeof did !== "string" || typeof handle !== "string") continue;
     if (!did.startsWith("did:")) continue;
     if (seen.has(did)) continue;
     seen.add(did);
-    out.push({ did, handle });
+    out.push({
+      did,
+      handle,
+      pdsUrl: typeof pdsUrl === "string" && pdsUrl ? pdsUrl : null,
+    });
     if (out.length >= MAX_ACCOUNTS) break;
   }
   return out;
@@ -131,10 +137,14 @@ async function parseSignedValue(value: string): Promise<RememberedAccount[]> {
 
 async function buildCookie(accounts: RememberedAccount[]): Promise<string> {
   const json = JSON.stringify(
-    accounts.map((a) => ({ did: a.did, handle: a.handle })),
+    accounts.map((a) => ({
+      did: a.did,
+      handle: a.handle,
+      ...(a.pdsUrl ? { pdsUrl: a.pdsUrl } : {}),
+    })),
   );
   const payload = b64uEncodeBytes(new TextEncoder().encode(json));
-  const sig = await hmacSign(SESSION_SECRET, payload);
+  const sig = await hmacSign(sessionSecret(), payload);
   const value = `${payload}.${sig}`;
   const flags = [
     "Path=/",

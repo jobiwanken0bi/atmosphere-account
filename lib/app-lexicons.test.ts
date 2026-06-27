@@ -1,0 +1,193 @@
+import { aliasesForDraft } from "./app-directory.ts";
+import {
+  ATSTORE_LISTING_NSID,
+  parseAtstoreFavorite,
+  parseAtstoreListing,
+  parseAtstoreReview,
+  parseCommunityAppRecord,
+} from "./app-lexicons.ts";
+
+function assert(
+  condition: unknown,
+  message = "Assertion failed",
+): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+function assertEquals(actual: unknown, expected: unknown): void {
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(expected);
+  if (a !== e) {
+    throw new Error(`Expected ${e}, got ${a}`);
+  }
+}
+
+Deno.test("parseAtstoreListing normalizes authoritative listing detail records", () => {
+  const draft = parseAtstoreListing({
+    uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/3lx`,
+    cid: "bafyrecord",
+    repoDid: "did:plc:store",
+    rkey: "3lx",
+    value: {
+      name: "Leaflet",
+      tagline: "Publish lightly",
+      description: "A shared writing app.",
+      externalUrl: "https://leaflet.pub/",
+      categorySlug: "apps/publishing",
+      appTags: ["writing", "publishing"],
+      productAccountDid: "did:plc:leaflet",
+      icon: {
+        ref: { $link: "bafyicon" },
+        mimeType: "image/png",
+      },
+      screenshots: [{
+        ref: { $link: "bafyscreenshot" },
+        mimeType: "image/webp",
+      }],
+      links: [{ uri: "https://leaflet.pub", label: "Website" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-02-01T00:00:00.000Z",
+    },
+  });
+
+  assert(draft, "expected a listing draft");
+  assertEquals(draft.sourceType, "atstore_listing");
+  assertEquals(draft.name, "Leaflet");
+  assertEquals(draft.primaryUrl, "https://leaflet.pub/");
+  assertEquals(draft.categorySlugs, ["apps/publishing"]);
+  assertEquals(draft.tags, ["writing", "publishing"]);
+  assertEquals(draft.productDid, "did:plc:leaflet");
+  assert(
+    draft.iconUrl?.includes(
+      "/api/atproto/blob?did=did%3Aplc%3Astore&cid=bafyicon",
+    ),
+    "expected proxied blob URL",
+  );
+  assertEquals(draft.screenshotUrls.length, 1);
+});
+
+Deno.test("parseAtstoreReview and favorite keep listing URI subjects", () => {
+  const subject = `at://did:plc:store/${ATSTORE_LISTING_NSID}/3lx`;
+  const review = parseAtstoreReview({
+    uri: "at://did:plc:user/fyi.atstore.listing.review/3ly",
+    cid: "bafyreview",
+    repoDid: "did:plc:user",
+    rkey: "3ly",
+    value: {
+      subject,
+      rating: 5,
+      text: "Great.",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    },
+  });
+  const favorite = parseAtstoreFavorite({
+    uri: "at://did:plc:user/fyi.atstore.listing.favorite/3lz",
+    cid: "bafyfavorite",
+    repoDid: "did:plc:user",
+    rkey: "3lz",
+    value: { subject, createdAt: "2026-01-03T00:00:00.000Z" },
+  });
+
+  assert(review, "expected a review draft");
+  assert(favorite, "expected a favorite draft");
+  assertEquals(review.subject, subject);
+  assertEquals(review.rating, 5);
+  assertEquals(favorite.subject, subject);
+});
+
+Deno.test("parseAtstoreReview and favorite reject non-listing subjects", () => {
+  const subject = "at://did:plc:store/app.bsky.feed.post/3lx";
+  const review = parseAtstoreReview({
+    uri: "at://did:plc:user/fyi.atstore.listing.review/3ly",
+    cid: "bafyreview",
+    repoDid: "did:plc:user",
+    rkey: "3ly",
+    value: {
+      subject,
+      rating: 5,
+      text: "Great.",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    },
+  });
+  const favorite = parseAtstoreFavorite({
+    uri: "at://did:plc:user/fyi.atstore.listing.favorite/3lz",
+    cid: "bafyfavorite",
+    repoDid: "did:plc:user",
+    rkey: "3lz",
+    value: { subject, createdAt: "2026-01-03T00:00:00.000Z" },
+  });
+
+  assertEquals(review, null);
+  assertEquals(favorite, null);
+});
+
+Deno.test("parseCommunityAppRecord prepares future community app records", () => {
+  const draft = parseCommunityAppRecord({
+    uri: "at://did:plc:app/community.lexicon.app.profile/self",
+    cid: "bafycommunity",
+    repoDid: "did:plc:app",
+    rkey: "self",
+    collection: "community.lexicon.app.profile",
+    value: {
+      name: "Reader",
+      description: "Read long-form AT Protocol posts.",
+      status: "community.lexicon.app.defs#preview",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      links: [{ uri: "https://reader.example", label: "Website" }],
+      images: [{
+        uri: "https://reader.example/icon.png",
+        purpose: "community.lexicon.app.defs#purposeIcon",
+      }, {
+        uri: "https://reader.example/broken.png",
+        image: { ref: { $link: "bafybroken" }, mimeType: "image/png" },
+        purpose: "community.lexicon.app.defs#purposeScreenshot",
+      }],
+      lexicons: {
+        produces: ["com.example.reader.bookmark"],
+        consumes: ["app.bsky.feed.post"],
+      },
+      accountIndicators: [{ collection: "com.example.reader.bookmark" }],
+      tags: ["reading"],
+      platforms: [
+        "community.lexicon.app.defs#platformWeb",
+        "community.lexicon.app.defs#platformIOS",
+      ],
+    },
+  });
+
+  assert(draft, "expected a community draft");
+  assertEquals(draft.sourceType, "community_profile");
+  assertEquals(draft.profileDid, "did:plc:app");
+  assertEquals(draft.primaryUrl, "https://reader.example");
+  assertEquals(draft.iconUrl, "https://reader.example/icon.png");
+  assertEquals(draft.screenshotUrls, []);
+  assertEquals(draft.status, "preview");
+  assertEquals(draft.platforms, ["web", "ios"]);
+  assertEquals(draft.lexiconsConsumes, ["app.bsky.feed.post"]);
+});
+
+Deno.test("aliasesForDraft dedupes by DID, canonical URL, source URI, and ATStore URI", () => {
+  const draft = parseAtstoreListing({
+    uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/3lx`,
+    cid: "bafyrecord",
+    repoDid: "did:plc:store",
+    rkey: "3lx",
+    value: {
+      name: "Leaflet",
+      tagline: "Publish lightly",
+      externalUrl: "https://www.leaflet.pub/",
+      categorySlug: "apps/publishing",
+      productAccountDid: "did:plc:leaflet",
+      icon: { ref: { $link: "bafyicon" }, mimeType: "image/png" },
+    },
+  });
+
+  assert(draft, "expected a listing draft");
+  const aliases = aliasesForDraft(draft);
+  assert(aliases.includes(`uri:${draft.sourceUri}`));
+  assert(aliases.includes("did:plc:leaflet"));
+  assert(aliases.includes(`atstore:${draft.sourceUri}`));
+  assert(aliases.includes("url:https://www.leaflet.pub"));
+  assert(!aliases.includes("slug:leaflet"));
+  assertEquals(new Set(aliases).size, aliases.length);
+});

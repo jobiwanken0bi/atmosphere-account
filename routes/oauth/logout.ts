@@ -10,10 +10,17 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   return new Response(null, {
     status: 303,
     headers: {
-      location: "/explore",
+      location: "/apps",
       "set-cookie": clearSessionCookie(),
     },
   });
 }
 
-export const handler = define.handlers({ GET: handle, POST: handle });
+export const handler = define.handlers({
+  POST: handle,
+  GET: () =>
+    new Response("method not allowed", {
+      status: 405,
+      headers: { allow: "POST" },
+    }),
+});

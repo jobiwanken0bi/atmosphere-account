@@ -7,70 +7,35 @@
  *
  * Returns a JSON summary: { processed, skipped, errors }.
  */
-import { Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
 import { define } from "../../../utils.ts";
 import { requireAdminApi } from "../../../lib/admin.ts";
-import { withDb } from "../../../lib/db.ts";
-import { fetchBlobPublic } from "../../../lib/pds.ts";
-import { storeOgJpeg } from "../../../lib/registry.ts";
-
-const OG_W = 1200;
-const OG_H = 630;
-const JPEG_QUALITY = 85;
+import { IS_HOSTED_RUNTIME } from "../../../lib/env.ts";
+import { backfillOgJpegs } from "../../../lib/og-jpeg-backfill.ts";
 
 export const handler = define.handlers({
   POST: async (ctx) => {
     const gate = requireAdminApi(ctx);
     if (!gate.ok) return gate.response;
-
-    const rows = await withDb((c) =>
-      c.execute(
-        `SELECT did, pds_url, banner_cid, banner_mime
-         FROM profile
-         WHERE banner_cid IS NOT NULL AND og_jpeg IS NULL
-         LIMIT 200`,
-      )
-    );
-
-    let processed = 0;
-    let skipped = 0;
-    const errors: string[] = [];
-
-    for (
-      const row of rows.rows as unknown as Array<{
-        did: string;
-        pds_url: string;
-        banner_cid: string;
-        banner_mime: string | null;
-      }>
-    ) {
-      try {
-        const upstream = await fetchBlobPublic(
-          row.pds_url,
-          row.did,
-          row.banner_cid,
-        );
-        if (!upstream.ok) {
-          skipped++;
-          errors.push(`${row.did}: upstream ${upstream.status}`);
-          continue;
-        }
-        const buf = new Uint8Array(await upstream.arrayBuffer());
-        const img = await Image.decode(buf);
-        const jpegLoose = new Uint8Array(
-          await img.cover(OG_W, OG_H).encodeJPEG(JPEG_QUALITY),
-        );
-        const jpeg = jpegLoose.slice();
-        await storeOgJpeg(row.did, jpeg);
-        processed++;
-      } catch (err) {
-        skipped++;
-        errors.push(`${row.did}: ${err instanceof Error ? err.message : err}`);
-      }
+    if (IS_HOSTED_RUNTIME && !allowInProcessAdminBackfills()) {
+      return new Response(
+        JSON.stringify({
+          processed: 0,
+          skipped: 0,
+          errors: [
+            "OG JPEG backfill is disabled on hosted web. Run it from a worker/CLI process.",
+          ],
+        }),
+        {
+          status: 409,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        },
+      );
     }
 
+    const result = await backfillOgJpegs(200);
+
     return new Response(
-      JSON.stringify({ processed, skipped, errors }),
+      JSON.stringify(result),
       {
         status: 200,
         headers: { "content-type": "application/json; charset=utf-8" },
@@ -78,3 +43,11 @@ export const handler = define.handlers({
     );
   },
 });
+
+function allowInProcessAdminBackfills(): boolean {
+  try {
+    return Deno.env.get("ALLOW_IN_PROCESS_ADMIN_BACKFILLS") === "true";
+  } catch {
+    return false;
+  }
+}

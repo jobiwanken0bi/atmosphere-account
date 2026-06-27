@@ -124,7 +124,7 @@ export default function AdminReviewReportRow(p: Props) {
       <div class="admin-report-meta">
         <span>
           <strong>
-            <a href={`/explore/${p.targetHandle}`}>@{p.targetHandle}</a>
+            <a href={`/apps/${p.targetHandle}`}>@{p.targetHandle}</a>
           </strong>
         </span>
         <span>

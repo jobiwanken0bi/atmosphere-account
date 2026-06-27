@@ -13,17 +13,27 @@
  */
 import type { State } from "../utils.ts";
 import type { AccountType } from "./account-types.ts";
+import type { HostVerificationStatus } from "./account-hosts.ts";
 
 interface AccountMenuProps {
   user: { did: string; handle: string } | null;
   accountType: AccountType | null;
   avatarUrl: string | null;
   publicProfileHandle: string | null;
+  accountHost: {
+    host: string;
+    displayName: string;
+    endpoint: string;
+    verificationStatus: HostVerificationStatus;
+  } | null;
   rememberedAccounts: { did: string; handle: string }[];
 }
 
 export function buildAccountMenuProps(
-  state: Pick<State, "user" | "accountType" | "rememberedAccounts">,
+  state: Pick<
+    State,
+    "user" | "accountType" | "accountHost" | "rememberedAccounts"
+  >,
   publicProfileHandle: string | null = null,
 ): AccountMenuProps {
   const user = state.user;
@@ -32,6 +42,7 @@ export function buildAccountMenuProps(
     accountType: state.accountType ?? null,
     avatarUrl: user ? `/api/me/avatar?v=${encodeURIComponent(user.did)}` : null,
     publicProfileHandle,
+    accountHost: state.accountHost ?? null,
     rememberedAccounts: state.rememberedAccounts ?? [],
   };
 }

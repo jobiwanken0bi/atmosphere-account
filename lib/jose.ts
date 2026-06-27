@@ -168,6 +168,41 @@ export async function signEs256({
   return `${signingInput}.${b64uEncode(sigBuf)}`;
 }
 
+export async function verifyEs256(
+  jwt: string,
+  publicJwk: JsonWebKey,
+): Promise<
+  { header: Record<string, unknown>; payload: Record<string, unknown> } | null
+> {
+  const parts = jwt.split(".");
+  if (parts.length !== 3) return null;
+  const [encodedHeader, encodedPayload, encodedSignature] = parts;
+  let header: Record<string, unknown>;
+  let payload: Record<string, unknown>;
+  try {
+    header = JSON.parse(
+      new TextDecoder().decode(b64uDecode(encodedHeader)),
+    ) as Record<string, unknown>;
+    payload = JSON.parse(
+      new TextDecoder().decode(b64uDecode(encodedPayload)),
+    ) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (header.alg !== "ES256") return null;
+  const publicKey = await importEs256PublicKey(publicJwk);
+  const signature = b64uDecode(encodedSignature);
+  const signatureBuf = new ArrayBuffer(signature.byteLength);
+  new Uint8Array(signatureBuf).set(signature);
+  const ok = await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    publicKey,
+    signatureBuf,
+    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`),
+  );
+  return ok ? { header, payload } : null;
+}
+
 /** Public JWK (no private key components) usable in DPoP `jwk` header. */
 export function publicJwkOnly(jwk: JsonWebKey): JsonWebKey {
   const { kty, crv, x, y, e, n } = jwk;

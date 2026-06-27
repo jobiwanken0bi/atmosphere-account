@@ -6,7 +6,7 @@ interface Props {
   /**
    * When true, the modal opens itself on mount. Used by the dashboard
    * to auto-show the upgrade prompt when the user lands here from a
-   * "Submit your project" CTA while already signed in as a user.
+   * "Register an app" CTA while already signed in as a user.
    */
   initiallyOpen?: boolean;
   copy: {
@@ -59,7 +59,7 @@ export default function UpgradeToProjectModal(
         redirect: "manual",
       });
       /**
-       * The API responds 303 → /explore/manage on success. `redirect:
+       * The API responds 303 → /apps/manage on success. `redirect:
        * "manual"` surfaces that as `res.type === "opaqueredirect"`
        * (status 0); treat any 2xx/3xx outcome as success and navigate
        * the browser to the project dashboard ourselves.
@@ -68,7 +68,7 @@ export default function UpgradeToProjectModal(
         res.type === "opaqueredirect" ||
         (res.status >= 200 && res.status < 400)
       ) {
-        globalThis.location.href = "/explore/manage";
+        globalThis.location.href = "/apps/manage";
         return;
       }
       const text = await res.text().catch(() => "");

@@ -19,15 +19,20 @@ import {
   getProfileByDid,
   requestIconAccess,
 } from "../../../../lib/registry.ts";
+import { rejectLargeRequest } from "../../../../lib/security.ts";
 
 interface RequestPayload {
   email?: unknown;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_ICON_ACCESS_REQUEST_BYTES = 4_096;
 
 export const handler = define.handlers({
   async POST(ctx) {
+    const large = rejectLargeRequest(ctx.req, MAX_ICON_ACCESS_REQUEST_BYTES);
+    if (large) return large;
+
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
 

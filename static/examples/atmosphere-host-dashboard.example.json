@@ -1,0 +1,45 @@
+{
+  "version": "atmosphere.hostDashboard.v0.1",
+  "host": "host.example",
+  "displayName": "Example Host",
+  "dashboardUrl": "https://pds.host.example/account",
+  "supportUrl": "https://host.example/support",
+  "capabilities": {
+    "accountOverview": {
+      "state": "supported",
+      "href": "https://pds.host.example/account"
+    },
+    "connectedApps": {
+      "state": "supported",
+      "href": "https://pds.host.example/account"
+    },
+    "password": {
+      "state": "host_owned",
+      "href": "https://pds.host.example/account"
+    },
+    "accountDeletion": {
+      "state": "host_owned",
+      "href": "https://pds.host.example/account"
+    },
+    "rotationKeys": {
+      "state": "host_owned",
+      "href": "https://pds.host.example/account"
+    },
+    "repoExport": {
+      "state": "planned"
+    },
+    "blobExport": {
+      "state": "planned"
+    },
+    "backupStatus": {
+      "state": "planned"
+    },
+    "migration": {
+      "state": "planned"
+    },
+    "support": {
+      "state": "supported",
+      "href": "https://host.example/support"
+    }
+  }
+}

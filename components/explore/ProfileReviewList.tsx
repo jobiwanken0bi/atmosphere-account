@@ -1,4 +1,5 @@
 import type { ComponentChildren } from "preact";
+import AtmosphereHandle from "../AtmosphereHandle.tsx";
 import type { ReviewRow } from "../../lib/reviews.ts";
 import ReportReviewButton from "../../islands/ReportReviewButton.tsx";
 import ReviewResponseComposer from "../../islands/ReviewResponseComposer.tsx";
@@ -94,7 +95,7 @@ export default function ProfileReviewList(
                       </p>
                       {review.reviewerHandle && (
                         <p class="profile-review-handle">
-                          @{review.reviewerHandle}
+                          <AtmosphereHandle handle={review.reviewerHandle} />
                         </p>
                       )}
                       <p class="profile-review-date">

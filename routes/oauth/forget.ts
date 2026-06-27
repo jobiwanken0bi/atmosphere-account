@@ -16,6 +16,9 @@ import {
   readRememberedAccountsFromHeader,
   removeRememberedAccountCookie,
 } from "../../lib/remembered-accounts.ts";
+import { rejectLargeRequest } from "../../lib/security.ts";
+
+const MAX_FORGET_BODY_BYTES = 8_192;
 
 async function readDid(req: Request): Promise<string | null> {
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
@@ -32,6 +35,8 @@ async function readDid(req: Request): Promise<string | null> {
 }
 
 async function handle(ctx: { req: Request }): Promise<Response> {
+  const large = rejectLargeRequest(ctx.req, MAX_FORGET_BODY_BYTES);
+  if (large) return large;
   const did = await readDid(ctx.req);
   if (!did) return new Response("missing did", { status: 400 });
 
@@ -44,7 +49,7 @@ async function handle(ctx: { req: Request }): Promise<Response> {
    *  user's intent is "remove this from my list" either way. */
   await deleteSession(did).catch(() => {});
 
-  const headers = new Headers({ location: "/explore" });
+  const headers = new Headers({ location: "/account" });
   headers.append(
     "set-cookie",
     await removeRememberedAccountCookie(remembered, did),

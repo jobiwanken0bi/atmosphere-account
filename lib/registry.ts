@@ -3,7 +3,7 @@
  * (read APIs and SSR pages) and the indexer worker (writes).
  */
 import type { InValue } from "@libsql/client";
-import { withDb } from "./db.ts";
+import { dbBackend, withDb } from "./db.ts";
 import type {
   FeaturedBadge,
   LinkEntry,
@@ -1068,20 +1068,37 @@ export async function searchProfiles(
 
   if (opts.query && opts.query.trim()) {
     const q = opts.query.trim().replace(/["']/g, "");
-    where.push(
-      `p.rowid IN (SELECT rowid FROM profile_fts WHERE profile_fts MATCH ?)`,
-    );
-    args.push(`${q}*`);
+    if (dbBackend() === "neon") {
+      where.push(`p.search_vector @@ plainto_tsquery('simple', ?)`);
+      args.push(q);
+    } else {
+      where.push(
+        `p.rowid IN (SELECT rowid FROM profile_fts WHERE profile_fts MATCH ?)`,
+      );
+      args.push(`${q}*`);
+    }
   }
   if (opts.category) {
     where.push(
-      `EXISTS (SELECT 1 FROM json_each(p.categories) WHERE value = ?)`,
+      dbBackend() === "neon"
+        ? `EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(p.categories::jsonb) AS category(value)
+          WHERE category.value = ?
+        )`
+        : `EXISTS (SELECT 1 FROM json_each(p.categories) WHERE value = ?)`,
     );
     args.push(opts.category);
   }
   if (opts.subcategory) {
     where.push(
-      `EXISTS (SELECT 1 FROM json_each(p.subcategories) WHERE value = ?)`,
+      dbBackend() === "neon"
+        ? `EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(p.subcategories::jsonb) AS subcategory(value)
+          WHERE subcategory.value = ?
+        )`
+        : `EXISTS (SELECT 1 FROM json_each(p.subcategories) WHERE value = ?)`,
     );
     args.push(opts.subcategory);
   }
