@@ -1,7 +1,7 @@
 /**
  * Update settings for the signed-in user's profile.
- * User accounts can edit their local/public display fields and microblog
- * profile viewer preferences from Account Home.
+ * User accounts can edit their local/public display fields and choose whether
+ * their microblog profile appears on their public Atmosphere profile.
  */
 import { define } from "../../../utils.ts";
 import {

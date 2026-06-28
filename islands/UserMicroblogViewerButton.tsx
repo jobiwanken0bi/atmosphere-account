@@ -68,6 +68,7 @@ export default function UserMicroblogViewerButton(
       selected.value = nextClientId;
       visible.value = nextVisible;
       message.value = "Saved";
+      open.value = false;
     } catch (err) {
       message.value = err instanceof Error ? err.message : "Network error";
     } finally {

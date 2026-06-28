@@ -5,7 +5,7 @@ import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import WebsiteIcon from "../../components/icons/WebsiteIcon.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getAppUserByHandle } from "../../lib/account-types.ts";
+import { getAppUser, getAppUserByHandle } from "../../lib/account-types.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import { getProfileMicroblogViewer } from "../../lib/bsky-clients.ts";
 import { getProfileByHandle } from "../../lib/registry.ts";
@@ -15,18 +15,23 @@ export const handler = define.handlers({
   async GET(ctx) {
     const handle = decodeURIComponent(ctx.params.handle ?? "").trim()
       .toLowerCase();
-    const [profile, appUser] = handle
+    const [profile, profileOwner, viewer] = handle
       ? await Promise.all([
         getProfileByHandle(handle, { profileType: "user" }).catch(() => null),
         getAppUserByHandle(handle).catch(() => null),
+        ctx.state.user
+          ? getAppUser(ctx.state.user.did).catch(() => null)
+          : Promise.resolve(null),
       ])
-      : [null, null];
+      : [null, null, null];
     return ctx.render(
       <UserProfilePage
         account={buildAccountMenuProps(ctx.state)}
         profile={profile}
-        bskyClientId={appUser?.bskyClientId ?? null}
-        bskyButtonVisible={appUser?.bskyButtonVisible ?? true}
+        microblogViewerClientId={viewer?.accountType === "user"
+          ? viewer.bskyClientId
+          : null}
+        microblogButtonVisible={profileOwner?.bskyButtonVisible ?? true}
         t={getMessages(ctx.state.locale)}
       />,
       { status: profile ? 200 : 404 },
@@ -37,14 +42,14 @@ export const handler = define.handlers({
 interface UserProfilePageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   profile: Awaited<ReturnType<typeof getProfileByHandle>>;
-  bskyClientId: string | null;
-  bskyButtonVisible: boolean;
+  microblogViewerClientId: string | null;
+  microblogButtonVisible: boolean;
   // deno-lint-ignore no-explicit-any
   t: any;
 }
 
 function UserProfilePage(
-  { account, profile, bskyClientId, bskyButtonVisible, t }:
+  { account, profile, microblogViewerClientId, microblogButtonVisible, t }:
     UserProfilePageProps,
 ) {
   const copy = t.userProfile;
@@ -71,7 +76,7 @@ function UserProfilePage(
   const avatarUrl = profile.avatarCid && profile.avatarMime
     ? bskyCdnAvatarUrl(profile.did, profile.avatarCid)
     : null;
-  const client = getProfileMicroblogViewer(bskyClientId);
+  const client = getProfileMicroblogViewer(microblogViewerClientId);
   const websiteUrl = safePublicProfileWebsiteUrl(profile.mainLink);
   return (
     <div id="page-top">
@@ -91,7 +96,7 @@ function UserProfilePage(
                     ? <img src={avatarUrl} alt="" decoding="async" />
                     : <span>{displayName.slice(0, 1).toUpperCase()}</span>}
                 </div>
-                {bskyButtonVisible && (
+                {microblogButtonVisible && (
                   <a
                     class="profile-action profile-action--compact user-public-client-link"
                     href={client.profileUrl(profile.handle)}
