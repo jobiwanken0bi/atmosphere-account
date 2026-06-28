@@ -145,7 +145,7 @@ Deno.test("buildHostDashboardState uses honest fallback capability states", () =
   assertEquals(dashboard.version, HOST_DASHBOARD_SPEC_VERSION);
   assertEquals(
     dashboard.accountManagementUrl,
-    "https://pds.example.host/account",
+    "https://example.host/account",
   );
   assertEquals(dashboard.supportedCount, 0);
   assertEquals(

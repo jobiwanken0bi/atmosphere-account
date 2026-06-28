@@ -1,8 +1,4 @@
-import {
-  type AccountHost,
-  type AccountHostLookup,
-  accountManagementUrlForEndpoint,
-} from "./account-hosts.ts";
+import { type AccountHost, type AccountHostLookup } from "./account-hosts.ts";
 import { readResponseTextWithLimit } from "./security.ts";
 
 export const HOST_DASHBOARD_SPEC_VERSION = "atmosphere.hostDashboard.v0.1";
@@ -182,9 +178,6 @@ export function buildHostDashboardState(input: {
   const displayName = input.host?.displayName ?? input.lookup?.displayName ??
     hostName;
   const accountManagementUrl = input.host?.accountManagementUrl ??
-    accountManagementUrlForEndpoint(
-      input.host?.serviceEndpoint ?? input.lookup?.endpoint,
-    ) ??
     input.host?.dashboardUrl ??
     null;
   const dashboardUrl = accountManagementUrl;

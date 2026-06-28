@@ -8,7 +8,6 @@ import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import {
   type AccountHost,
   type AccountHostClaim,
-  accountManagementUrlForEndpoint,
   getAccountHost,
   getAccountHostClaim,
   type HostSignupStatus,
@@ -248,7 +247,7 @@ export const handler = define.handlers({
         "$.accountManagementUrl",
         fieldIssues,
       )
-      : accountManagementUrlForEndpoint(serviceEndpoint);
+      : null;
     const manifestUrl = values.manifestUrl
       ? normalizeManifestField(values.manifestUrl, fieldIssues)
       : null;
@@ -384,15 +383,13 @@ async function publishManagedHostProfile(
 
   try {
     const serviceEndpoint = host.serviceEndpoint || session.pdsUrl;
-    const accountManagementUrl = host.accountManagementUrl ||
-      accountManagementUrlForEndpoint(serviceEndpoint);
     const records = await publishHostRecords(user, session.pdsUrl, {
       host: host.host,
       displayName: values.displayName,
       description: values.description,
       homepageUrl: values.homepageUrl,
       serviceEndpoint,
-      accountManagementUrl,
+      accountManagementUrl: host.accountManagementUrl,
       supportUrl: host.supportUrl,
       signupStatus: values.signupStatus,
       avatar,
@@ -433,8 +430,7 @@ async function publishManagedHostService(
       description: host.description,
       homepageUrl: host.homepageUrl,
       serviceEndpoint: endpoint,
-      accountManagementUrl: accountManagementUrl ||
-        accountManagementUrlForEndpoint(endpoint),
+      accountManagementUrl,
       supportUrl,
       signupStatus: values.signupStatus,
       createdAt: isoFromMs(host.createdAt),
@@ -791,8 +787,7 @@ function ManageBody(
               required
             />
             <span class="profile-form-hint">
-              The canonical PDS origin for this host. Atmosphere derives
-              /account from this by default.
+              The canonical PDS origin for this host.
             </span>
           </label>
           <label class="profile-form-field">
@@ -805,8 +800,8 @@ function ManageBody(
               placeholder="https://pds.example/account"
             />
             <span class="profile-form-hint">
-              Optional override if the host account page is not at /account on
-              the PDS endpoint.
+              Optional. Add this when the host has a working account page for
+              passwords, sessions, connected apps, and recovery.
             </span>
           </label>
           <label class="profile-form-field">
@@ -963,7 +958,6 @@ function redirectToSignin(host: string, url: URL): Response {
 
 function valuesFromHost(host: AccountHost): ManageFormValues {
   const derivedAccountUrl = host.accountManagementUrl ??
-    accountManagementUrlForEndpoint(host.serviceEndpoint) ??
     host.dashboardUrl ??
     "";
   return {
@@ -1005,8 +999,9 @@ function valuesFromForm(
       : fallback.bskyProfileVisible,
     serviceEndpoint: textValue(form.get("service_endpoint")) ||
       fallback.serviceEndpoint,
-    accountManagementUrl: textValue(form.get("account_management_url")) ||
-      fallback.accountManagementUrl,
+    accountManagementUrl: form.has("account_management_url")
+      ? textValue(form.get("account_management_url"))
+      : fallback.accountManagementUrl,
     manifestUrl: textValue(form.get("manifest_url")) || fallback.manifestUrl,
     supportUrl: textValue(form.get("support_url")) || fallback.supportUrl,
   };

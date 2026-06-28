@@ -140,7 +140,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "Host account routing",
                 body:
-                  "PDS hosts publish a service record. Atmosphere derives `/account` on the PDS and sends users there for devices, grants, passwords, recovery, and migration.",
+                  "PDS hosts publish a service record. Atmosphere sends users to the account page the host declares for devices, grants, passwords, recovery, and migration.",
               },
               {
                 title: "Developer ecosystem",
@@ -199,7 +199,7 @@ export const docsPages: DocsPage[] = [
               [
                 "A PDS host",
                 "Host service record",
-                "Atmosphere can route people to the PDS `/account` page without duplicating host controls.",
+                "Atmosphere can route people to the host-published account page without duplicating host controls.",
               ],
               [
                 "A directory or compatibility badge",
@@ -1692,7 +1692,7 @@ return Response.redirect(oauthUrl);`,
       "Publish a host service record so Atmosphere can route users to the PDS-owned account page for apps, devices, security, backups, restore, and migration.",
     summary: [
       "Hosts declare their PDS service endpoint in `account.atmosphere.host.service`.",
-      "Atmosphere derives the account page as `/account` on that endpoint unless the host declares an override.",
+      "Hosts can declare a working `accountManagementUrl`; `/account` on the PDS remains the recommended convention when supported.",
       "The PDS account page owns devices, OAuth grants, passwords, recovery, backups, and migration.",
       "Optional manifests are compatibility metadata, not the primary account surface.",
     ],
@@ -1764,7 +1764,7 @@ return Response.redirect(oauthUrl);`,
           {
             type: "paragraph",
             body:
-              "Hosts publish `account.atmosphere.host.service` from the ATProto account that represents the host. The `serviceEndpoint` is the canonical PDS origin; clients derive the account page as `/account` on that origin unless `accountManagementUrl` is set.",
+              "Hosts publish `account.atmosphere.host.service` from the ATProto account that represents the host. The `serviceEndpoint` is the canonical PDS origin; `accountManagementUrl` should be set when the host has a working account page. `/account` on the PDS is the recommended convention when supported.",
           },
           {
             type: "code",
@@ -1802,7 +1802,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Directory policy",
             body:
-              "Claiming proves the host account can manage the listing. The host service endpoint is enough for routing users to the PDS `/account` page; richer compatibility badges still require validated metadata.",
+              "Claiming proves the host account can manage the listing. A host should publish a working account-management URL before Atmosphere shows a direct host-management button; richer compatibility badges still require validated metadata.",
           },
           {
             type: "endpoint",

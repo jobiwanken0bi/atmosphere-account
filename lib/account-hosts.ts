@@ -192,6 +192,7 @@ const SEEDED_HOSTS: SeedHost[] = [
       "A large general-purpose account host for people using Bluesky and other Atmosphere apps.",
     homepageUrl: "https://bsky.app",
     serviceEndpoint: "https://bsky.social",
+    accountManagementUrl: "https://bsky.app/settings",
     profileHandle: "bsky.app",
     claimHandle: "bsky.app",
     signupStatus: "open",
@@ -539,18 +540,6 @@ function normalizePublicServiceEndpoint(
   }
 }
 
-export function accountManagementUrlForEndpoint(
-  value: string | null | undefined,
-): string | null {
-  const endpoint = normalizeEndpoint(value);
-  if (!endpoint) return null;
-  if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
-    return null;
-  }
-  if (endpoint.username || endpoint.password) return null;
-  return new URL("/account", endpoint.origin).toString();
-}
-
 function normalizeClaimProfileHandle(
   value: string | null | undefined,
 ): string | null {
@@ -719,7 +708,11 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
           description = excluded.description,
           homepage_url = excluded.homepage_url,
           service_endpoint = COALESCE(account_host.service_endpoint, excluded.service_endpoint),
-          account_management_url = COALESCE(account_host.account_management_url, excluded.account_management_url),
+          account_management_url = CASE
+            WHEN excluded.account_management_url IS NOT NULL
+            THEN excluded.account_management_url
+            ELSE account_host.account_management_url
+          END,
           dashboard_url = COALESCE(account_host.dashboard_url, excluded.dashboard_url),
           capability_manifest_url = COALESCE(account_host.capability_manifest_url, excluded.capability_manifest_url),
           capabilities_json = COALESCE(account_host.capabilities_json, excluded.capabilities_json),
@@ -1001,7 +994,7 @@ export async function registerAccountHost(
   }
   const accountManagementUrl = input.accountManagementUrl?.trim()
     ? normalizePublicHttpsUrl(input.accountManagementUrl)
-    : accountManagementUrlForEndpoint(serviceEndpoint);
+    : null;
   if (input.accountManagementUrl?.trim() && !accountManagementUrl) {
     return {
       ok: false,
@@ -1093,7 +1086,11 @@ export async function registerAccountHost(
           description = excluded.description,
           homepage_url = COALESCE(excluded.homepage_url, account_host.homepage_url),
           service_endpoint = COALESCE(excluded.service_endpoint, account_host.service_endpoint),
-          account_management_url = COALESCE(excluded.account_management_url, account_host.account_management_url),
+          account_management_url = CASE
+            WHEN excluded.account_management_url IS NOT NULL
+            THEN excluded.account_management_url
+            ELSE account_host.account_management_url
+          END,
           profile_handle = excluded.profile_handle,
           profile_did = COALESCE(excluded.profile_did, account_host.profile_did),
           bsky_profile_visible = excluded.bsky_profile_visible,
@@ -1295,8 +1292,7 @@ export async function updateAccountHostDashboardSettings(
         WHERE host = ?`,
       args: [
         input.serviceEndpoint ?? null,
-        input.accountManagementUrl ??
-          accountManagementUrlForEndpoint(input.serviceEndpoint),
+        input.accountManagementUrl ?? null,
         input.dashboardUrl ?? null,
         input.capabilityManifestUrl ?? null,
         input.capabilitiesJson ?? null,
@@ -1372,19 +1368,21 @@ export async function observeAccountHost(
     if (seed) {
       const serviceEndpoint = normalizePublicServiceEndpoint(pdsUrl) ??
         seed.serviceEndpoint ?? null;
-      const accountManagementUrl = accountManagementUrlForEndpoint(
-        serviceEndpoint,
-      );
+      const accountManagementUrl = seed.accountManagementUrl ?? null;
       await c.execute({
         sql: `UPDATE account_host
             SET service_endpoint = COALESCE(service_endpoint, ?),
-                account_management_url = COALESCE(account_management_url, ?),
+                account_management_url = CASE
+                  WHEN ? IS NOT NULL THEN ?
+                  ELSE account_management_url
+                END,
                 service_observed_at = COALESCE(service_observed_at, ?),
                 last_observed_at = ?,
                 updated_at = ?
             WHERE host = ?`,
         args: [
           serviceEndpoint,
+          accountManagementUrl,
           accountManagementUrl,
           serviceEndpoint ? ts : null,
           ts,
@@ -1396,9 +1394,6 @@ export async function observeAccountHost(
     }
     const origin = normalizeEndpoint(pdsUrl)?.origin ?? `https://${host}`;
     const serviceEndpoint = normalizePublicServiceEndpoint(origin);
-    const accountManagementUrl = accountManagementUrlForEndpoint(
-      serviceEndpoint,
-    );
     await c.execute({
       sql: `INSERT INTO account_host (
           host, display_name, description, homepage_url,
@@ -1419,7 +1414,7 @@ export async function observeAccountHost(
         "An account host observed from the Atmosphere network.",
         origin,
         serviceEndpoint,
-        accountManagementUrl,
+        null,
         host,
         JSON.stringify([host]),
         serviceEndpoint ? ts : null,

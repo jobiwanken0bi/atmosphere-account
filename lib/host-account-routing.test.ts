@@ -48,12 +48,12 @@ function host(overrides: Partial<AccountHost> = {}): AccountHost {
   };
 }
 
-Deno.test("buildHostAccountRoute derives account page from service endpoint", () => {
+Deno.test("buildHostAccountRoute does not derive account page from service endpoint", () => {
   const route = buildHostAccountRoute({ host: host() });
 
   assert(route);
-  assertEquals(route.accountManagementUrl, "https://pds.example.host/account");
-  assertEquals(route.source, "service_endpoint");
+  assertEquals(route.accountManagementUrl, null);
+  assertEquals(route.source, "unknown");
   assertEquals(route.directoryUrl, "/hosts/example.host");
 });
 
@@ -100,5 +100,6 @@ Deno.test("buildHostAccountRoute can use OAuth-observed lookup before a full hos
 
   assert(route);
   assertEquals(route.displayName, "Observed Host");
-  assertEquals(route.accountManagementUrl, "https://pds.observed.host/account");
+  assertEquals(route.accountManagementUrl, null);
+  assertEquals(route.source, "unknown");
 });

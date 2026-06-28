@@ -136,7 +136,6 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
                 if (!serviceEndpoint.value) {
                   const origin = originFromUrl(value);
                   serviceEndpoint.value = origin;
-                  accountManagementUrl.value = accountUrlFromEndpoint(origin);
                 }
               }}
               placeholder="https://pckt.cafe"
@@ -152,16 +151,12 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
               onInput={(event) => {
                 const value = (event.currentTarget as HTMLInputElement).value;
                 serviceEndpoint.value = value;
-                if (!accountManagementUrl.value) {
-                  accountManagementUrl.value = accountUrlFromEndpoint(value);
-                }
               }}
               placeholder="https://pds.example"
               required
             />
             <span class="profile-form-hint">
-              The PDS origin that owns account controls for this host. The
-              default account page is /account on this origin.
+              The PDS origin that owns account controls for this host.
             </span>
           </label>
           <label class="profile-form-field">
@@ -177,8 +172,8 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
               placeholder="https://pds.example/account"
             />
             <span class="profile-form-hint">
-              Optional override if account controls live somewhere other than
-              /account on the PDS endpoint.
+              Optional. Add this when the host has a working account page for
+              passwords, sessions, connected apps, and recovery.
             </span>
           </label>
           <label class="profile-form-field">
@@ -278,15 +273,6 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
       </div>
     </form>
   );
-}
-
-function accountUrlFromEndpoint(value: string): string {
-  try {
-    const url = new URL(value);
-    return new URL("/account", url.origin).toString();
-  } catch {
-    return "";
-  }
 }
 
 function originFromUrl(value: string): string {

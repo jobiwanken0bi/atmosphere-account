@@ -1,7 +1,4 @@
-import {
-  accountManagementUrlForEndpoint,
-  type HostSignupStatus,
-} from "./account-hosts.ts";
+import { type HostSignupStatus } from "./account-hosts.ts";
 import {
   type BlobRef,
   HOST_PROFILE_NSID,
@@ -74,8 +71,7 @@ export function buildHostServiceRecord(
   input: HostRecordInput,
 ): Record<string, unknown> {
   const host = hostServiceRkey(input.host);
-  const accountManagementUrl = input.accountManagementUrl ||
-    accountManagementUrlForEndpoint(input.serviceEndpoint);
+  const accountManagementUrl = input.accountManagementUrl ?? null;
   return omitEmpty({
     host,
     displayName: input.displayName.trim(),

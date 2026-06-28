@@ -1,7 +1,4 @@
-import {
-  accountManagementUrlForEndpoint,
-  type HostSignupStatus,
-} from "./account-hosts.ts";
+import { type HostSignupStatus } from "./account-hosts.ts";
 import { type DbClient, withDb } from "./db.ts";
 import {
   HOST_IMAGE_PURPOSE_AVATAR,
@@ -292,7 +289,7 @@ export function parseHostServiceRecord(
   ]) ?? signupUrl;
   const accountManagementUrl = normalizePublicHttpsUrl(
     record.accountManagementUrl,
-  ) ?? accountManagementUrlForEndpoint(serviceEndpoint);
+  );
   const capabilities = readCapabilities(record.capabilities);
   const matchPatterns = readStrings(record.hostPatterns, 32)
     .map((pattern) => pattern.toLowerCase())

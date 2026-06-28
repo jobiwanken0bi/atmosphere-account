@@ -8,7 +8,6 @@ import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHostRegistrationResult,
-  accountManagementUrlForEndpoint,
   type HostSignupStatus,
   registerAccountHost,
 } from "../../lib/account-hosts.ts";
@@ -208,11 +207,6 @@ async function buildRegisterPrefill(
   if (!values.serviceEndpoint && values.homepageUrl) {
     values.serviceEndpoint = originFromUrl(values.homepageUrl);
   }
-  if (!values.accountManagementUrl && values.serviceEndpoint) {
-    values.accountManagementUrl = accountManagementUrlForEndpoint(
-      values.serviceEndpoint,
-    ) ?? "";
-  }
   if (!values.avatarUrl && bsky?.avatar?.ref?.$link) {
     values.avatarUrl = bskyCdnAvatarUrl(user.did, bsky.avatar.ref.$link);
   }
@@ -320,15 +314,13 @@ async function publishHostProfileFromForm(
 
   try {
     const serviceEndpoint = values.serviceEndpoint || session.pdsUrl;
-    const accountManagementUrl = values.accountManagementUrl ||
-      accountManagementUrlForEndpoint(serviceEndpoint);
     const records = await publishHostRecords(user, session.pdsUrl, {
       host: values.host,
       displayName: values.displayName,
       description: values.description,
       homepageUrl: values.homepageUrl,
       serviceEndpoint,
-      accountManagementUrl,
+      accountManagementUrl: values.accountManagementUrl || null,
       supportUrl: values.supportUrl,
       signupStatus: values.signupStatus,
       avatar,

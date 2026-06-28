@@ -18,7 +18,7 @@ Atmosphere Account is becoming a developer platform with three layers:
 
 ### Cycle 2: Host Routing And Conformance
 
-- Make `/account` a thin router to the host's PDS-owned `/account` page.
+- Make `/account` a thin router to the host-published PDS account page.
 - Keep Atmosphere-specific sections limited to picker connections, remembered
   browser accounts, developer apps, app listings, and reviews.
 - Publish a mock host implementation.

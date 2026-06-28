@@ -1,8 +1,8 @@
 # Atmosphere Host Account Routing v0.1
 
 Atmosphere Account should be a thin router for account management. The primary
-account-management surface is the PDS-owned `/account` page on the host's PDS
-service endpoint, not an Atmosphere-owned dashboard.
+account-management surface is the PDS-owned account page the host publishes, not
+an Atmosphere-owned dashboard.
 
 PDS hosts remain responsible for passwords, app grants, sessions, devices,
 rotation keys, repo/blob exports, backups, restores, and migrations. Atmosphere
@@ -10,15 +10,16 @@ provides host discovery, friendly naming, account selection history, docs,
 conformance tests, and a route from the user's Atmosphere account page to
 host-owned controls.
 
-For a PDS service endpoint like `https://pds.example`, Atmosphere should derive
-the account page as:
+For a PDS service endpoint like `https://pds.example`, `/account` is the
+recommended convention when the host supports the reference account-management
+surface:
 
 ```txt
 https://pds.example/account
 ```
 
-A host may publish an explicit account-management URL in
-`account.atmosphere.host.service` when it differs from that default.
+A host should publish an explicit account-management URL in
+`account.atmosphere.host.service` once the destination is known to work.
 
 ## Host Service Record
 
@@ -38,9 +39,9 @@ The routing source of truth is the host service record:
 }
 ```
 
-If `accountManagementUrl` is omitted, Atmosphere derives it as `/account` on
-`serviceEndpoint`. The host homepage remains a marketing or support link; it is
-not used as an account-management fallback.
+If `accountManagementUrl` is omitted, Atmosphere does not show a direct
+host-management button. The host homepage remains a marketing or support link;
+it is not used as an account-management fallback.
 
 ## Optional Compatibility Manifest
 
@@ -151,4 +152,5 @@ The next build cycles should add:
 - a mock PDS host,
 - a CLI conformance runner,
 - host directory badges only after tests pass,
-- account-route checks that confirm `serviceEndpoint + /account` is reachable.
+- account-route checks that confirm the published account-management URL is
+  reachable.

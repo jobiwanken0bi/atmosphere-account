@@ -39,6 +39,7 @@ Deno.test("buildHostServiceRecord creates account.atmosphere.host.service shape"
     description: "A cozy host.",
     homepageUrl: "https://pckt.cafe",
     serviceEndpoint: "https://pds.pckt.cafe",
+    accountManagementUrl: "https://pds.pckt.cafe/account",
     supportUrl: "https://pckt.cafe/support",
     signupStatus: "open",
     createdAt: "2026-06-26T00:00:00.000Z",
@@ -68,6 +69,23 @@ Deno.test("buildHostServiceRecord creates account.atmosphere.host.service shape"
       capability.id === HOST_CAPABILITY_DASHBOARD &&
       capability.status === HOST_CAPABILITY_EXTERNAL &&
       capability.url === "https://pds.pckt.cafe/account"
+    ),
+  );
+});
+
+Deno.test("buildHostServiceRecord omits guessed account page when not provided", () => {
+  const record = buildHostServiceRecord({
+    host: "Pckt.Cafe",
+    displayName: "Pckt",
+    serviceEndpoint: "https://pds.pckt.cafe",
+    signupStatus: "open",
+    createdAt: "2026-06-26T00:00:00.000Z",
+  });
+
+  assertEquals(record.accountManagementUrl, undefined);
+  assert(
+    !(record.capabilities as Array<Record<string, string>>).some(
+      (capability) => capability.url === "https://pds.pckt.cafe/account",
     ),
   );
 });
