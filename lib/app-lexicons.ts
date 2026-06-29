@@ -1,6 +1,7 @@
 import type { ProfileRecord } from "./lexicons.ts";
 
 export const ATSTORE_LISTING_NSID = "fyi.atstore.listing.detail";
+export const ATSTORE_PROFILE_NSID = "fyi.atstore.profile";
 export const ATSTORE_REVIEW_NSID = "fyi.atstore.listing.review";
 export const ATSTORE_FAVORITE_NSID = "fyi.atstore.listing.favorite";
 export const COMMUNITY_APP_PROFILE_NSID = "community.lexicon.app.profile";
@@ -527,9 +528,9 @@ export function atmosphereProfileToDraft(input: {
       ...(input.record.androidLink ? ["android"] : []),
     ],
     categorySlugs: input.record.categories ?? [],
-    lexiconsProduces: [],
-    lexiconsConsumes: [],
-    accountIndicators: [],
+    lexiconsProduces: input.record.lexicons?.produces ?? [],
+    lexiconsConsumes: input.record.lexicons?.consumes ?? [],
+    accountIndicators: input.record.accountIndicators ?? [],
     productDid: input.did,
     profileDid: input.did,
     legacyProfileDid: input.did,

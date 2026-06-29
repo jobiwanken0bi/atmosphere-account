@@ -43,6 +43,8 @@ export async function upsertProfileFromRecord(input: {
     categories: r.categories ?? [],
     subcategories: r.subcategories ?? [],
     links: r.links ?? [],
+    lexicons: r.lexicons ?? null,
+    accountIndicators: r.accountIndicators ?? [],
     screenshots: r.screenshots ?? [],
     avatarCid: r.avatar?.ref.$link ?? null,
     avatarMime: r.avatar?.mimeType ?? null,

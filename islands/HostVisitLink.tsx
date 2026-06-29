@@ -2,9 +2,12 @@ import WebsiteIcon from "../components/icons/WebsiteIcon.tsx";
 
 interface HostVisitLinkProps {
   href: string;
+  label?: string;
 }
 
-export default function HostVisitLink({ href }: HostVisitLinkProps) {
+export default function HostVisitLink(
+  { href, label = "Visit host" }: HostVisitLinkProps,
+) {
   return (
     <a
       class="profile-hero-action"
@@ -25,7 +28,7 @@ export default function HostVisitLink({ href }: HostVisitLinkProps) {
       <span class="profile-hero-action-icon">
         <WebsiteIcon class="profile-hero-action-icon-svg" />
       </span>
-      <span>Visit host</span>
+      <span>{label}</span>
       <span class="profile-hero-action-arrow" aria-hidden="true">
         ↗
       </span>

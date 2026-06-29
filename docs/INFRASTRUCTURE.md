@@ -108,13 +108,13 @@ deno task db:smoke
 deno task db:smoke -- --backend=neon
 ```
 
-These tasks require `NEON_DIRECT_DATABASE_URL` or `NEON_DATABASE_URL`. Keep
-runtime reads/writes on Turso until the adapter conversion and parity checks
-below are complete.
+These tasks require `NEON_DIRECT_DATABASE_URL` or `NEON_DATABASE_URL`.
 
 Runtime backend selection is controlled with `ATMOSPHERE_DB_BACKEND=turso|neon`.
-The default is `turso`. Neon runtime mode is opt-in only while the compatibility
-suite is being hardened.
+When unset, the runtime uses Neon if `NEON_DATABASE_URL` or
+`NEON_DIRECT_DATABASE_URL` is present; otherwise it falls back to Turso/libSQL.
+Set `ATMOSPHERE_DB_BACKEND=turso` explicitly when you need to inspect the legacy
+Turso database.
 
 The Neon migration scripts load `.env` automatically and preserve already
 exported shell variables. This lets an operator keep Turso credentials in `.env`

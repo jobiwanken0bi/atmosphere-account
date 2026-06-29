@@ -79,6 +79,8 @@ export default function ProfileReviewList(
                             alt=""
                             loading="lazy"
                             decoding="async"
+                            width={40}
+                            height={40}
                           />
                         )
                         : (

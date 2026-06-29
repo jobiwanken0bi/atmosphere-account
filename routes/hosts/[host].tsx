@@ -11,19 +11,11 @@ import {
   type AccountHostClaim,
   getAccountHost,
   getAccountHostClaim,
-  type HostSignupStatus,
   type HostVerificationStatus,
 } from "../../lib/account-hosts.ts";
-import {
-  type HostSourceRecord,
-  listHostProtocolRecords,
-} from "../../lib/host-record-indexing.ts";
-import {
-  buildHostDashboardState,
-  type HostDashboardCapability,
-  hostDashboardCapabilityStatusLabel,
-} from "../../lib/host-dashboard.ts";
+import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
 import { buildHostAccountRoute } from "../../lib/host-account-routing.ts";
+import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -32,13 +24,11 @@ export const handler = define.handlers({
     const claim = host
       ? await getAccountHostClaim(host.host).catch(() => null)
       : null;
-    const sourceRecords = host
-      ? await listHostProtocolRecords(host.host).catch(() => [])
-      : [];
     if (host) {
+      const friendly = hostFriendlyProfile(host);
       ctx.state.pageMeta = {
         title: `${host.displayName} on Atmosphere Hosts`,
-        description: host.description,
+        description: friendly.summary,
         ogType: "website",
         canonicalUrl: new URL(
           `/hosts/${encodeURIComponent(host.host)}`,
@@ -54,7 +44,6 @@ export const handler = define.handlers({
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}
         account={buildAccountMenuProps(ctx.state)}
-        sourceRecords={sourceRecords}
       />,
       { status: host ? 200 : 404 },
     );
@@ -62,13 +51,12 @@ export const handler = define.handlers({
 });
 
 function HostDetailPage(
-  { host, claim, claimed, managed, account, sourceRecords }: {
+  { host, claim, claimed, managed, account }: {
     host: AccountHost | null;
     claim: AccountHostClaim | null;
     claimed: boolean;
     managed: boolean;
     account: ReturnType<typeof buildAccountMenuProps>;
-    sourceRecords: HostSourceRecord[];
   },
 ) {
   if (!host) {
@@ -97,6 +85,7 @@ function HostDetailPage(
   const accountRoute = buildHostAccountRoute({ host });
   const dashboard = buildHostDashboardState({ host });
   const accountUrl = accountRoute?.accountManagementUrl ?? null;
+  const friendly = hostFriendlyProfile(host);
   const isManagedByCurrentAccount = Boolean(
     claim && account.user && claim.claimantDid === account.user.did,
   );
@@ -120,11 +109,6 @@ function HostDetailPage(
               <div class="profile-hero-body">
                 <div class="profile-hero-name-row">
                   <h1 class="profile-hero-name">{host.displayName}</h1>
-                  <span
-                    class={`host-status host-status-${host.verificationStatus}`}
-                  >
-                    {verificationLabel(host.verificationStatus)}
-                  </span>
                 </div>
                 <p class="profile-hero-handle">
                   {host.profileHandle
@@ -137,13 +121,24 @@ function HostDetailPage(
                       Account host
                     </span>
                     <span class="profile-card-category">
-                      {signupLabel(host.signupStatus)}
+                      {friendly.location}
+                    </span>
+                    <span class="profile-card-category">
+                      {friendly.signupLabel}
                     </span>
                   </div>
                 </div>
-                <p class="profile-hero-description">{host.description}</p>
+                <p class="profile-hero-description">{friendly.summary}</p>
               </div>
               <div class="profile-hero-actions" aria-label="Host actions">
+                {host.homepageUrl && (
+                  <HostVisitLink
+                    href={host.homepageUrl}
+                    label={host.signupStatus === "open"
+                      ? "Create account"
+                      : "Visit host"}
+                  />
+                )}
                 {accountUrl && (
                   <a
                     href={accountUrl}
@@ -154,7 +149,6 @@ function HostDetailPage(
                     Manage account
                   </a>
                 )}
-                {host.homepageUrl && <HostVisitLink href={host.homepageUrl} />}
                 {host.profileHandle && host.bskyProfileVisible && (
                   <a
                     class="profile-action profile-action--compact"
@@ -172,91 +166,74 @@ function HostDetailPage(
               </div>
             </div>
 
-            <div class="host-detail-grid">
-              <section class="glass host-detail-card">
-                <p class="text-eyebrow">Overview</p>
-                <dl class="host-card-facts host-detail-facts">
-                  <Fact label="Host address" value={host.host} />
-                  {host.serviceEndpoint && (
-                    <Fact label="PDS endpoint" value={host.serviceEndpoint} />
-                  )}
-                  <Fact label="Signup" value={signupLabel(host.signupStatus)} />
-                  <Fact
-                    label="Registry status"
-                    value={registryStatusLabel(host)}
-                  />
-                  {host.profileHandle && (
-                    <div>
-                      <dt>Host account</dt>
-                      <dd>
-                        <AtmosphereHandle handle={host.profileHandle} />
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              </section>
-
-              <section class="glass host-detail-card">
-                <p class="text-eyebrow">Status</p>
-                <dl class="host-card-facts host-detail-facts">
-                  <Fact
-                    label="Verification"
-                    value={verificationLabel(host.verificationStatus)}
-                  />
-                  {host.lastObservedAt && (
-                    <Fact
-                      label="Last seen"
-                      value={formatDate(host.lastObservedAt)}
-                    />
-                  )}
-                  {host.profileCheckedAt && (
-                    <Fact
-                      label="Profile checked"
-                      value={formatDate(host.profileCheckedAt)}
-                    />
-                  )}
-                </dl>
-              </section>
-            </div>
-
-            {dashboard && (
-              <section class="glass host-detail-card host-detail-dashboard-card">
-                <div class="host-detail-dashboard-head">
-                  <div>
-                    <p class="text-eyebrow">Account page</p>
-                    <h2>Host-owned controls</h2>
-                    <p class="text-body">
-                      Atmosphere can route you to this host's PDS account page.
-                      Passwords, devices, OAuth grants, account deletion,
-                      backups, and recovery remain owned by the host.
-                    </p>
-                  </div>
-                  {accountUrl && (
-                    <a
-                      href={accountUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="profile-form-button-secondary profile-form-button-secondary--lg"
-                    >
-                      Open host account page
-                    </a>
-                  )}
+            <section class="host-detail-choice-grid" aria-label="Host summary">
+              <article class="glass host-detail-choice-card">
+                <span class="host-detail-choice-icon" aria-hidden="true">
+                  <HostDetailIcon name="fit" />
+                </span>
+                <div>
+                  <p class="text-eyebrow">Best for</p>
+                  <h2>{friendly.bestFor}</h2>
                 </div>
-                <div class="host-detail-capability-grid">
-                  {dashboard.capabilities.map((capability) => (
-                    <HostCapabilitySummary
-                      key={capability.key}
-                      capability={capability}
-                    />
-                  ))}
+              </article>
+              <article class="glass host-detail-choice-card">
+                <span class="host-detail-choice-icon" aria-hidden="true">
+                  <HostDetailIcon name="location" />
+                </span>
+                <div>
+                  <p class="text-eyebrow">Data location</p>
+                  <h2>{friendly.location}</h2>
+                  <p>{friendly.locationDetail}</p>
                 </div>
-              </section>
-            )}
+              </article>
+              <article class="glass host-detail-choice-card">
+                <span class="host-detail-choice-icon" aria-hidden="true">
+                  <HostDetailIcon name="handle" />
+                </span>
+                <div>
+                  <p class="text-eyebrow">Handle domain</p>
+                  <h2>{friendly.handleLabel}</h2>
+                  <p>{friendly.handleDetail}</p>
+                </div>
+              </article>
+              <article class="glass host-detail-choice-card">
+                <span class="host-detail-choice-icon" aria-hidden="true">
+                  <HostDetailIcon name="signup" />
+                </span>
+                <div>
+                  <p class="text-eyebrow">Joining</p>
+                  <h2>{friendly.signupLabel}</h2>
+                  <p>{friendly.signupDetail}</p>
+                </div>
+              </article>
+            </section>
 
             <details class="glass account-home-details host-detail-details">
-              <summary>Technical details</summary>
+              <summary>
+                Technical details for developers and host operators
+              </summary>
               <dl>
                 <Fact label="Host domain" value={host.host} />
+                <Fact
+                  label="Directory status"
+                  value={registryStatusLabel(host)}
+                />
+                <Fact
+                  label="Verification"
+                  value={verificationLabel(host.verificationStatus)}
+                />
+                {host.lastObservedAt && (
+                  <Fact
+                    label="Last seen"
+                    value={formatDate(host.lastObservedAt)}
+                  />
+                )}
+                {host.profileCheckedAt && (
+                  <Fact
+                    label="Profile checked"
+                    value={formatDate(host.profileCheckedAt)}
+                  />
+                )}
                 {host.serviceEndpoint && (
                   <Fact
                     label="PDS service endpoint"
@@ -267,6 +244,24 @@ function HostDetailPage(
                   <Fact
                     label="Account management URL"
                     value={host.accountManagementUrl}
+                  />
+                )}
+                {host.inferredLocation && (
+                  <Fact
+                    label="Inferred network location"
+                    value={host.inferredLocation}
+                  />
+                )}
+                {host.inferredLocationSource && (
+                  <Fact
+                    label="Location inference source"
+                    value={host.inferredLocationSource}
+                  />
+                )}
+                {host.inferredLocationCheckedAt && (
+                  <Fact
+                    label="Location checked"
+                    value={formatDate(host.inferredLocationCheckedAt)}
                   />
                 )}
                 {dashboard?.manifestUrl && (
@@ -294,19 +289,6 @@ function HostDetailPage(
                   </div>
                 )}
               </dl>
-              {sourceRecords.length > 0 && (
-                <div class="host-source-records">
-                  <h3>Indexed host records</h3>
-                  <div class="host-source-record-list">
-                    {sourceRecords.map((record) => (
-                      <HostSourceRecordRow
-                        key={record.uri}
-                        record={record}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
             </details>
 
             <div class="host-detail-claim-row">
@@ -350,53 +332,50 @@ function HostDetailPage(
   );
 }
 
-function HostSourceRecordRow({ record }: { record: HostSourceRecord }) {
-  return (
-    <article class="host-source-record">
-      <div>
-        <strong>{hostCollectionLabel(record.collection)}</strong>
-        <span>
-          {record.authorHandle
-            ? <AtmosphereHandle handle={record.authorHandle} />
-            : record.repoDid}
-        </span>
-      </div>
-      <code>{record.uri}</code>
-      <p>
-        {record.deletedAt
-          ? `Deleted ${formatDate(record.deletedAt)}`
-          : `Indexed ${formatDate(record.indexedAt)}`}
-        {record.cid ? ` · CID ${record.cid}` : ""}
-      </p>
-    </article>
-  );
-}
-
-function hostCollectionLabel(collection: string): string {
-  if (collection.endsWith(".service")) return "Host service";
-  if (collection.endsWith(".profile")) return "Host profile";
-  return collection;
-}
-
-function HostCapabilitySummary(
-  { capability }: { capability: HostDashboardCapability },
-) {
-  return (
-    <article
-      class={`host-detail-capability host-detail-capability--${capability.state}`}
-    >
-      <span>{capability.label}</span>
-      <strong>{hostDashboardCapabilityStatusLabel(capability.state)}</strong>
-    </article>
-  );
-}
-
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
+  );
+}
+
+function HostDetailIcon(
+  { name }: { name: "fit" | "location" | "handle" | "signup" },
+) {
+  if (name === "location") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z" />
+        <circle cx="12" cy="10" r="2.2" />
+      </svg>
+    );
+  }
+  if (name === "handle") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5.5" width="15" height="13" rx="3" />
+        <path d="M7.5 9.5h9" />
+        <path d="M8 13h4.8" />
+        <path d="M8 16h7" />
+      </svg>
+    );
+  }
+  if (name === "signup") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 8v8" />
+        <path d="M8 12h8" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3.5 19 7.3v5.4c0 4.2-2.8 6.9-7 8-4.2-1.1-7-3.8-7-8V7.3l7-3.8Z" />
+      <path d="m8.5 12.3 2.2 2.2 4.8-5" />
+    </svg>
   );
 }
 
@@ -436,18 +415,5 @@ function verificationLabel(status: HostVerificationStatus): string {
       return "Claimed";
     default:
       return "Observed";
-  }
-}
-
-function signupLabel(status: HostSignupStatus): string {
-  switch (status) {
-    case "open":
-      return "Open signup";
-    case "invite_required":
-      return "Invite required";
-    case "closed":
-      return "Closed";
-    default:
-      return "Status being checked";
   }
 }

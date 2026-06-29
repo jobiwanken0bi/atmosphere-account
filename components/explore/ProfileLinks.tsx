@@ -9,6 +9,7 @@ import TangledIcon from "../icons/TangledIcon.tsx";
 
 interface Props {
   profile: ProfileRow;
+  microblogViewerClientId?: string | null;
 }
 
 /**
@@ -18,7 +19,9 @@ interface Props {
  * URL subtitles are intentionally hidden for these buttons — the title alone
  * is enough; the URL is a destination, not metadata.
  */
-export default function ProfileLinks({ profile }: Props) {
+export default function ProfileLinks(
+  { profile, microblogViewerClientId }: Props,
+) {
   const t = useT();
   const tLink = t.linkKinds;
 
@@ -26,7 +29,11 @@ export default function ProfileLinks({ profile }: Props) {
     // The form no longer emits `website`; old records may still carry it
     // as the former Landing Page button, which should no longer render.
     .filter((entry) => entry.kind !== "website")
-    .map((entry) => resolveLink(entry, profile.handle, tLink))
+    .map((entry) =>
+      resolveLink(entry, profile.handle, tLink, {
+        microblogViewerClientId,
+      })
+    )
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
   const actions = resolved;

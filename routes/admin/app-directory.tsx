@@ -1,6 +1,7 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
+import CopyTextButton from "../../islands/CopyTextButton.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AppDirectoryAdminStatus,
@@ -37,6 +38,7 @@ export const handler = define.handlers({
         failures={failures}
         jobs={jobs}
         saved={ctx.url.searchParams.get("saved") ?? null}
+        origin={ctx.url.origin}
       />,
     );
   },
@@ -70,6 +72,7 @@ function AdminAppDirectoryPage(
     failures,
     jobs,
     saved,
+    origin,
   }: {
     account: ReturnType<typeof buildAccountMenuProps>;
     status: AppDirectoryAdminStatus;
@@ -77,6 +80,7 @@ function AdminAppDirectoryPage(
     failures: AppRecordFailure[];
     jobs: AppDirectoryJob[];
     saved: string | null;
+    origin: string;
   },
 ) {
   return (
@@ -294,8 +298,9 @@ function AdminAppDirectoryPage(
                 <p class="text-body">
                   {status.migrationCandidates}{" "}
                   candidate{status.migrationCandidates === 1 ? "" : "s"}{" "}
-                  can move to ATStore records. This is a dry-run view; no
-                  records are published from here.
+                  can move to shared app records. This is a dry-run view; no
+                  records are published from here; copy the owner link and have
+                  the app account publish through OAuth.
                 </p>
               </div>
               {migrationGroups.every((group) => group.candidates.length === 0)
@@ -303,7 +308,11 @@ function AdminAppDirectoryPage(
                 : (
                   <div class="admin-app-directory-migration-groups">
                     {migrationGroups.map((group) => (
-                      <MigrationGroup group={group} key={group.status} />
+                      <MigrationGroup
+                        group={group}
+                        origin={origin}
+                        key={group.status}
+                      />
                     ))}
                   </div>
                 )}
@@ -394,7 +403,9 @@ function JobList({ jobs }: { jobs: AppDirectoryJob[] }) {
   );
 }
 
-function MigrationGroup({ group }: { group: AppDirectoryMigrationDryRun }) {
+function MigrationGroup(
+  { group, origin }: { group: AppDirectoryMigrationDryRun; origin: string },
+) {
   return (
     <section class="admin-app-directory-migration-group">
       <header>
@@ -422,18 +433,35 @@ function MigrationGroup({ group }: { group: AppDirectoryMigrationDryRun }) {
                     </p>
                   )}
                 </div>
-                <a
-                  href={`/apps/${encodeURIComponent(candidate.slug)}`}
-                  class="directory-register-button"
-                >
-                  Inspect
-                </a>
+                <div class="admin-app-directory-row-actions">
+                  <a
+                    href={`/apps/${encodeURIComponent(candidate.slug)}`}
+                    class="directory-register-button"
+                  >
+                    Inspect
+                  </a>
+                  {candidate.legacyProfileDid && (
+                    <CopyTextButton
+                      text={ownerMigrationUrl(
+                        origin,
+                        candidate.legacyProfileDid,
+                      )}
+                      label="Copy owner link"
+                    />
+                  )}
+                </div>
               </article>
             ))}
           </div>
         )}
     </section>
   );
+}
+
+function ownerMigrationUrl(origin: string, did: string): string {
+  const url = new URL("/apps/migrate-from-legacy", origin);
+  url.searchParams.set("did", did);
+  return url.href;
 }
 
 function formatWhen(value: number | null): string {

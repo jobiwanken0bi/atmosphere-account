@@ -40,9 +40,10 @@ Atmosphere Account is becoming a developer platform with three layers:
   metadata.
 - Link users to the PDS-owned account page or host-owned deep links when the
   host explicitly declares them.
-- Keep any Atmosphere-managed backup optional and client-side encrypted.
-- Never store plaintext recovery material, repo archives, blobs, or private
-  keys.
+- Do not build Atmosphere-owned backup, restore, recovery, key-management, grant
+  revocation, device/session, account deletion, or migration controls.
+- Never store plaintext recovery material, repo archives, blobs, private keys,
+  or backup material.
 
 ### Cycle 5: Governance And FedCM Readiness
 
@@ -61,5 +62,4 @@ Atmosphere Account is becoming a developer platform with three layers:
 - Host-owned controls stay visibly separate from Atmosphere-owned picker
   history.
 - Atmosphere never renders first-party controls for PDS grants, devices,
-  passwords, keys, recovery, account deletion, or migration unless a future host
-  explicitly delegates a narrow action.
+  passwords, keys, recovery, account deletion, backup/restore, or migration.

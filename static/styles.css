@@ -5317,7 +5317,7 @@ body {
 }
 
 .app-promo-copy h3 {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
   margin: 0;
   color: #0e1428;
@@ -5355,12 +5355,17 @@ body {
   -webkit-line-clamp: 3;
 }
 
+.app-promo-cta-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 0.85rem;
+}
+
 .app-promo-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: flex-end;
-  margin-top: auto;
   min-width: 4.1rem;
   min-height: 2.05rem;
   padding: 0.36rem 0.5rem;
@@ -6333,6 +6338,12 @@ body {
 .profile-hero-action-icon-svg {
   width: 100%;
   height: 100%;
+}
+.profile-hero-action-icon-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  object-fit: cover;
 }
 .profile-hero-action-arrow {
   margin-left: auto;
@@ -7331,16 +7342,98 @@ body {
   flex-direction: column;
   gap: 1.1rem;
 }
-.host-register-profile-row {
+.host-register-form-section {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1rem;
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.34);
+}
+.host-register-profile-section {
   margin-top: 1.35rem;
+}
+.host-register-section-head {
+  max-width: 42rem;
+}
+.host-register-section-head h2,
+.host-register-app-section h2 {
+  margin: 0.16rem 0 0;
+  color: #0e1428;
+  font-size: clamp(1.08rem, 2vw, 1.25rem);
+  line-height: 1.16;
+}
+.host-register-section-head .text-body,
+.host-register-app-section .text-body {
+  margin-top: 0.45rem;
+}
+.host-register-profile-row {
+  margin-top: 0;
+  align-items: stretch;
 }
 .host-register-avatar-hint {
   max-width: 12rem;
   margin: 0;
 }
+.host-register-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+.host-location-infer-field {
+  gap: 0.55rem;
+}
+.host-location-infer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.host-location-infer-row .profile-form-button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.host-location-infer-row .profile-form-hint {
+  flex: 1 1 18rem;
+}
+.host-location-infer-status {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  color: rgba(18, 26, 47, 0.68);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.host-location-infer-status.is-ok {
+  border-color: rgba(20, 93, 180, 0.18);
+  background: rgba(227, 240, 255, 0.62);
+  color: rgba(17, 60, 126, 0.82);
+}
+.host-location-infer-status.is-error {
+  border-color: rgba(180, 63, 52, 0.18);
+  background: rgba(255, 234, 230, 0.65);
+  color: rgba(135, 50, 42, 0.86);
+}
+.host-register-app-section {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+}
 .host-register-submit-hint {
   flex: 1 1 16rem;
   margin: 0;
+}
+@media (max-width: 760px) {
+  .host-register-app-section {
+    grid-template-columns: 1fr;
+  }
+
+  .host-register-app-section .profile-form-button-secondary {
+    justify-self: flex-start;
+  }
 }
 
 /* Full-width column for everything below name/description (categories,
@@ -8076,6 +8169,16 @@ body {
 }
 .custom-link-add {
   align-self: flex-start;
+}
+.profile-form-interop {
+  gap: 0.75rem;
+}
+.profile-form-interop-textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 @media (max-width: 640px) {
   .custom-link-row {
@@ -10046,6 +10149,12 @@ body {
   flex: 0 0 auto;
 }
 
+.account-dashboard-upgrade-anchor {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 0.8rem;
+}
+
 .account-dashboard-page-head p:not(.text-eyebrow) {
   max-width: 660px;
   margin: 0.7rem 0 0;
@@ -10126,6 +10235,37 @@ body {
   color: rgba(18, 26, 47, 0.68);
   line-height: 1.45;
   text-align: right;
+}
+
+.account-dashboard-profile-source {
+  display: grid;
+  justify-items: end;
+  gap: 0.65rem;
+  max-width: 27rem;
+  border: 1px solid rgba(18, 26, 47, 0.07);
+  border-radius: 20px;
+  padding: 0.85rem;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.account-dashboard-profile-source .text-eyebrow,
+.account-dashboard-profile-source strong,
+.account-dashboard-profile-source p {
+  margin: 0;
+  text-align: right;
+}
+
+.account-dashboard-profile-source strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #0e1428;
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.account-dashboard-profile-source p:not(.text-eyebrow) {
+  margin-top: 0.32rem;
+  font-size: 0.9rem;
 }
 
 .account-dashboard-profile-facts {
@@ -12068,23 +12208,20 @@ body {
   color: #0e1428;
 }
 
-.account-home-details dl,
-.host-card-facts {
+.account-home-details dl {
   display: grid;
   gap: 0.75rem;
   margin: 1rem 0 0;
 }
 
-.account-home-details dt,
-.host-card-facts dt {
+.account-home-details dt {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
   text-transform: uppercase;
   color: rgba(18, 26, 47, 0.55);
 }
 
-.account-home-details dd,
-.host-card-facts dd {
+.account-home-details dd {
   margin: 0.15rem 0 0;
   overflow-wrap: anywhere;
   color: rgba(18, 26, 47, 0.82);
@@ -12128,6 +12265,7 @@ body {
 .hosts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  align-items: stretch;
   gap: 1.1rem;
   min-width: 0;
 }
@@ -12136,6 +12274,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  height: 100%;
   min-width: 0;
   min-height: 14rem;
   color: inherit;
@@ -12280,12 +12419,19 @@ body {
   margin: 0;
   color: rgba(18, 26, 47, 0.72);
   line-height: 1.5;
+  display: -webkit-box;
+  min-height: 4.5em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .host-card-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+  margin-top: auto;
+  padding-top: 0.15rem;
 }
 
 .host-card-tags span {
@@ -12341,6 +12487,94 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin-top: 1rem;
+}
+
+.host-detail-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.host-detail-choice-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  min-height: 8.5rem;
+  padding: 1.2rem;
+}
+
+.host-detail-choice-card h2 {
+  margin: 0.2rem 0 0;
+  color: #0e1428;
+  font-size: clamp(1.05rem, 2vw, 1.28rem);
+  line-height: 1.16;
+  letter-spacing: 0;
+}
+
+.host-detail-choice-card p:not(.text-eyebrow) {
+  margin: 0.45rem 0 0;
+  color: rgba(18, 26, 47, 0.66);
+  line-height: 1.45;
+}
+
+.host-detail-choice-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  border-radius: 14px;
+  color: #244f94;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.72),
+      rgba(255, 255, 255, 0.45)
+    ),
+    rgba(155, 190, 235, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    0 10px 26px rgba(48, 70, 128, 0.12);
+}
+
+.host-detail-choice-icon svg {
+  width: 1.55rem;
+  height: 1.55rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.host-detail-explainer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.2rem;
+  margin-top: 1rem;
+  padding: 1.35rem;
+}
+
+.host-detail-explainer h2 {
+  margin: 0.2rem 0 0;
+  color: #0e1428;
+  font-size: clamp(1.2rem, 2.2vw, 1.45rem);
+  line-height: 1.12;
+}
+
+.host-detail-explainer .text-body {
+  max-width: 640px;
+  margin-top: 0.55rem;
+}
+
+.host-detail-explainer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
 }
 
 .host-detail-card {
@@ -12689,7 +12923,8 @@ body {
 .dark-phase .account-developer-app-top h3,
 .dark-phase .account-developer-check h3,
 .dark-phase .account-dashboard-browser-summary-copy strong,
-.dark-phase .account-dashboard-saved-identity strong {
+.dark-phase .account-dashboard-saved-identity strong,
+.dark-phase .account-dashboard-profile-source strong {
   color: #f3f5fb;
 }
 
@@ -12697,7 +12932,6 @@ body {
 .dark-phase .account-home-host,
 .dark-phase .host-card p,
 .dark-phase .account-home-details dd,
-.dark-phase .host-card-facts dd,
 .dark-phase .account-dashboard-section-head p:not(.text-eyebrow),
 .dark-phase .account-dashboard-info-card p,
 .dark-phase .account-dashboard-readiness-card p,
@@ -12740,6 +12974,11 @@ body {
 }
 
 .dark-phase .account-dashboard-profile-facts div {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+
+.dark-phase .account-dashboard-profile-source {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.13);
 }
@@ -13019,7 +13258,6 @@ body {
 }
 
 .dark-phase .account-home-details dt,
-.dark-phase .host-card-facts dt,
 .dark-phase .hosts-filter-label {
   color: rgba(255, 255, 255, 0.58);
 }
@@ -13041,6 +13279,21 @@ body {
 
 .dark-phase .host-source-record code {
   color: rgba(255, 255, 255, 0.72);
+}
+
+.dark-phase .host-detail-choice-card h2,
+.dark-phase .host-detail-explainer h2 {
+  color: #f3f5fb;
+}
+
+.dark-phase .host-detail-choice-card p:not(.text-eyebrow) {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.dark-phase .host-detail-choice-icon {
+  color: #d8e4ff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.13);
 }
 
 .dark-phase .host-manage-validation,
@@ -13168,6 +13421,18 @@ body {
     text-align: left;
   }
 
+  .account-dashboard-profile-source {
+    justify-items: start;
+    max-width: none;
+    width: 100%;
+  }
+
+  .account-dashboard-profile-source .text-eyebrow,
+  .account-dashboard-profile-source strong,
+  .account-dashboard-profile-source p {
+    text-align: left;
+  }
+
   .account-dashboard-profile-facts {
     grid-template-columns: 1fr;
     width: 100%;
@@ -13256,8 +13521,18 @@ body {
   }
 
   .host-detail-grid,
+  .host-detail-choice-grid,
   .host-detail-capability-grid {
     grid-template-columns: 1fr;
+  }
+
+  .host-detail-explainer {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .host-detail-explainer-actions {
+    justify-content: flex-start;
   }
 
   .account-dashboard-host-router,
@@ -13740,6 +14015,11 @@ body {
   border-color: rgba(219, 106, 82, 0.18);
 }
 
+.login-example-result--dev {
+  background: rgba(248, 245, 255, 0.72);
+  border-color: rgba(112, 86, 188, 0.18);
+}
+
 .login-example-result strong {
   display: block;
   color: #0e1428;
@@ -13901,6 +14181,11 @@ body {
 .dark-phase .login-example-result--error {
   background: rgba(176, 74, 54, 0.13);
   border-color: rgba(232, 133, 116, 0.2);
+}
+
+.dark-phase .login-example-result--dev {
+  background: rgba(112, 86, 188, 0.14);
+  border-color: rgba(190, 170, 248, 0.22);
 }
 
 .dark-phase .login-console-head h3,
@@ -16197,11 +16482,33 @@ body {
 .docs-toc {
   position: sticky;
   top: 6.5rem;
+  max-height: calc(100vh - 7.25rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(18, 26, 47, 0.22) transparent;
 }
 
 .docs-sidebar {
   display: grid;
   gap: 1rem;
+  padding-right: 0.25rem;
+}
+
+.docs-sidebar::-webkit-scrollbar,
+.docs-toc::-webkit-scrollbar {
+  width: 0.45rem;
+}
+
+.docs-sidebar::-webkit-scrollbar-track,
+.docs-toc::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-sidebar::-webkit-scrollbar-thumb,
+.docs-toc::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(18, 26, 47, 0.18);
 }
 
 .docs-sidebar-home {
@@ -16905,6 +17212,10 @@ body {
   .docs-sidebar,
   .docs-toc {
     position: static;
+    max-height: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+    padding-right: 0;
   }
 
   .docs-nav {

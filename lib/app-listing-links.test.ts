@@ -45,6 +45,26 @@ Deno.test("appActionLinks does not duplicate explicit Bluesky links", () => {
   assertEquals(links[0].uri, "https://bsky.app/profile/grain.social");
 });
 
+Deno.test("appActionLinks opens Bluesky profiles in the selected viewer", () => {
+  const links = appActionLinks(
+    {
+      links: [{
+        uri: "https://bsky.app/profile/grain.social",
+        label: "Bluesky",
+        role: "bsky",
+      }],
+      primaryUrl: null,
+      productDid: "did:plc:e7rftrdyz5e2rw4y6ocszew2",
+    },
+    { microblogViewerClientId: "blacksky" },
+  );
+
+  assertEquals(links.length, 1);
+  assertEquals(links[0].kind, "bluesky");
+  assertEquals(links[0].label, "Blacksky");
+  assertEquals(links[0].uri, "https://blacksky.community/profile/grain.social");
+});
+
 Deno.test("appActionLinks keeps more than four visible ATStore actions", () => {
   const links = appActionLinks({
     links: [

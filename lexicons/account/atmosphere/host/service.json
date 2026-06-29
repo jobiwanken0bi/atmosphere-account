@@ -84,7 +84,7 @@
               "type": "string",
               "maxLength": 64
             },
-            "description": "Public geographic or jurisdictional hints such as EU, US, or Australia. These are informational, not a compliance guarantee."
+            "description": "Self-asserted geographic or jurisdictional locations where account data is primarily hosted, such as Europe, United States, or Australia. These are informational, not a compliance guarantee."
           },
           "software": {
             "type": "ref",

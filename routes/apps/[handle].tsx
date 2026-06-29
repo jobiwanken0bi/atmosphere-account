@@ -61,6 +61,7 @@ import {
   searchAppDirectory,
 } from "../../lib/app-directory.ts";
 import {
+  type AppActionLink,
   type AppActionLinkKind,
   appActionLinks,
 } from "../../lib/app-listing-links.ts";
@@ -70,6 +71,13 @@ import {
 } from "../../lib/app-display.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle, resolveDidDocument } from "../../lib/identity.ts";
+
+const DID_HANDLE_CACHE_TTL_MS = 30 * 60 * 1000;
+const DID_HANDLE_CACHE_MAX = 500;
+const didHandleCache = new Map<
+  string,
+  { value: string | null; expiresAt: number }
+>();
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -82,16 +90,23 @@ export const handler = define.handlers({
      *  user's own registry entry so the AccountMenu can deep-link to
      *  their public page. The lookups are cheap and trigger from the
      *  same DB connection. */
-    let [profile, ownerProfile, appListing] = await Promise.all([
-      getProfileByHandle(handle).catch(() => null),
-      user ? getProfileByDid(user.did).catch(() => null) : Promise.resolve(
-        null,
-      ),
-      getAppListingByIdentifier(handle).catch((err) => {
-        console.warn(`[apps] app listing lookup failed for ${handle}:`, err);
-        return null;
-      }),
-    ]);
+    let [profile, ownerProfile, appListing, viewerAccount] = await Promise
+      .all([
+        getProfileByHandle(handle).catch(() => null),
+        user ? getProfileByDid(user.did).catch(() => null) : Promise.resolve(
+          null,
+        ),
+        getAppListingByIdentifier(handle, { syncLegacy: false }).catch(
+          (err) => {
+            console.warn(
+              `[apps] app listing lookup failed for ${handle}:`,
+              err,
+            );
+            return null;
+          },
+        ),
+        user ? getAppUser(user.did).catch(() => null) : Promise.resolve(null),
+      ]);
     if (!profile && !appListing && isHandle(handle.toLowerCase())) {
       const synced = await syncProfileByIdentifier(handle).catch((err) => {
         console.warn(`[explore] profile sync failed for ${handle}:`, err);
@@ -107,9 +122,9 @@ export const handler = define.handlers({
       );
     }
     if (!appListing && profile) {
-      appListing = await getAppListingByIdentifier(profile.handle).catch(() =>
-        null
-      );
+      appListing = await getAppListingByIdentifier(profile.handle, {
+        syncLegacy: false,
+      }).catch(() => null);
     }
     const canInspectAppSources = !!(appListing && user &&
       (user.did === appListing.productDid ||
@@ -256,6 +271,9 @@ export const handler = define.handlers({
         signedInUser={user ? { did: user.did, handle: user.handle } : null}
         account={buildAccountMenuProps(ctx.state, ownerProfile?.handle ?? null)}
         ownerHandle={ownerProfile?.handle ?? null}
+        microblogViewerClientId={viewerAccount?.accountType === "user"
+          ? viewerAccount.bskyClientId
+          : null}
         locale={ctx.state.locale}
         shareUrl={shareUrl}
       />,
@@ -281,6 +299,7 @@ interface DetailProps {
   signedInUser: { did: string; handle: string } | null;
   account: ReturnType<typeof buildAccountMenuProps>;
   ownerHandle: string | null;
+  microblogViewerClientId: string | null;
   locale: Locale;
   /** Absolute URL of this project page; passed to the Share button so
    *  copy-to-clipboard / Web Share API both get the canonical link. */
@@ -305,6 +324,7 @@ function ProfileDetailPage(
     signedInUser,
     account,
     ownerHandle: _ownerHandle,
+    microblogViewerClientId,
     locale,
     shareUrl,
   }: DetailProps,
@@ -325,6 +345,7 @@ function ProfileDetailPage(
         locale={locale}
         signedInUser={signedInUser}
         account={account}
+        microblogViewerClientId={microblogViewerClientId}
         shareUrl={shareUrl}
       />
     );
@@ -344,6 +365,7 @@ function ProfileDetailPage(
           locale={locale}
           signedInUser={signedInUser}
           account={account}
+          microblogViewerClientId={microblogViewerClientId}
           shareUrl={shareUrl}
         />
       );
@@ -395,11 +417,16 @@ function ProfileDetailPage(
                   class="project-page-banner-img"
                   loading="lazy"
                   decoding="async"
+                  width={1200}
+                  height={630}
                 />
               </div>
             )}
             <div style={{ marginTop: bannerUrl ? "0" : "1rem" }}>
-              <ProfileHero profile={profile} />
+              <ProfileHero
+                profile={profile}
+                microblogViewerClientId={microblogViewerClientId}
+              />
             </div>
             <ProfileScreenshots profile={profile} />
 
@@ -543,6 +570,7 @@ interface AppListingDetailProps {
   locale: Locale;
   signedInUser: { did: string; handle: string } | null;
   account: ReturnType<typeof buildAccountMenuProps>;
+  microblogViewerClientId: string | null;
   shareUrl: string;
 }
 
@@ -559,6 +587,7 @@ function AppListingDetailPage(
     locale,
     signedInUser,
     account,
+    microblogViewerClientId,
     shareUrl,
   }: AppListingDetailProps,
 ) {
@@ -597,11 +626,16 @@ function AppListingDetailPage(
                   loading="eager"
                   decoding="async"
                   fetchpriority="high"
+                  width={1200}
+                  height={630}
                 />
               </div>
             )}
 
-            <AppListingHero app={app} />
+            <AppListingHero
+              app={app}
+              microblogViewerClientId={microblogViewerClientId}
+            />
 
             {app.screenshotUrls.length > 0 && (
               <section class="app-detail-screenshots glass">
@@ -613,6 +647,8 @@ function AppListingDetailPage(
                       alt={`${app.name} screenshot ${index + 1}`}
                       loading="lazy"
                       decoding="async"
+                      width={960}
+                      height={540}
                       key={url}
                     />
                   ))}
@@ -655,8 +691,13 @@ interface DisplayAppReview extends AppMirroredReview {
   authorHref: string | null;
 }
 
-function AppListingHero({ app }: { app: AppListing }) {
-  const links = appActionLinks(app);
+function AppListingHero(
+  { app, microblogViewerClientId }: {
+    app: AppListing;
+    microblogViewerClientId: string | null;
+  },
+) {
+  const links = appActionLinks(app, { microblogViewerClientId });
   const taxonomy = appDisplayTaxonomy(app);
   const primaryCollection = appPrimaryCollection(app);
   const visibleCollections = primaryCollection
@@ -741,7 +782,7 @@ function AppListingHero({ app }: { app: AppListing }) {
                       key={`${link.role ?? link.label ?? "link"}-${link.uri}`}
                     >
                       <span class="profile-hero-action-icon app-detail-link-icon">
-                        {renderAppActionIcon(link.kind)}
+                        {renderAppActionIcon(link)}
                       </span>
                       {!isCompactAppAction(link.kind) && (
                         <>
@@ -782,11 +823,25 @@ function AppListingHero({ app }: { app: AppListing }) {
   );
 }
 
-function renderAppActionIcon(kind: AppActionLinkKind) {
+function renderAppActionIcon(
+  link: Pick<AppActionLink, "kind" | "iconUrl" | "label">,
+) {
+  const { kind } = link;
   if (kind === "website") {
     return <WebsiteIcon class="profile-hero-action-icon-svg" />;
   }
   if (kind === "bluesky") {
+    if (link.iconUrl) {
+      return (
+        <img
+          src={link.iconUrl}
+          alt=""
+          class="profile-hero-action-icon-img"
+          loading="lazy"
+          decoding="async"
+        />
+      );
+    }
     return <BskyIcon class="profile-hero-action-icon-svg" />;
   }
   if (kind === "ios") {
@@ -927,6 +982,8 @@ function AppReviewsSection(
                             alt=""
                             loading="lazy"
                             decoding="async"
+                            width={40}
+                            height={40}
                           />
                         )
                         : (
@@ -1095,6 +1152,7 @@ async function relatedListings(app: AppListing): Promise<AppListing[]> {
     includeSections: false,
     includeTags: false,
     includeTotal: false,
+    syncLegacy: false,
   });
   return result.apps.filter((item) => item.id !== app.id).slice(0, 3);
 }
@@ -1142,9 +1200,7 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
         reviewerName,
         reviewerHandle,
         reviewerAvatarUrl,
-        reviewerProfileHref: appUser?.accountType === "user" && reviewerHandle
-          ? `/users/${encodeURIComponent(reviewerHandle)}`
-          : null,
+        reviewerProfileHref: microblogProfileHref(reviewerHandle),
       };
     }),
   );
@@ -1173,24 +1229,42 @@ async function enrichAppMirroredReviews(
         authorHandle,
         authorName,
         authorAvatarUrl,
-        authorHref: appUser?.accountType === "user" && authorHandle
-          ? `/users/${encodeURIComponent(authorHandle)}`
-          : authorHandle
-          ? `https://bsky.app/profile/${encodeURIComponent(authorHandle)}`
-          : null,
+        authorHref: microblogProfileHref(authorHandle),
       };
     }),
   );
 }
 
+function microblogProfileHref(handle: string | null): string | null {
+  const clean = handle?.replace(/^@/, "").trim();
+  return clean ? `https://bsky.app/profile/${encodeURIComponent(clean)}` : null;
+}
+
 async function resolveHandleForDid(did: string): Promise<string | null> {
+  const cached = didHandleCache.get(did);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (cached) didHandleCache.delete(did);
   try {
     const doc = await resolveDidDocument(did);
     const aka = (doc.alsoKnownAs ?? []).find((uri) => uri.startsWith("at://"));
-    return aka ? aka.slice("at://".length) : null;
+    const value = aka ? aka.slice("at://".length) : null;
+    rememberDidHandle(did, value);
+    return value;
   } catch {
+    rememberDidHandle(did, null);
     return null;
   }
+}
+
+function rememberDidHandle(did: string, value: string | null): void {
+  if (didHandleCache.size >= DID_HANDLE_CACHE_MAX) {
+    const oldest = didHandleCache.keys().next().value;
+    if (oldest) didHandleCache.delete(oldest);
+  }
+  didHandleCache.set(did, {
+    value,
+    expiresAt: Date.now() + DID_HANDLE_CACHE_TTL_MS,
+  });
 }
 
 function NotFound(

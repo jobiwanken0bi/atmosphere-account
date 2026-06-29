@@ -19,8 +19,10 @@ import {
   findExistingAtstoreListingForProfile,
   getAtstoreMigrationReadiness,
 } from "../../lib/atstore-migration.ts";
+import { findExistingCommunityAppProfile } from "../../lib/community-app-profile.ts";
 import { getAppListingByIdentifier } from "../../lib/app-directory.ts";
 import { getProfileRecord } from "../../lib/pds.ts";
+import type { AccountIndicator, LexiconInterop } from "../../lib/lexicons.ts";
 import type { BlobRef, LinkEntry } from "../../lib/lexicons.ts";
 
 export const handler = define.handlers({
@@ -45,7 +47,7 @@ export const handler = define.handlers({
        */
       return new Response(null, {
         status: 303,
-        headers: { location: "/account/reviews?upgrade=1" },
+        headers: { location: "/account?upgrade=app" },
       });
     }
 
@@ -103,6 +105,8 @@ export const handler = define.handlers({
         categories: existing.categories,
         subcategories: existing.subcategories,
         links: existing.links,
+        lexicons: existing.lexicons,
+        accountIndicators: existing.accountIndicators,
         screenshots: existing.screenshots.map((entry) => ({
           ref: entry.image.ref.$link,
           mime: entry.image.mimeType,
@@ -141,6 +145,15 @@ export const handler = define.handlers({
           : null;
         if (atstoreInitial) {
           initial = atstoreInitial.initial;
+          const communityProfile = await findExistingCommunityAppProfile(
+            user.did,
+            session.pdsUrl,
+          ).catch(() => null);
+          const interop = interopFromCommunityProfile(
+            communityProfile?.value,
+          );
+          initial.lexicons = interop.lexicons;
+          initial.accountIndicators = interop.accountIndicators;
           initialAvatarUrl = atstoreInitial.initialAvatarUrl;
           initialBannerUrl = atstoreInitial.initialBannerUrl;
           hasAtstoreListing = true;
@@ -158,6 +171,8 @@ export const handler = define.handlers({
               categories: ["app"],
               subcategories: [],
               links: [],
+              lexicons: {},
+              accountIndicators: [],
               screenshots: [],
               avatar: bsky.avatar
                 ? {
@@ -241,6 +256,8 @@ export const handler = define.handlers({
         atstoreMigrationIssues={atstoreMigrationIssues}
         atstoreMigrationPreview={atstoreMigrationPreview}
         showAtstoreMigration={!!existing && !takedown}
+        migrationFocus={ctx.url.searchParams.get("migrate") ===
+          "shared-records"}
         takedown={takedown}
         t={t}
       />,
@@ -267,6 +284,30 @@ const FORM_BANNER_MIME_TYPES = new Set([
   "image/webp",
 ]);
 const FORM_SCREENSHOT_MIME_TYPES = FORM_BANNER_MIME_TYPES;
+
+function interopFromCommunityProfile(value: unknown): {
+  lexicons: LexiconInterop;
+  accountIndicators: AccountIndicator[];
+} {
+  const record = asRecord(value);
+  const lex = asRecord(record?.lexicons);
+  const indicators = Array.isArray(record?.accountIndicators)
+    ? record.accountIndicators.flatMap((item): AccountIndicator[] => {
+      const row = asRecord(item);
+      const collection = str(row?.collection, 256);
+      if (!collection) return [];
+      const rkey = str(row?.rkey, 256);
+      return [{ collection, ...(rkey ? { rkey } : {}) }];
+    })
+    : [];
+  return {
+    lexicons: {
+      produces: strArray(lex?.produces, 64, 256),
+      consumes: strArray(lex?.consumes, 64, 256),
+    },
+    accountIndicators: indicators,
+  };
+}
 
 function initialFromAtstoreRecord(
   value: unknown,
@@ -300,6 +341,8 @@ function initialFromAtstoreRecord(
       categories: ["app"],
       subcategories: strArray(record.appTags, 10, 32),
       links: links.links,
+      lexicons: {},
+      accountIndicators: [],
       screenshots: screenshots.map((screenshot) => {
         const previewUrl = blobPreviewUrl(did, screenshot);
         return {
@@ -467,6 +510,7 @@ interface ManagePageProps {
   atstoreMigrationIssues: string[];
   atstoreMigrationPreview: AtstoreMigrationPreview | null;
   showAtstoreMigration: boolean;
+  migrationFocus: boolean;
   takedown: { reason: string; at: number | null } | null;
   // deno-lint-ignore no-explicit-any
   t: any;
@@ -490,6 +534,7 @@ function ManagePage(
     atstoreMigrationIssues,
     atstoreMigrationPreview,
     showAtstoreMigration,
+    migrationFocus,
     takedown,
     t,
   }: ManagePageProps,
@@ -544,6 +589,14 @@ function ManagePage(
                 remoteAtstoreListingUri={remoteAtstoreListingUri}
                 publicProfileHandle={publicProfileHandle}
               />
+              {showAtstoreMigration && migrationFocus && (
+                <MigrationSection
+                  atstoreListingUri={atstoreListingUri}
+                  remoteAtstoreListingUri={remoteAtstoreListingUri}
+                  atstoreMigrationIssues={atstoreMigrationIssues}
+                  atstoreMigrationPreview={atstoreMigrationPreview}
+                />
+              )}
               <CreateProfileForm
                 did={user.did}
                 handle={user.handle}
@@ -555,26 +608,13 @@ function ManagePage(
               />
             </div>
 
-            {showAtstoreMigration && (
-              <section class="glass atstore-migration-card">
-                <div class="atstore-migration-copy">
-                  <p class="text-eyebrow">Shared app record</p>
-                  <h2>Move this listing to ATStore</h2>
-                  <p>
-                    New app listings publish as ATStore records. Existing
-                    Atmosphere-only apps can be moved over so reviews,
-                    favorites, and discovery use the shared app ecosystem.
-                  </p>
-                </div>
-                <AtstoreMigrationButton
-                  disabled={atstoreMigrationIssues.length > 0 &&
-                    !remoteAtstoreListingUri}
-                  initialUri={atstoreListingUri}
-                  remoteUri={remoteAtstoreListingUri}
-                  issues={atstoreMigrationIssues}
-                  preview={atstoreMigrationPreview}
-                />
-              </section>
+            {showAtstoreMigration && !migrationFocus && (
+              <MigrationSection
+                atstoreListingUri={atstoreListingUri}
+                remoteAtstoreListingUri={remoteAtstoreListingUri}
+                atstoreMigrationIssues={atstoreMigrationIssues}
+                atstoreMigrationPreview={atstoreMigrationPreview}
+              />
             )}
 
             {showUpdates && (
@@ -590,6 +630,41 @@ function ManagePage(
         <Footer variant="compact" />
       </div>
     </div>
+  );
+}
+
+function MigrationSection(
+  {
+    atstoreListingUri,
+    remoteAtstoreListingUri,
+    atstoreMigrationIssues,
+    atstoreMigrationPreview,
+  }: {
+    atstoreListingUri: string | null;
+    remoteAtstoreListingUri: string | null;
+    atstoreMigrationIssues: string[];
+    atstoreMigrationPreview: AtstoreMigrationPreview | null;
+  },
+) {
+  return (
+    <section class="glass atstore-migration-card">
+      <div class="atstore-migration-copy">
+        <p class="text-eyebrow">Shared app records</p>
+        <h2>Move this listing to shared records</h2>
+        <p>
+          New app listings publish shared records. Existing Atmosphere-only apps
+          can be moved over so community app profiles, ATStore reviews,
+          favorites, and discovery all use the shared app ecosystem.
+        </p>
+      </div>
+      <AtstoreMigrationButton
+        disabled={atstoreMigrationIssues.length > 0 && !remoteAtstoreListingUri}
+        initialUri={atstoreListingUri}
+        remoteUri={remoteAtstoreListingUri}
+        issues={atstoreMigrationIssues}
+        preview={atstoreMigrationPreview}
+      />
+    </section>
   );
 }
 
@@ -618,15 +693,15 @@ function OwnerAppSummary(
       label: "ATStore-backed",
       title: "Shared app record active",
       body:
-        "Edits from this page update the shared ATStore app record for interoperable discovery, reviews, and favorites.",
+        "Edits from this page update shared app records for interoperable discovery, reviews, and favorites.",
     }
     : remoteAtstoreListingUri
     ? {
       tone: "attention",
-      label: "Remote ATStore record found",
-      title: "Sync the shared record",
+      label: "Remote shared record found",
+      title: "Sync shared records",
       body:
-        "This account already has an ATStore listing on its PDS. Sync it below to make this page use the canonical shared record.",
+        "This account already has an ATStore listing on its PDS. Sync it below and publish the community app profile.",
     }
     : initialPublished
     ? {
@@ -634,14 +709,14 @@ function OwnerAppSummary(
       label: "Legacy Atmosphere record",
       title: "Migration available",
       body:
-        "This app is still using the older Atmosphere listing record. Complete the requirements below, then migrate it to ATStore.",
+        "This app is still using the older Atmosphere listing record. Complete the requirements below, then migrate it to shared app records.",
     }
     : {
       tone: "ok",
       label: "New app listing",
-      title: "Publishes to ATStore by default",
+      title: "Publishes shared records by default",
       body:
-        "When you publish, Atmosphere writes a shared ATStore app record from this app account.",
+        "When you publish, Atmosphere writes shared app records from this app account.",
     };
   return (
     <section class={`glass owner-app-summary owner-app-summary--${state.tone}`}>

@@ -135,16 +135,35 @@ return createAppSession(account);`;
               </div>
 
               {exampleSession && (
-                <div class="login-example-result login-example-result--ok">
+                <div
+                  class={`login-example-result ${
+                    exampleSession.oauthMode === "dev_simulated"
+                      ? "login-example-result--dev"
+                      : "login-example-result--ok"
+                  }`}
+                >
                   <strong>
-                    Signed in to the example app as{" "}
+                    {exampleSession.oauthMode === "dev_simulated"
+                      ? "Local dev account selected"
+                      : "Signed in to the example app as"}{" "}
                     <AtmosphereHandle handle={exampleSession.handle} />
                   </strong>
-                  <p>
-                    This is a separate demo app session. Atmosphere Account
-                    chose the account; the example app completed its own ATProto
-                    OAuth flow.
-                  </p>
+                  {exampleSession.oauthMode === "dev_simulated"
+                    ? (
+                      <p>
+                        This fake `.test` account cannot complete real ATProto
+                        OAuth because its handle is not resolvable. The example
+                        app created a local simulated session so you can inspect
+                        the final UI state.
+                      </p>
+                    )
+                    : (
+                      <p>
+                        This is a separate demo app session. Atmosphere Account
+                        chose the account; the example app completed its own
+                        ATProto OAuth flow.
+                      </p>
+                    )}
                 </div>
               )}
 

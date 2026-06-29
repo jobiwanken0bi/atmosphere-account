@@ -6,6 +6,7 @@ import {
   upsertAppReview,
 } from "../../../../lib/app-directory.ts";
 import { ATSTORE_REVIEW_NSID } from "../../../../lib/app-lexicons.ts";
+import { ensureAtstoreReviewerProfile } from "../../../../lib/atstore-profile.ts";
 import { getValidSession } from "../../../../lib/oauth.ts";
 import { putRecord } from "../../../../lib/pds.ts";
 import { createAtprotoTid } from "../../../../lib/tid.ts";
@@ -51,6 +52,14 @@ export const handler = define.handlers({
     if (!rating) return jsonError(400, "invalid_rating");
     const text = normalizeReviewText(body.body);
     if (text == null) return jsonError(400, "body_too_long");
+
+    await ensureAtstoreReviewerProfile({
+      did: user.did,
+      handle: user.handle,
+      pdsUrl: session.pdsUrl,
+    }).catch((err) => {
+      console.warn("[apps/reviews] could not ensure ATStore profile:", err);
+    });
 
     const existing = await getOwnAppReview(app.id, user.did).catch(() => null);
     const now = Date.now();

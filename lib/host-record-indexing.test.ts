@@ -22,6 +22,7 @@ Deno.test("parseHostServiceRecord normalizes host service records", () => {
       host: "Example.COM",
       displayName: "Example Host",
       description: "A friendly PDS host.",
+      regions: ["Europe"],
       serviceEndpoint: "https://pds.example.com/",
       hostPatterns: ["example.com", "*.example.net"],
       signup: {
@@ -40,6 +41,7 @@ Deno.test("parseHostServiceRecord normalizes host service records", () => {
 
   assertEquals(parsed?.kind, "service");
   assertEquals(parsed?.host, "example.com");
+  assertEquals(parsed?.dataLocation, "Europe");
   assertEquals(parsed?.serviceEndpoint, "https://pds.example.com");
   assertEquals(parsed?.accountManagementUrl, null);
   assertEquals(parsed?.homepageUrl, "https://example.com/");

@@ -5,7 +5,9 @@
 import type { InValue } from "@libsql/client";
 import { dbBackend, withDb } from "./db.ts";
 import type {
+  AccountIndicator,
   FeaturedBadge,
+  LexiconInterop,
   LinkEntry,
   ProfileType,
   ScreenshotEntry,
@@ -68,6 +70,8 @@ export interface ProfileRow {
   subcategories: string[];
   /** Outbound links (atmosphere services and custom links) in author-defined order. */
   links: LinkEntry[];
+  lexicons: { produces: string[]; consumes: string[] };
+  accountIndicators: AccountIndicator[];
   screenshots: ScreenshotEntry[];
   avatarCid: string | null;
   avatarMime: string | null;
@@ -131,6 +135,8 @@ interface RawProfileRow {
   categories: string;
   subcategories: string;
   links: string | null;
+  lexicons_json: string | null;
+  account_indicators_json: string | null;
   screenshots: string | null;
   avatar_cid: string | null;
   avatar_mime: string | null;
@@ -226,6 +232,56 @@ function safeJsonScreenshots(
   }
 }
 
+function safeJsonLexicons(text: string | null | undefined): {
+  produces: string[];
+  consumes: string[];
+} {
+  if (!text) return { produces: [], consumes: [] };
+  try {
+    const value = JSON.parse(text) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { produces: [], consumes: [] };
+    }
+    const record = value as Record<string, unknown>;
+    return {
+      produces: Array.isArray(record.produces)
+        ? record.produces.filter((x): x is string => typeof x === "string")
+        : [],
+      consumes: Array.isArray(record.consumes)
+        ? record.consumes.filter((x): x is string => typeof x === "string")
+        : [],
+    };
+  } catch {
+    return { produces: [], consumes: [] };
+  }
+}
+
+function safeJsonAccountIndicators(
+  text: string | null | undefined,
+): AccountIndicator[] {
+  if (!text) return [];
+  try {
+    const value = JSON.parse(text) as unknown;
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((raw): AccountIndicator[] => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+      const item = raw as Record<string, unknown>;
+      if (typeof item.collection !== "string" || !item.collection.trim()) {
+        return [];
+      }
+      const rkey = typeof item.rkey === "string" && item.rkey.trim()
+        ? item.rkey.trim()
+        : undefined;
+      return [{
+        collection: item.collection.trim(),
+        ...(rkey ? { rkey } : {}),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
 function normalizeIconStatus(v: string | null): IconStatus | null {
   if (v === "pending" || v === "approved" || v === "rejected") return v;
   return null;
@@ -261,6 +317,8 @@ function rowToProfile(r: RawProfileRow): ProfileRow {
     categories: safeJsonArray(r.categories),
     subcategories: safeJsonArray(r.subcategories),
     links: safeJsonLinks(r.links),
+    lexicons: safeJsonLexicons(r.lexicons_json),
+    accountIndicators: safeJsonAccountIndicators(r.account_indicators_json),
     screenshots: safeJsonScreenshots(r.screenshots),
     avatarCid: r.avatar_cid,
     avatarMime: r.avatar_mime,
@@ -327,6 +385,8 @@ export interface UpsertProfileInput {
   categories: string[];
   subcategories: string[];
   links?: LinkEntry[] | null;
+  lexicons?: LexiconInterop | null;
+  accountIndicators?: AccountIndicator[] | null;
   screenshots?: ScreenshotEntry[] | null;
   avatarCid?: string | null;
   avatarMime?: string | null;
@@ -380,7 +440,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
       sql: `
         INSERT INTO profile (
           did, handle, profile_type, name, description, main_link, ios_link, android_link,
-          categories, subcategories, links, screenshots,
+          categories, subcategories, links, lexicons_json, account_indicators_json, screenshots,
           avatar_cid, avatar_mime, banner_cid, banner_mime, og_jpeg,
           icon_cid, icon_mime, icon_status,
           icon_reviewed_by, icon_reviewed_at, icon_rejected_reason,
@@ -392,7 +452,7 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           takedown_status, takedown_reason, takedown_by, takedown_at,
           pds_url, record_cid, record_rev, created_at, indexed_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           NULL, NULL, NULL,
           ?, ?, ?,
           NULL, NULL, NULL,
@@ -411,6 +471,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
           categories=excluded.categories,
           subcategories=excluded.subcategories,
           links=excluded.links,
+          lexicons_json=excluded.lexicons_json,
+          account_indicators_json=excluded.account_indicators_json,
           screenshots=excluded.screenshots,
           avatar_cid=excluded.avatar_cid,
           avatar_mime=excluded.avatar_mime,
@@ -524,6 +586,8 @@ export async function upsertProfile(input: UpsertProfileInput): Promise<void> {
         JSON.stringify(cats),
         JSON.stringify(input.subcategories ?? []),
         JSON.stringify(input.links ?? []),
+        JSON.stringify(input.lexicons ?? {}),
+        JSON.stringify(input.accountIndicators ?? []),
         JSON.stringify(input.screenshots ?? []),
         input.avatarCid ?? null,
         input.avatarMime ?? null,

@@ -5,7 +5,7 @@ import Footer from "../../components/Footer.tsx";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
 import UserMicroblogViewerButton from "../../islands/UserMicroblogViewerButton.tsx";
-import UserProfileEditButton from "../../islands/UserProfileEditButton.tsx";
+import UpgradeToProjectModal from "../../islands/UpgradeToProjectModal.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getAppUser } from "../../lib/account-types.ts";
 import {
@@ -23,6 +23,7 @@ import {
 } from "../../lib/host-account-routing.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import type { RememberedAccount } from "../../lib/remembered-accounts.ts";
+import { getProfileMicroblogViewer } from "../../lib/bsky-clients.ts";
 
 function safeNext(raw: string | null): string | null {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
@@ -41,11 +42,27 @@ function safeHandle(raw: string | null): string | undefined {
   return handle;
 }
 
+const APP_UPGRADE_COPY = {
+  button: "Register an app",
+  modalTitle: "Use this account as an app profile?",
+  modalBody:
+    "This sets up the current Atmosphere account as an app profile and opens the app management tools. If this app should use a different account,",
+  signInWithProjectLink: "sign in with that app's account here",
+  signInWithProjectSuffix: ".",
+  yes: "Yes, create app profile",
+  cancel: "Cancel",
+  submitting: "Creating app profile...",
+  error: "Couldn't create the app profile.",
+};
+
 export default define.page(async function AccountPage(ctx) {
   const account = buildAccountMenuProps(ctx.state);
   const user = ctx.state.user;
   const next = safeNext(ctx.url.searchParams.get("next")) ?? "/account";
   const initialHandle = safeHandle(ctx.url.searchParams.get("handle"));
+  const upgradeIntent = ctx.url.searchParams.get("upgrade") === "app"
+    ? "app"
+    : null;
   if (!user) {
     return (
       <div id="page-top">
@@ -98,6 +115,7 @@ export default define.page(async function AccountPage(ctx) {
   const primaryManagedHost = managedHosts[0] ?? null;
   const managesHost = managedHosts.length > 0;
   const isAppAccount = ctx.state.accountType === "project";
+  const autoOpenAppUpgrade = upgradeIntent === "app" && !isAppAccount;
   const showAdvancedDetails = isAppAccount || managesHost;
   const rememberedAccounts = account.rememberedAccounts;
   const hasKnownHost = Boolean(accountHost?.displayName);
@@ -111,7 +129,10 @@ export default define.page(async function AccountPage(ctx) {
     ...(isAppAccount ? ["App account"] : []),
     ...(managesHost ? ["Host account"] : []),
   ];
-  const editProfileLabel = isAppAccount ? "Edit app profile" : "Edit profile";
+  const microblogViewer = getProfileMicroblogViewer(
+    profile?.bskyClientId ?? null,
+  );
+  const publicProfileUrl = microblogViewer.profileUrl(user.handle);
 
   return (
     <div id="page-top">
@@ -131,6 +152,14 @@ export default define.page(async function AccountPage(ctx) {
                   </div>
                 )}
               </div>
+              {!isAppAccount && (
+                <div class="account-dashboard-upgrade-anchor">
+                  <UpgradeToProjectModal
+                    initiallyOpen={autoOpenAppUpgrade}
+                    copy={APP_UPGRADE_COPY}
+                  />
+                </div>
+              )}
               <p>
                 Your home base for Atmosphere. See your handle, your account
                 host, saved accounts on this browser, and apps you have opened
@@ -148,6 +177,8 @@ export default define.page(async function AccountPage(ctx) {
                         alt=""
                         loading="lazy"
                         decoding="async"
+                        width={82}
+                        height={82}
                       />
                     )
                     : <span>{initialFor(displayName)}</span>}
@@ -175,28 +206,15 @@ export default define.page(async function AccountPage(ctx) {
                         class="account-dashboard-button account-dashboard-button--primary"
                       >
                         <AccountIcon name="edit" />
-                        <span>{editProfileLabel}</span>
+                        <span>Edit app profile</span>
                       </a>
                     )
                     : (
-                      <UserProfileEditButton
-                        displayName={displayName}
-                        bio={profile?.bio ?? ""}
-                        avatarUrl={avatarUrl}
-                        microblogVisible={profile?.bskyButtonVisible ?? true}
-                        websiteUrl={profile?.websiteUrl ?? null}
-                        websiteVisible={profile?.websiteVisible ?? false}
-                        triggerLabel={editProfileLabel}
-                        title="Edit profile"
-                        description="Update how your account appears on Atmosphere."
-                        nameLabel="Display name"
-                        namePlaceholder="Your name"
-                        bioLabel="Bio"
-                        bioPlaceholder="A short note about you"
-                        saveLabel="Save profile"
-                        savingLabel="Saving..."
-                        savedLabel="Profile saved."
-                        errorLabel="Could not save your profile."
+                      <ProfileSourcePanel
+                        profileUrl={publicProfileUrl}
+                        profileViewerName={microblogViewer.name}
+                        hostManagementUrl={hostRoute?.accountManagementUrl ??
+                          null}
                       />
                     )}
                   {managesHost && primaryManagedHost && (
@@ -290,6 +308,49 @@ export default define.page(async function AccountPage(ctx) {
     </div>
   );
 });
+
+function ProfileSourcePanel(
+  { profileUrl, profileViewerName, hostManagementUrl }: {
+    profileUrl: string;
+    profileViewerName: string;
+    hostManagementUrl: string | null;
+  },
+) {
+  return (
+    <div class="account-dashboard-profile-source">
+      <div>
+        <p class="text-eyebrow">Profile</p>
+        <strong>Shown from your account</strong>
+        <p>
+          Your name, avatar, and bio come from your Atmosphere profile. Change
+          them in your account host or microblog app.
+        </p>
+      </div>
+      <div class="account-dashboard-actions">
+        <a
+          href={profileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="account-dashboard-button account-dashboard-button--primary"
+        >
+          <AccountIcon name="external" />
+          <span>Open in {profileViewerName}</span>
+        </a>
+        {hostManagementUrl && (
+          <a
+            href={hostManagementUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="account-dashboard-button account-dashboard-button--secondary"
+          >
+            <AccountIcon name="host" />
+            <span>Manage at host</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function DashboardSection(
   { id, eyebrow, title, icon, description, badge, children }: {
@@ -463,6 +524,8 @@ function ApplicationsPanel(
                       alt=""
                       loading="lazy"
                       decoding="async"
+                      width={40}
+                      height={40}
                     />
                   )
                   : <span>{initialFor(connection.appName)}</span>}

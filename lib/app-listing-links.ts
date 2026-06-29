@@ -1,5 +1,10 @@
 import type { AppListing } from "./app-directory.ts";
 import type { AppDirectoryLink } from "./app-lexicons.ts";
+import {
+  BSKY_CLIENTS,
+  type BskyClient,
+  getProfileMicroblogViewer,
+} from "./bsky-clients.ts";
 
 export type AppActionLinkKind =
   | "website"
@@ -11,32 +16,55 @@ export type AppActionLinkKind =
 export interface AppActionLink extends AppDirectoryLink {
   kind: AppActionLinkKind;
   label: string;
+  iconUrl?: string | null;
 }
 
 type LinkSource = Pick<AppListing, "links" | "primaryUrl" | "productDid">;
 
-export function appActionLinks(app: LinkSource): AppActionLink[] {
+export interface AppActionLinkOptions {
+  microblogViewerClientId?: string | null;
+}
+
+export function appActionLinks(
+  app: LinkSource,
+  options: AppActionLinkOptions = {},
+): AppActionLink[] {
   const out: AppActionLink[] = [];
   const seen = new Set<string>();
+  const microblogViewer = options.microblogViewerClientId
+    ? getProfileMicroblogViewer(options.microblogViewerClientId)
+    : null;
 
   for (const link of app.links) {
-    addActionLink(out, seen, link);
-  }
-
-  if (app.primaryUrl && !hasEquivalentUrl(out, app.primaryUrl)) {
-    addActionLink(out, seen, {
-      uri: app.primaryUrl,
-      label: "Website",
-      role: "website",
+    addActionLink(out, seen, link, {
+      fallbackAccount: app.productDid,
+      microblogViewer,
     });
   }
 
+  if (app.primaryUrl && !hasEquivalentUrl(out, app.primaryUrl)) {
+    addActionLink(
+      out,
+      seen,
+      {
+        uri: app.primaryUrl,
+        label: "Website",
+        role: "website",
+      },
+      { fallbackAccount: app.productDid, microblogViewer },
+    );
+  }
+
   if (app.productDid && !out.some((link) => link.kind === "bluesky")) {
+    const viewer = microblogViewer?.id === "bluesky" ? null : microblogViewer;
     const blueskyLink: AppActionLink = {
-      uri: bskyProfileUrl(app.productDid),
-      label: "Bluesky",
+      uri: viewer ? viewer.profileUrl(app.productDid) : bskyProfileUrl(
+        app.productDid,
+      ),
+      label: viewer?.name ?? "Bluesky",
       role: "bluesky",
       kind: "bluesky",
+      iconUrl: viewer?.iconUrl ?? null,
     };
     const insertAfter = out.findIndex((link) => link.kind === "website");
     if (insertAfter >= 0) {
@@ -59,15 +87,27 @@ function addActionLink(
   out: AppActionLink[],
   seen: Set<string>,
   link: AppDirectoryLink,
+  options: {
+    fallbackAccount: string | null;
+    microblogViewer: BskyClient | null;
+  },
 ): void {
   const key = canonicalActionUrl(link.uri);
   if (!key || seen.has(key)) return;
   const kind = appActionLinkKind(link);
   seen.add(key);
+  const viewer = kind === "bluesky" && options.microblogViewer?.id !== "bluesky"
+    ? options.microblogViewer
+    : null;
+  const account = viewer
+    ? blueskyProfileIdentifier(link.uri) ?? options.fallbackAccount
+    : null;
   out.push({
     ...link,
+    uri: viewer && account ? viewer.profileUrl(account) : link.uri,
     kind,
-    label: appActionLinkLabel(link, kind),
+    label: viewer?.name ?? appActionLinkLabel(link, kind),
+    iconUrl: viewer?.iconUrl ?? null,
   });
 }
 
@@ -153,5 +193,22 @@ function parseUrl(value: string): URL | null {
     return new URL(value);
   } catch {
     return null;
+  }
+}
+
+function blueskyProfileIdentifier(value: string): string | null {
+  const url = parseUrl(value);
+  if (!url) return null;
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  const isKnownViewer = BSKY_CLIENTS.some((client) =>
+    client.domain.toLowerCase() === host
+  );
+  if (!isKnownViewer) return null;
+  const match = url.pathname.match(/^\/profile\/([^/?#]+)/i);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]).trim() || null;
+  } catch {
+    return match[1].trim() || null;
   }
 }

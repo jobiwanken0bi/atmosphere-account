@@ -16,6 +16,8 @@ export default function HostMark({ host }: { host: AccountHost }) {
             alt=""
             loading="lazy"
             decoding="async"
+            width={56}
+            height={56}
             class="host-card-mark-image"
           />
         )

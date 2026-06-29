@@ -19,6 +19,16 @@ export interface CommunityAppImage {
   uri?: string;
 }
 
+export interface CommunityAppLexiconInterop {
+  produces?: string[];
+  consumes?: string[];
+}
+
+export interface CommunityAppAccountIndicator {
+  collection: string;
+  rkey?: string;
+}
+
 export interface CommunityAppProfileRecord {
   $type?: typeof COMMUNITY_APP_PROFILE_NSID;
   name: string;
@@ -27,7 +37,9 @@ export interface CommunityAppProfileRecord {
   links: CommunityAppLink[];
   images?: CommunityAppImage[];
   status?: string;
+  lexicons?: CommunityAppLexiconInterop;
   platforms?: string[];
+  accountIndicators?: CommunityAppAccountIndicator[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -100,6 +112,8 @@ export function buildCommunityAppProfileFromProfileRecord(
     ...(input.record.categories ?? []).filter((category) => category !== "app"),
   ]).slice(0, 10);
   const platforms = communityPlatformsFromProfile(input.record);
+  const lexicons = communityLexiconsFromProfile(input.record);
+  const accountIndicators = communityAccountIndicatorsFromProfile(input.record);
 
   return {
     $type: COMMUNITY_APP_PROFILE_NSID,
@@ -111,7 +125,9 @@ export function buildCommunityAppProfileFromProfileRecord(
     links,
     ...(images.length > 0 ? { images } : {}),
     status: STATUS_RELEASED,
+    ...(lexicons ? { lexicons } : {}),
     ...(platforms.length > 0 ? { platforms } : {}),
+    ...(accountIndicators.length > 0 ? { accountIndicators } : {}),
     createdAt,
     updatedAt: now.toISOString(),
   };
@@ -230,6 +246,35 @@ function communityPlatformsFromProfile(record: ProfileRecord): string[] {
     record.iosLink ? PLATFORM_IOS : null,
     record.androidLink ? PLATFORM_ANDROID : null,
   ]);
+}
+
+function communityLexiconsFromProfile(
+  record: ProfileRecord,
+): CommunityAppLexiconInterop | null {
+  const produces = uniqueStrings(record.lexicons?.produces ?? []).slice(0, 64);
+  const consumes = uniqueStrings(record.lexicons?.consumes ?? []).slice(0, 64);
+  const out: CommunityAppLexiconInterop = {};
+  if (produces.length > 0) out.produces = produces;
+  if (consumes.length > 0) out.consumes = consumes;
+  return out.produces || out.consumes ? out : null;
+}
+
+function communityAccountIndicatorsFromProfile(
+  record: ProfileRecord,
+): CommunityAppAccountIndicator[] {
+  const seen = new Set<string>();
+  const out: CommunityAppAccountIndicator[] = [];
+  for (const indicator of record.accountIndicators ?? []) {
+    const collection = indicator.collection.trim();
+    if (!collection) continue;
+    const rkey = indicator.rkey?.trim();
+    const key = `${collection}/${rkey ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ collection, ...(rkey ? { rkey } : {}) });
+    if (out.length >= 64) break;
+  }
+  return out;
 }
 
 function addCommunityLink(

@@ -139,6 +139,16 @@ export interface ScreenshotEntry {
   image: BlobRef;
 }
 
+export interface LexiconInterop {
+  produces?: string[];
+  consumes?: string[];
+}
+
+export interface AccountIndicator {
+  collection: string;
+  rkey?: string;
+}
+
 export interface ProfileRecord {
   $type?: typeof PROFILE_NSID;
   profileType?: ProfileType;
@@ -186,6 +196,13 @@ export interface ProfileRecord {
    * current form no longer emits them.
    */
   links?: LinkEntry[];
+  /**
+   * Optional app-interop metadata aligned with community.lexicon.app.profile.
+   * This keeps legacy Atmosphere profiles publishable into the community app
+   * profile shape without forcing every app owner to think about lexicons.
+   */
+  lexicons?: LexiconInterop;
+  accountIndicators?: AccountIndicator[];
   createdAt: string;
 }
 
@@ -405,6 +422,110 @@ function normalizeLinks(input: unknown): {
   return { ok: true, value: out };
 }
 
+function normalizeStringList(
+  input: unknown,
+  label: string,
+  opts: { maxItems: number; maxLength: number },
+): { ok: true; value: string[] } | { ok: false; error: string } {
+  if (input === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(input)) {
+    return { ok: false, error: `${label}: must be an array` };
+  }
+  if (input.length > opts.maxItems) {
+    return { ok: false, error: `${label}: at most ${opts.maxItems}` };
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    if (!isStr(raw, opts.maxLength)) {
+      return {
+        ok: false,
+        error: `${label}: items must be strings <=${opts.maxLength}`,
+      };
+    }
+    const value = raw.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return { ok: true, value: out };
+}
+
+function normalizeLexiconInterop(input: unknown): {
+  ok: true;
+  value?: LexiconInterop;
+} | { ok: false; error: string } {
+  if (input === undefined) return { ok: true, value: undefined };
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "lexicons: must be an object" };
+  }
+  const record = input as Record<string, unknown>;
+  const produces = normalizeStringList(record.produces, "lexicons.produces", {
+    maxItems: 64,
+    maxLength: 256,
+  });
+  if (!produces.ok) return produces;
+  const consumes = normalizeStringList(record.consumes, "lexicons.consumes", {
+    maxItems: 64,
+    maxLength: 256,
+  });
+  if (!consumes.ok) return consumes;
+  const value: LexiconInterop = {};
+  if (produces.value.length > 0) value.produces = produces.value;
+  if (consumes.value.length > 0) value.consumes = consumes.value;
+  return {
+    ok: true,
+    value: value.produces || value.consumes ? value : undefined,
+  };
+}
+
+function normalizeAccountIndicators(input: unknown): {
+  ok: true;
+  value?: AccountIndicator[];
+} | { ok: false; error: string } {
+  if (input === undefined) return { ok: true, value: undefined };
+  if (!Array.isArray(input)) {
+    return { ok: false, error: "accountIndicators: must be an array" };
+  }
+  if (input.length > 64) {
+    return { ok: false, error: "accountIndicators: at most 64" };
+  }
+  const seen = new Set<string>();
+  const out: AccountIndicator[] = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return {
+        ok: false,
+        error: "accountIndicators: items must be objects",
+      };
+    }
+    const item = raw as Record<string, unknown>;
+    if (!isStr(item.collection, 256)) {
+      return {
+        ok: false,
+        error: "accountIndicators[].collection: string <=256 required",
+      };
+    }
+    const collection = item.collection.trim();
+    if (!collection) continue;
+    let rkey: string | undefined;
+    if (item.rkey !== undefined && item.rkey !== null && item.rkey !== "") {
+      if (!isStr(item.rkey, 256)) {
+        return {
+          ok: false,
+          error: "accountIndicators[].rkey: string <=256",
+        };
+      }
+      rkey = item.rkey.trim();
+    }
+    const key = `${collection}/${rkey ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ collection, ...(rkey ? { rkey } : {}) });
+  }
+  return { ok: true, value: out.length > 0 ? out : undefined };
+}
+
 export function validateProfile(
   input: unknown,
 ): ValidationResult<ProfileRecord> {
@@ -528,6 +649,12 @@ export function validateProfile(
   if (!screenshotsRes.ok) return { ok: false, error: screenshotsRes.error };
   const linksRes = normalizeLinks(v.links);
   if (!linksRes.ok) return { ok: false, error: linksRes.error };
+  const lexiconsRes = normalizeLexiconInterop(v.lexicons);
+  if (!lexiconsRes.ok) return { ok: false, error: lexiconsRes.error };
+  const accountIndicatorsRes = normalizeAccountIndicators(v.accountIndicators);
+  if (!accountIndicatorsRes.ok) {
+    return { ok: false, error: accountIndicatorsRes.error };
+  }
   if (v.subcategories !== undefined) {
     if (!Array.isArray(v.subcategories) || v.subcategories.length > 10) {
       return { ok: false, error: "subcategories: array of <=10 strings" };
@@ -562,6 +689,8 @@ export function validateProfile(
       categories: normalizedCategories,
       subcategories: v.subcategories as string[] | undefined,
       links: linksRes.value.length > 0 ? linksRes.value : undefined,
+      lexicons: lexiconsRes.value,
+      accountIndicators: accountIndicatorsRes.value,
       createdAt: v.createdAt as string,
     },
   };

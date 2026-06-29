@@ -91,13 +91,27 @@ export default function UserMicroblogViewerButton(
         }}
       >
         <span class="account-microblog-viewer-atmosphere" aria-hidden="true">
-          <img src="/union.svg" alt="" loading="lazy" decoding="async" />
+          <img
+            src="/union.svg"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            width={18}
+            height={18}
+          />
         </span>
         <span class="account-microblog-viewer-separator" aria-hidden="true">
           :
         </span>
         <span class="account-microblog-viewer-client" aria-hidden="true">
-          <img src={active.iconUrl} alt="" loading="lazy" decoding="async" />
+          <img
+            src={active.iconUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            width={20}
+            height={20}
+          />
         </span>
       </button>
 
@@ -140,6 +154,8 @@ export default function UserMicroblogViewerButton(
                       alt=""
                       loading="lazy"
                       decoding="async"
+                      width={26}
+                      height={26}
                     />
                   </span>
                   <span class="account-microblog-viewer-option-copy">

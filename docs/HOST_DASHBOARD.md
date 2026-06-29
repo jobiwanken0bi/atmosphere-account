@@ -8,7 +8,8 @@ PDS hosts remain responsible for passwords, app grants, sessions, devices,
 rotation keys, repo/blob exports, backups, restores, and migrations. Atmosphere
 provides host discovery, friendly naming, account selection history, docs,
 conformance tests, and a route from the user's Atmosphere account page to
-host-owned controls.
+host-owned controls. Atmosphere does not implement the PDS account-management
+tools itself.
 
 For a PDS service endpoint like `https://pds.example`, `/account` is the
 recommended convention when the host supports the reference account-management
@@ -51,6 +52,10 @@ manifest at:
 ```txt
 https://host.example/.well-known/atmosphere-host-dashboard.json
 ```
+
+The `dashboard` name is legacy. This file describes optional compatibility
+metadata and deep links; it is not the account-management surface and does not
+delegate PDS controls to Atmosphere.
 
 Minimal example:
 
@@ -118,12 +123,17 @@ states honestly and should not imply it can perform host-owned actions.
 Atmosphere `/account` should:
 
 - show the current account, avatar, handle, and friendly host name,
-- provide one primary "Manage account at host" route,
+- provide one primary "Manage account at host" route when the host publishes a
+  working account page URL,
 - show Atmosphere Login picker connections,
 - show remembered accounts for this browser,
 - hide technical identifiers behind disclosure UI,
 - never render first-party controls for PDS OAuth grant revocation, devices,
   passwords, keys, recovery, backup, account deletion, or migration.
+
+Atmosphere-specific sections may include picker connections, saved browser
+accounts, developer app registrations, app listings, and reviews. They should be
+visibly separate from host-owned account controls.
 
 ## Conformance Direction
 

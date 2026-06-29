@@ -22,7 +22,6 @@ import {
   updateAppUserProfile,
 } from "../../lib/account-types.ts";
 import { observeAccountHost } from "../../lib/account-hosts.ts";
-import { ensureUserProfileRecord } from "../../lib/user-profile-records.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -76,7 +75,8 @@ export const handler = define.handlers({
        *  - `intent === "project"` (clicked "Register an app")
        *      → mark as project, take them to the project dashboard.
        *  - `intent === "user"` or unset (header sign-in, review CTAs)
-       *      → mark as user and publish a baseline user profile record.
+       *      → mark as user in the local account cache. Normal reviewer
+       *        accounts use their ATProto/Bluesky profile for public identity.
        *
        * If the DID already has a type (re-sign-in or upgrade flows),
        * the intent is ignored and the existing classification stands.
@@ -98,16 +98,6 @@ export const handler = define.handlers({
           accountType: desired,
         }).catch(() => {});
         accountType = desired;
-      }
-      if (accountType === "user") {
-        await ensureUserProfileRecord({
-          did: result.did,
-          handle: result.handle,
-          pdsUrl: result.pdsUrl,
-          fallbackName: bskyProfile?.displayName ?? null,
-          fallbackDescription: bskyProfile?.description ?? null,
-          fallbackAvatar: bskyProfile?.avatar ?? null,
-        }).catch(() => {});
       }
       const returnTo = result.returnTo && result.returnTo.startsWith("/") &&
           !result.returnTo.startsWith("//")

@@ -59,6 +59,8 @@ function profile(): ProfileRow {
     categories: ["app"],
     subcategories: ["blogging"],
     links: [{ kind: "bsky", clientId: "bsky" }],
+    lexicons: { produces: [], consumes: [] },
+    accountIndicators: [],
     screenshots: [{ image: screenshotBlob }],
     avatarCid: iconBlob.ref.$link,
     avatarMime: iconBlob.mimeType,

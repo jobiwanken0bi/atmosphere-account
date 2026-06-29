@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS profile (
   categories text NOT NULL DEFAULT '[]',
   subcategories text NOT NULL DEFAULT '[]',
   links text NOT NULL DEFAULT '[]',
+  lexicons_json text NOT NULL DEFAULT '{}',
+  account_indicators_json text NOT NULL DEFAULT '[]',
   screenshots text NOT NULL DEFAULT '[]',
   avatar_cid text,
   avatar_mime text,
@@ -70,6 +72,9 @@ CREATE TABLE IF NOT EXISTS profile (
     setweight(to_tsvector('simple', coalesce(handle, '')), 'C')
   ) STORED
 );
+
+ALTER TABLE profile ADD COLUMN IF NOT EXISTS lexicons_json text NOT NULL DEFAULT '{}';
+ALTER TABLE profile ADD COLUMN IF NOT EXISTS account_indicators_json text NOT NULL DEFAULT '[]';
 
 CREATE INDEX IF NOT EXISTS profile_handle ON profile(handle);
 CREATE INDEX IF NOT EXISTS profile_handle_trgm ON profile USING gin (handle gin_trgm_ops);
@@ -226,6 +231,11 @@ CREATE TABLE IF NOT EXISTS account_host (
   host text PRIMARY KEY,
   display_name text NOT NULL,
   description text NOT NULL DEFAULT '',
+  data_location text,
+  inferred_location text,
+  inferred_location_source text,
+  inferred_location_checked_at bigint,
+  inferred_location_evidence_json text,
   homepage_url text,
   service_endpoint text,
   account_management_url text,
@@ -257,6 +267,11 @@ CREATE INDEX IF NOT EXISTS account_host_verification ON account_host(verificatio
 CREATE INDEX IF NOT EXISTS account_host_signup ON account_host(signup_status);
 CREATE INDEX IF NOT EXISTS account_host_source ON account_host(source);
 
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS data_location text;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location text;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location_source text;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location_checked_at bigint;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location_evidence_json text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_endpoint text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS account_management_url text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_record_uri text;

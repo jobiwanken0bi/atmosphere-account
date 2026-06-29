@@ -13,7 +13,6 @@ import {
   isSafeRelativePath,
   rejectLargeRequest,
 } from "../../../lib/security.ts";
-import { ensureUserProfileRecord } from "../../../lib/user-profile-records.ts";
 
 const MAX_ACCOUNT_TYPE_FORM_BYTES = 8_192;
 
@@ -51,11 +50,6 @@ export const handler = define.handlers({
     }
 
     const session = await loadSession(user.did).catch(() => null);
-    if (accountType === "user" && !session) {
-      return new Response("OAuth session expired, please sign in again", {
-        status: 401,
-      });
-    }
 
     const bskyProfile = session
       ? await getBskyProfile(session.pdsUrl, user.did).catch(() => null)
@@ -70,24 +64,6 @@ export const handler = define.handlers({
       avatarMime: bskyProfile?.avatar?.mimeType ?? null,
       accountType,
     });
-
-    if (accountType === "user" && session) {
-      const result = await ensureUserProfileRecord({
-        did: user.did,
-        handle: user.handle,
-        pdsUrl: session.pdsUrl,
-        fallbackName: bskyProfile?.displayName ?? null,
-        fallbackDescription: bskyProfile?.description ?? null,
-        fallbackAvatar: bskyProfile?.avatar ?? null,
-      }).then(() => null).catch((err) =>
-        err instanceof Error ? err : new Error(String(err))
-      );
-      if (result) {
-        return new Response(`user profile setup failed: ${result.message}`, {
-          status: 502,
-        });
-      }
-    }
 
     return new Response(null, {
       status: 303,

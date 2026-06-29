@@ -25,8 +25,8 @@ export default define.page(async function ExploreCreate(ctx) {
     /**
      * Already signed in:
      *  - Project account → straight to manage.
-     *  - User account that hit "Register an app" → bounce to the
-     *    dashboard with the upgrade modal pre-opened so they can either
+     *  - User account that hit "Register an app" → bounce to account
+     *    home with the upgrade modal pre-opened so they can either
      *    convert this account or sign in with a different one.
      *  - User account otherwise → their reviews dashboard.
      *  - Unknown legacy state → user dashboard (callback now always
@@ -36,7 +36,7 @@ export default define.page(async function ExploreCreate(ctx) {
     if (accountType === "project") {
       location = next ?? "/apps/manage";
     } else if (accountType === "user" && intent === "project") {
-      location = "/account/reviews?upgrade=1";
+      location = "/account?upgrade=app";
     } else {
       location = next ?? "/account";
     }

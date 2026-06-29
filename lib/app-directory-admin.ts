@@ -103,7 +103,20 @@ export async function getAppDirectoryAdminStatus(): Promise<
       count(
         c,
         "app_listing",
-        "deleted_at IS NULL AND atstore_listing_uri IS NULL AND legacy_profile_did IS NOT NULL",
+        `deleted_at IS NULL
+          AND legacy_profile_did IS NOT NULL
+          AND atstore_listing_uri IS NULL
+          AND community_profile_uri IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM app_record r
+            WHERE r.listing_id = app_listing.id
+              AND r.deleted_at IS NULL
+              AND r.source_type IN (
+                'atstore_listing',
+                'community_profile',
+                'community_entry'
+              )
+          )`,
       ),
       count(
         c,
@@ -144,8 +157,20 @@ export async function listAppDirectoryMigrationCandidates(
         SELECT id, slug, name, primary_url, legacy_profile_did, icon_url
         FROM app_listing
         WHERE deleted_at IS NULL
+          AND legacy_profile_did IS NOT NULL
           AND atstore_listing_uri IS NULL
+          AND community_profile_uri IS NULL
           AND canonical_source = 'atmosphere_profile'
+          AND NOT EXISTS (
+            SELECT 1 FROM app_record r
+            WHERE r.listing_id = app_listing.id
+              AND r.deleted_at IS NULL
+              AND r.source_type IN (
+                'atstore_listing',
+                'community_profile',
+                'community_entry'
+              )
+          )
         ORDER BY updated_at DESC
         LIMIT ?
       `,
@@ -161,7 +186,7 @@ export async function listAppDirectoryMigrationCandidates(
         primaryUrl: stringOrNull(r.primary_url),
         legacyProfileDid: stringOrNull(r.legacy_profile_did),
         iconUrl,
-        issue: iconUrl ? null : "Needs an icon before ATStore publishing",
+        issue: iconUrl ? null : "Needs an icon before shared-record publishing",
       };
     });
   });
@@ -228,7 +253,8 @@ async function classifyMigrationCandidate(
   if (existingRemote) {
     return {
       status: "already_remote",
-      issue: "A remote ATStore record exists and can be indexed.",
+      issue:
+        "A remote ATStore record exists; index it and publish the community profile.",
     };
   }
   const sourceRecord = await getProfileRecord(profile.did, session.pdsUrl)
@@ -237,7 +263,7 @@ async function classifyMigrationCandidate(
   if (readiness.ok && sourceRecord) {
     return {
       status: "ready",
-      issue: "Ready to publish an ATStore listing.",
+      issue: "Ready to publish shared app records.",
     };
   }
   const issue = readiness.issues[0] ?? "Not ready to migrate.";
@@ -265,19 +291,20 @@ const migrationStatusCopy: Record<
 > = {
   ready: {
     label: "Ready",
-    description: "Can publish an ATStore listing when the owner chooses.",
+    description: "Can publish shared app records when the owner chooses.",
   },
   already_remote: {
     label: "Remote record exists",
-    description: "Can be indexed without publishing a duplicate.",
+    description:
+      "Can index the existing ATStore record and publish the community profile.",
   },
   needs_icon: {
     label: "Needs icon",
-    description: "ATStore publishing requires an app icon/avatar.",
+    description: "Shared-record publishing requires an app icon/avatar.",
   },
   needs_url: {
     label: "Needs URL",
-    description: "ATStore publishing requires a primary app URL.",
+    description: "Shared-record publishing requires a primary app URL.",
   },
   no_session: {
     label: "Needs sign-in",

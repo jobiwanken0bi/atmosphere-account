@@ -115,6 +115,20 @@
             },
             "description": "Outbound buttons shown on the public profile after the Web / iOS / Android app links. Atmosphere links (kind = bsky / tangled / supper) derive their URL from the project's current handle by default; a `url` override is allowed for tangled / supper when the canonical destination differs from the handle. Custom link kinds (kind = website / other) always carry their `url`; new records no longer emit website entries."
           },
+          "lexicons": {
+            "type": "ref",
+            "ref": "#lexiconInterop",
+            "description": "Optional app interoperability metadata aligned with community.lexicon.app.profile. Lists AT Protocol record collections this app writes and reads."
+          },
+          "accountIndicators": {
+            "type": "array",
+            "maxLength": 64,
+            "items": {
+              "type": "ref",
+              "ref": "#accountIndicator"
+            },
+            "description": "Optional record collections whose presence in an account can indicate that the account uses this app."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime",
@@ -166,6 +180,45 @@
           "type": "string",
           "maxLength": 64,
           "description": "Required when kind=\"other\". Used as the visible button title for custom links."
+        }
+      }
+    },
+    "lexiconInterop": {
+      "type": "object",
+      "properties": {
+        "produces": {
+          "type": "array",
+          "maxLength": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "description": "AT Protocol collections this app writes or publishes."
+        },
+        "consumes": {
+          "type": "array",
+          "maxLength": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "description": "AT Protocol collections this app reads or understands."
+        }
+      }
+    },
+    "accountIndicator": {
+      "type": "object",
+      "required": ["collection"],
+      "properties": {
+        "collection": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "AT Protocol collection whose presence can indicate this app is connected to an account."
+        },
+        "rkey": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Optional record key when a single known record, not just a collection, is the indicator."
         }
       }
     }

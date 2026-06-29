@@ -7,10 +7,10 @@ import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import {
   type AccountHost,
   type HostSignupStatus,
-  type HostVerificationStatus,
   listAccountHosts,
   warmAccountHostProfiles,
 } from "../lib/account-hosts.ts";
+import { hostFriendlyProfile } from "../lib/host-friendly.ts";
 
 const signupOptions: Array<HostSignupStatus | "all"> = [
   "all",
@@ -53,8 +53,8 @@ export default define.page(async function HostsPage(ctx) {
                 <h1 class="text-section">Choose where your account lives.</h1>
                 <p class="text-body mt-2">
                   Account hosts keep your Atmosphere account online so you can
-                  use it across apps. Start with a friendly name; technical
-                  endpoints stay in the details.
+                  use it across apps. Compare who each host is for, where
+                  account data is hosted, and whether signup is open.
                 </p>
               </div>
             </header>
@@ -150,6 +150,7 @@ function DirectoryRegisterCta(
 }
 
 function HostCard({ host }: { host: AccountHost }) {
+  const friendly = hostFriendlyProfile(host);
   return (
     <a
       href={`/hosts/${encodeURIComponent(host.host)}`}
@@ -168,27 +169,12 @@ function HostCard({ host }: { host: AccountHost }) {
             )}
           </div>
         </div>
-        <span class={`host-status host-status-${host.verificationStatus}`}>
-          {verificationLabel(host.verificationStatus)}
-        </span>
       </div>
-      <p class="host-card-description">{host.description}</p>
+      <p class="host-card-description">{friendly.summary}</p>
       <div class="host-card-tags" aria-label="Host facts">
-        <span>{signupLabel(host.signupStatus)}</span>
-        <span>{registryStatusLabel(host)}</span>
+        <span>{friendly.location}</span>
+        <span>{friendly.signupLabel}</span>
       </div>
-      <dl class="host-card-facts">
-        <div>
-          <dt>Host address</dt>
-          <dd>{host.host}</dd>
-        </div>
-        {host.lastObservedAt && (
-          <div>
-            <dt>Last seen</dt>
-            <dd>{formatDate(host.lastObservedAt)}</dd>
-          </div>
-        )}
-      </dl>
     </a>
   );
 }
@@ -206,35 +192,6 @@ function buildHostsHref(opts: {
 
 function registerHostHref(): string {
   return "/hosts/register";
-}
-
-function formatDate(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-function registryStatusLabel(host: AccountHost): string {
-  if (host.serviceRecordUri) return "Published by host";
-  switch (host.source) {
-    case "seeded":
-      return "Seeded by Atmosphere";
-    case "manual":
-      return "Needs host record";
-    default:
-      return "Observed from sign-in";
-  }
-}
-
-function verificationLabel(status: HostVerificationStatus | "all"): string {
-  switch (status) {
-    case "verified":
-      return "Verified";
-    case "claimed":
-      return "Claimed";
-    case "observed":
-      return "Observed";
-    default:
-      return "All";
-  }
 }
 
 function signupLabel(status: HostSignupStatus | "all"): string {

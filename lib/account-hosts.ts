@@ -20,6 +20,11 @@ export interface AccountHost {
   host: string;
   displayName: string;
   description: string;
+  dataLocation: string | null;
+  inferredLocation: string | null;
+  inferredLocationSource: string | null;
+  inferredLocationCheckedAt: number | null;
+  inferredLocationEvidenceJson: string | null;
   homepageUrl: string | null;
   serviceEndpoint: string | null;
   accountManagementUrl: string | null;
@@ -65,6 +70,7 @@ interface SeedHost {
   host: string;
   displayName: string;
   description: string;
+  dataLocation?: string;
   homepageUrl: string;
   serviceEndpoint?: string;
   accountManagementUrl?: string;
@@ -110,6 +116,11 @@ export interface AccountHostDashboardSettingsInput {
 export interface AccountHostProfileSettingsInput {
   displayName: string;
   description?: string | null;
+  dataLocation?: string | null;
+  inferredLocation?: string | null;
+  inferredLocationSource?: string | null;
+  inferredLocationCheckedAt?: number | null;
+  inferredLocationEvidenceJson?: string | null;
   homepageUrl?: string | null;
   signupStatus?: HostSignupStatus | null;
   profileHandle?: string | null;
@@ -121,6 +132,11 @@ export interface AccountHostRegistrationInput {
   host: string;
   displayName: string;
   description?: string | null;
+  dataLocation?: string | null;
+  inferredLocation?: string | null;
+  inferredLocationSource?: string | null;
+  inferredLocationCheckedAt?: number | null;
+  inferredLocationEvidenceJson?: string | null;
   homepageUrl?: string | null;
   serviceEndpoint?: string | null;
   accountManagementUrl?: string | null;
@@ -218,6 +234,7 @@ const SEEDED_HOSTS: SeedHost[] = [
     displayName: "Eurosky",
     description:
       "An independent account host for people who want another friendly home for their Atmosphere account.",
+    dataLocation: "Europe",
     homepageUrl: "https://eurosky.social",
     profileHandle: "eurosky.social",
     claimHandle: "eurosky.social",
@@ -364,6 +381,19 @@ function parseHostRow(row: Record<string, unknown>): AccountHost {
     host: String(row.host),
     displayName: String(row.display_name),
     description: String(row.description ?? ""),
+    dataLocation: row.data_location ? String(row.data_location) : null,
+    inferredLocation: row.inferred_location
+      ? String(row.inferred_location)
+      : null,
+    inferredLocationSource: row.inferred_location_source
+      ? String(row.inferred_location_source)
+      : null,
+    inferredLocationCheckedAt: row.inferred_location_checked_at == null
+      ? null
+      : Number(row.inferred_location_checked_at),
+    inferredLocationEvidenceJson: row.inferred_location_evidence_json
+      ? String(row.inferred_location_evidence_json)
+      : null,
     homepageUrl: row.homepage_url ? String(row.homepage_url) : null,
     serviceEndpoint: row.service_endpoint ? String(row.service_endpoint) : null,
     accountManagementUrl: row.account_management_url
@@ -554,6 +584,18 @@ function normalizeClaimProfileHandle(
   return handle;
 }
 
+function normalizeDataLocation(
+  value: string | null | undefined,
+): string | null {
+  const text = (value ?? "").trim().replace(/\s+/g, " ");
+  return text ? text.slice(0, 120) : null;
+}
+
+function textOrNull(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  return text ? text : null;
+}
+
 function claimHandleForHost(host: AccountHost): string | null {
   const handle = normalizeHandle(host.claimHandle ?? host.profileHandle);
   if (!handle || handle.includes(":") || !handle.includes(".")) return null;
@@ -695,17 +737,18 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
     const claimHandle = seed.claimHandle ?? seed.profileHandle ?? seed.host;
     await c.execute({
       sql: `INSERT INTO account_host (
-          host, display_name, description, homepage_url,
+          host, display_name, description, data_location, homepage_url,
           service_endpoint, account_management_url, dashboard_url,
           capability_manifest_url, capabilities_json, support_url,
           profile_handle, bsky_profile_visible, claim_handle, signup_status, verification_status,
           source, match_patterns,
           last_checked_at,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(host) DO UPDATE SET
           display_name = excluded.display_name,
           description = excluded.description,
+          data_location = COALESCE(excluded.data_location, account_host.data_location),
           homepage_url = excluded.homepage_url,
           service_endpoint = COALESCE(account_host.service_endpoint, excluded.service_endpoint),
           account_management_url = CASE
@@ -753,6 +796,7 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
         seed.host,
         seed.displayName,
         seed.description,
+        normalizeDataLocation(seed.dataLocation),
         seed.homepageUrl,
         seed.serviceEndpoint ?? null,
         seed.accountManagementUrl ?? null,
@@ -1034,6 +1078,16 @@ export async function registerAccountHost(
 
   const signupStatus = normalizeSignupStatus(input.signupStatus);
   const description = (input.description ?? "").trim().slice(0, 600);
+  const dataLocation = normalizeDataLocation(input.dataLocation);
+  const inferredLocation = normalizeDataLocation(input.inferredLocation);
+  const inferredLocationSource = textOrNull(input.inferredLocationSource)
+    ?.slice(0, 120) ?? null;
+  const inferredLocationCheckedAt = input.inferredLocationCheckedAt &&
+      Number.isFinite(input.inferredLocationCheckedAt)
+    ? Math.max(0, Math.floor(input.inferredLocationCheckedAt))
+    : null;
+  const inferredLocationEvidenceJson =
+    textOrNull(input.inferredLocationEvidenceJson)?.slice(0, 4000) ?? null;
   const avatarUrl = normalizePublicImageUrl(input.avatarUrl);
   const bskyProfileVisible = input.bskyProfileVisible !== false;
   const existing = await getAccountHost(host);
@@ -1074,16 +1128,24 @@ export async function registerAccountHost(
     await ensureSeededHosts(c);
     await c.execute({
       sql: `INSERT INTO account_host (
-          host, display_name, description, homepage_url,
+          host, display_name, description, data_location,
+          inferred_location, inferred_location_source,
+          inferred_location_checked_at, inferred_location_evidence_json,
+          homepage_url,
           service_endpoint, account_management_url,
           profile_handle, profile_did, bsky_profile_visible, avatar_url, claim_handle, claim_did,
           support_url, service_record_uri, service_record_cid, service_observed_at,
           signup_status, verification_status, source, match_patterns,
           last_checked_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?)
         ON CONFLICT(host) DO UPDATE SET
           display_name = excluded.display_name,
           description = excluded.description,
+          data_location = COALESCE(excluded.data_location, account_host.data_location),
+          inferred_location = COALESCE(excluded.inferred_location, account_host.inferred_location),
+          inferred_location_source = COALESCE(excluded.inferred_location_source, account_host.inferred_location_source),
+          inferred_location_checked_at = COALESCE(excluded.inferred_location_checked_at, account_host.inferred_location_checked_at),
+          inferred_location_evidence_json = COALESCE(excluded.inferred_location_evidence_json, account_host.inferred_location_evidence_json),
           homepage_url = COALESCE(excluded.homepage_url, account_host.homepage_url),
           service_endpoint = COALESCE(excluded.service_endpoint, account_host.service_endpoint),
           account_management_url = CASE
@@ -1115,6 +1177,11 @@ export async function registerAccountHost(
         host,
         displayName,
         description || `${displayName} account host.`,
+        dataLocation,
+        inferredLocation,
+        inferredLocationSource,
+        inferredLocationCheckedAt,
+        inferredLocationEvidenceJson,
         homepageUrl,
         serviceEndpoint,
         accountManagementUrl,
@@ -1213,6 +1280,7 @@ export async function updateAccountHostProfileSettings(
       sql: `UPDATE account_host
         SET display_name = ?,
             description = ?,
+            data_location = ?,
             homepage_url = ?,
             signup_status = ?,
             profile_handle = ?,
@@ -1229,6 +1297,7 @@ export async function updateAccountHostProfileSettings(
       args: [
         displayName,
         (input.description ?? "").trim().slice(0, 600),
+        normalizeDataLocation(input.dataLocation),
         homepageUrl,
         normalizeSignupStatus(input.signupStatus),
         profileHandle,

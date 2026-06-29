@@ -1,5 +1,6 @@
 import { aliasesForDraft } from "./app-directory.ts";
 import {
+  atmosphereProfileToDraft,
   ATSTORE_LISTING_NSID,
   parseAtstoreFavorite,
   parseAtstoreListing,
@@ -164,6 +165,37 @@ Deno.test("parseCommunityAppRecord prepares future community app records", () =>
   assertEquals(draft.status, "preview");
   assertEquals(draft.platforms, ["web", "ios"]);
   assertEquals(draft.lexiconsConsumes, ["app.bsky.feed.post"]);
+});
+
+Deno.test("atmosphereProfileToDraft preserves community interop metadata", () => {
+  const draft = atmosphereProfileToDraft({
+    did: "did:plc:app",
+    handle: "reader.example",
+    uri: "at://did:plc:app/com.atmosphereaccount.registry.profile/self",
+    cid: "bafyprofile",
+    record: {
+      name: "Reader",
+      description: "Read long-form AT Protocol posts.",
+      mainLink: "https://reader.example",
+      categories: ["app"],
+      lexicons: {
+        produces: ["com.example.reader.bookmark"],
+        consumes: ["app.bsky.feed.post"],
+      },
+      accountIndicators: [
+        { collection: "com.example.reader.bookmark" },
+        { collection: "com.example.reader.settings", rkey: "self" },
+      ],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+
+  assertEquals(draft.lexiconsProduces, ["com.example.reader.bookmark"]);
+  assertEquals(draft.lexiconsConsumes, ["app.bsky.feed.post"]);
+  assertEquals(draft.accountIndicators, [
+    { collection: "com.example.reader.bookmark" },
+    { collection: "com.example.reader.settings", rkey: "self" },
+  ]);
 });
 
 Deno.test("aliasesForDraft dedupes by DID, canonical URL, source URI, and ATStore URI", () => {

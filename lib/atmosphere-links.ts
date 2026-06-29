@@ -168,6 +168,10 @@ export interface ResolvedLink {
   iconKind?: ResolvedIconKind;
 }
 
+export interface ResolveLinkOptions {
+  microblogViewerClientId?: string | null;
+}
+
 function trimUrlForDisplay(url: string): string {
   try {
     const u = new URL(url);
@@ -192,11 +196,14 @@ export function resolveLink(
   entry: LinkEntry,
   handle: string,
   labels: LinkKindLabels,
+  options: ResolveLinkOptions = {},
 ): ResolvedLink | null {
   const kind = entry.kind;
 
   if (kind === "bsky") {
-    const client = getBskyClient(entry.clientId);
+    const client = getBskyClient(
+      options.microblogViewerClientId ?? entry.clientId,
+    );
     const href = client.profileUrl(handle);
     return {
       title: client.name,

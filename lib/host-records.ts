@@ -48,6 +48,7 @@ export interface HostRecordInput {
   host: string;
   displayName: string;
   description?: string | null;
+  dataLocation?: string | null;
   homepageUrl?: string | null;
   serviceEndpoint: string;
   accountManagementUrl?: string | null;
@@ -79,6 +80,7 @@ export function buildHostServiceRecord(
     serviceEndpoint: input.serviceEndpoint,
     accountManagementUrl: accountManagementUrl || undefined,
     hostPatterns: [host],
+    regions: dataLocationRegions(input.dataLocation),
     status: "account.atmosphere.host.defs#statusActive",
     signup: {
       status: HOST_SIGNUP_VALUES[input.signupStatus],
@@ -174,6 +176,13 @@ export function hostLinks(
     links.push({ role: HOST_LINK_ROLE_SUPPORT, url: supportUrl });
   }
   return links.length > 0 ? links : undefined;
+}
+
+function dataLocationRegions(
+  value: string | null | undefined,
+): string[] | undefined {
+  const text = value?.trim().replace(/\s+/g, " ").slice(0, 120);
+  return text ? [text] : undefined;
 }
 
 export function hostServiceCapabilities(

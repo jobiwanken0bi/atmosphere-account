@@ -1,10 +1,15 @@
 import { define } from "../../../utils.ts";
 import {
+  type AtstoreMigrationPublishResult,
   findExistingAtstoreListingForProfile,
   getAtstoreMigrationReadiness,
   indexAtstoreListingMigrationRecord,
   publishAtstoreListingMigration,
 } from "../../../lib/atstore-migration.ts";
+import {
+  findExistingCommunityAppProfile,
+  publishCommunityAppProfileFromProfileRecord,
+} from "../../../lib/community-app-profile.ts";
 import { getAppListingByIdentifier } from "../../../lib/app-directory.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
 import { loadSession } from "../../../lib/oauth.ts";
@@ -32,34 +37,6 @@ export const handler = define.handlers({
 
     const existingListing = await getAppListingByIdentifier(profile.handle)
       .catch(() => null);
-    if (existingListing?.atstoreListingUri) {
-      return jsonResponse(200, {
-        ok: true,
-        alreadyMigrated: true,
-        uri: existingListing.atstoreListingUri,
-        slug: existingListing.slug,
-      });
-    }
-
-    const existingRemote = await findExistingAtstoreListingForProfile(
-      user.did,
-      session.pdsUrl,
-    ).catch(() => null);
-    if (existingRemote) {
-      const indexed = await indexAtstoreListingMigrationRecord(
-        existingRemote,
-        user.did,
-      );
-      if (indexed) {
-        return jsonResponse(200, {
-          ok: true,
-          alreadyMigrated: true,
-          uri: indexed.uri,
-          cid: indexed.cid,
-          slug: indexed.slug,
-        });
-      }
-    }
 
     const sourceRecord = await getProfileRecord(user.did, session.pdsUrl)
       .catch(() => null);
@@ -72,20 +49,66 @@ export const handler = define.handlers({
     }
 
     try {
-      const result = await publishAtstoreListingMigration({
+      const existingCommunity = await findExistingCommunityAppProfile(
+        user.did,
+        session.pdsUrl,
+      ).catch(() => null);
+      const community = await publishCommunityAppProfileFromProfileRecord({
         did: user.did,
+        handle: user.handle,
         pdsUrl: session.pdsUrl,
-        profile,
-        sourceRecord,
+        record: sourceRecord,
+        existingRecord: existingCommunity,
       });
+
+      let alreadyMigrated = Boolean(existingListing?.atstoreListingUri);
+      let result: AtstoreMigrationPublishResult | null =
+        existingListing?.atstoreListingUri
+          ? {
+            uri: existingListing.atstoreListingUri,
+            cid: "",
+            rkey: existingListing.atstoreListingUri.split("/").at(-1) ?? "",
+            slug: existingListing.slug,
+          }
+          : null;
+
+      if (!result) {
+        const existingRemote = await findExistingAtstoreListingForProfile(
+          user.did,
+          session.pdsUrl,
+        ).catch(() => null);
+        if (existingRemote) {
+          result = await indexAtstoreListingMigrationRecord(
+            existingRemote,
+            user.did,
+          );
+          alreadyMigrated = Boolean(result);
+        }
+      }
+
+      if (!result) {
+        result = await publishAtstoreListingMigration({
+          did: user.did,
+          pdsUrl: session.pdsUrl,
+          profile,
+          sourceRecord,
+        });
+      }
+      if (!result) {
+        throw new Error("The ATStore record could not be indexed.");
+      }
+
       return jsonResponse(200, {
         ok: true,
         uri: result.uri,
         cid: result.cid,
         slug: result.slug,
+        alreadyMigrated,
+        communityProfileUri: community.uri,
+        communityProfileCid: community.cid,
       });
     } catch (err) {
-      console.error("[atstore-migration] putRecord failed:", err);
+      console.error("[shared-record-migration] putRecord failed:", err);
       return jsonResponse(502, {
         error: "publish_failed",
         detail: err instanceof Error ? err.message : String(err),

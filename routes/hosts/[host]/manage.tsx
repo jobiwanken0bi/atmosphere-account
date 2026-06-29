@@ -63,6 +63,7 @@ type HostPublishResult =
 interface ManageFormValues {
   displayName: string;
   description: string;
+  dataLocation: string;
   homepageUrl: string;
   signupStatus: HostSignupStatus;
   profileHandle: string;
@@ -192,6 +193,7 @@ export const handler = define.handlers({
       const result = await updateAccountHostProfileSettings(host.host, {
         displayName: values.displayName,
         description: values.description,
+        dataLocation: values.dataLocation,
         homepageUrl: values.homepageUrl,
         signupStatus: values.signupStatus,
         profileHandle: values.profileHandle,
@@ -387,6 +389,7 @@ async function publishManagedHostProfile(
       host: host.host,
       displayName: values.displayName,
       description: values.description,
+      dataLocation: values.dataLocation,
       homepageUrl: values.homepageUrl,
       serviceEndpoint,
       accountManagementUrl: host.accountManagementUrl,
@@ -428,6 +431,7 @@ async function publishManagedHostService(
       host: host.host,
       displayName: host.displayName,
       description: host.description,
+      dataLocation: host.dataLocation ?? "",
       homepageUrl: host.homepageUrl,
       serviceEndpoint: endpoint,
       accountManagementUrl,
@@ -675,6 +679,21 @@ function ManageBody(
                   value={values.homepageUrl}
                   placeholder="https://pckt.cafe"
                 />
+              </label>
+              <label class="profile-form-field">
+                <span class="profile-form-label">Data location</span>
+                <input
+                  class="profile-form-input"
+                  type="text"
+                  name="dataLocation"
+                  value={values.dataLocation}
+                  placeholder="Europe"
+                  maxLength={120}
+                />
+                <span class="profile-form-hint">
+                  Optional. Where account data is primarily hosted, if the host
+                  publishes that information.
+                </span>
               </label>
               <label class="profile-form-field">
                 <span class="profile-form-label">Host account handle</span>
@@ -963,6 +982,7 @@ function valuesFromHost(host: AccountHost): ManageFormValues {
   return {
     displayName: host.displayName,
     description: host.description,
+    dataLocation: host.dataLocation ?? "",
     homepageUrl: host.homepageUrl ?? "",
     signupStatus: host.signupStatus,
     profileHandle: host.profileHandle ?? "",
@@ -985,6 +1005,9 @@ function valuesFromForm(
     description: form.has("description")
       ? textValue(form.get("description"))
       : fallback.description,
+    dataLocation: form.has("dataLocation")
+      ? textValue(form.get("dataLocation"))
+      : fallback.dataLocation,
     homepageUrl: form.has("homepageUrl")
       ? textValue(form.get("homepageUrl"))
       : fallback.homepageUrl,
@@ -1011,6 +1034,7 @@ function emptyValues(): ManageFormValues {
   return {
     displayName: "",
     description: "",
+    dataLocation: "",
     homepageUrl: "",
     signupStatus: "unknown",
     profileHandle: "",

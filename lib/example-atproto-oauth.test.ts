@@ -7,6 +7,7 @@ import {
   buildExampleOAuthStartPath,
   exampleAtprotoOAuthCallbackUri,
   exampleAtprotoOAuthClientId,
+  isExampleLocalDevSelection,
   readExampleAppSession,
 } from "./example-atproto-oauth.ts";
 import { generateEs256KeyPair, signEs256 } from "./jose.ts";
@@ -82,11 +83,39 @@ Deno.test("example OAuth metadata helpers use the example app routes", () => {
   );
 });
 
+Deno.test("example OAuth recognizes local dev-only fake selections", () => {
+  assert(isExampleLocalDevSelection({
+    handle: "local-host-abc.test",
+    did: "did:plc:aalocalabc",
+    dev: true,
+  }));
+  assert(isExampleLocalDevSelection({
+    handle: "real.example.com",
+    did: "did:plc:aalocalabc",
+    dev: true,
+  }));
+  assert(
+    !isExampleLocalDevSelection({
+      handle: "user.example.com",
+      did: "did:plc:user",
+      dev: true,
+    }),
+  );
+  assert(
+    !isExampleLocalDevSelection({
+      handle: "local-host-abc.test",
+      did: "did:plc:aalocalabc",
+      dev: false,
+    }),
+  );
+});
+
 Deno.test("example app session cookie is separate and readable", async () => {
   const cookie = await buildExampleAppSessionCookie({
     did: "did:plc:user",
     handle: "user.example",
     pdsUrl: "https://bsky.social",
+    oauthMode: "dev_simulated",
   });
   const cookiePair = cookie.split(";")[0];
   const session = await readExampleAppSession(
@@ -99,4 +128,5 @@ Deno.test("example app session cookie is separate and readable", async () => {
   assertEquals(session.did, "did:plc:user");
   assertEquals(session.handle, "user.example");
   assertEquals(session.pdsUrl, "https://bsky.social");
+  assertEquals(session.oauthMode, "dev_simulated");
 });

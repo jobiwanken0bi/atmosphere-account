@@ -84,10 +84,11 @@ After verification, the app should start its own AT Protocol OAuth flow using
 the selected `handle` or DID as the login hint. OAuth tokens stay between the
 app and the user's account host.
 
-Users manage the resulting PDS OAuth grants, devices, passwords, and account
-security at their host-owned PDS account page, usually `/account` on their PDS
-service endpoint. Atmosphere Login can show picker history; it should not imply
-it can revoke every PDS-issued grant.
+Users manage the resulting PDS OAuth grants, devices, passwords, account
+security, backups, recovery, deletion, and migration at their host-owned PDS
+account page, usually `/account` on their PDS service endpoint. Atmosphere Login
+can show picker history and apps that used the Atmosphere picker; it must not
+imply it can revoke every PDS-issued grant or operate PDS account controls.
 
 ## Server Helper
 
@@ -112,6 +113,8 @@ Atmosphere Login is an account picker and signed handoff. It is not:
 
 - an OAuth token exchange service,
 - a grant revocation authority,
+- a device or session manager,
+- a password, recovery, or account deletion surface,
 - a key backup service,
 - a PDS migration proxy.
 

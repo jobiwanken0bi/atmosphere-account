@@ -402,6 +402,8 @@ function Avatar({ url, handle }: AvatarProps) {
             alt=""
             loading="eager"
             decoding="async"
+            width={30}
+            height={30}
             onError={() => {
               failed.value = true;
             }}

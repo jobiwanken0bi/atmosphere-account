@@ -184,7 +184,9 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
                       <AppCollectionBadge app={app} />
                     </div>
                     <p>{description(app)}</p>
-                    <span class="app-promo-cta">View</span>
+                    <span class="app-promo-cta-wrap">
+                      <span class="app-promo-cta">View</span>
+                    </span>
                   </div>
                 </a>
               );

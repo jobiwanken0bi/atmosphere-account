@@ -696,7 +696,7 @@ async function recomputeListing(
         profile_did, legacy_profile_did, atstore_listing_uri,
         community_profile_uri, community_entry_uri, published_at, updated_at,
         indexed_at, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(id) DO UPDATE SET
         slug=excluded.slug,
         name=excluded.name,
@@ -1343,6 +1343,8 @@ export async function upsertLegacyProfileAsApp(
     categories: profile.categories,
     subcategories: profile.subcategories,
     links: profile.links,
+    lexicons: profile.lexicons,
+    accountIndicators: profile.accountIndicators,
     screenshots: profile.screenshots,
     createdAt: new Date(profile.createdAt).toISOString(),
   };
@@ -1737,8 +1739,11 @@ function hashFeaturedSlot(apps: AppListing[], slot: number): number {
 
 export async function getAppListingByIdentifier(
   identifier: string,
+  options: { syncLegacy?: boolean } = {},
 ): Promise<AppListing | null> {
-  await syncLegacyAppProfilesToDirectory().catch(() => {});
+  if (options.syncLegacy !== false) {
+    await syncLegacyAppProfilesToDirectory().catch(() => {});
+  }
   const raw = decodeURIComponent(identifier).trim();
   const keyCandidates = uniqueStrings([
     didAlias(raw),

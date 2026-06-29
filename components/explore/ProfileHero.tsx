@@ -15,13 +15,16 @@ import TangledIcon from "../icons/TangledIcon.tsx";
 
 interface Props {
   profile: ProfileRow;
+  microblogViewerClientId?: string | null;
 }
 
 /**
  * Profile detail hero. Primary app destinations live in a right-side rail;
  * secondary Atmosphere/custom links sit under the avatar.
  */
-export default function ProfileHero({ profile }: Props) {
+export default function ProfileHero(
+  { profile, microblogViewerClientId }: Props,
+) {
   const t = useT();
   const tCat = t.categories as Record<string, string>;
   const tSub = t.subcategories as Record<string, string>;
@@ -59,7 +62,11 @@ export default function ProfileHero({ profile }: Props) {
   ].filter((link): link is NonNullable<typeof link> => link !== null);
   const secondaryLinks = profile.links
     .filter((entry) => entry.kind !== "website")
-    .map((entry) => resolveLink(entry, profile.handle, tLink))
+    .map((entry) =>
+      resolveLink(entry, profile.handle, tLink, {
+        microblogViewerClientId,
+      })
+    )
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
   return (

@@ -32,6 +32,7 @@ export interface ParsedHostServiceRecord {
   host: string;
   displayName: string;
   description: string;
+  dataLocation: string | null;
   serviceEndpoint: string;
   accountManagementUrl: string | null;
   homepageUrl: string | null;
@@ -291,6 +292,7 @@ export function parseHostServiceRecord(
     record.accountManagementUrl,
   );
   const capabilities = readCapabilities(record.capabilities);
+  const dataLocation = readStrings(record.regions, 24).join(", ") || null;
   const matchPatterns = readStrings(record.hostPatterns, 32)
     .map((pattern) => pattern.toLowerCase())
     .filter((pattern) =>
@@ -303,6 +305,7 @@ export function parseHostServiceRecord(
     host,
     displayName,
     description: str(record.description, 600) ?? "",
+    dataLocation,
     serviceEndpoint,
     accountManagementUrl,
     homepageUrl,
@@ -501,20 +504,21 @@ async function upsertAccountHostFromService(
   const authorHandle = normalizeHandle(input.authorHandle);
   await c.execute({
     sql: `INSERT INTO account_host (
-        host, display_name, description, homepage_url,
+        host, display_name, description, data_location, homepage_url,
         service_endpoint, account_management_url, dashboard_url,
         capability_manifest_url, capabilities_json, support_url,
         profile_handle, profile_did, claim_handle, claim_did,
         signup_status, verification_status, source, match_patterns,
         service_record_uri, service_record_cid, service_observed_at,
         last_checked_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(host) DO UPDATE SET
         display_name = excluded.display_name,
         description = CASE
           WHEN excluded.description <> '' THEN excluded.description
           ELSE account_host.description
         END,
+        data_location = COALESCE(excluded.data_location, account_host.data_location),
         homepage_url = COALESCE(excluded.homepage_url, account_host.homepage_url),
         service_endpoint = excluded.service_endpoint,
         account_management_url = COALESCE(excluded.account_management_url, account_host.account_management_url),
@@ -545,6 +549,7 @@ async function upsertAccountHostFromService(
       parsed.host,
       parsed.displayName,
       parsed.description,
+      parsed.dataLocation,
       parsed.homepageUrl,
       parsed.serviceEndpoint,
       parsed.accountManagementUrl,

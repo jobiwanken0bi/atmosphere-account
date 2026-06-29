@@ -7,6 +7,11 @@ import {
 import { getRecordPublic, putProfileRecord } from "./pds.ts";
 import { upsertProfile } from "./registry.ts";
 
+/**
+ * Legacy user-profile publisher. Ordinary reviewer sign-in no longer calls
+ * this; normal review identity comes from ATProto/Bluesky profile data and
+ * ATStore-compatible review records.
+ */
 interface EnsureUserProfileRecordInput {
   did: string;
   handle: string;
@@ -49,6 +54,8 @@ async function mirrorUserProfileRecord(input: {
     categories: input.record.categories ?? [],
     subcategories: input.record.subcategories ?? [],
     links: input.record.links ?? [],
+    lexicons: input.record.lexicons ?? null,
+    accountIndicators: input.record.accountIndicators ?? [],
     screenshots: input.record.screenshots ?? [],
     avatarCid: blobCid(input.record.avatar),
     avatarMime: blobMime(input.record.avatar),

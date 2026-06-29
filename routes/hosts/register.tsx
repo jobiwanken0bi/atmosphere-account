@@ -11,6 +11,7 @@ import {
   type HostSignupStatus,
   registerAccountHost,
 } from "../../lib/account-hosts.ts";
+import { inferHostNetworkLocation } from "../../lib/host-location-inference.ts";
 import type { BlobRef } from "../../lib/lexicons.ts";
 import { publishHostRecords } from "../../lib/host-records.ts";
 import { loadSession } from "../../lib/oauth.ts";
@@ -21,6 +22,13 @@ interface RegisterValues {
   host: string;
   displayName: string;
   description: string;
+  dataLocation: string;
+  inferredLocation: string;
+  inferredLocationSource: string;
+  inferredLocationCheckedAt: number | null;
+  inferredLocationEvidenceJson: string;
+  inferenceMessage: string;
+  inferenceState: "idle" | "ok" | "error";
   homepageUrl: string;
   serviceEndpoint: string;
   accountManagementUrl: string;
@@ -73,6 +81,21 @@ export const handler = define.handlers({
     if (large) return large;
     const form = await ctx.req.formData().catch(() => null);
     const values = valuesFromForm(form);
+    if (textValue(form?.get("action")) === "infer_location") {
+      const inferred = await inferHostNetworkLocation({
+        host: values.host,
+        serviceEndpoint: values.serviceEndpoint,
+      });
+      if (inferred.ok) {
+        applyInferenceResult(values, inferred);
+      } else {
+        clearInferenceValues(values);
+        values.inferenceState = "error";
+        values.inferenceMessage = inferred.message;
+      }
+      return await renderRegisterError(ctx, values, "", { status: 200 });
+    }
+    await refreshSubmittedInference(values);
     const profilePublication = await publishHostProfileFromForm(
       ctx.state.user,
       values,
@@ -86,6 +109,11 @@ export const handler = define.handlers({
         host: values.host,
         displayName: values.displayName,
         description: values.description,
+        dataLocation: values.dataLocation,
+        inferredLocation: values.inferredLocation,
+        inferredLocationSource: values.inferredLocationSource,
+        inferredLocationCheckedAt: values.inferredLocationCheckedAt,
+        inferredLocationEvidenceJson: values.inferredLocationEvidenceJson,
         homepageUrl: values.homepageUrl,
         serviceEndpoint: values.serviceEndpoint,
         accountManagementUrl: values.accountManagementUrl,
@@ -125,6 +153,13 @@ function emptyValues(): RegisterValues {
     host: "",
     displayName: "",
     description: "",
+    dataLocation: "",
+    inferredLocation: "",
+    inferredLocationSource: "",
+    inferredLocationCheckedAt: null,
+    inferredLocationEvidenceJson: "",
+    inferenceMessage: "",
+    inferenceState: "idle",
     homepageUrl: "",
     serviceEndpoint: "",
     accountManagementUrl: "",
@@ -140,6 +175,23 @@ function valuesFromUrl(url: URL): RegisterValues {
   values.host = textValue(url.searchParams.get("host"));
   values.displayName = textValue(url.searchParams.get("displayName"));
   values.description = textValue(url.searchParams.get("description"));
+  values.dataLocation = textValue(url.searchParams.get("dataLocation"));
+  values.inferredLocation = textValue(
+    url.searchParams.get("inferredLocation"),
+  );
+  values.inferredLocationSource = textValue(
+    url.searchParams.get("inferredLocationSource"),
+  );
+  values.inferredLocationCheckedAt = numberValue(
+    url.searchParams.get("inferredLocationCheckedAt"),
+  );
+  values.inferredLocationEvidenceJson = textValue(
+    url.searchParams.get("inferredLocationEvidenceJson"),
+  );
+  values.inferenceMessage = textValue(url.searchParams.get("inferenceMessage"));
+  values.inferenceState = readInferenceState(
+    url.searchParams.get("inferenceState"),
+  );
   values.homepageUrl = textValue(url.searchParams.get("homepageUrl"));
   values.serviceEndpoint = textValue(url.searchParams.get("serviceEndpoint"));
   values.accountManagementUrl = textValue(
@@ -158,6 +210,17 @@ function valuesFromForm(form: FormData | null): RegisterValues {
     host: textValue(form?.get("host")),
     displayName: textValue(form?.get("displayName")),
     description: textValue(form?.get("description")),
+    dataLocation: textValue(form?.get("dataLocation")),
+    inferredLocation: textValue(form?.get("inferredLocation")),
+    inferredLocationSource: textValue(form?.get("inferredLocationSource")),
+    inferredLocationCheckedAt: numberValue(
+      form?.get("inferredLocationCheckedAt"),
+    ),
+    inferredLocationEvidenceJson: textValue(
+      form?.get("inferredLocationEvidenceJson"),
+    ),
+    inferenceMessage: "",
+    inferenceState: "idle",
     homepageUrl: textValue(form?.get("homepageUrl")),
     serviceEndpoint: textValue(form?.get("serviceEndpoint")),
     accountManagementUrl: textValue(form?.get("accountManagementUrl")),
@@ -172,6 +235,14 @@ function textValue(value: FormDataEntryValue | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function numberValue(
+  value: FormDataEntryValue | null | undefined,
+): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function readSignupStatus(
   value: FormDataEntryValue | null | undefined,
 ): HostSignupStatus {
@@ -179,6 +250,12 @@ function readSignupStatus(
       value === "closed" || value === "unknown"
     ? value
     : "unknown";
+}
+
+function readInferenceState(
+  value: FormDataEntryValue | null | undefined,
+): RegisterValues["inferenceState"] {
+  return value === "ok" || value === "error" ? value : "idle";
 }
 
 function formHasValue(
@@ -211,6 +288,40 @@ async function buildRegisterPrefill(
     values.avatarUrl = bskyCdnAvatarUrl(user.did, bsky.avatar.ref.$link);
   }
   return { values, hasOAuthSession: !!session };
+}
+
+async function refreshSubmittedInference(
+  values: RegisterValues,
+): Promise<void> {
+  if (!values.inferredLocation) return;
+  const inferred = await inferHostNetworkLocation({
+    host: values.host,
+    serviceEndpoint: values.serviceEndpoint,
+  }).catch(() => null);
+  if (inferred?.ok) {
+    applyInferenceResult(values, inferred);
+  } else {
+    clearInferenceValues(values);
+  }
+}
+
+function applyInferenceResult(
+  values: RegisterValues,
+  inferred: Awaited<ReturnType<typeof inferHostNetworkLocation>> & { ok: true },
+): void {
+  values.inferredLocation = inferred.label;
+  values.inferredLocationSource = inferred.source;
+  values.inferredLocationCheckedAt = inferred.checkedAt;
+  values.inferredLocationEvidenceJson = JSON.stringify(inferred.evidence);
+  values.inferenceState = "ok";
+  values.inferenceMessage = inferred.detail;
+}
+
+function clearInferenceValues(values: RegisterValues): void {
+  values.inferredLocation = "";
+  values.inferredLocationSource = "";
+  values.inferredLocationCheckedAt = null;
+  values.inferredLocationEvidenceJson = "";
 }
 
 function originFromUrl(value: string): string {
@@ -318,6 +429,7 @@ async function publishHostProfileFromForm(
       host: values.host,
       displayName: values.displayName,
       description: values.description,
+      dataLocation: values.dataLocation,
       homepageUrl: values.homepageUrl,
       serviceEndpoint,
       accountManagementUrl: values.accountManagementUrl || null,

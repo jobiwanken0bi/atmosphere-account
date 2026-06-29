@@ -63,10 +63,11 @@ export const docsPages: DocsPage[] = [
     navTitle: "Overview",
     title: "Atmosphere Account docs",
     description:
-      "Build with a shared Atmosphere sign-in picker and PDS-owned account management for AT Protocol apps and hosts.",
+      "Build with a shared Atmosphere sign-in picker, host registry, and thin routing to PDS-owned account pages.",
     summary: [
       "Use Atmosphere Login when an app wants a consistent account picker before starting its own AT Protocol OAuth flow.",
-      "Use host service records when a PDS host wants Atmosphere to route users to its account page without giving custody to Atmosphere.",
+      "Use host service records when a PDS host wants Atmosphere to route users to its account page without giving custody or account-control authority to Atmosphere.",
+      "Passwords, devices, OAuth grants, keys, backups, recovery, deletion, and migration are managed by the user's PDS host, not by Atmosphere.",
       "Use conformance tools before claiming compatibility in the host directory.",
     ],
     primaryCta: {
@@ -92,7 +93,7 @@ export const docsPages: DocsPage[] = [
       {
         title: "Route to host account pages",
         body:
-          "Publish a host service record with a PDS endpoint so Atmosphere can route users to PDS-owned account management.",
+          "Publish a host service record with a PDS endpoint so Atmosphere can send users to the host-owned account page.",
         href: "/docs/host-dashboard",
         label: "Host guide",
       },
@@ -101,9 +102,9 @@ export const docsPages: DocsPage[] = [
       {
         id: "architecture",
         eyebrow: "Architecture",
-        title: "Three layers, one account-first experience",
+        title: "Thin coordination, host-owned account controls",
         intro:
-          "Atmosphere Account coordinates UX and contracts. The user’s account host remains the authority for account security and data custody.",
+          "Atmosphere Account coordinates UX, discovery, and contracts. The user’s account host remains the authority for account security, account controls, and data custody.",
         blocks: [
           {
             type: "diagram",
@@ -140,7 +141,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "Host account routing",
                 body:
-                  "PDS hosts publish a service record. Atmosphere sends users to the account page the host declares for devices, grants, passwords, recovery, and migration.",
+                  "PDS hosts publish a service record. Atmosphere shows where the account lives and links users to the account page the host owns.",
               },
               {
                 title: "Developer ecosystem",
@@ -153,7 +154,28 @@ export const docsPages: DocsPage[] = [
             type: "callout",
             title: "Security boundary",
             body:
-              "Atmosphere does not broker app OAuth tokens, hold plaintext backups, custody rotation keys, or revoke host-issued grants. Those actions belong to the user’s account host.",
+              "Atmosphere does not broker app OAuth tokens, revoke PDS grants, manage devices, change passwords, rotate keys, perform account recovery, store backups, delete accounts, or move accounts. Those actions belong to the user’s account host.",
+          },
+          {
+            type: "table",
+            columns: ["Surface", "Atmosphere does", "PDS host does"],
+            rows: [
+              [
+                "Sign in",
+                "Lets the user choose an account and returns a signed selection token.",
+                "Issues the app's OAuth grant after the app starts normal AT Protocol OAuth.",
+              ],
+              [
+                "Account home",
+                "Shows the current account, remembered browser accounts, Atmosphere Login connections, developer apps, reviews, and a link to the host.",
+                "Manages passwords, devices, OAuth grants, account deletion, recovery, backups, exports, and migration.",
+              ],
+              [
+                "Host directory",
+                "Shows friendly host profiles, signup information, location/style, and optional compatibility signals.",
+                "Publishes authoritative host service/profile records and owns the account page destination.",
+              ],
+            ],
           },
           {
             type: "cards",
@@ -168,7 +190,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "PDS hosts",
                 body:
-                  "Publish host service records so Atmosphere can route users to your PDS-owned account page.",
+                  "Publish host service records so Atmosphere can route users to your PDS-owned account page without duplicating it.",
                 href: "/docs/host-dashboard",
                 label: "Read the host guide",
               },
@@ -199,7 +221,7 @@ export const docsPages: DocsPage[] = [
               [
                 "A PDS host",
                 "Host service record",
-                "Atmosphere can route people to the host-published account page without duplicating host controls.",
+                "Atmosphere can route people to the host-published account page without duplicating account controls.",
               ],
               [
                 "A directory or compatibility badge",
@@ -547,6 +569,42 @@ return redirect("/oauth/start?" + new URLSearchParams({
             title: "Keep the token boundary clear",
             body:
               "Do not send AT Protocol OAuth access tokens to Atmosphere. The relying app owns its OAuth session, refresh behavior, scopes, and logout semantics.",
+          },
+        ],
+      },
+      {
+        id: "account-management-boundary",
+        title: "Account management stays with the host",
+        intro:
+          "Atmosphere Login gives apps a consistent account picker. It is intentionally not a replacement for the user's PDS account page.",
+        blocks: [
+          {
+            type: "callout",
+            title: "Thin architecture",
+            body:
+              "Atmosphere can show picker history and apps that used the Atmosphere picker. The user's PDS host manages OAuth grants, connected apps, devices, sessions, passwords, keys, recovery, backups, deletion, and migration.",
+          },
+          {
+            type: "table",
+            columns: ["Need", "Where it belongs"],
+            rows: [
+              [
+                "Choose which account to use",
+                "Atmosphere hosted picker and signed selection token.",
+              ],
+              [
+                "Grant an app repository access",
+                "The app's normal AT Protocol OAuth flow with the user's PDS or entryway.",
+              ],
+              [
+                "Review or revoke all connected apps",
+                "The user's PDS-owned account page, usually exposed by the host.",
+              ],
+              [
+                "Manage devices, passwords, recovery, backups, or migration",
+                "The user's account host. Atmosphere only routes to that destination when known.",
+              ],
+            ],
           },
         ],
       },
@@ -1687,17 +1745,18 @@ return Response.redirect(oauthUrl);`,
     group: "Hosts",
     status: "Experimental",
     navTitle: "Host Account Routing",
-    title: "Route users to PDS-owned account management",
+    title: "Route users to host-owned account pages",
     description:
-      "Publish a host service record so Atmosphere can route users to the PDS-owned account page for apps, devices, security, backups, restore, and migration.",
+      "Publish a host service record so Atmosphere can send users to the account page where their PDS host manages account controls.",
     summary: [
       "Hosts declare their PDS service endpoint in `account.atmosphere.host.service`.",
       "Hosts can declare a working `accountManagementUrl`; `/account` on the PDS remains the recommended convention when supported.",
       "The PDS account page owns devices, OAuth grants, passwords, recovery, backups, and migration.",
-      "Optional manifests are compatibility metadata, not the primary account surface.",
+      "Atmosphere does not implement those account-management tools; it links to the host that does.",
+      "Optional manifests are compatibility metadata, not the primary account surface and not a delegation of account authority.",
     ],
     primaryCta: {
-      label: "Optional manifest",
+      label: "Manifest example",
       href: "/examples/atmosphere-host-dashboard.example.json",
     },
     secondaryCta: {
@@ -1726,7 +1785,7 @@ return Response.redirect(oauthUrl);`,
         eyebrow: "Boundary",
         title: "Hosts remain the account authority",
         intro:
-          "Atmosphere standardizes discovery and routing. The PDS account page owns grants, devices, passwords, backups, restore, migration, and account security.",
+          "Atmosphere standardizes discovery and routing. The PDS account page owns grants, devices, passwords, keys, backups, restore, migration, account deletion, and account security.",
         blocks: [
           {
             type: "diagram",
@@ -1735,7 +1794,7 @@ return Response.redirect(oauthUrl);`,
               {
                 title: "Atmosphere account router",
                 body:
-                  "Shows where the account is hosted and links to the PDS account page.",
+                  "Shows where the account is hosted, explains the host in plain language, and links to the PDS account page.",
               },
               {
                 title: "Host service record",
@@ -1745,7 +1804,7 @@ return Response.redirect(oauthUrl);`,
               {
                 title: "PDS account page",
                 body:
-                  "The user manages grants, devices, passwords, keys, backups, and migration at the host.",
+                  "The user manages grants, devices, passwords, keys, backups, recovery, deletion, and migration at the host.",
               },
               {
                 title: "Optional metadata",
@@ -1764,7 +1823,7 @@ return Response.redirect(oauthUrl);`,
           {
             type: "paragraph",
             body:
-              "Hosts publish `account.atmosphere.host.service` from the ATProto account that represents the host. The `serviceEndpoint` is the canonical PDS origin; `accountManagementUrl` should be set when the host has a working account page. `/account` on the PDS is the recommended convention when supported.",
+              "Hosts publish `account.atmosphere.host.service` from the ATProto account that represents the host. The `serviceEndpoint` is the canonical PDS origin; `accountManagementUrl` should be set when the host has a working account page. `/account` on the PDS is the recommended convention when supported. Do not point this field at a marketing homepage unless that page actually manages accounts.",
           },
           {
             type: "code",
@@ -1785,7 +1844,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Optional manifest",
             body:
-              "Hosts may still publish `/.well-known/atmosphere-host-dashboard.json` to describe detailed compatibility. Atmosphere treats it as optional metadata and does not duplicate account controls from it.",
+              "Hosts may still publish `/.well-known/atmosphere-host-dashboard.json` to describe detailed compatibility. The name is legacy; Atmosphere treats it as optional metadata and does not duplicate or operate account controls from it.",
           },
         ],
       },
@@ -1802,14 +1861,14 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Directory policy",
             body:
-              "Claiming proves the host account can manage the listing. A host should publish a working account-management URL before Atmosphere shows a direct host-management button; richer compatibility badges still require validated metadata.",
+              "Claiming proves the host account can manage the listing. A host should publish a working account page URL before Atmosphere shows a direct Manage account at host link; richer compatibility badges still require validated metadata.",
           },
           {
             type: "endpoint",
             method: "GET",
             path: "/hosts/{host}/manage",
             body:
-              "Owner-only page for saving the PDS service endpoint, account-management URL override, and optional compatibility manifest after the host has been claimed through OAuth.",
+              "Owner-only page for saving the PDS service endpoint, account page URL override, signup/support links, and optional compatibility manifest after the host has been claimed through OAuth.",
           },
         ],
       },
@@ -1821,7 +1880,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Do not mirror PDS controls",
             body:
-              "These keys are compatibility metadata for hosts and directories. Atmosphere should not render a parallel device, grant, password, backup, recovery, or migration control panel from them.",
+              "These keys are compatibility metadata for hosts and directories. Atmosphere should not render a parallel device, grant, password, backup, recovery, deletion, or migration control panel from them.",
           },
           {
             type: "table",
@@ -1874,11 +1933,12 @@ return Response.redirect(oauthUrl);`,
     navTitle: "Conformance",
     title: "Validate host compatibility",
     description:
-      "Use the validator before a host claims optional compatibility support or asks Atmosphere to show support badges.",
+      "Use the validator before a host claims optional compatibility metadata or asks Atmosphere to show support badges.",
     summary: [
       "Validate a published manifest by host or URL.",
       "Validate a local JSON file during development.",
       "Treat warnings as compatibility cleanup and errors as badge blockers.",
+      "Passing conformance can unlock directory signals; it does not delegate account-management authority to Atmosphere.",
     ],
     primaryCta: {
       label: "Validator API",
@@ -1902,7 +1962,7 @@ deno task host:dashboard:check host.example --json`,
             type: "callout",
             title: "Badge policy",
             body:
-              "Atmosphere should only show compatibility badges after a host passes conformance checks. Observed or claimed hosts can exist in the directory without publishing optional compatibility metadata.",
+              "Atmosphere should only show compatibility badges after a host passes conformance checks. Observed or claimed hosts can exist in the directory without publishing optional compatibility metadata, and the PDS host remains responsible for account controls either way.",
           },
         ],
       },
@@ -1968,7 +2028,7 @@ deno task host:dashboard:check host.example --json`,
     summary: [
       "Use the sign-in badge and logo to make Atmosphere Login recognizable.",
       "Download the Lottie animation and icon assets for product and docs surfaces.",
-      "Use registry schemas and SVG icon exports when building app-directory experiences.",
+      "Use registry schemas, optional host compatibility schemas, and SVG icon exports when building interoperable experiences.",
     ],
     primaryCta: {
       label: "Sign-in badge",
@@ -2042,14 +2102,15 @@ deno task host:dashboard:check host.example --json`,
             type: "endpoint",
             method: "GET",
             path: "/atmosphere-host-dashboard.schema.json",
-            body: "JSON Schema for the optional host compatibility manifest.",
+            body:
+              "JSON Schema for the optional host compatibility manifest. The file name is legacy; the manifest does not make Atmosphere the account-control surface.",
           },
           {
             type: "endpoint",
             method: "GET",
             path: "/examples/atmosphere-host-dashboard.example.json",
             body:
-              "Example manifest for PDS hosts declaring optional compatibility metadata.",
+              "Example manifest for PDS hosts declaring optional compatibility metadata and host-owned account-page links.",
           },
           {
             type: "endpoint",
@@ -2325,7 +2386,7 @@ iss=https://atmosphereaccount.com`,
     summary: [
       "Use `/atmosphere-login.js` for the browser picker SDK.",
       "Use `/login/jwks.json` to verify selection tokens.",
-      "Use `/api/hosts/dashboard/validate` to validate optional host compatibility manifests.",
+      "Use `/api/hosts/dashboard/validate` to validate optional host compatibility manifests. The endpoint name is legacy; validated metadata is not account-control delegation.",
     ],
     sections: [
       {
@@ -2361,6 +2422,12 @@ iss=https://atmosphereaccount.com`,
         eyebrow: "Host Compatibility",
         title: "Optional host manifest files and endpoints",
         blocks: [
+          {
+            type: "callout",
+            title: "Legacy naming",
+            body:
+              "These files and endpoints still include `dashboard` in their paths for compatibility. They validate optional host metadata only. PDS-owned account management remains on the host account page.",
+          },
           {
             type: "endpoint",
             method: "GET",

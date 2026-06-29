@@ -16,6 +16,7 @@ export interface ExampleAppSession {
   handle: string;
   pdsUrl: string;
   signedInAt: number;
+  oauthMode?: "real" | "dev_simulated";
 }
 
 export function exampleAtprotoOAuthClientId(origin: string): string {
@@ -47,6 +48,17 @@ export function exampleOAuthLoginHint(input: {
   did?: string | null;
 }): string | null {
   return input.handle?.trim() || input.did?.trim() || null;
+}
+
+export function isExampleLocalDevSelection(input: {
+  handle?: string | null;
+  did?: string | null;
+  dev?: boolean;
+}): boolean {
+  if (!(input.dev ?? IS_DEV)) return false;
+  const handle = input.handle?.trim().toLowerCase() ?? "";
+  const did = input.did?.trim().toLowerCase() ?? "";
+  return handle.endsWith(".test") || did.startsWith("did:plc:aalocal");
 }
 
 export function isExampleOAuthConfigured(origin: string): boolean {
@@ -136,6 +148,13 @@ export async function readExampleAppSession(
       typeof parsed.handle !== "string" ||
       typeof parsed.pdsUrl !== "string" ||
       typeof parsed.signedInAt !== "number"
+    ) {
+      return null;
+    }
+    if (
+      parsed.oauthMode !== undefined &&
+      parsed.oauthMode !== "real" &&
+      parsed.oauthMode !== "dev_simulated"
     ) {
       return null;
     }

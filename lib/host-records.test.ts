@@ -37,6 +37,7 @@ Deno.test("buildHostServiceRecord creates account.atmosphere.host.service shape"
     host: "Pckt.Cafe",
     displayName: "Pckt",
     description: "A cozy host.",
+    dataLocation: "Europe",
     homepageUrl: "https://pckt.cafe",
     serviceEndpoint: "https://pds.pckt.cafe",
     accountManagementUrl: "https://pds.pckt.cafe/account",
@@ -46,6 +47,7 @@ Deno.test("buildHostServiceRecord creates account.atmosphere.host.service shape"
   });
 
   assertEquals(record.host, "pckt.cafe");
+  assertEquals(record.regions, ["Europe"]);
   assertEquals(record.accountManagementUrl, "https://pds.pckt.cafe/account");
   assertEquals(
     (record.signup as Record<string, unknown>).status,

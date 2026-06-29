@@ -18,8 +18,10 @@ import {
   uploadBlob,
 } from "../../../lib/pds.ts";
 import {
+  type AccountIndicator,
   ATMOSPHERE_LINK_KINDS,
   type BlobRef,
+  type LexiconInterop,
   type LinkEntry,
   type ProfileRecord,
   type ScreenshotEntry,
@@ -125,6 +127,14 @@ interface ProfileFormPayload {
   categories?: string[];
   subcategories?: string[];
   links?: LinkPayload[];
+  lexicons?: {
+    produces?: string[];
+    consumes?: string[];
+  };
+  accountIndicators?: Array<{
+    collection?: string;
+    rkey?: string;
+  }>;
   /** Either keep an existing avatar (passed as the BlobRef) or upload new bytes */
   avatar?: {
     $type: "blob";
@@ -187,6 +197,54 @@ function asArray(v: unknown): string[] {
     typeof x === "string" && x.trim().length > 0
   )
     .map((x) => x.trim().slice(0, 32));
+}
+
+function asLongStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of v) {
+    if (typeof raw !== "string") continue;
+    const value = raw.trim().slice(0, 256);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+    if (out.length >= 64) break;
+  }
+  return out;
+}
+
+function normalizeLexiconsPayload(input: ProfileFormPayload["lexicons"]): {
+  lexicons?: LexiconInterop;
+} {
+  const produces = asLongStringArray(input?.produces);
+  const consumes = asLongStringArray(input?.consumes);
+  const lexicons: LexiconInterop = {};
+  if (produces.length > 0) lexicons.produces = produces;
+  if (consumes.length > 0) lexicons.consumes = consumes;
+  return lexicons.produces || lexicons.consumes ? { lexicons } : {};
+}
+
+function normalizeAccountIndicatorsPayload(
+  input: ProfileFormPayload["accountIndicators"],
+): AccountIndicator[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: AccountIndicator[] = [];
+  for (const raw of input) {
+    const collection = trimOrNull(raw?.collection);
+    if (!collection) continue;
+    const rkey = trimOrNull(raw?.rkey);
+    const key = `${collection}/${rkey ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      collection: collection.slice(0, 256),
+      ...(rkey ? { rkey: rkey.slice(0, 256) } : {}),
+    });
+    if (out.length >= 64) break;
+  }
+  return out;
 }
 
 /**
@@ -596,6 +654,10 @@ export const handler = define.handlers({
     })();
 
     const links = normalizeLinksPayload(body.links);
+    const { lexicons } = normalizeLexiconsPayload(body.lexicons);
+    const accountIndicators = normalizeAccountIndicatorsPayload(
+      body.accountIndicators,
+    );
 
     const mainLink = trimOrNull(body.mainLink);
     const iosLink = trimOrNull(body.iosLink);
@@ -617,6 +679,10 @@ export const handler = define.handlers({
       categories: normalizedCategories,
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
+      lexicons,
+      accountIndicators: accountIndicators.length > 0
+        ? accountIndicators
+        : undefined,
       avatar: avatar ?? undefined,
       banner: banner ?? undefined,
       icon: icon ?? undefined,
@@ -718,6 +784,8 @@ export const handler = define.handlers({
         categories: validation.value.categories ?? [],
         subcategories: validation.value.subcategories ?? [],
         links: validation.value.links ?? [],
+        lexicons: validation.value.lexicons ?? null,
+        accountIndicators: validation.value.accountIndicators ?? [],
         screenshots: validation.value.screenshots ?? [],
         avatarCid: validation.value.avatar?.ref.$link ?? null,
         avatarMime: validation.value.avatar?.mimeType ?? null,

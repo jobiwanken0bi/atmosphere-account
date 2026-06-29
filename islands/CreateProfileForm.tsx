@@ -1,8 +1,10 @@
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import {
+  type AccountIndicator,
   APP_SUBCATEGORIES,
   type Category,
+  type LexiconInterop,
   type LinkEntry,
   PUBLIC_CATEGORIES,
 } from "../lib/lexicons.ts";
@@ -35,6 +37,8 @@ interface ExistingProfile {
   categories: string[];
   subcategories: string[];
   links: LinkEntry[];
+  lexicons?: LexiconInterop;
+  accountIndicators?: AccountIndicator[];
   screenshots: Array<{
     ref: string;
     mime: string;
@@ -186,6 +190,50 @@ interface CustomLinkRow {
   url: string;
 }
 
+function linesFromStrings(values: string[] | undefined): string {
+  return (values ?? []).join("\n");
+}
+
+function linesFromAccountIndicators(
+  values: AccountIndicator[] | undefined,
+): string {
+  return (values ?? []).map((value) =>
+    value.rkey ? `${value.collection}/${value.rkey}` : value.collection
+  ).join("\n");
+}
+
+function parseStringLines(value: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of value.split(/\r?\n/)) {
+    const item = raw.trim();
+    if (!item || seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+    if (out.length >= 64) break;
+  }
+  return out;
+}
+
+function parseAccountIndicatorLines(value: string): AccountIndicator[] {
+  const seen = new Set<string>();
+  const out: AccountIndicator[] = [];
+  for (const raw of value.split(/\r?\n/)) {
+    const item = raw.trim();
+    if (!item) continue;
+    const slash = item.lastIndexOf("/");
+    const collection = slash > 0 ? item.slice(0, slash).trim() : item;
+    const rkey = slash > 0 ? item.slice(slash + 1).trim() : "";
+    if (!collection) continue;
+    const key = `${collection}/${rkey}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ collection, ...(rkey ? { rkey } : {}) });
+    if (out.length >= 64) break;
+  }
+  return out;
+}
+
 /**
  * Collapse the saved `LinkEntry[]` into the form's working state.
  *
@@ -334,6 +382,17 @@ export default function CreateProfileForm(
   const urlOverrideOpen = useSignal<"tangled" | "supper" | null>(null);
 
   const customLinks = useSignal<CustomLinkRow[]>(initialSplit.custom);
+  const lexiconsProduced = useSignal<string>(
+    linesFromStrings(initial?.lexicons?.produces),
+  );
+  const lexiconsConsumed = useSignal<string>(
+    linesFromStrings(initial?.lexicons?.consumes),
+  );
+  const accountIndicators = useSignal<string>(
+    linesFromAccountIndicators(initial?.accountIndicators),
+  );
+  const accountIndicatorsPlaceholder =
+    "com.example.app.settings\ncom.example.app.profile/self";
 
   const tIcon = tForm.icon;
 
@@ -819,6 +878,9 @@ export default function CreateProfileForm(
 
     try {
       const cleanedLinks = buildLinksPayload();
+      const produces = parseStringLines(lexiconsProduced.value);
+      const consumes = parseStringLines(lexiconsConsumed.value);
+      const indicators = parseAccountIndicatorLines(accountIndicators.value);
 
       const payload: Record<string, unknown> = {
         name: name.value.trim(),
@@ -829,6 +891,8 @@ export default function CreateProfileForm(
         categories: categories.value,
         subcategories: showSubcategories ? subcategories.value : [],
         links: cleanedLinks,
+        lexicons: { produces, consumes },
+        accountIndicators: indicators,
       };
       if (avatarFile.value) {
         payload.avatarUpload = {
@@ -1384,6 +1448,63 @@ export default function CreateProfileForm(
             + {tCustom.addButton}
           </button>
         </div>
+
+        {/* ---------------- Interoperability metadata ---------------- */}
+        <fieldset class="profile-form-field profile-form-interop">
+          <legend class="profile-form-label">Interoperability</legend>
+          <p class="profile-form-hint">
+            Optional AT Protocol metadata for app directories and future
+            community lexicon tooling. Use one collection per line.
+          </p>
+          <div class="profile-form-row-2">
+            <label class="profile-form-field">
+              <span class="profile-form-label">Writes records</span>
+              <textarea
+                class="profile-form-input profile-form-interop-textarea"
+                rows={3}
+                spellcheck={false}
+                placeholder="com.example.app.record"
+                value={lexiconsProduced.value}
+                onInput={(e) =>
+                  lexiconsProduced.value =
+                    (e.currentTarget as HTMLTextAreaElement).value}
+              >
+              </textarea>
+            </label>
+            <label class="profile-form-field">
+              <span class="profile-form-label">Reads records</span>
+              <textarea
+                class="profile-form-input profile-form-interop-textarea"
+                rows={3}
+                spellcheck={false}
+                placeholder="app.bsky.feed.post"
+                value={lexiconsConsumed.value}
+                onInput={(e) =>
+                  lexiconsConsumed.value =
+                    (e.currentTarget as HTMLTextAreaElement).value}
+              >
+              </textarea>
+            </label>
+          </div>
+          <label class="profile-form-field">
+            <span class="profile-form-label">Account indicators</span>
+            <textarea
+              class="profile-form-input profile-form-interop-textarea"
+              rows={3}
+              spellcheck={false}
+              placeholder={accountIndicatorsPlaceholder}
+              value={accountIndicators.value}
+              onInput={(e) =>
+                accountIndicators.value =
+                  (e.currentTarget as HTMLTextAreaElement).value}
+            >
+            </textarea>
+            <span class="profile-form-hint">
+              These are records whose presence can suggest someone uses this
+              app. Add just a collection, or collection/rkey for a known record.
+            </span>
+          </label>
+        </fieldset>
 
         {/* ---------------- Developer SVG icon -------------------- */}
         {

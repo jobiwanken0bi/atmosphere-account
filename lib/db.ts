@@ -54,7 +54,12 @@ function getEnv(key: string): string | undefined {
 
 export function dbBackend(): DatabaseBackend {
   const raw = getEnv("ATMOSPHERE_DB_BACKEND")?.trim().toLowerCase();
-  if (!raw || raw === "turso" || raw === "libsql" || raw === "sqlite") {
+  if (!raw) {
+    return getEnv("NEON_DATABASE_URL") || getEnv("NEON_DIRECT_DATABASE_URL")
+      ? "neon"
+      : "turso";
+  }
+  if (raw === "turso" || raw === "libsql" || raw === "sqlite") {
     return "turso";
   }
   if (raw === "neon" || raw === "postgres" || raw === "postgresql") {
@@ -160,6 +165,8 @@ const SCHEMA_STATEMENTS: string[] = [
     categories TEXT NOT NULL DEFAULT '[]',
     subcategories TEXT NOT NULL DEFAULT '[]',
     links TEXT NOT NULL DEFAULT '[]',
+    lexicons_json TEXT NOT NULL DEFAULT '{}',
+    account_indicators_json TEXT NOT NULL DEFAULT '[]',
     screenshots TEXT NOT NULL DEFAULT '[]',
     avatar_cid TEXT,
     avatar_mime TEXT,
@@ -374,6 +381,11 @@ const SCHEMA_STATEMENTS: string[] = [
     host TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    data_location TEXT,
+    inferred_location TEXT,
+    inferred_location_source TEXT,
+    inferred_location_checked_at INTEGER,
+    inferred_location_evidence_json TEXT,
     homepage_url TEXT,
     service_endpoint TEXT,
     account_management_url TEXT,
@@ -739,6 +751,18 @@ async function applyAdditiveMigrations(
       },
       {
         table: "profile",
+        column: "lexicons_json",
+        ddl:
+          "ALTER TABLE profile ADD COLUMN lexicons_json TEXT NOT NULL DEFAULT '{}'",
+      },
+      {
+        table: "profile",
+        column: "account_indicators_json",
+        ddl:
+          "ALTER TABLE profile ADD COLUMN account_indicators_json TEXT NOT NULL DEFAULT '[]'",
+      },
+      {
+        table: "profile",
         column: "screenshots",
         ddl:
           "ALTER TABLE profile ADD COLUMN screenshots TEXT NOT NULL DEFAULT '[]'",
@@ -925,6 +949,34 @@ async function applyAdditiveMigrations(
         column: "website_visible",
         ddl:
           "ALTER TABLE app_user ADD COLUMN website_visible INTEGER NOT NULL DEFAULT 0",
+      },
+      {
+        table: "account_host",
+        column: "data_location",
+        ddl: "ALTER TABLE account_host ADD COLUMN data_location TEXT",
+      },
+      {
+        table: "account_host",
+        column: "inferred_location",
+        ddl: "ALTER TABLE account_host ADD COLUMN inferred_location TEXT",
+      },
+      {
+        table: "account_host",
+        column: "inferred_location_source",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN inferred_location_source TEXT",
+      },
+      {
+        table: "account_host",
+        column: "inferred_location_checked_at",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN inferred_location_checked_at INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "inferred_location_evidence_json",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN inferred_location_evidence_json TEXT",
       },
       {
         table: "account_host",

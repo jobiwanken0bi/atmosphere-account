@@ -61,6 +61,7 @@ export default function AtstoreMigrationButton(
       });
       const body = await res.json().catch(() => ({})) as {
         uri?: string;
+        communityProfileUri?: string;
         slug?: string;
         alreadyMigrated?: boolean;
         issues?: string[];
@@ -78,8 +79,8 @@ export default function AtstoreMigrationButton(
       message.value = {
         kind: "ok",
         text: body.alreadyMigrated
-          ? "Shared ATStore listing synced and indexed."
-          : "Shared ATStore listing published and indexed.",
+          ? "Shared app records synced and indexed."
+          : "Shared app records published and indexed.",
       };
       const slug = typeof body.slug === "string" && body.slug.trim()
         ? body.slug.trim()
@@ -113,6 +114,10 @@ export default function AtstoreMigrationButton(
         <div class="atstore-migration-preview">
           <p class="text-eyebrow">Will publish</p>
           <dl>
+            <div>
+              <dt>Records</dt>
+              <dd>Community app profile + ATStore listing</dd>
+            </div>
             <div>
               <dt>Name</dt>
               <dd>{preview.name}</dd>
@@ -171,7 +176,7 @@ export default function AtstoreMigrationButton(
           ? "Shared listing active"
           : remoteRecordUri.value
           ? "Sync ATStore record"
-          : "Migrate to ATStore"}
+          : "Migrate to shared records"}
       </button>
       {issues.length > 0 && (
         <ul class="atstore-migration-issues">
@@ -209,21 +214,22 @@ function migrationState(
     case "active":
       return {
         tone: "ok",
-        label: "Already on ATStore",
-        body: "This listing is using the shared app record.",
+        label: "Shared records active",
+        body: "This listing is using shared app records for discovery.",
       };
     case "remote":
       return {
         tone: "attention",
-        label: "Already has remote ATStore record",
+        label: "Remote shared record found",
         body:
-          "Sync the existing record from this account's PDS so the public app page uses it.",
+          "Sync the existing record from this account's PDS, then publish the community app profile.",
       };
     case "ready":
       return {
         tone: "ok",
         label: "Ready to migrate",
-        body: "This Atmosphere-only listing has the fields ATStore requires.",
+        body:
+          "This Atmosphere-only listing has the fields needed for shared records.",
       };
     case "needs-icon":
       return {

@@ -4,6 +4,8 @@
   "tasks": {
     "check": "deno fmt --check . && deno lint . && deno check",
     "dev": "vite",
+    "dev:local": "ATMOSPHERE_DB_BACKEND=turso TURSO_DATABASE_URL=file:./local.db deno task dev --host 127.0.0.1",
+    "dev:seed": "deno run -A scripts/seed-local-dev.ts",
     "build": "deno install && deno run -A npm:vite@^7.1.3 build",
     "gen:images": "deno run -A --node-modules-dir=auto scripts/generate-static-images.ts",
     "gen:oauth-key": "deno run scripts/generate-oauth-key.ts",
