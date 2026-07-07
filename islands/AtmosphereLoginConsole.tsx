@@ -38,7 +38,7 @@ function randomState(): string {
 export default function AtmosphereLoginConsole(
   { defaultOrigin }: { defaultOrigin: string },
 ) {
-  const initialOrigin = defaultOrigin || "https://atmosphereaccount.com";
+  const initialOrigin = defaultAtmosphereOrigin(defaultOrigin);
   const atmosphereOrigin = useSignal(initialOrigin);
   const clientId = useSignal(
     new URL("/examples/atmosphere-login/client-metadata.json", initialOrigin)
@@ -495,6 +495,22 @@ const { sub: did, handle, pds_url } = result.claims;`;
       </div>
     </div>
   );
+}
+
+function defaultAtmosphereOrigin(origin: string): string {
+  try {
+    const url = new URL(origin || "https://login.atmosphereaccount.com");
+    if (
+      url.protocol === "https:" &&
+      (url.hostname === "atmosphereaccount.com" ||
+        url.hostname === "www.atmosphereaccount.com")
+    ) {
+      return "https://login.atmosphereaccount.com";
+    }
+    return url.origin;
+  } catch {
+    return "https://login.atmosphereaccount.com";
+  }
 }
 
 function Snippet(

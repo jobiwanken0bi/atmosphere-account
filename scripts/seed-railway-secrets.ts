@@ -73,6 +73,7 @@ async function setVars(service: "web" | "indexer", entries: string[]) {
 await setVars("web", [
   "DENO_ENV=production",
   "FRESH_PUBLIC_SITE_URL=https://atmosphereaccount.com",
+  "FRESH_PUBLIC_LOGIN_URL=https://login.atmosphereaccount.com",
   "JETSTREAM_URL=wss://jetstream2.us-east.bsky.network/subscribe",
   "ATPROTO_FETCH_TIMEOUT_MS=10000",
   "COMMUNITY_APP_LEXICON_ENABLED=false",

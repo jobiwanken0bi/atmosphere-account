@@ -8,6 +8,9 @@ import { bskyCdnAvatarUrl } from "../../../../lib/avatar.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
+const EMPTY_AVATAR_SVG =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"></svg>`;
+
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
     const did = decodeURIComponent(ctx.params.did);
@@ -15,7 +18,13 @@ export const handler = define.handlers({
     const avatarCid = profile?.avatarCid ??
       (await getAppUser(did).catch(() => null))?.avatarCid;
     if (!avatarCid) {
-      return new Response("not found", { status: 404 });
+      return new Response(EMPTY_AVATAR_SVG, {
+        status: 200,
+        headers: {
+          "content-type": "image/svg+xml; charset=utf-8",
+          "cache-control": "public, max-age=60, s-maxage=300",
+        },
+      });
     }
     return new Response(null, {
       status: 302,

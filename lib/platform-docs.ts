@@ -368,7 +368,7 @@ export const docsPages: DocsPage[] = [
             language: "html",
             caption: "Button",
             code:
-              `<script src="https://atmosphereaccount.com/atmosphere-login.js" defer></script>
+              `<script src="https://login.atmosphereaccount.com/atmosphere-login.js" defer></script>
 
 <button
   data-atmosphere-login
@@ -384,7 +384,7 @@ export const docsPages: DocsPage[] = [
             code: `const verified = await verifyAtmosphereLoginCallback({
   url: request.url,
   publicJwk,
-  expectedIssuer: "https://atmosphereaccount.com",
+  expectedIssuer: "https://login.atmosphereaccount.com",
   expectedClientId,
   expectedReturnUri,
   expectedState,
@@ -469,7 +469,7 @@ return startAtprotoOAuth({
             type: "code",
             language: "html",
             code:
-              `<script src="https://atmosphereaccount.com/atmosphere-login.js" defer></script>
+              `<script src="https://login.atmosphereaccount.com/atmosphere-login.js" defer></script>
 
 <button
   data-atmosphere-login
@@ -568,7 +568,7 @@ return startAtprotoOAuth({
             code: `const verified = await verifyAtmosphereLoginCallback({
   url: request.url,
   publicJwk,
-  expectedIssuer: "https://atmosphereaccount.com",
+  expectedIssuer: "https://login.atmosphereaccount.com",
   expectedClientId,
   expectedReturnUri,
   expectedState,
@@ -976,16 +976,16 @@ return_uri=https://app.example.com/auth/atmosphere/selected`,
             code: `import {
   fetchAtmosphereLoginPublicJwk,
   verifyAtmosphereLoginCallback,
-} from "https://atmosphereaccount.com/atmosphere-login-server.js";
+} from "https://login.atmosphereaccount.com/atmosphere-login-server.js";
 
 const publicJwk = await fetchAtmosphereLoginPublicJwk(
-  "https://atmosphereaccount.com",
+  "https://login.atmosphereaccount.com",
 );
 
 const result = await verifyAtmosphereLoginCallback({
   url: request.url,
   publicJwk,
-  expectedIssuer: "https://atmosphereaccount.com",
+  expectedIssuer: "https://login.atmosphereaccount.com",
   expectedClientId: "https://app.example.com/oauth/client-metadata.json",
   expectedState: stateFromSession,
   expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
@@ -1078,7 +1078,7 @@ return Response.redirect(oauthUrl);`,
             type: "list",
             items: [
               "Use a fresh `state` value for every picker request.",
-              "Verify the JWT signature with `/login/jwks.json`.",
+              "Verify the JWT signature with `/oauth/jwks.json`.",
               "Require exact `aud`, `iss`, `state`, and `return_uri` matches.",
               "Reject replayed `jti` values until the token expires.",
               "Start your own AT Protocol OAuth flow after selection.",
@@ -1458,7 +1458,7 @@ return Response.redirect(oauthUrl);`,
             language: "html",
             caption: "Redirect button",
             code:
-              `<script src="https://atmosphereaccount.com/atmosphere-login.js" defer></script>
+              `<script src="https://login.atmosphereaccount.com/atmosphere-login.js" defer></script>
 
 <button
   data-atmosphere-login
@@ -1566,16 +1566,16 @@ location.href = url;`,
             code: `import {
   fetchAtmosphereLoginPublicJwk,
   verifyAtmosphereLoginCallback,
-} from "https://atmosphereaccount.com/atmosphere-login-server.js";
+} from "https://login.atmosphereaccount.com/atmosphere-login-server.js";
 
 const publicJwk = await fetchAtmosphereLoginPublicJwk(
-  "https://atmosphereaccount.com",
+  "https://login.atmosphereaccount.com",
 );
 
 const result = await verifyAtmosphereLoginCallback({
   url: request.url,
   publicJwk,
-  expectedIssuer: "https://atmosphereaccount.com",
+  expectedIssuer: "https://login.atmosphereaccount.com",
   expectedClientId: "https://app.example.com/oauth/client-metadata.json",
   expectedState,
   expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
@@ -2518,7 +2518,7 @@ const selection = AtmosphereLogin.consumeSelection({
             rows: [
               [
                 "fetchAtmosphereLoginPublicJwk(origin)",
-                "Fetches the first public key from `/login/jwks.json`.",
+                "Fetches the first public key from `/oauth/jwks.json`.",
               ],
               [
                 "verifyAtmosphereLoginCallback(options)",
@@ -2569,7 +2569,7 @@ client_id=https://app.example.com/oauth/client-metadata.json
 state=generated-state
 did=did:plc:...
 handle=alice.example
-iss=https://atmosphereaccount.com`,
+iss=https://login.atmosphereaccount.com`,
           },
           {
             type: "table",
@@ -2642,7 +2642,7 @@ iss=https://atmosphereaccount.com`,
       "Routes, scripts, files, and helper contracts exposed by Atmosphere Account.",
     summary: [
       "Use `/atmosphere-login.js` for the browser picker SDK.",
-      "Use `/login/jwks.json` to verify selection tokens.",
+      "Use `/oauth/jwks.json` to verify selection tokens.",
       "Use `/api/hosts/dashboard/validate` only for optional host compatibility manifests. The endpoint name is legacy; validated metadata is not account-control delegation.",
     ],
     sections: [
@@ -2661,7 +2661,7 @@ iss=https://atmosphereaccount.com`,
           {
             type: "endpoint",
             method: "GET",
-            path: "/login/jwks.json",
+            path: "/oauth/jwks.json",
             body:
               "Public JWKS used by relying apps to verify Atmosphere selection tokens.",
           },

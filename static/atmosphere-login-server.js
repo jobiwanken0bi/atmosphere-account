@@ -1,9 +1,9 @@
 const DEFAULT_MAX_TOKEN_AGE_SEC = 5 * 60;
 
 export async function fetchAtmosphereLoginPublicJwk(
-  atmosphereOrigin = "https://atmosphereaccount.com",
+  atmosphereOrigin = "https://login.atmosphereaccount.com",
 ) {
-  const response = await fetch(new URL("/login/jwks.json", atmosphereOrigin));
+  const response = await fetch(new URL("/oauth/jwks.json", atmosphereOrigin));
   if (!response.ok) {
     throw new Error(`JWKS request failed with ${response.status}`);
   }

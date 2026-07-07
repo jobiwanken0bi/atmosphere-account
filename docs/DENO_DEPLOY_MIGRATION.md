@@ -9,6 +9,7 @@ The app is selected in the Deno CLI as:
 - App: `atmosphere-account`
 - Production app URL: `https://atmosphere-account.atmospheremoney.deno.net`
 - Production custom domain: `https://atmosphereaccount.com`
+- Production login domain: `https://login.atmosphereaccount.com`
 
 Official docs:
 
@@ -44,7 +45,7 @@ Completed:
   - `GET /api/health`
   - `GET /api/health/ready`
   - `HEAD /oauth/client-metadata.json`
-  - `HEAD /login/jwks.json`
+  - `HEAD /oauth/jwks.json`
   - `HEAD /.well-known/atmosphere-login.json`
 
 The hosted picker route `HEAD /login/select` returns `400` without query
@@ -99,6 +100,7 @@ Required production variables while Turso is primary:
 - `ATSTORE_REPO_DID` if configured
 - `ATSTORE_SOCIAL_REPO_DIDS` if configured
 - `FRESH_PUBLIC_SITE_URL=https://atmosphereaccount.com`
+- `FRESH_PUBLIC_LOGIN_URL=https://login.atmosphereaccount.com`
 - `DENO_ENV=production`
 - `ATPROTO_FETCH_TIMEOUT_MS=10000`
 - `COMMUNITY_APP_LEXICON_ENABLED=false` unless intentionally enabled
@@ -116,7 +118,7 @@ curl -s https://<new-deno-app-url>/api/health
 curl -s https://<new-deno-app-url>/api/health/ready
 curl -I https://<new-deno-app-url>/login/select
 curl -I https://<new-deno-app-url>/oauth/client-metadata.json
-curl -I https://<new-deno-app-url>/login/jwks.json
+curl -I https://<new-deno-app-url>/oauth/jwks.json
 ```
 
 Expected:
@@ -130,22 +132,28 @@ Expected:
 Only if the production domain ever needs to be reattached:
 
 1. Add `atmosphereaccount.com` to the new Deno Deploy app.
-2. Add `www.atmosphereaccount.com` if we want the new app to answer `www`.
-3. Add the `_acme-challenge` CNAME records Deno provides for certificate
+2. Add `login.atmosphereaccount.com` to the same Deno Deploy app.
+3. Add `www.atmosphereaccount.com` if we want the new app to answer `www`.
+4. Add the `_acme-challenge` CNAME records Deno provides for certificate
    provisioning.
-4. Update the existing Porkbun root `ALIAS` away from the Classic
+5. Update the existing Porkbun root `ALIAS` away from the Classic
    `alias.deno.net` target and to `atmosphere-account.atmospheremoney.deno.net`.
    If Porkbun will not accept an `ALIAS`, use `A @ 69.67.170.170` and
    `AAAA @ 2602:f70f::1`.
-5. Do not point `www` at Deno unless `www.atmosphereaccount.com` is also added
+6. Add `CNAME login atmosphere-account.atmospheremoney.deno.net` or the Deno
+   Deploy-provided target for the login custom domain.
+7. Do not point `www` at Deno unless `www.atmosphereaccount.com` is also added
    to the Deno Deploy app and has a valid certificate.
-6. Wait for DNS and certificate validation.
-7. Verify production:
+8. Wait for DNS and certificate validation.
+9. Verify production:
 
 ```sh
 curl -s https://atmosphereaccount.com/api/health
 curl -s https://atmosphereaccount.com/api/health/ready
 curl -I https://atmosphereaccount.com/login/select
+curl -I https://login.atmosphereaccount.com/login/select
+curl -I https://login.atmosphereaccount.com/oauth/client-metadata.json
+curl -I https://login.atmosphereaccount.com/oauth/jwks.json
 ```
 
 Deno's migration guide says DNS propagation may take up to 48 hours. Keep any

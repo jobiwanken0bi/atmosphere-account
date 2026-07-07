@@ -33,6 +33,7 @@ export default defineConfig({
       "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
       "Pragma": "no-cache",
       "Expires": "0",
+      "Access-Control-Allow-Origin": "*",
     },
     /** Make sure HMR uses the same port so client/server stay in sync. */
     hmr: { port: 5173 },

@@ -45,7 +45,7 @@ export default function DocsLayout(
             </div>
             <h1>{page.title}</h1>
             <p>{page.description}</p>
-            <div class="docs-summary-grid">
+            <div class={docsSummaryGridClass(page.summary.length)}>
               {page.summary.map((item) => (
                 <span key={item}>
                   <InlineText text={item} />
@@ -55,14 +55,17 @@ export default function DocsLayout(
             {(page.primaryCta || page.secondaryCta) && (
               <div class="docs-hero-actions">
                 {page.primaryCta && (
-                  <a href={page.primaryCta.href} class="explore-cta-primary">
+                  <a
+                    href={page.primaryCta.href}
+                    class="docs-hero-cta docs-hero-cta--primary"
+                  >
                     {page.primaryCta.label}
                   </a>
                 )}
                 {page.secondaryCta && (
                   <a
                     href={page.secondaryCta.href}
-                    class="profile-form-button-secondary profile-form-button-secondary--lg"
+                    class="docs-hero-cta docs-hero-cta--secondary"
                   >
                     {page.secondaryCta.label}
                   </a>
@@ -111,7 +114,7 @@ export default function DocsLayout(
             <section class="docs-next-steps" aria-labelledby="docs-next-title">
               <p class="text-eyebrow">Next steps</p>
               <h2 id="docs-next-title">Keep building</h2>
-              <div class="docs-card-grid">
+              <div class={docsCardGridClass(page.nextSteps.length)}>
                 {page.nextSteps.map((item) => (
                   <a href={item.href} class="docs-card-link" key={item.href}>
                     <strong>{item.title}</strong>
@@ -219,7 +222,7 @@ function DocsBlockView(
       );
     case "cards":
       return (
-        <div class="docs-card-grid">
+        <div class={docsCardGridClass(block.items.length)}>
           {block.items.map((item) => (
             <a href={item.href} class="docs-card-link" key={item.href}>
               <strong>{item.title}</strong>
@@ -326,6 +329,14 @@ function InlineText({ text }: { text: string }) {
       )}
     </>
   );
+}
+
+function docsCardGridClass(count: number): string {
+  return `docs-card-grid docs-card-grid--count-${count}`;
+}
+
+function docsSummaryGridClass(count: number): string {
+  return `docs-summary-grid docs-summary-grid--count-${count}`;
 }
 
 function docsHref(slug: string): string {

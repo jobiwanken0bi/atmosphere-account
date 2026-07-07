@@ -19,6 +19,7 @@ import {
   OAUTH_PUBLIC_JWK,
   siteOrigin,
 } from "./env.ts";
+import { isTrustedAtmosphereOrigin } from "./atmosphere-origins.ts";
 import {
   isPrivateNetworkHostname,
   readResponseTextWithLimit,
@@ -312,9 +313,7 @@ function appFromClientId(clientId: string): LoginApp {
     appUri: isReferenceApp
       ? new URL("/examples/atmosphere-login/app", client.origin).toString()
       : client.origin,
-    logoUri: isReferenceApp
-      ? new URL("/union.svg", client.origin).toString()
-      : null,
+    logoUri: null,
     allowedReturnUris: [],
     allowedOrigins: [],
     status: isDev ? "development" : "unverified",
@@ -1362,6 +1361,7 @@ export async function signLoginSelection(input: {
   app: LoginApp;
   did: string;
   handle: string;
+  issuer?: string;
   pdsUrl?: string | null;
   returnUri: string;
   state: string;
@@ -1374,8 +1374,9 @@ export async function signLoginSelection(input: {
     );
   }
   const now = Math.floor(Date.now() / 1000);
+  const issuer = input.issuer ?? siteOrigin();
   const payload: LoginSelectionPayload = {
-    iss: siteOrigin(),
+    iss: issuer,
     aud: input.app.clientId,
     sub: input.did,
     handle: input.handle,
@@ -1420,14 +1421,25 @@ export async function verifyLoginSelectionTokenDetailed(
     };
   }
   const publicJwk = parseJwkEnv("OAUTH_PUBLIC_JWK", OAUTH_PUBLIC_JWK);
-  return await verifyAtmosphereSelectionToken({
+  const result = await verifyAtmosphereSelectionToken({
     token,
     publicJwk,
-    expectedIssuer: expected?.expectedIssuer ?? siteOrigin(),
+    expectedIssuer: expected?.expectedIssuer,
     expectedAudience: expected?.expectedAudience,
     expectedState: expected?.expectedState,
     expectedReturnUri: expected?.expectedReturnUri,
   });
+  if (!result.ok) return result;
+  if (
+    !expected?.expectedIssuer && !isTrustedAtmosphereOrigin(result.claims.iss)
+  ) {
+    return {
+      ok: false,
+      error: "issuer mismatch",
+      claims: result.claims,
+    };
+  }
+  return result;
 }
 
 export async function recordLoginSelection(input: {
@@ -1512,11 +1524,12 @@ export function appendSelectionToReturnUri(input: {
   clientId: string;
   did: string;
   handle: string;
+  issuer?: string;
   state: string;
   token: string;
 }): string {
   const url = new URL(input.returnUri);
-  url.searchParams.set("iss", siteOrigin());
+  url.searchParams.set("iss", input.issuer ?? siteOrigin());
   url.searchParams.set("client_id", input.clientId);
   url.searchParams.set("did", input.did);
   url.searchParams.set("handle", input.handle);

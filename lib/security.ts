@@ -216,6 +216,12 @@ export const securityHeadersMiddleware = define.middleware(async (ctx) => {
         "max-age=31536000; includeSubDomains",
       );
     }
+    if (
+      ctx.url.pathname === "/atmosphere-login.js" ||
+      ctx.url.pathname === "/atmosphere-login-server.js"
+    ) {
+      setDefault(headers, "access-control-allow-origin", "*");
+    }
   };
 
   try {

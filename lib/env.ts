@@ -26,6 +26,8 @@ export const IS_HOSTED_RUNTIME = !!(safeGet("DENO_DEPLOYMENT_ID") ??
   safeGet("K_SERVICE"));
 
 const RAW_SITE_URL = safeGet("FRESH_PUBLIC_SITE_URL");
+const RAW_LOGIN_SITE_URL = safeGet("FRESH_PUBLIC_LOGIN_URL") ??
+  safeGet("LOGIN_SITE_URL");
 
 /** atproto / RFC 8252 forbid `localhost` as a redirect host for confidential
  *  clients (only loopback IPs like 127.0.0.1 are allowed, and even then only
@@ -57,9 +59,26 @@ export const SITE_URL: string = (() => {
   return "https://atmosphereaccount.com";
 })();
 
+export const LOGIN_SITE_URL: string = (() => {
+  if (
+    RAW_LOGIN_SITE_URL &&
+    !(IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_LOGIN_SITE_URL))
+  ) {
+    return RAW_LOGIN_SITE_URL;
+  }
+  if (IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_LOGIN_SITE_URL)) {
+    console.warn(
+      `[env] FRESH_PUBLIC_LOGIN_URL/LOGIN_SITE_URL is set to ${RAW_LOGIN_SITE_URL} ` +
+        `on a hosted deployment. Ignoring and falling back to ` +
+        `https://login.atmosphereaccount.com.`,
+    );
+  }
+  return IS_HOSTED_RUNTIME ? "https://login.atmosphereaccount.com" : SITE_URL;
+})();
+
 export const IS_DEV = !IS_HOSTED_RUNTIME &&
   safeGet("DENO_ENV") !== "production" &&
-  !SITE_URL.startsWith("https://atmosphereaccount.com");
+  (!RAW_SITE_URL || !SITE_URL.startsWith("https://atmosphereaccount.com"));
 
 export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");
 export const OAUTH_PUBLIC_JWK = safeGet("OAUTH_PUBLIC_JWK");
@@ -137,14 +156,30 @@ export function siteOrigin(): string {
   return SITE_URL.replace(/\/$/, "");
 }
 
+export function loginOrigin(): string {
+  return LOGIN_SITE_URL.replace(/\/$/, "");
+}
+
 export function clientId(): string {
   return `${siteOrigin()}/oauth/client-metadata.json`;
+}
+
+export function clientIdForOrigin(origin: string): string {
+  return `${origin.replace(/\/$/, "")}/oauth/client-metadata.json`;
 }
 
 export function redirectUri(): string {
   return `${siteOrigin()}/oauth/callback`;
 }
 
+export function redirectUriForOrigin(origin: string): string {
+  return `${origin.replace(/\/$/, "")}/oauth/callback`;
+}
+
 export function jwksUri(): string {
   return `${siteOrigin()}/oauth/jwks.json`;
+}
+
+export function jwksUriForOrigin(origin: string): string {
+  return `${origin.replace(/\/$/, "")}/oauth/jwks.json`;
 }

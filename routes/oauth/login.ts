@@ -12,6 +12,7 @@ import {
   type SignInIntent,
   startLogin,
 } from "../../lib/oauth.ts";
+import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
 
 const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
@@ -80,7 +81,12 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   }
   const wantsJson = ctx.req.headers.get("x-atmosphere-login") === "1" ||
     (ctx.req.headers.get("accept") ?? "").includes("application/json");
-  if (!isOAuthConfigured()) {
+  const oauth = oauthClientConfigForRequest(ctx.url);
+  const oauthOptions = {
+    clientId: oauth.clientId,
+    redirectUri: oauth.redirectUri,
+  };
+  if (!isOAuthConfigured(oauthOptions)) {
     const message =
       "OAuth is not configured on this deployment. Run `deno task gen:oauth-key` and set OAUTH_PRIVATE_JWK + OAUTH_KID + OAUTH_PUBLIC_JWK.";
     return wantsJson ? jsonError(message, 503) : new Response(message, {
@@ -97,7 +103,12 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       : new Response("missing handle", { status: 400 });
   }
   try {
-    const { redirectUrl } = await startLogin(handleStr, returnTo, intent);
+    const { redirectUrl } = await startLogin(
+      handleStr,
+      returnTo,
+      intent,
+      oauthOptions,
+    );
     if (wantsJson) {
       return new Response(JSON.stringify({ redirectUrl }), {
         status: 200,

@@ -1,9 +1,6 @@
 import { define, type State } from "../../utils.ts";
-import Nav from "../../components/Nav.tsx";
-import Footer from "../../components/Footer.tsx";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
-import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   appendSelectionToReturnUri,
   type LoginApp,
@@ -16,6 +13,7 @@ import {
   resolveLoginAppForRequest,
   signLoginSelection,
 } from "../../lib/atmosphere-login.ts";
+import { loginPickerOriginForRequest } from "../../lib/atmosphere-origins.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 
@@ -26,7 +24,6 @@ interface PickerAccount {
 }
 
 interface PickerPageProps {
-  account: ReturnType<typeof buildAccountMenuProps>;
   app: LoginApp | null;
   request: LoginRequest | null;
   selectPath: string | null;
@@ -55,6 +52,7 @@ export const handler = define.handlers({
       request = readLoginRequestFromForm(form);
       const { app, returnUri } = await resolveLoginAppForRequest(request);
       const pickerAccounts = getPickerAccounts(ctx.state);
+      const issuer = loginPickerOriginForRequest(ctx.url);
       const did = String(form.get("did") ?? "").trim();
       const selected = pickerAccounts.find((account) => account.did === did);
       if (!selected) {
@@ -66,6 +64,7 @@ export const handler = define.handlers({
         app,
         did: selected.did,
         handle: selected.handle,
+        issuer,
         pdsUrl: selected.pdsUrl,
         returnUri: returnUri.toString(),
         state: request.state,
@@ -85,6 +84,7 @@ export const handler = define.handlers({
             clientId: app.clientId,
             did: selected.did,
             handle: selected.handle,
+            issuer,
             state: request.state,
             token,
           }),
@@ -113,12 +113,10 @@ function readLoginRequestFromForm(form: FormData): LoginRequest {
 async function buildPickerPageProps(
   ctx: { state: State; url: URL },
 ): Promise<PickerPageProps> {
-  const account = buildAccountMenuProps(ctx.state);
   try {
     const request = readLoginRequest(ctx.url);
     const { app } = await resolveLoginAppForRequest(request);
     return {
-      account,
       app,
       request,
       selectPath: loginRequestToPath(request),
@@ -128,7 +126,6 @@ async function buildPickerPageProps(
     };
   } catch (err) {
     return {
-      account,
       app: null,
       request: null,
       selectPath: null,
@@ -159,39 +156,34 @@ function getPickerAccounts(
 }
 
 function LoginPickerPage(props: PickerPageProps) {
-  const { account, app, request, selectPath, pickerAccounts, error } = props;
+  const { app, request, selectPath, pickerAccounts, error } = props;
   return (
-    <div id="page-top">
-      <div class="content-layer">
-        <Nav account={account} disableScrollEffects />
-        <section class="signin-page-section login-picker-section">
-          <div class="container signin-page-container login-picker-container">
-            <p class="text-eyebrow">Atmosphere Login</p>
-            <h1 class="text-section">Continue with Atmosphere</h1>
-            <p class="text-body mt-2">
-              Choose the account you want to use. The app will complete its own
-              AT Protocol sign-in after this step.
-            </p>
-            <div class="glass signin-page-card login-picker-card">
-              {error || !app || !request || !selectPath
-                ? (
-                  <LoginPickerError
-                    message={error ?? "Invalid login request."}
-                  />
-                )
-                : (
-                  <LoginPickerBody
-                    app={app}
-                    request={request}
-                    selectPath={selectPath}
-                    pickerAccounts={pickerAccounts}
-                  />
-                )}
-            </div>
+    <div id="page-top" class="login-picker-page">
+      <section class="signin-page-section login-picker-section">
+        <div class="container signin-page-container login-picker-container">
+          <p class="text-eyebrow">Account picker</p>
+          <h1 class="text-section login-picker-title">
+            <img src="/union.svg" alt="" width="36" height="36" />
+            <span>Continue with Atmosphere</span>
+          </h1>
+          <div class="glass signin-page-card login-picker-card">
+            {error || !app || !request || !selectPath
+              ? (
+                <LoginPickerError
+                  message={error ?? "Invalid login request."}
+                />
+              )
+              : (
+                <LoginPickerBody
+                  app={app}
+                  request={request}
+                  selectPath={selectPath}
+                  pickerAccounts={pickerAccounts}
+                />
+              )}
           </div>
-        </section>
-        <Footer variant="compact" />
-      </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -211,12 +203,10 @@ function LoginPickerBody(
         <div class="login-picker-app-copy">
           <p class="login-picker-label">Continue to</p>
           <h2>{app.appName}</h2>
-          <p>{app.appUri ? displayUrl(app.appUri) : "Registered app"}</p>
         </div>
         <StatusPill app={app} />
       </header>
-      <PickerTrustNotice app={app} request={request} />
-      <ReturnDestination request={request} />
+      <PickerTrustNotice app={app} />
 
       {pickerAccounts.length > 0
         ? (
@@ -281,8 +271,8 @@ function LoginPickerBody(
         )}
 
       <p class="login-picker-footnote">
-        Atmosphere only shares the selected handle and DID. {app.appName}{" "}
-        still needs to complete AT Protocol OAuth with your account host.
+        Atmosphere shares only the account you choose. {app.appName}{" "}
+        will ask your account host to finish signing you in.
       </p>
     </>
   );
@@ -333,17 +323,14 @@ function StatusPill({ app }: { app: LoginApp }) {
   );
 }
 
-function PickerTrustNotice(
-  { app, request }: { app: LoginApp; request: LoginRequest },
-) {
+function PickerTrustNotice({ app }: { app: LoginApp }) {
   if (app.status === "trusted") {
     return (
       <div class="login-picker-notice login-picker-notice--trusted">
         <strong>Trusted app</strong>
         <span>
-          Atmosphere has reviewed this app identity, verified its domain
-          manifest, and checked this exact return destination:{" "}
-          {displayReturnDestination(request.returnUri)}.
+          Atmosphere has reviewed this app and checked that it sends you back to
+          the right place after you choose an account.
         </span>
       </div>
     );
@@ -353,8 +340,8 @@ function PickerTrustNotice(
       <div class="login-picker-notice login-picker-notice--development">
         <strong>Development app</strong>
         <span>
-          This looks like a local development app. Only continue if you opened
-          this flow yourself.
+          This is a local test app. Only continue if you opened this flow
+          yourself.
         </span>
       </div>
     );
@@ -363,19 +350,10 @@ function PickerTrustNotice(
     <div class="login-picker-notice login-picker-notice--unverified">
       <strong>Unverified app</strong>
       <span>
-        This app has not been reviewed by Atmosphere yet. Check the app name,
-        homepage, and return destination before continuing. Logos appear after
-        trusted review.
+        This app has not been reviewed by Atmosphere yet. Check that you
+        recognize the app before continuing. App logos appear after trusted
+        review.
       </span>
-    </div>
-  );
-}
-
-function ReturnDestination({ request }: { request: LoginRequest }) {
-  return (
-    <div class="login-picker-return-target">
-      <span>Returns to</span>
-      <code>{displayReturnDestination(request.returnUri)}</code>
     </div>
   );
 }
@@ -389,26 +367,8 @@ function LoginPickerError({ message }: { message: string }) {
       <p class="text-body-sm">
         {blocked
           ? "Atmosphere cannot continue this sign-in request. Return to the app or choose another app."
-          : "Apps must include a client ID, return URL, and state value when opening the Atmosphere account picker."}
+          : "This app did not send enough information to open the account picker. Return to the app and try again."}
       </p>
     </div>
   );
-}
-
-function displayUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    return url.hostname;
-  } catch {
-    return value;
-  }
-}
-
-function displayReturnDestination(value: string): string {
-  try {
-    const url = new URL(value);
-    return `${url.hostname}${url.pathname}`;
-  } catch {
-    return value;
-  }
 }

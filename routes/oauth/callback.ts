@@ -9,6 +9,7 @@
  */
 import { define } from "../../utils.ts";
 import { completeCallback, isOAuthConfigured } from "../../lib/oauth.ts";
+import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 import {
@@ -26,7 +27,13 @@ import { isSafeRelativePath } from "../../lib/security.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
-    if (!isOAuthConfigured()) {
+    const oauth = oauthClientConfigForRequest(ctx.url);
+    if (
+      !isOAuthConfigured({
+        clientId: oauth.clientId,
+        redirectUri: oauth.redirectUri,
+      })
+    ) {
       return new Response("OAuth is not configured", { status: 503 });
     }
     const state = ctx.url.searchParams.get("state");

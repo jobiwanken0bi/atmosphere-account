@@ -1,10 +1,27 @@
 (function () {
   const script = document.currentScript;
-  const defaultOrigin = script && script.src
+  const scriptOrigin = script && script.src
     ? new URL(script.src, location.href).origin
-    : "https://atmosphereaccount.com";
+    : "https://login.atmosphereaccount.com";
+  const defaultOrigin = defaultAtmosphereOrigin(scriptOrigin);
   const STATE_PREFIX = "atmosphere_login_state:";
   const BUTTON_ENHANCED_ATTR = "data-atmosphere-login-enhanced";
+
+  function defaultAtmosphereOrigin(origin) {
+    try {
+      const url = new URL(origin);
+      if (
+        url.protocol === "https:" &&
+        (url.hostname === "atmosphereaccount.com" ||
+          url.hostname === "www.atmosphereaccount.com")
+      ) {
+        return "https://login.atmosphereaccount.com";
+      }
+      return url.origin;
+    } catch {
+      return "https://login.atmosphereaccount.com";
+    }
+  }
 
   function randomState() {
     const bytes = new Uint8Array(24);
@@ -239,9 +256,6 @@
         width: 1.2rem;
         height: 1.2rem;
         filter: brightness(0) invert(1);
-      }
-      .atmosphere-login-button[data-atmosphere-state="loading"] .atmosphere-login-button-label::after {
-        content: "...";
       }
     `;
     document.head.append(style);

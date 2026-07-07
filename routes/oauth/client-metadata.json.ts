@@ -5,30 +5,29 @@
  * Spec: https://atproto.com/specs/oauth#client-and-server-metadata
  */
 import { define } from "../../utils.ts";
-import { clientId, jwksUri, redirectUri } from "../../lib/env.ts";
+import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
+import { siteOrigin } from "../../lib/env.ts";
 import { DEFAULT_OAUTH_SCOPE } from "../../lib/oauth-scopes.ts";
 
 export const handler = define.handlers({
-  GET(): Response {
+  GET(ctx): Response {
+    const oauth = oauthClientConfigForRequest(ctx.url);
     const body = {
-      client_id: clientId(),
+      client_id: oauth.clientId,
       application_type: "web",
       client_name: "Atmosphere Account Registry",
-      client_uri: clientId().replace(/\/oauth\/client-metadata\.json$/, ""),
-      logo_uri: clientId().replace(
-        /\/oauth\/client-metadata\.json$/,
-        "/union.svg",
-      ),
-      tos_uri: clientId().replace(/\/oauth\/client-metadata\.json$/, ""),
-      policy_uri: clientId().replace(/\/oauth\/client-metadata\.json$/, ""),
+      client_uri: siteOrigin(),
+      logo_uri: `${oauth.origin}/union.svg`,
+      tos_uri: siteOrigin(),
+      policy_uri: siteOrigin(),
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      redirect_uris: [redirectUri()],
+      redirect_uris: [oauth.redirectUri],
       scope: DEFAULT_OAUTH_SCOPE,
       dpop_bound_access_tokens: true,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "ES256",
-      jwks_uri: jwksUri(),
+      jwks_uri: oauth.jwksUri,
     };
     return new Response(JSON.stringify(body, null, 2), {
       status: 200,

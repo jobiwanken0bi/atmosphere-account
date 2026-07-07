@@ -2,6 +2,7 @@ import Nav from "../../../components/Nav.tsx";
 import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
+import { loginPickerOriginForRequest } from "../../../lib/atmosphere-origins.ts";
 import {
   type ExampleAppSession,
   exampleAtprotoOAuthCallbackUri,
@@ -15,6 +16,7 @@ interface ExampleAppProps {
   clientId: string;
   returnUri: string;
   sdkSrc: string;
+  pickerOrigin: string;
   appHomepage: string;
   oauthClientId: string;
   oauthCallbackUri: string;
@@ -42,12 +44,14 @@ export const handler = define.handlers({
       canonicalUrl: new URL("/examples/atmosphere-login/app", ctx.url.origin)
         .toString(),
     };
+    const pickerOrigin = loginPickerOriginForRequest(ctx.url);
     return ctx.render(
       <ExampleApp
         account={buildAccountMenuProps(ctx.state)}
         clientId={clientId}
         returnUri={returnUri}
-        sdkSrc={new URL("/atmosphere-login.js", ctx.url.origin).toString()}
+        sdkSrc={new URL("/atmosphere-login.js", pickerOrigin).toString()}
+        pickerOrigin={pickerOrigin}
         appHomepage={appHomepage}
         oauthClientId={exampleAtprotoOAuthClientId(ctx.url.origin)}
         oauthCallbackUri={exampleAtprotoOAuthCallbackUri(ctx.url.origin)}
@@ -63,6 +67,7 @@ function ExampleApp(
     clientId,
     returnUri,
     sdkSrc,
+    pickerOrigin,
     appHomepage,
     oauthClientId,
     oauthCallbackUri,
@@ -87,7 +92,7 @@ if (!selection) return showSignedOut();
 const verified = await verifyAtmosphereLoginCallback({
   url: request.url,
   publicJwk,
-  expectedIssuer: "${new URL(sdkSrc).origin}",
+  expectedIssuer: "${pickerOrigin}",
   expectedClientId: "${clientId}",
   expectedReturnUri: "${returnUri}",
   expectedState: selection.state,
@@ -170,7 +175,12 @@ return createAppSession(account);`;
               <div class="login-example-app-grid">
                 <div class="login-example-demo-panel">
                   <div class="login-example-demo-app">
-                    <img src="/union.svg" alt="" width="42" height="42" />
+                    <span
+                      class="login-example-demo-app-avatar"
+                      aria-hidden="true"
+                    >
+                      <span>App</span>
+                    </span>
                     <div>
                       <strong>Reference app</strong>
                       <span>Local example using this deployment</span>

@@ -367,6 +367,97 @@ function seedForEndpoint(pdsUrl: string | null | undefined): SeedHost | null {
   ) ?? null;
 }
 
+function verificationRank(status: HostVerificationStatus): number {
+  switch (status) {
+    case "verified":
+      return 0;
+    case "claimed":
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+function signupRank(status: HostSignupStatus): number {
+  switch (status) {
+    case "open":
+      return 0;
+    case "invite_required":
+      return 1;
+    case "closed":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function seedToAccountHost(seed: SeedHost, ts = now()): AccountHost {
+  return {
+    host: seed.host,
+    displayName: seed.displayName,
+    description: seed.description,
+    dataLocation: seed.dataLocation ?? null,
+    inferredLocation: null,
+    inferredLocationSource: null,
+    inferredLocationCheckedAt: null,
+    inferredLocationEvidenceJson: null,
+    homepageUrl: seed.homepageUrl ?? null,
+    serviceEndpoint: seed.serviceEndpoint ?? null,
+    accountManagementUrl: seed.accountManagementUrl ?? null,
+    dashboardUrl: seed.dashboardUrl ?? null,
+    capabilityManifestUrl: seed.capabilityManifestUrl ?? null,
+    capabilitiesJson: seed.capabilitiesJson ?? null,
+    supportUrl: seed.supportUrl ?? null,
+    profileHandle: seed.profileHandle ?? null,
+    profileDid: null,
+    bskyProfileVisible: seed.bskyProfileVisible ?? true,
+    avatarUrl: null,
+    claimHandle: seed.claimHandle ?? seed.profileHandle ?? seed.host,
+    claimDid: null,
+    signupStatus: seed.signupStatus,
+    verificationStatus: seed.verificationStatus,
+    source: seed.source,
+    matchPatterns: seed.matchPatterns,
+    serviceRecordUri: null,
+    serviceRecordCid: null,
+    serviceObservedAt: null,
+    profileCheckedAt: null,
+    lastCheckedAt: null,
+    lastObservedAt: null,
+    createdAt: ts,
+    updatedAt: ts,
+  };
+}
+
+function hostMatchesPublicQuery(host: AccountHost, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return [
+    host.displayName,
+    host.host,
+    host.description,
+    host.profileHandle,
+    host.dataLocation,
+  ].some((value) => value?.toLowerCase().includes(q));
+}
+
+export function listSeededAccountHostFallback(
+  opts: { query?: string } = {},
+): AccountHost[] {
+  const ts = now();
+  const query = opts.query?.trim() ?? "";
+  return SEEDED_HOSTS
+    .map((seed) => seedToAccountHost(seed, ts))
+    .filter((host) => hostMatchesPublicQuery(host, query))
+    .sort((a, b) =>
+      verificationRank(a.verificationStatus) -
+        verificationRank(b.verificationStatus) ||
+      signupRank(a.signupStatus) - signupRank(b.signupStatus) ||
+      a.displayName.localeCompare(b.displayName)
+    )
+    .slice(0, MAX_PUBLIC_HOSTS);
+}
+
 function parseHostRow(row: Record<string, unknown>): AccountHost {
   let matchPatterns: string[] = [];
   try {

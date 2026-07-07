@@ -17,7 +17,7 @@ flow with the selected account.
   data-return-uri="https://app.example.com/auth/atmosphere/selected"
 >
 </button>
-<script src="https://atmosphereaccount.com/atmosphere-login.js"></script>
+<script src="https://login.atmosphereaccount.com/atmosphere-login.js"></script>
 ```
 
 The browser script exposes:
@@ -72,7 +72,7 @@ Claims:
 
 Relying apps must verify:
 
-- JWT signature using `/login/jwks.json`.
+- JWT signature using `/oauth/jwks.json`.
 - `iss` equals the expected Atmosphere origin.
 - `aud` equals their `client_id`.
 - `state` equals the state they created.
@@ -100,7 +100,7 @@ import { verifyAtmosphereSelectionToken } from "./lib/atmosphere-login-sdk.ts";
 const result = await verifyAtmosphereSelectionToken({
   token,
   publicJwk,
-  expectedIssuer: "https://atmosphereaccount.com",
+  expectedIssuer: "https://login.atmosphereaccount.com",
   expectedAudience: "https://app.example.com/oauth/client-metadata.json",
   expectedState: state,
   expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",

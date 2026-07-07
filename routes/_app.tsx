@@ -17,8 +17,9 @@ export default define.page(function App(ctx) {
   const t = getMessages(locale);
   const htmlClass = "sky-static";
   const bodyClass = "sky-bg";
+  const isStandaloneLoginPicker = url.pathname === "/login/select";
   const needsSigninPreview = url.pathname === "/signin" ||
-    url.pathname === "/login/select" ||
+    isStandaloneLoginPicker ||
     url.pathname === "/apps/create" ||
     url.pathname === "/account";
   const needsDocsScript = url.pathname === "/docs" ||
@@ -125,7 +126,9 @@ export default define.page(function App(ctx) {
           <Component />
         </I18nProvider>
         <script type="module" src="/page-skeleton.js" />
-        <script type="module" src="/nav-scroll.js" />
+        {!isStandaloneLoginPicker && (
+          <script type="module" src="/nav-scroll.js" />
+        )}
         {needsDocsScript && (
           <script type="module" src="/docs.js?v=scrollspy2" />
         )}

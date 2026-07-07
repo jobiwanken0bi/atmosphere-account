@@ -24,7 +24,10 @@ Recommended target:
   picker, OAuth metadata/JWKS, account pages, app pages, and admin pages on Deno
   Deploy. If production is still on Deploy Classic, migrate to the new Deno
   Deploy platform before the Classic shutdown on July 20, 2026. See
-  [DENO_DEPLOY_MIGRATION.md](./DENO_DEPLOY_MIGRATION.md).
+  [DENO_DEPLOY_MIGRATION.md](./DENO_DEPLOY_MIGRATION.md). Production should
+  serve the consumer site from `atmosphereaccount.com` and the standalone
+  picker/OAuth surface from `login.atmosphereaccount.com` on the same Deno
+  Deploy app.
 - **Primary database:** Neon Postgres. The appview is now write-concurrent,
   relational, query-heavy, and needs safer migrations, branching, backfills, and
   operational visibility.
@@ -150,7 +153,8 @@ Cutover sequence:
 
 Acceptance checks before production cutover:
 
-- `/signin`, `/login/select`, and selection-token verification pass end to end.
+- `/signin`, `https://login.atmosphereaccount.com/login/select`, and
+  selection-token verification pass end to end.
 - `/apps`, `/apps/all`, app detail pages, review sorting, favorite counts, and
   admin backfill pages match Turso for sampled rows.
 - Jetstream cursor, worker lease, job status, and failed-record inspector work
