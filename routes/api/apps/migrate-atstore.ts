@@ -1,4 +1,5 @@
 import { define } from "../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import {
   type AtstoreMigrationPublishResult,
   findExistingAtstoreListingForProfile,
@@ -18,6 +19,17 @@ import { getProfileByDid } from "../../../lib/registry.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => {
+        console.error("[appview] migrate atstore proxy failed:", err);
+        return new Response(JSON.stringify({ error: "appview_unavailable" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
