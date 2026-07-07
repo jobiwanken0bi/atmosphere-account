@@ -879,6 +879,9 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
           profile_checked_at = CASE
             WHEN COALESCE(account_host.profile_handle, '') <> excluded.profile_handle
             THEN NULL
+            WHEN account_host.avatar_url IS NULL
+              AND account_host.profile_handle = excluded.profile_handle
+            THEN NULL
             ELSE account_host.profile_checked_at
           END,
           profile_handle = excluded.profile_handle,

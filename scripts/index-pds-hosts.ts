@@ -3,6 +3,7 @@ import {
   observePdsAccount,
   setPdsDiscoveryCursor,
 } from "../lib/pds-discovery.ts";
+import { loadDotEnvIfPresent } from "../lib/cli-env.ts";
 
 const PLC_EXPORT_URL = "https://plc.directory/export";
 const CURSOR_SOURCE = "plc_export";
@@ -25,13 +26,14 @@ interface ParsedPlcOperation {
 
 function usage(): string {
   return [
-    "Usage: deno task pds:index [--count=1000] [--after=<ISO timestamp>] [--resume] [--dry-run]",
+    "Usage: deno task pds:index [--count=1000] [--after=<ISO timestamp>] [--recent-days=30] [--resume] [--dry-run]",
     "",
     "Reads a batch from the DID PLC export, extracts AT Protocol PDS service",
     "endpoints, and records them as claimable account hosts.",
     "",
     "Examples:",
     "  deno task pds:index -- --count=500 --resume",
+    "  deno task pds:index -- --recent-days=30 --count=5000",
     "  deno task pds:index -- --after=2024-01-01T00:00:00.000Z --count=100",
   ].join("\n");
 }
@@ -48,6 +50,12 @@ function numberFlag(args: string[], flag: string, fallback: number): number {
   if (!raw) return fallback;
   const value = Number.parseInt(raw, 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function recentAfter(args: string[]): string | null {
+  const days = numberFlag(args, "--recent-days", 0);
+  if (days <= 0) return null;
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function handleFromOperation(
@@ -111,6 +119,14 @@ function parsePlcExportLine(line: string): ParsedPlcOperation | null {
   };
 }
 
+function safeServiceHost(serviceEndpoint: string): string {
+  try {
+    return new URL(serviceEndpoint).host.toLowerCase();
+  } catch {
+    return "invalid-service-endpoint";
+  }
+}
+
 async function fetchPlcExportBatch(
   { count, after }: { count: number; after: string | null },
 ): Promise<ParsedPlcOperation[]> {
@@ -136,21 +152,26 @@ if (import.meta.main) {
     console.log(usage());
     Deno.exit(0);
   }
+  await loadDotEnvIfPresent();
 
   const count = numberFlag(args, "--count", DEFAULT_COUNT);
   const dryRun = args.includes("--dry-run");
   const resume = args.includes("--resume");
   const explicitAfter = stringFlag(args, "--after");
   const after = explicitAfter ??
-    (resume ? await getPdsDiscoveryCursor(CURSOR_SOURCE) : null);
+    (resume ? await getPdsDiscoveryCursor(CURSOR_SOURCE) : null) ??
+    recentAfter(args);
 
   const entries = await fetchPlcExportBatch({ count, after });
   let indexed = 0;
   let skipped = 0;
   let latestCursor = after;
+  const hostsSeen = new Map<string, number>();
 
   for (const entry of entries) {
     latestCursor = entry.cursor;
+    const serviceHost = safeServiceHost(entry.serviceEndpoint);
+    hostsSeen.set(serviceHost, (hostsSeen.get(serviceHost) ?? 0) + 1);
     if (dryRun) {
       indexed++;
       continue;
@@ -180,4 +201,10 @@ if (import.meta.main) {
       latestCursor ?? ""
     }`,
   );
+  const topHosts = [...hostsSeen.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([host, seen]) => `${host}:${seen}`)
+    .join(", ");
+  if (topHosts) console.log(`[pds:index] top service hosts: ${topHosts}`);
 }
