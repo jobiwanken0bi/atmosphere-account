@@ -164,6 +164,36 @@ export async function proxyAppviewPageResponse(
   });
 }
 
+export async function proxyAppviewApiResponse(
+  currentUrl: URL,
+  request: Request,
+): Promise<Response | null> {
+  const remote = appviewBaseUrl();
+  if (!remote) return null;
+  const url = new URL(`${currentUrl.pathname}${currentUrl.search}`, remote);
+  if (url.origin === currentUrl.origin) return null;
+
+  const res = await fetch(url, {
+    method: request.method,
+    headers: appviewRequestHeaders(request.headers, currentUrl),
+    body: request.method === "GET" || request.method === "HEAD"
+      ? undefined
+      : request.body,
+    redirect: "manual",
+    signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
+  });
+  const headers = proxiedHeaders(res.headers, remote);
+  const location = headers.get("location");
+  if (location) {
+    headers.set("location", rewriteAppviewUrl(location, remote, currentUrl));
+  }
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
 export async function listPublicAccountHosts(input: {
   query?: string;
 } = {}): Promise<AccountHost[]> {
@@ -206,12 +236,22 @@ function appviewPageHeaders(
   requestHeaders: Headers,
   currentUrl: URL,
 ): Headers {
+  const headers = appviewRequestHeaders(requestHeaders, currentUrl);
+  headers.delete("content-type");
+  return headers;
+}
+
+function appviewRequestHeaders(
+  requestHeaders: Headers,
+  currentUrl: URL,
+): Headers {
   const headers = new Headers();
   for (
     const name of [
       "accept",
       "accept-language",
       "cookie",
+      "content-type",
       "user-agent",
     ]
   ) {

@@ -1,4 +1,5 @@
 import { define } from "../../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../../lib/appview-client.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 import {
   getAppListingByIdentifier,
@@ -21,6 +22,11 @@ const MAX_REVIEW_REQUEST_BYTES = 16_384;
 
 export const handler = define.handlers({
   POST: withRateLimit(async (ctx) => {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const large = rejectLargeRequest(ctx.req, MAX_REVIEW_REQUEST_BYTES);
     if (large) return large;
 
@@ -127,4 +133,9 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function appviewProxyError(err: unknown): Response {
+  console.warn("[api/apps/reviews] appview proxy failed:", err);
+  return jsonResponse(503, { error: "appview_unavailable" });
 }
