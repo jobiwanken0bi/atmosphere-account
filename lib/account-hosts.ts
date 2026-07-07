@@ -46,6 +46,9 @@ export interface AccountHost {
   serviceRecordCid: string | null;
   serviceObservedAt: number | null;
   profileCheckedAt: number | null;
+  observedAccountCount: number;
+  observedActiveAccountCount: number;
+  lastIndexedAccountAt: number | null;
   lastCheckedAt: number | null;
   lastObservedAt: number | null;
   createdAt: number;
@@ -422,6 +425,9 @@ function seedToAccountHost(seed: SeedHost, ts = now()): AccountHost {
     serviceRecordCid: null,
     serviceObservedAt: null,
     profileCheckedAt: null,
+    observedAccountCount: 0,
+    observedActiveAccountCount: 0,
+    lastIndexedAccountAt: null,
     lastCheckedAt: null,
     lastObservedAt: null,
     createdAt: ts,
@@ -522,6 +528,15 @@ function parseHostRow(row: Record<string, unknown>): AccountHost {
     profileCheckedAt: row.profile_checked_at == null
       ? null
       : Number(row.profile_checked_at),
+    observedAccountCount: row.observed_account_count == null
+      ? 0
+      : Number(row.observed_account_count),
+    observedActiveAccountCount: row.observed_active_account_count == null
+      ? 0
+      : Number(row.observed_active_account_count),
+    lastIndexedAccountAt: row.last_indexed_account_at == null
+      ? null
+      : Number(row.last_indexed_account_at),
     lastCheckedAt: row.last_checked_at == null
       ? null
       : Number(row.last_checked_at),
@@ -1475,6 +1490,13 @@ export function accountHostName(pdsUrl: string | null | undefined): string {
   return endpointHost(pdsUrl);
 }
 
+export function accountHostKeyForEndpoint(
+  pdsUrl: string | null | undefined,
+): string {
+  const seed = seedForEndpoint(pdsUrl);
+  return seed?.host ?? endpointHost(pdsUrl);
+}
+
 export async function lookupAccountHost(
   pdsUrl: string | null | undefined,
 ): Promise<AccountHostLookup | null> {
@@ -1571,7 +1593,7 @@ export async function observeAccountHost(
       args: [
         host,
         host,
-        "An account host observed from the Atmosphere network.",
+        "An account host observed from public account activity.",
         origin,
         serviceEndpoint,
         null,
@@ -1652,12 +1674,22 @@ export async function getAccountHost(
   });
 }
 
+export async function hydrateAccountHostProfiles(
+  hosts: AccountHost[],
+): Promise<AccountHost[]> {
+  const { ts, results } = await fetchHostProfileRefreshes(hosts);
+  if (results.length === 0) return hosts;
+  const refreshed = await withDb(async (c) => {
+    return await persistHostProfileRefreshes(c, ts, results);
+  });
+  return hosts.map((host) => ({
+    ...host,
+    ...(refreshed.get(host.host) ?? {}),
+  }));
+}
+
 export async function warmAccountHostProfiles(
   hosts: AccountHost[],
 ): Promise<void> {
-  const { ts, results } = await fetchHostProfileRefreshes(hosts);
-  if (results.length === 0) return;
-  await withDb(async (c) => {
-    await persistHostProfileRefreshes(c, ts, results);
-  });
+  await hydrateAccountHostProfiles(hosts);
 }

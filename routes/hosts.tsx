@@ -6,9 +6,9 @@ import HostMark from "../components/hosts/HostMark.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import {
   type AccountHost,
+  hydrateAccountHostProfiles,
   listAccountHosts,
   listSeededAccountHostFallback,
-  warmAccountHostProfiles,
 } from "../lib/account-hosts.ts";
 import { hostFriendlyProfile } from "../lib/host-friendly.ts";
 
@@ -20,13 +20,16 @@ export default define.page(async function HostsPage(ctx) {
     console.warn("[hosts] list account hosts failed:", err);
     return listSeededAccountHostFallback({ query });
   });
-  const visibleHosts = hosts.length === 0 && !query
+  let visibleHosts = hosts.length === 0 && !query
     ? listSeededAccountHostFallback()
     : hosts;
   if (visibleHosts.length > 0) {
-    warmAccountHostProfiles(visibleHosts).catch((err) => {
-      console.warn("[hosts] warm profile avatars failed:", err);
-    });
+    visibleHosts = await hydrateAccountHostProfiles(visibleHosts).catch(
+      (err) => {
+        console.warn("[hosts] hydrate profile avatars failed:", err);
+        return visibleHosts;
+      },
+    );
   }
   return (
     <div id="page-top">

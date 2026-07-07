@@ -407,6 +407,9 @@ const SCHEMA_STATEMENTS: string[] = [
     service_record_cid TEXT,
     service_observed_at INTEGER,
     profile_checked_at INTEGER,
+    observed_account_count INTEGER NOT NULL DEFAULT 0,
+    observed_active_account_count INTEGER NOT NULL DEFAULT 0,
+    last_indexed_account_at INTEGER,
     last_checked_at INTEGER,
     last_observed_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -440,6 +443,27 @@ const SCHEMA_STATEMENTS: string[] = [
     service_endpoint TEXT,
     indexed_at INTEGER NOT NULL,
     deleted_at INTEGER
+  )`,
+  /**
+   * Programmatic PDS discovery. Each DID is counted once at its latest
+   * observed service endpoint; Jetstream observations mark active accounts,
+   * while PLC export observations provide broad historical coverage.
+   */
+  `CREATE TABLE IF NOT EXISTS pds_host_account (
+    did TEXT PRIMARY KEY,
+    handle TEXT,
+    service_endpoint TEXT NOT NULL,
+    service_host TEXT NOT NULL,
+    account_host TEXT NOT NULL,
+    source TEXT NOT NULL,
+    first_observed_at INTEGER NOT NULL,
+    last_observed_at INTEGER NOT NULL,
+    last_active_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS pds_discovery_cursor (
+    source TEXT PRIMARY KEY,
+    cursor TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
   )`,
   /**
    * Source records from app-directory lexicons. These rows preserve the
@@ -669,6 +693,9 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_repo_rkey ON host_record(repo_did, collection, rkey)`,
+  `CREATE INDEX IF NOT EXISTS pds_host_account_host ON pds_host_account(account_host, last_observed_at)`,
+  `CREATE INDEX IF NOT EXISTS pds_host_account_service_host ON pds_host_account(service_host, last_observed_at)`,
+  `CREATE INDEX IF NOT EXISTS pds_host_account_active ON pds_host_account(account_host, last_active_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_collection ON app_record(collection, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_listing ON app_record(listing_id, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_repo_rkey ON app_record(repo_did, collection, rkey)`,
@@ -1048,6 +1075,24 @@ async function applyAdditiveMigrations(
         table: "account_host",
         column: "profile_checked_at",
         ddl: "ALTER TABLE account_host ADD COLUMN profile_checked_at INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "observed_account_count",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN observed_account_count INTEGER NOT NULL DEFAULT 0",
+      },
+      {
+        table: "account_host",
+        column: "observed_active_account_count",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN observed_active_account_count INTEGER NOT NULL DEFAULT 0",
+      },
+      {
+        table: "account_host",
+        column: "last_indexed_account_at",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN last_indexed_account_at INTEGER",
       },
       {
         table: "account_host",

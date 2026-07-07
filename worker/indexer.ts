@@ -77,6 +77,7 @@ import {
   markHostProtocolRecordDeleted,
   upsertHostProtocolRecord,
 } from "../lib/host-record-indexing.ts";
+import { observePdsAccount } from "../lib/pds-discovery.ts";
 
 interface JetstreamCommit {
   rev: string;
@@ -146,22 +147,66 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 // DID document for every event.
 const pdsCache = new Map<string, { pdsUrl: string; expiresAt: number }>();
 const PDS_CACHE_TTL_MS = 30 * 60 * 1000;
+const pdsDiscoveryCache = new Map<string, number>();
+const PDS_DISCOVERY_TTL_MS = 6 * 60 * 60 * 1000;
 
-async function resolvePdsForDid(did: string): Promise<string> {
+function handleFromDidDocument(
+  doc: { alsoKnownAs?: string[] },
+): string | null {
+  const aka = (doc.alsoKnownAs ?? []).find((u) => u.startsWith("at://"));
+  return aka ? aka.slice("at://".length) : null;
+}
+
+async function maybeObservePdsAccount(
+  did: string,
+  handle: string | null,
+  pdsUrl: string,
+  observedAt = Date.now(),
+): Promise<void> {
+  const cachedUntil = pdsDiscoveryCache.get(did) ?? 0;
+  if (cachedUntil > Date.now()) return;
+  try {
+    await observePdsAccount({
+      did,
+      handle,
+      serviceEndpoint: pdsUrl,
+      source: "jetstream",
+      observedAt,
+      activeAt: observedAt,
+    });
+    pdsDiscoveryCache.set(did, Date.now() + PDS_DISCOVERY_TTL_MS);
+  } catch (err) {
+    console.warn(`[indexer] PDS discovery failed for ${did}:`, err);
+  }
+}
+
+async function resolvePdsForDid(
+  did: string,
+  observedAt = Date.now(),
+): Promise<string> {
   const cached = pdsCache.get(did);
   if (cached && cached.expiresAt > Date.now()) return cached.pdsUrl;
   const doc = await resolveDidDocument(did);
   const pdsUrl = findPdsEndpoint(doc);
   pdsCache.set(did, { pdsUrl, expiresAt: Date.now() + PDS_CACHE_TTL_MS });
+  await maybeObservePdsAccount(
+    did,
+    handleFromDidDocument(doc),
+    pdsUrl,
+    observedAt,
+  );
   return pdsUrl;
+}
+
+function eventObservedAt(event: JetstreamEvent): number {
+  return event.time_us > 0 ? Math.floor(event.time_us / 1000) : Date.now();
 }
 
 /** Best-effort handle lookup from the DID document's alsoKnownAs. */
 async function resolveHandleFromDoc(did: string): Promise<string> {
   try {
     const doc = await resolveDidDocument(did);
-    const aka = (doc.alsoKnownAs ?? []).find((u) => u.startsWith("at://"));
-    return aka ? aka.slice("at://".length) : did;
+    return handleFromDidDocument(doc) ?? did;
   } catch {
     return did;
   }
@@ -176,7 +221,7 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
+  const pdsUrl = await resolvePdsForDid(event.did, eventObservedAt(event));
   // Trust Jetstream's record bytes when present, but fetch from PDS for
   // create/update to make sure we have the canonical value (Jetstream may
   // omit blobs in some configurations).
@@ -208,7 +253,7 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
+  const pdsUrl = await resolvePdsForDid(event.did, eventObservedAt(event));
   const fetched = await getRecordPublic(
     pdsUrl,
     event.did,
@@ -263,7 +308,7 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
+  const pdsUrl = await resolvePdsForDid(event.did, eventObservedAt(event));
   const fetched = await getRecordPublic(
     pdsUrl,
     event.did,
@@ -304,7 +349,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
+  const pdsUrl = await resolvePdsForDid(event.did, eventObservedAt(event));
   const fetched = await getRecordPublic(
     pdsUrl,
     event.did,
@@ -363,7 +408,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
+  const pdsUrl = await resolvePdsForDid(event.did, eventObservedAt(event));
   const fetched = await getRecordPublic(
     pdsUrl,
     event.did,
@@ -489,7 +534,7 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
+  const pdsUrl = await resolvePdsForDid(event.did, eventObservedAt(event));
   const fetched = await getRecordPublic(
     pdsUrl,
     event.did,

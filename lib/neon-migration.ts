@@ -15,6 +15,8 @@ export const NEON_APP_TABLES = [
   "account_host",
   "account_host_claim",
   "host_record",
+  "pds_host_account",
+  "pds_discovery_cursor",
   "app_record",
   "app_listing",
   "app_alias",

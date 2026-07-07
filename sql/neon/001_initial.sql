@@ -257,6 +257,9 @@ CREATE TABLE IF NOT EXISTS account_host (
   service_record_cid text,
   service_observed_at bigint,
   profile_checked_at bigint,
+  observed_account_count integer NOT NULL DEFAULT 0,
+  observed_active_account_count integer NOT NULL DEFAULT 0,
+  last_indexed_account_at bigint,
   last_checked_at bigint,
   last_observed_at bigint,
   created_at bigint NOT NULL,
@@ -278,6 +281,9 @@ ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_record_uri text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_record_cid text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_observed_at bigint;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS bsky_profile_visible integer NOT NULL DEFAULT 1;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_account_count integer NOT NULL DEFAULT 0;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_active_account_count integer NOT NULL DEFAULT 0;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS last_indexed_account_at bigint;
 
 CREATE TABLE IF NOT EXISTS account_host_claim (
   host text PRIMARY KEY REFERENCES account_host(host) ON DELETE CASCADE,
@@ -310,6 +316,28 @@ CREATE TABLE IF NOT EXISTS host_record (
 CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at);
 CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at);
 CREATE INDEX IF NOT EXISTS host_record_repo_rkey ON host_record(repo_did, collection, rkey);
+
+CREATE TABLE IF NOT EXISTS pds_host_account (
+  did text PRIMARY KEY,
+  handle text,
+  service_endpoint text NOT NULL,
+  service_host text NOT NULL,
+  account_host text NOT NULL,
+  source text NOT NULL,
+  first_observed_at bigint NOT NULL,
+  last_observed_at bigint NOT NULL,
+  last_active_at bigint
+);
+
+CREATE INDEX IF NOT EXISTS pds_host_account_host ON pds_host_account(account_host, last_observed_at);
+CREATE INDEX IF NOT EXISTS pds_host_account_service_host ON pds_host_account(service_host, last_observed_at);
+CREATE INDEX IF NOT EXISTS pds_host_account_active ON pds_host_account(account_host, last_active_at);
+
+CREATE TABLE IF NOT EXISTS pds_discovery_cursor (
+  source text PRIMARY KEY,
+  cursor text NOT NULL,
+  updated_at bigint NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS app_record (
   uri text PRIMARY KEY,

@@ -12,6 +12,7 @@ import {
   getAccountHost,
   getAccountHostClaim,
   type HostVerificationStatus,
+  hydrateAccountHostProfiles,
 } from "../../lib/account-hosts.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
 import { buildHostAccountRoute } from "../../lib/host-account-routing.ts";
@@ -20,7 +21,13 @@ import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
 export const handler = define.handlers({
   async GET(ctx) {
     const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
-    const host = await getAccountHost(hostId).catch(() => null);
+    let host = await getAccountHost(hostId).catch(() => null);
+    if (host) {
+      host = (await hydrateAccountHostProfiles([host]).catch((err) => {
+        console.warn("[host] hydrate profile avatar failed:", err);
+        return [host as AccountHost];
+      }))[0] ?? host;
+    }
     const claim = host
       ? await getAccountHostClaim(host.host).catch(() => null)
       : null;

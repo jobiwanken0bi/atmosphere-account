@@ -238,7 +238,9 @@ function DocsBlockView(
       return (
         <div class={`docs-diagram docs-diagram--${block.variant ?? "neutral"}`}>
           {block.title && <h3>{block.title}</h3>}
-          <div class="docs-diagram-track">
+          <div
+            class={`docs-diagram-track docs-diagram-track--count-${block.items.length}`}
+          >
             {block.items.map((item, index) => (
               <article class="docs-diagram-node" key={item.title}>
                 <span>{String(index + 1).padStart(2, "0")}</span>
