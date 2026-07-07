@@ -86,7 +86,7 @@ export const docsPages: DocsPage[] = [
       {
         title: "Register an app",
         body:
-          "Set app identity, exact return URIs, review status, and picker warnings.",
+          "Set app identity, exact return URIs, review status, picker warnings, and shared app records.",
         href: "/docs/register-app",
         label: "Open guide",
       },
@@ -139,6 +139,11 @@ export const docsPages: DocsPage[] = [
                   "Apps send users to the hosted picker. Atmosphere returns a signed selection token, then the app starts normal AT Protocol OAuth with the chosen account.",
               },
               {
+                title: "Shared app records",
+                body:
+                  "Apps use interoperable listing records for discovery, reviews, favorites, and community app identity. The old Atmosphere profile record is legacy compatibility.",
+              },
+              {
                 title: "Host account routing",
                 body:
                   "PDS hosts publish a service record. Atmosphere shows where the account lives and links users to the account page the host owns.",
@@ -175,6 +180,11 @@ export const docsPages: DocsPage[] = [
                 "Shows friendly host profiles, signup information, location/style, and optional compatibility signals.",
                 "Publishes authoritative host service/profile records and owns the account page destination.",
               ],
+              [
+                "App directory",
+                "Indexes shared app records, merges duplicates, and shows reviews/favorites from interoperable records.",
+                "Publishes app-owned records from the app account and remains the source of truth for app-specific OAuth grants.",
+              ],
             ],
           },
           {
@@ -201,6 +211,13 @@ export const docsPages: DocsPage[] = [
                 href: "/docs/production-checklist",
                 label: "Prepare launch",
               },
+              {
+                title: "App record owners",
+                body:
+                  "Publish shared app records instead of depending on the legacy Atmosphere profile record.",
+                href: "/docs/app-records",
+                label: "Read the model",
+              },
             ],
           },
         ],
@@ -215,8 +232,8 @@ export const docsPages: DocsPage[] = [
             rows: [
               [
                 "An Atmosphere app",
-                "Atmosphere Login",
-                "One consistent account picker, followed by your own AT Protocol OAuth session.",
+                "Atmosphere Login and shared app records",
+                "One consistent account picker, followed by your own AT Protocol OAuth session and interoperable app discovery.",
               ],
               [
                 "A PDS host",
@@ -662,7 +679,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "register-app",
         title: "Register your app",
         intro:
-          "Registering gives the picker a clear app identity and a return URI allow-list tied to your signed-in ATProto account.",
+          "Registering gives the picker a clear app identity and a return URI allow-list tied to your signed-in Atmosphere account.",
         blocks: [
           {
             type: "endpoint",
@@ -677,7 +694,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Sign in with the owner account",
                 body:
-                  "The current ATProto account becomes the owner of the app registration. That owner can update the name, logo, homepage, and return URI allow-list.",
+                  "The current Atmosphere account becomes the owner of the app registration. That owner can update the name, logo, homepage, and return URI allow-list.",
               },
               {
                 title: "Use a stable client ID",
@@ -1098,7 +1115,7 @@ return Response.redirect(oauthUrl);`,
     description:
       "Give the picker a clear app identity, an owner account, and an exact return URI allow-list.",
     summary: [
-      "App registration is tied to the signed-in ATProto owner account.",
+      "App registration is tied to the signed-in Atmosphere owner account.",
       "Production apps use HTTPS identity and exact allowed return URIs.",
       "Review states control picker copy and trust warnings.",
     ],
@@ -1116,6 +1133,13 @@ return Response.redirect(oauthUrl);`,
         body: "Use the registered client ID and return URI in the browser SDK.",
         href: "/docs/add-button",
         label: "Next",
+      },
+      {
+        title: "Understand app records",
+        body:
+          "See how community app profiles, ATStore listings, reviews, and legacy Atmosphere records fit together.",
+        href: "/docs/app-records",
+        label: "Record model",
       },
       {
         title: "Run checks",
@@ -1211,6 +1235,180 @@ return Response.redirect(oauthUrl);`,
               "Keep staging, preview, and production callbacks explicit.",
               "Remove loopback URLs before requesting trusted review.",
             ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    slug: "app-records",
+    group: "Guides",
+    status: "Experimental",
+    navTitle: "App records",
+    title: "App records and directory interop",
+    description:
+      "Use shared app records for Atmosphere Account, ATStore, and the community app lexicon without duplicating listings.",
+    summary: [
+      "Community app profiles describe app identity and product metadata.",
+      "ATStore listing records power discovery, reviews, and favorites today.",
+      "Legacy Atmosphere app profile records should not be the active target for new app listings.",
+      "Atmosphere merges duplicate records into one public app page.",
+    ],
+    primaryCta: { label: "Manage app listings", href: "/apps/manage" },
+    secondaryCta: { label: "Browse apps", href: "/apps" },
+    nextSteps: [
+      {
+        title: "Register your app",
+        body:
+          "Create the app identity and exact picker return URIs before publishing records.",
+        href: "/docs/register-app",
+        label: "Register",
+      },
+      {
+        title: "API reference",
+        body: "Review exposed routes, SDK files, and compatibility endpoints.",
+        href: "/docs/reference",
+        label: "Reference",
+      },
+    ],
+    sections: [
+      {
+        id: "sources",
+        eyebrow: "Read model",
+        title: "One app page can come from multiple records",
+        intro:
+          "Atmosphere’s app directory is an appview projection. It reads AT Protocol records, normalizes them into one internal listing shape, and deduplicates records that describe the same app.",
+        blocks: [
+          {
+            type: "table",
+            columns: ["Record", "Role", "How Atmosphere uses it"],
+            rows: [
+              [
+                "`community.lexicon.app.profile`",
+                "Canonical app identity.",
+                "Name, description, icon, banner/media, links, status, platforms, lexicons, and app-owned metadata.",
+              ],
+              [
+                "`fyi.atstore.listing.detail`",
+                "Shared listing record.",
+                "Primary public listing source today. It connects to ATStore reviews, favorites, categories, and discovery signals.",
+              ],
+              [
+                "`fyi.atstore.listing.review` / `favorite`",
+                "Social signals.",
+                "Reviews, ratings, favorites, and trending inputs for apps with an ATStore listing URI.",
+              ],
+              [
+                "`com.atmosphereaccount.registry.profile`",
+                "Legacy compatibility.",
+                "Read as a fallback while old Atmosphere-only listings migrate. New listings should publish shared app records instead.",
+              ],
+            ],
+          },
+          {
+            type: "callout",
+            title: "No duplicate cards",
+            body:
+              "When an app has records in more than one source, Atmosphere shows one app card and one detail page. Source details belong in owner/admin disclosure, not in the public card design.",
+          },
+        ],
+      },
+      {
+        id: "publishing",
+        title: "Publishing direction",
+        intro:
+          "The practical path is to publish from the app account itself, then let appviews such as Atmosphere and ATStore index the same records.",
+        blocks: [
+          {
+            type: "steps",
+            items: [
+              {
+                title: "Use the app account",
+                body:
+                  "Sign in with the account that represents the app. That account owns the app’s shared profile and listing records.",
+              },
+              {
+                title: "Add required listing fields",
+                body:
+                  "Provide a name, description, icon, homepage or app link, category/collection, and media where available.",
+              },
+              {
+                title: "Publish shared records",
+                body:
+                  "Atmosphere writes an ATStore listing record for discovery and a community app profile for canonical app identity when the app is ready.",
+              },
+              {
+                title: "Migrate legacy listings",
+                body:
+                  "Legacy Atmosphere-only listings should move to shared records. The old record can remain indexed as a fallback until the migration is complete.",
+              },
+            ],
+          },
+          {
+            type: "callout",
+            title: "Regular reviewers are different",
+            body:
+              "A regular user leaving a review does not need an app or host profile record. Reviews use the signed-in Atmosphere account identity and, when needed, a minimal ATStore reviewer profile for display compatibility.",
+          },
+        ],
+      },
+      {
+        id: "dedupe",
+        title: "Merge and precedence rules",
+        blocks: [
+          {
+            type: "table",
+            columns: ["Match key", "Purpose"],
+            rows: [
+              [
+                "Product/profile DID",
+                "Strongest signal that multiple records belong to the same app account.",
+              ],
+              [
+                "Canonical primary URL",
+                "Useful when a community profile and ATStore listing describe the same app from the same website.",
+              ],
+              [
+                "Source AT URI",
+                "Fallback when no shared identity or URL exists.",
+              ],
+            ],
+          },
+          {
+            type: "table",
+            columns: ["Precedence", "Display behavior"],
+            rows: [
+              [
+                "ATStore listing",
+                "Wins duplicate resolution today because it carries the shared review/favorite ecosystem.",
+              ],
+              [
+                "Community app profile",
+                "Fills canonical identity and app metadata gaps.",
+              ],
+              [
+                "Legacy Atmosphere profile",
+                "Fills remaining blanks only while older listings migrate.",
+              ],
+            ],
+          },
+        ],
+      },
+      {
+        id: "reviews",
+        title: "Reviews and favorites",
+        blocks: [
+          {
+            type: "paragraph",
+            body:
+              "If an app has an ATStore listing URI, Atmosphere routes reviews and favorites to ATStore-compatible records. If it does not, older Atmosphere review behavior is treated as legacy fallback until the app migrates.",
+          },
+          {
+            type: "callout",
+            title: "Do not mix rating systems",
+            body:
+              "ATStore-backed review aggregates and legacy Atmosphere review aggregates should not be blended into one public rating. Prefer the shared ATStore-backed signal once a listing exists.",
+            tone: "amber",
           },
         ],
       },
@@ -1756,27 +1954,27 @@ return Response.redirect(oauthUrl);`,
       "Optional manifests are compatibility metadata, not the primary account surface and not a delegation of account authority.",
     ],
     primaryCta: {
-      label: "Manifest example",
-      href: "/examples/atmosphere-host-dashboard.example.json",
+      label: "Register a host",
+      href: "/hosts/register",
     },
     secondaryCta: {
-      label: "Schema",
-      href: "/atmosphere-host-dashboard.schema.json",
+      label: "Host directory",
+      href: "/hosts",
     },
     nextSteps: [
       {
-        title: "Validate a manifest",
+        title: "Review host lexicons",
+        body:
+          "Use the profile and service records as the source of truth for host pages.",
+        href: "/docs/resources#schemas",
+        label: "Resources",
+      },
+      {
+        title: "Validate optional metadata",
         body:
           "Run the manifest validator only when claiming optional compatibility metadata.",
         href: "/docs/conformance",
         label: "Validate",
-      },
-      {
-        title: "Review the schema",
-        body:
-          "Use the v0.1 schema and example manifest as implementation fixtures.",
-        href: "/docs/resources#schemas",
-        label: "Resources",
       },
     ],
     sections: [
@@ -1823,7 +2021,7 @@ return Response.redirect(oauthUrl);`,
           {
             type: "paragraph",
             body:
-              "Hosts publish `account.atmosphere.host.service` from the ATProto account that represents the host. The `serviceEndpoint` is the canonical PDS origin; `accountManagementUrl` should be set when the host has a working account page. `/account` on the PDS is the recommended convention when supported. Do not point this field at a marketing homepage unless that page actually manages accounts.",
+              "Hosts publish `account.atmosphere.host.service` from the Atmosphere account that represents the host. The `serviceEndpoint` is the canonical PDS origin; `accountManagementUrl` should be set when the host has a working account page. `/account` on the PDS is the recommended convention when supported. Do not point this field at a marketing homepage unless that page actually manages accounts.",
           },
           {
             type: "code",
@@ -1849,13 +2047,42 @@ return Response.redirect(oauthUrl);`,
         ],
       },
       {
+        id: "profile-record",
+        eyebrow: "Profile record",
+        title: "Publish the host profile",
+        blocks: [
+          {
+            type: "paragraph",
+            body:
+              "The host profile is the friendly public card: name, description, avatar or logo, banner, links, contact, and the services it represents. Keep public copy understandable for people choosing where to host their account.",
+          },
+          {
+            type: "code",
+            language: "json",
+            code: `{
+  "name": "Example Host",
+  "description": "A friendly account host for builders and small communities.",
+  "avatar": {
+    "ref": { "$link": "bafk..." },
+    "mimeType": "image/png"
+  },
+  "links": [
+    { "uri": "https://host.example", "label": "Website" },
+    { "uri": "https://host.example/support", "label": "Support" }
+  ],
+  "createdAt": "2026-06-26T00:00:00.000Z"
+}`,
+          },
+        ],
+      },
+      {
         id: "directory",
         title: "Connect a claimed host listing",
         blocks: [
           {
             type: "paragraph",
             body:
-              "After a host is claimed in the Atmosphere host directory, the claiming ATProto account can open the host’s manage page, save the PDS service endpoint, and optionally validate compatibility metadata.",
+              "After a host is claimed in the Atmosphere host directory, the claiming Atmosphere account can open the host’s manage page, save the PDS service endpoint, and optionally validate compatibility metadata.",
           },
           {
             type: "callout",
@@ -2028,7 +2255,7 @@ deno task host:dashboard:check host.example --json`,
     summary: [
       "Use the sign-in badge and logo to make Atmosphere Login recognizable.",
       "Download the Lottie animation and icon assets for product and docs surfaces.",
-      "Use registry schemas, optional host compatibility schemas, and SVG icon exports when building interoperable experiences.",
+      "Use community app profiles, ATStore records, host lexicons, optional compatibility schemas, and SVG icon exports when building interoperable experiences.",
     ],
     primaryCta: {
       label: "Sign-in badge",
@@ -2116,8 +2343,38 @@ deno task host:dashboard:check host.example --json`,
             type: "endpoint",
             method: "GET",
             path:
+              "https://lexicon.garden/lexicon/did:plc:2uwoih2htodskvgocarwv5eq/community.lexicon.app.profile/docs",
+            body:
+              "Community app profile lexicon docs for canonical app identity records.",
+          },
+          {
+            type: "endpoint",
+            method: "GET",
+            path: "https://github.com/ATProtocol-Community/ATStore",
+            body:
+              "ATStore project source, including listing, review, and favorite record behavior.",
+          },
+          {
+            type: "endpoint",
+            method: "GET",
+            path:
+              "https://tangled.org/joebasser.com/atmosphere-account/blob/main/lexicons/account/atmosphere/host/profile.json",
+            body: "Atmosphere host profile lexicon source.",
+          },
+          {
+            type: "endpoint",
+            method: "GET",
+            path:
+              "https://tangled.org/joebasser.com/atmosphere-account/blob/main/lexicons/account/atmosphere/host/service.json",
+            body: "Atmosphere host service lexicon source.",
+          },
+          {
+            type: "endpoint",
+            method: "GET",
+            path:
               "https://tangled.org/joebasser.com/atmosphere-account/blob/main/lexicons/com/atmosphereaccount/registry/profile.json",
-            body: "Atmosphere registry profile lexicon source.",
+            body:
+              "Legacy Atmosphere app profile lexicon source. New listings should migrate to shared app records.",
           },
         ],
       },
@@ -2386,7 +2643,7 @@ iss=https://atmosphereaccount.com`,
     summary: [
       "Use `/atmosphere-login.js` for the browser picker SDK.",
       "Use `/login/jwks.json` to verify selection tokens.",
-      "Use `/api/hosts/dashboard/validate` to validate optional host compatibility manifests. The endpoint name is legacy; validated metadata is not account-control delegation.",
+      "Use `/api/hosts/dashboard/validate` only for optional host compatibility manifests. The endpoint name is legacy; validated metadata is not account-control delegation.",
     ],
     sections: [
       {

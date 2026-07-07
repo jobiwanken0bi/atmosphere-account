@@ -1,4 +1,5 @@
 const skeletonId = "page-loading-skeleton";
+const skeletonDelayMs = 220;
 let showTimer = 0;
 
 function isSkeletonPage(url) {
@@ -462,7 +463,7 @@ function showSkeleton(kind) {
 function scheduleSkeleton(url) {
   clearTimeout(showTimer);
   const kind = routeKind(url.pathname);
-  showTimer = globalThis.setTimeout(() => showSkeleton(kind), 120);
+  showTimer = globalThis.setTimeout(() => showSkeleton(kind), skeletonDelayMs);
 }
 
 function hideSkeleton() {

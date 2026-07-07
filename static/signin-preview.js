@@ -107,7 +107,7 @@ function renderSelected(target, match, onClear) {
   clear.type = "button";
   clear.className = "signin-selected-clear";
   clear.setAttribute("aria-label", "Clear selected account");
-  clear.textContent = "x";
+  clear.textContent = "×";
   clear.addEventListener("click", onClear);
 
   target.replaceChildren(avatar, meta, clear);
@@ -143,11 +143,11 @@ function enhanceForm(form, index) {
   if (!field) return;
 
   form.setAttribute(ENHANCED_ATTR, "true");
-  const loadingLabel = form.dataset.previewLoading || "Searching...";
+  const loadingLabel = form.dataset.previewLoading || "Searching…";
   const notFoundLabel = form.dataset.previewNotFound ||
     "No matching account found.";
   const submitLabel = form.dataset.submitLabel || "Continue";
-  const submittingLabel = form.dataset.submittingLabel || "Redirecting...";
+  const submittingLabel = form.dataset.submittingLabel || "Redirecting…";
   const submitButton = form.querySelector(".signin-form-submit");
   const selectedBox = form.querySelector("[data-signin-selected]");
   const previewId = input.getAttribute("aria-controls") ||

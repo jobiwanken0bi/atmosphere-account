@@ -4,6 +4,8 @@ import {
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
 } from "../../i18n/mod.ts";
+import { IS_DEV } from "../../lib/env.ts";
+import { isSafeRelativePath } from "../../lib/security.ts";
 
 /**
  * Persist a locale choice as a cookie and bounce the user back to where
@@ -25,14 +27,16 @@ function handle(ctx: { url: URL; req: Request }): Response {
   const headers = new Headers({
     location: safeReturn,
     "set-cookie":
-      `${LOCALE_COOKIE}=${to}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax`,
+      `${LOCALE_COOKIE}=${to}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax${
+        IS_DEV ? "" : "; Secure"
+      }`,
   });
   return new Response(null, { status: 303, headers });
 }
 
 /** Only allow same-origin relative paths to avoid open-redirects. */
 function isSafeRedirect(value: string): boolean {
-  return value.startsWith("/") && !value.startsWith("//");
+  return isSafeRelativePath(value);
 }
 
 export const handler = define.handlers({

@@ -1,10 +1,13 @@
 import { define } from "../../../../utils.ts";
 import { inferHostNetworkLocation } from "../../../../lib/host-location-inference.ts";
+import { rejectLargeRequest } from "../../../../lib/security.ts";
 
 interface InferRequestBody {
   host?: string;
   serviceEndpoint?: string;
 }
+
+const MAX_LOCATION_INFER_BODY_BYTES = 8_192;
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -13,6 +16,8 @@ export const handler = define.handlers({
         status: 401,
       });
     }
+    const large = rejectLargeRequest(ctx.req, MAX_LOCATION_INFER_BODY_BYTES);
+    if (large) return large;
     const body = await readBody(ctx.req);
     const result = await inferHostNetworkLocation({
       host: body?.host,

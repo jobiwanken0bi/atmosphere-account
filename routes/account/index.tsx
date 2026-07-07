@@ -51,7 +51,7 @@ const APP_UPGRADE_COPY = {
   signInWithProjectSuffix: ".",
   yes: "Yes, create app profile",
   cancel: "Cancel",
-  submitting: "Creating app profile...",
+  submitting: "Creating app profile…",
   error: "Couldn't create the app profile.",
 };
 

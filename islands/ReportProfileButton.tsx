@@ -1,4 +1,5 @@
 import { useSignal } from "@preact/signals";
+import { useDialog } from "../lib/use-dialog.ts";
 
 interface Props {
   /** Handle or DID of the profile being reported. The API accepts both. */
@@ -62,6 +63,8 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
     reset();
   };
 
+  const dialogRef = useDialog<HTMLDivElement>(open.value, close);
+
   const submit = async () => {
     submitting.value = true;
     try {
@@ -113,9 +116,18 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
             if (e.target === e.currentTarget) close();
           }}
         >
-          <div class="modal-card">
+          <div
+            class="modal-card"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-profile-title"
+            tabIndex={-1}
+          >
             <div class="modal-header">
-              <p class="modal-title">{copy.modalTitle}</p>
+              <h2 id="report-profile-title" class="modal-title">
+                {copy.modalTitle}
+              </h2>
               <p class="modal-body-text">{copy.modalBody}</p>
             </div>
 
@@ -178,7 +190,10 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                   </label>
 
                   {status.value.kind === "error" && (
-                    <p class="report-modal-status report-modal-status--error">
+                    <p
+                      class="report-modal-status report-modal-status--error"
+                      role="alert"
+                    >
                       {copy.error}: {status.value.text}
                     </p>
                   )}

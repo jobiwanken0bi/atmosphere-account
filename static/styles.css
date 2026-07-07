@@ -12,6 +12,9 @@ html {
   scroll-padding-top: 5rem;
   overflow-x: clip;
   -webkit-text-size-adjust: 100%;
+  /* Opaque light base so the page never relies on canvas background
+     propagation (which OS/browser dark modes can suppress → black page). */
+  background-color: #e8f0fe;
 }
 
 body {
@@ -78,6 +81,8 @@ a:hover {
     #ebe4f5 88%,
     #f0e8f0 100%
   );
+  /* Opaque fallback under the gradients so no dark canvas can bleed through. */
+  background-color: #dbe6fa;
   min-height: 100vh;
   position: relative;
 }
@@ -189,6 +194,13 @@ h1, h2, h3, h4 {
 
 :root {
   --nav-bar-height: 4.5rem;
+  /* The site is a light-only design (sky gradient). Declare the scheme so
+     browsers in OS/auto dark mode don't force-darken the page to black. */
+  color-scheme: light;
+  /* Shared keyboard focus ring — reused by every interactive control's
+     :focus-visible so keyboard users always get a consistent, visible indicator. */
+  --focus-ring: 2px solid rgba(80, 130, 220, 0.7);
+  --focus-ring-offset: 2px;
 }
 
 .nav {
@@ -305,7 +317,12 @@ h1, h2, h3, h4 {
   font-size: 0.85rem;
   font-weight: 500;
   text-decoration: none;
-  transition: all 0.25s;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
   border: none;
 }
 
@@ -1273,13 +1290,13 @@ h1, h2, h3, h4 {
 }
 
 .lottie-section-cta {
-  margin-top: clamp(5.35rem, 9vw, 6.5rem);
+  margin-top: clamp(6rem, 9.5vw, 7.25rem);
 }
 
 .atmosphere-map {
   position: relative;
   width: min(620px, 92vw);
-  min-height: clamp(26rem, 46vw, 33rem);
+  min-height: clamp(27rem, 47vw, 34rem);
   overflow: visible;
 }
 
@@ -2428,7 +2445,7 @@ h1, h2, h3, h4 {
   }
 
   .lottie-section-cta {
-    margin-top: 1.5rem;
+    margin-top: 2.25rem;
   }
 
   .inner-ring {
@@ -2500,6 +2517,11 @@ h1, h2, h3, h4 {
   max-width: none;
   padding: clamp(0.75rem, 1.6vw, 0.95rem);
   overflow: hidden;
+}
+
+.host-handle-explainer-copy {
+  /* Cap the measure so the body doesn't run an over-long line into the demo. */
+  max-width: 38rem;
 }
 
 .host-handle-explainer-copy .text-eyebrow {
@@ -2732,6 +2754,7 @@ h1, h2, h3, h4 {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.45rem;
   min-height: 2.08rem;
   border-radius: 8px;
   background: #254a9e;
@@ -2740,6 +2763,13 @@ h1, h2, h3, h4 {
   font-size: 0.84rem;
   font-weight: 700;
   box-shadow: 0 10px 24px rgba(42, 90, 168, 0.2);
+}
+
+.host-handle-demo-button-icon {
+  width: 1rem;
+  height: 1rem;
+  /* union.svg is dark navy — render it white on the blue button. */
+  filter: brightness(0) invert(1);
 }
 
 @media (max-width: 900px) {
@@ -2812,6 +2842,16 @@ h1, h2, h3, h4 {
   margin: 0;
   flex: 1;
   min-width: 0;
+}
+
+/* Your-choice cards (Moderation / Algorithms / Portability): centered headers. */
+.your-choice-grid .feature-card-title-row {
+  justify-content: center;
+}
+
+.your-choice-grid .feature-card-title-row .text-subsection {
+  flex: 0 1 auto;
+  text-align: center;
 }
 
 .feature-icon {
@@ -2999,30 +3039,24 @@ h1, h2, h3, h4 {
   transform: translateY(-1px);
 }
 
-.hub-tag-icon,
-.flow-node-icon {
+.hub-tag-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  width: 1.72rem;
+  height: 1.72rem;
   border-radius: 10px;
   color: #244d9e;
   background: rgba(42, 90, 168, 0.11);
 }
 
-.hub-tag-icon {
-  width: 1.72rem;
-  height: 1.72rem;
-}
-
-.hub-tag-icon-svg,
-.flow-node-icon-svg {
+.hub-tag-icon-svg {
   width: 1.05rem;
   height: 1.05rem;
 }
 
-.hub-tag-label,
-.flow-node-label {
+.hub-tag-label {
   min-width: 0;
 }
 
@@ -3101,162 +3135,192 @@ h1, h2, h3, h4 {
 }
 
 /* ================================
-   Cross-Pollination / Flow Diagram
+   Cross-Pollination / Flow (animated)
    ================================ */
 
-.flow-diagram {
+.flow-stage {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  gap: 0;
-  align-items: start;
-  margin-top: 2.5rem;
+  align-items: center;
+  gap: clamp(0.25rem, 2vw, 1.5rem);
+  margin-top: 2.75rem;
   position: relative;
 }
 
-.flow-column {
+/* Rails --------------------------------------------------------------- */
+
+.flow-rail {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  min-width: 0;
 }
 
-.flow-column-label {
+.flow-rail-left {
+  align-items: flex-end;
+}
+
+.flow-rail-right {
+  align-items: flex-start;
+}
+
+.flow-rail-label {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: rgba(18, 26, 47, 0.68);
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.6rem;
   padding: 0 1rem;
 }
 
-.flow-column-left {
-  align-items: flex-end;
-}
-.flow-column-left .flow-column-label {
+.flow-rail-left .flow-rail-label {
   text-align: right;
 }
-.flow-column-right {
+
+.flow-rail-viewport {
+  position: relative;
+  width: 100%;
+  max-width: 15rem;
+  height: 21rem;
+  overflow: hidden;
+  /* Types dissolve into the sky at both ends -> the stream feels infinite. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 20%,
+    #000 80%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 20%,
+    #000 80%,
+    transparent 100%
+  );
+}
+
+.flow-rail-left .flow-rail-viewport {
+  margin-left: auto;
+}
+
+.flow-rail-right .flow-rail-viewport {
+  margin-right: auto;
+}
+
+.flow-rail-track {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* Two identical halves; translateY(-50%) advances exactly one half -> seamless. */
+  animation: flowMarquee 34s linear infinite;
+  will-change: transform;
+}
+
+.flow-rail-left .flow-rail-track {
+  align-items: flex-end;
+}
+
+.flow-rail-right .flow-rail-track {
   align-items: flex-start;
 }
 
-.flow-node {
+.flow-rail-right .flow-rail-track {
+  animation-direction: reverse;
+}
+
+@keyframes flowMarquee {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+/* Chips --------------------------------------------------------------- */
+
+.flow-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.58rem;
-  min-width: 12.25rem;
+  min-width: 11.5rem;
+  max-width: 100%;
+  /* margin (not gap) so both marquee halves are exactly equal height. */
+  margin-bottom: 0.6rem;
   padding: 0.5rem 0.74rem 0.5rem 0.5rem;
   border-radius: 14px;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
-  animation: flowFadeIn 0.5s ease both;
   box-shadow: 0 10px 26px rgba(48, 70, 128, 0.07);
 }
 
-.flow-node-left {
-  justify-content: flex-end;
-}
-
-.flow-node-right {
-  justify-content: flex-start;
-}
-
-.flow-node-left .flow-node-icon {
-  order: 2;
-}
-
-.flow-node-left .flow-node-label {
+.flow-chip-left {
+  flex-direction: row-reverse;
   text-align: right;
 }
 
-.flow-node-icon {
+.flow-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   width: 2rem;
   height: 2rem;
+  border-radius: 10px;
+  color: #244d9e;
+  background: rgba(42, 90, 168, 0.11);
 }
 
-.flow-node-left:nth-child(4n+2) .flow-node-icon,
-.flow-node-right:nth-child(4n+2) .flow-node-icon {
+.flow-chip-icon-svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.flow-chip-label {
+  min-width: 0;
+}
+
+/* 4-colour icon rotation, matched across both marquee halves. */
+.flow-chip:nth-child(4n+1) .flow-chip-icon {
   color: #284f9d;
   background: rgba(58, 103, 189, 0.12);
 }
-
-.flow-node-left:nth-child(4n+3) .flow-node-icon,
-.flow-node-right:nth-child(4n+3) .flow-node-icon {
+.flow-chip:nth-child(4n+2) .flow-chip-icon {
   color: #8d3e76;
   background: rgba(208, 80, 148, 0.13);
 }
-
-.flow-node-left:nth-child(4n) .flow-node-icon,
-.flow-node-right:nth-child(4n) .flow-node-icon {
+.flow-chip:nth-child(4n+3) .flow-chip-icon {
   color: #28735f;
   background: rgba(62, 164, 118, 0.14);
 }
-
-.flow-node-left:nth-child(4n+1) .flow-node-icon,
-.flow-node-right:nth-child(4n+1) .flow-node-icon {
+.flow-chip:nth-child(4n) .flow-chip-icon {
   color: #7a5a1f;
   background: rgba(218, 166, 61, 0.14);
 }
 
-.flow-node-open {
-  border-style: dashed;
+.flow-chip-open {
+  border: 1px dashed rgba(42, 90, 168, 0.4);
   font-style: italic;
   color: rgba(18, 26, 47, 0.66);
   box-shadow: none;
 }
 
-@keyframes flowFadeIn {
-  from {
-    opacity: 0;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+.flow-chip-open .flow-chip-icon {
+  color: #4a6ba8;
+  background: rgba(42, 90, 168, 0.08);
 }
 
-.flow-node-left {
-  animation-name: flowSlideLeft;
-}
+/* Core: hub + particle conduits -------------------------------------- */
 
-.flow-node-right {
-  animation-name: flowSlideRight;
-}
-
-@keyframes flowSlideLeft {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes flowSlideRight {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* Center hub */
-
-.flow-center {
+.flow-core {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   position: relative;
-  padding: 0 2rem;
-  min-height: 100%;
+  padding: 0 clamp(0.25rem, 1.5vw, 1rem);
 }
 
 .flow-hub {
@@ -3273,6 +3337,31 @@ h1, h2, h3, h4 {
   text-align: center;
 }
 
+.flow-hub-glow {
+  position: absolute;
+  inset: -20%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(120, 170, 240, 0.45) 0%,
+    rgba(120, 170, 240, 0) 68%
+  );
+  z-index: -1;
+  animation: flowHubPulse 3.2s ease-in-out infinite;
+}
+
+@keyframes flowHubPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
 .flow-hub-logo {
   filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%)
     hue-rotate(195deg) brightness(95%);
@@ -3286,136 +3375,138 @@ h1, h2, h3, h4 {
   line-height: 1.3;
 }
 
-/* Animated connection lines */
-
-.flow-lines {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-around;
-  z-index: 1;
-}
-
-.flow-lines-left {
-  right: 100%;
-  margin-right: -0.5rem;
-}
-.flow-lines-right {
-  left: 100%;
-  margin-left: -0.5rem;
-}
-
-.flow-line {
+.flow-conduit {
+  --flow-len: clamp(1.75rem, 5vw, 3.75rem);
+  position: relative;
+  width: var(--flow-len);
   height: 2px;
-  width: 100%;
+  flex: 0 0 auto;
+  align-self: center;
+  border-radius: 2px;
   background: linear-gradient(
     90deg,
-    rgba(42, 90, 168, 0.14),
-    rgba(42, 90, 168, 0.45),
-    rgba(42, 90, 168, 0.14)
+    rgba(42, 90, 168, 0.05),
+    rgba(42, 90, 168, 0.3),
+    rgba(42, 90, 168, 0.05)
   );
-  border-radius: 1px;
-  animation: flowPulse 2.4s ease-in-out infinite;
 }
 
-.flow-lines-right .flow-line {
-  animation-direction: reverse;
+.flow-particle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #6fa6e6, #3f6ac4);
+  box-shadow: 0 0 8px 1px rgba(74, 138, 212, 0.6);
+  animation: flowParticle 2.4s linear infinite;
 }
 
-@keyframes flowPulse {
-  0%, 100% {
-    opacity: 0.42;
-    transform: scaleX(0.6);
+@keyframes flowParticle {
+  0% {
+    transform: translateX(0) scale(0.5);
+    opacity: 0;
   }
-  50% {
+  15% {
     opacity: 1;
-    transform: scaleX(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(var(--flow-len)) scale(0.9);
+    opacity: 0;
   }
 }
 
-/* Mobile: hub on top, two columns of pills (shorter than a single tall stack) */
+/* Tablet -------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .flow-rail-viewport {
+    height: 18rem;
+    max-width: 12.5rem;
+  }
+  .flow-chip {
+    min-width: 9.5rem;
+    font-size: 0.78rem;
+  }
+}
+
+/* Mobile: hub on top, two shorter rails side by side ------------------ */
 
 @media (max-width: 640px) {
-  .flow-diagram {
+  .flow-stage {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto auto;
-    gap: 0.65rem 0.5rem;
-    align-items: start;
+    gap: 0.5rem;
     margin-top: 1.75rem;
   }
 
-  /* Hub spans full width, first row */
-  .flow-center {
+  .flow-core {
     grid-column: 1 / -1;
     grid-row: 1;
-    padding: 0.35rem 0 0.25rem;
-    min-height: 0;
+    padding: 0.25rem 0;
   }
 
-  .flow-column-left {
+  /* Conduits are horizontal - drop them in the stacked layout. */
+  .flow-conduit {
+    display: none;
+  }
+
+  .flow-rail-left {
     grid-column: 1;
     grid-row: 2;
     align-items: center;
   }
 
-  .flow-column-right {
+  .flow-rail-right {
     grid-column: 2;
     grid-row: 2;
     align-items: center;
   }
 
-  .flow-column-left .flow-column-label,
-  .flow-column-right .flow-column-label {
+  .flow-rail-label,
+  .flow-rail-left .flow-rail-label {
     text-align: center;
     padding: 0 0.35rem;
     font-size: 0.68rem;
-    margin-bottom: 0.15rem;
   }
 
-  .flow-column {
-    gap: 0.42rem;
+  .flow-rail-viewport {
+    height: 15rem;
+    max-width: 100%;
+    margin-inline: auto;
   }
 
-  /* Drop only the open-ended final example — keeps the diagram short. */
-  .flow-column-left .flow-node:last-child,
-  .flow-column-right .flow-node:last-child {
-    display: none !important;
+  .flow-rail-left .flow-rail-track,
+  .flow-rail-right .flow-rail-track {
+    align-items: center;
   }
 
-  .flow-node {
+  .flow-chip {
     min-width: 0;
-    width: min(100%, 10.25rem);
+    width: min(100%, 10rem);
     padding: 0.42rem 0.55rem;
-    gap: 0.38rem;
+    gap: 0.4rem;
     font-size: 0.72rem;
     white-space: normal;
-    max-width: 100%;
-    line-height: 1.25;
+    line-height: 1.2;
     border-radius: 12px;
   }
 
-  .flow-node-left,
-  .flow-node-right {
-    justify-content: flex-start;
-  }
-
-  .flow-node-left .flow-node-icon {
-    order: 0;
-  }
-
-  .flow-node-left .flow-node-label {
+  .flow-chip-left {
+    flex-direction: row;
     text-align: left;
   }
 
-  .flow-node-icon {
+  .flow-chip-icon {
     width: 1.62rem;
     height: 1.62rem;
   }
 
-  .flow-node-icon-svg {
+  .flow-chip-icon-svg {
     width: 0.92rem;
     height: 0.92rem;
   }
@@ -3435,9 +3526,21 @@ h1, h2, h3, h4 {
     font-size: 0.62rem;
     max-width: 9rem;
   }
+}
 
-  .flow-lines {
-    display: none;
+/* Respect reduced-motion: freeze the marquee mid-stream, hold particles. */
+@media (prefers-reduced-motion: reduce) {
+  .flow-rail-track {
+    animation: none;
+    transform: translateY(-8%);
+  }
+  .flow-hub-glow {
+    animation: none;
+  }
+  .flow-particle {
+    animation: none;
+    opacity: 0.5;
+    transform: translateX(calc(var(--flow-len) / 2));
   }
 }
 
@@ -3606,6 +3709,7 @@ h1, h2, h3, h4 {
 .provider-logo-row {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.6rem;
   color: #0e1428;
 }
@@ -4034,7 +4138,7 @@ body {
 }
 
 .dark-phase .hub-tag-icon,
-.dark-phase .flow-node-icon {
+.dark-phase .flow-chip-icon {
   color: #b9d8ff;
   background: rgba(255, 255, 255, 0.1);
 }
@@ -4081,11 +4185,11 @@ body {
   color: #80e2c1;
 }
 
-.dark-phase .flow-column-label {
+.dark-phase .flow-rail-label {
   color: rgba(255, 255, 255, 0.62);
 }
 
-.dark-phase .flow-node-open {
+.dark-phase .flow-chip-open {
   color: rgba(255, 255, 255, 0.62);
   border-color: rgba(255, 255, 255, 0.28);
 }
@@ -4098,12 +4202,12 @@ body {
   filter: brightness(0) invert(1);
 }
 
-.dark-phase .flow-line {
+.dark-phase .flow-conduit {
   background: linear-gradient(
     90deg,
-    rgba(158, 200, 240, 0.1),
-    rgba(158, 200, 240, 0.42),
-    rgba(158, 200, 240, 0.1)
+    rgba(158, 200, 240, 0.08),
+    rgba(158, 200, 240, 0.4),
+    rgba(158, 200, 240, 0.08)
   );
 }
 
@@ -5120,7 +5224,8 @@ body {
 .app-spotlight-card:hover,
 .app-promo-card:hover,
 .app-category-tile:hover,
-.app-ranked-row:hover {
+.app-ranked-row:hover,
+.app-fresh-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 14px 34px rgba(48, 70, 128, 0.12);
 }
@@ -5228,12 +5333,11 @@ body {
 }
 
 .app-spotlight-media img {
-  width: calc(100% - 2rem);
-  height: calc(100% - 2rem);
+  width: 100%;
+  height: 100%;
   min-height: 14rem;
-  max-height: 17rem;
-  object-fit: contain;
-  border-radius: 1.35rem;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .app-spotlight-media--icon {
@@ -5267,16 +5371,16 @@ body {
 
 .app-promo-column {
   display: grid;
-  gap: 1rem;
+  gap: 0.62rem;
 }
 
 .app-promo-card {
   display: grid;
-  grid-template-columns: 3.85rem minmax(0, 1fr);
-  gap: 0.9rem;
-  align-items: flex-start;
-  min-height: 9rem;
-  padding: 1rem;
+  grid-template-columns: 3rem minmax(0, 1fr) auto;
+  gap: 0.72rem;
+  align-items: center;
+  min-height: 6.15rem;
+  padding: 0.78rem 0.8rem;
   color: inherit;
   text-decoration: none;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
@@ -5296,9 +5400,9 @@ body {
 }
 
 .app-promo-icon {
-  width: 3.85rem;
-  height: 3.85rem;
-  border-radius: 1rem;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.86rem;
 }
 
 .app-promo-icon img,
@@ -5311,23 +5415,29 @@ body {
 .app-promo-copy {
   display: flex;
   flex-direction: column;
+  gap: 0.14rem;
   min-width: 0;
-  flex: 1;
-  align-self: stretch;
 }
 
-.app-promo-copy h3 {
-  flex: 0 0 auto;
+.app-promo-title-row {
+  display: flex;
+  align-items: center;
   min-width: 0;
-  margin: 0;
+}
+
+.app-promo-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: #0e1428;
-  font-size: 1.05rem;
-  line-height: 1.2;
+  font-weight: 650;
+  line-height: 1.16;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-promo-handle {
   min-width: 0;
-  margin: 0.18rem 0 0;
   overflow: hidden;
   color: rgba(18, 26, 47, 0.56);
   font-family: "IBM Plex Mono", monospace;
@@ -5337,43 +5447,48 @@ body {
   white-space: nowrap;
 }
 
-.app-promo-meta-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
-}
-
-.app-promo-copy p {
-  margin: 0.45rem 0 0;
-  color: rgba(18, 26, 47, 0.72);
-  font-size: 0.9rem;
-  line-height: 1.4;
+.app-promo-description {
   display: -webkit-box;
+  min-height: 2.05rem;
   overflow: hidden;
+  color: rgba(18, 26, 47, 0.72);
+  font-size: 0.8rem;
+  line-height: 1.28;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 
-.app-promo-cta-wrap {
+.app-promo-actions,
+.app-fresh-actions {
   display: flex;
-  justify-content: flex-end;
-  margin-top: auto;
-  padding-top: 0.85rem;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.42rem;
+  min-width: 4.25rem;
+}
+
+.app-promo-actions .app-collection-badge,
+.app-fresh-actions .app-collection-badge {
+  max-width: 6.9rem;
+  min-height: 1.38rem;
+  padding-inline: 0.48rem;
+  overflow: hidden;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
 }
 
 .app-promo-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 4.1rem;
-  min-height: 2.05rem;
-  padding: 0.36rem 0.5rem;
+  min-height: 1.9rem;
+  padding: 0.25rem 0.7rem;
   border-radius: 999px;
   background: rgba(42, 90, 168, 0.92);
   border: 1px solid rgba(42, 90, 168, 0.24);
   color: #fff;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 650;
   box-shadow: 0 10px 22px rgba(42, 90, 168, 0.14);
 }
@@ -5607,11 +5722,108 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
-  gap: 1rem;
+  gap: 0.72rem;
 }
 
-.app-fresh-grid .app-card {
-  min-height: 12rem;
+.app-fresh-card {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) auto;
+  gap: 0.72rem;
+  align-items: center;
+  min-height: 6.2rem;
+  padding: 0.8rem;
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.app-fresh-icon {
+  display: flex;
+  width: 3rem;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 0.86rem;
+  background: rgba(255, 255, 255, 0.58);
+  color: #254a9e;
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 9px 22px rgba(48, 70, 128, 0.1);
+}
+
+.app-fresh-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.app-fresh-copy,
+.app-fresh-title-row {
+  min-width: 0;
+}
+
+.app-fresh-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.app-fresh-title-row {
+  display: flex;
+  align-items: center;
+}
+
+.app-fresh-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #0e1428;
+  font-weight: 650;
+  line-height: 1.14;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-fresh-handle,
+.app-fresh-description,
+.app-fresh-signal {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(18, 26, 47, 0.58);
+  font-size: 0.78rem;
+  line-height: 1.16;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-fresh-description {
+  display: -webkit-box;
+  min-height: 2rem;
+  white-space: normal;
+  color: rgba(18, 26, 47, 0.68);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.app-fresh-signal {
+  color: rgba(18, 26, 47, 0.52);
+}
+
+.app-fresh-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.9rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(42, 90, 168, 0.92);
+  border: 1px solid rgba(42, 90, 168, 0.24);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 650;
+  box-shadow: 0 10px 22px rgba(42, 90, 168, 0.14);
 }
 
 .app-pagination {
@@ -6038,19 +6250,23 @@ body {
 .dark-phase .app-promo-handle,
 .dark-phase .app-category-count,
 .dark-phase .app-ranked-index,
-.dark-phase .app-ranked-meta {
+.dark-phase .app-ranked-meta,
+.dark-phase .app-fresh-handle,
+.dark-phase .app-fresh-signal {
   color: rgba(255, 255, 255, 0.58);
 }
 
 .dark-phase .app-spotlight-card h3,
-.dark-phase .app-promo-copy h3,
+.dark-phase .app-promo-title,
 .dark-phase .app-category-name,
-.dark-phase .app-ranked-title {
+.dark-phase .app-ranked-title,
+.dark-phase .app-fresh-title {
   color: #f0f4ff;
 }
 
 .dark-phase .app-spotlight-description,
-.dark-phase .app-promo-copy p {
+.dark-phase .app-promo-description,
+.dark-phase .app-fresh-description {
   color: rgba(255, 255, 255, 0.76);
 }
 
@@ -6062,7 +6278,8 @@ body {
 
 .dark-phase .app-spotlight-media,
 .dark-phase .app-promo-icon,
-.dark-phase .app-ranked-icon {
+.dark-phase .app-ranked-icon,
+.dark-phase .app-fresh-icon {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.14);
   color: #d8e4ff;
@@ -6285,6 +6502,12 @@ body {
   flex-direction: column;
   justify-content: center;
   gap: 0.65rem;
+}
+
+/* Host detail: top-align the CTA with the name instead of floating it in the
+   middle of the tall hero (which reads as excess empty space). */
+.host-detail-hero .profile-hero-actions {
+  justify-content: flex-start;
 }
 .profile-hero-action {
   display: flex;
@@ -8306,11 +8529,14 @@ body {
   justify-content: center;
   z-index: 200;
   padding: 1rem;
+  /* Keep scroll momentum inside the dialog; don't chain to the page behind. */
+  overscroll-behavior: contain;
 }
 .modal-card {
   width: min(440px, 100%);
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(255, 255, 255, 0.96);
   border-radius: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.6);
@@ -8962,7 +9188,8 @@ body {
 .signin-handle-prefix {
   position: absolute;
   left: 1rem;
-  top: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 1;
   display: inline-flex;
   width: 1.05rem;
@@ -9214,19 +9441,54 @@ body {
   border-top-color: rgba(255, 255, 255, 0.7);
 }
 
+/* Locked-account chip. Overlays the input at the SAME height so selecting a
+   match doesn't grow the field (which used to stretch the submit button). */
 .signin-selected {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  margin-top: 0.65rem;
-  border-radius: 16px;
-  padding: 0.72rem;
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(18, 26, 47, 0.08);
+  gap: 0.55rem;
+  padding: 0 0.4rem 0 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(42, 90, 168, 0.5);
+  overflow: hidden;
 }
 
 .signin-selected[hidden] {
   display: none;
+}
+
+.signin-selected .signin-form-preview-avatar {
+  flex: 0 0 auto;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 50%;
+}
+
+.signin-selected .signin-form-preview-meta {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Keep the chip to a single line — the avatar + name is enough confirmation. */
+.signin-selected .signin-form-preview-handle {
+  display: none;
+}
+
+.signin-selected .signin-form-preview-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signin-selected-clear {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .signin-selected-clear {
@@ -13882,7 +14144,7 @@ body {
   padding-top: 1rem;
 }
 
-.login-console-verifier h4 {
+.login-console-verifier h3 {
   margin: 0.15rem 0 0;
   color: #0e1428;
   font-size: 1rem;
@@ -14189,7 +14451,7 @@ body {
 }
 
 .dark-phase .login-console-head h3,
-.dark-phase .login-console-verifier h4,
+.dark-phase .login-console-verifier h3,
 .dark-phase .login-example-demo-app strong,
 .dark-phase .login-example-next-panel h2,
 .dark-phase .login-example-result strong,
@@ -16560,6 +16822,7 @@ body {
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 750;
+  outline: none;
 }
 
 .docs-nav-group a {
@@ -16567,11 +16830,17 @@ body {
 }
 
 .docs-nav-group a:hover,
-.docs-nav-group a:focus-visible,
-.docs-nav-group a.is-active {
+.docs-nav-group a:focus-visible {
   color: #0e1428;
   background: rgba(255, 255, 255, 0.56);
-  outline: none;
+}
+
+/* Active page: distinct from hover — accent colour + inset left bar. */
+.docs-nav-group a.is-active {
+  color: #1f4fa8;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: inset 3px 0 0 #2f6ae0;
 }
 
 .docs-main {
@@ -16919,6 +17188,21 @@ body {
   font-size: 0.84rem;
 }
 
+.docs-inline-code {
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 7px;
+  padding: 0.05rem 0.28rem;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  color: #0e1428;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.88em;
+  line-height: 1.35;
+  vertical-align: baseline;
+  overflow-wrap: anywhere;
+}
+
 .docs-list {
   display: grid;
   gap: 0.55rem;
@@ -17093,6 +17377,32 @@ body {
   border-left: 1px solid rgba(18, 26, 47, 0.08);
 }
 
+.docs-toc-summary {
+  margin: 0 0 0.35rem;
+  color: rgba(18, 26, 47, 0.5);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  list-style: none;
+  cursor: pointer;
+}
+
+.docs-toc-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Disclosure chevron — hidden on desktop where the TOC is always open. */
+.docs-toc-summary::after {
+  content: "";
+  display: none;
+}
+
+.docs-toc-links {
+  display: grid;
+  gap: 0.25rem;
+}
+
 .docs-toc a {
   position: relative;
   margin-left: -0.5rem;
@@ -17182,14 +17492,15 @@ body {
   font-size: 1rem;
 }
 
-@media (max-width: 980px) {
-  .docs-shell,
-  .docs-content-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 1120px) {
+  .docs-shell {
+    grid-template-columns: 12.75rem minmax(0, 1fr);
+    gap: clamp(1rem, 2.4vw, 1.5rem);
   }
 
   .docs-main {
     display: block;
+    max-width: none;
   }
 
   .docs-content-grid {
@@ -17209,8 +17520,63 @@ body {
     max-width: none;
   }
 
-  .docs-sidebar,
+  /* TOC becomes a collapsible card above the content (docs.js collapses it
+     by default on load for small screens). */
   .docs-toc {
+    display: block;
+    position: static;
+    grid-column: 1;
+    grid-row: auto;
+    order: -1;
+    max-height: none;
+    overflow: visible;
+    margin-bottom: 1.35rem;
+    padding: 0.5rem 0.85rem;
+    border: 1px solid rgba(18, 26, 47, 0.1);
+    border-left: 1px solid rgba(18, 26, 47, 0.1);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  .docs-toc[open] {
+    padding-bottom: 0.7rem;
+  }
+
+  .docs-toc-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0;
+  }
+
+  .docs-toc[open] .docs-toc-summary {
+    margin-bottom: 0.5rem;
+  }
+
+  /* Show a rotating chevron on mobile where the TOC is interactive. */
+  .docs-toc-summary::after {
+    display: block;
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    border-right: 2px solid rgba(18, 26, 47, 0.5);
+    border-bottom: 2px solid rgba(18, 26, 47, 0.5);
+    transform: rotate(45deg);
+    transition: transform 0.2s ease;
+  }
+
+  .docs-toc[open] .docs-toc-summary::after {
+    transform: rotate(-135deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .docs-shell,
+  .docs-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-sidebar {
     position: static;
     max-height: none;
     overflow: visible;
@@ -17227,10 +17593,6 @@ body {
 
   .docs-nav-group {
     min-width: 0;
-  }
-
-  .docs-toc {
-    display: none;
   }
 
   .docs-summary-grid,
@@ -17475,4 +17837,57 @@ body {
   .docs-page-link {
     width: 100%;
   }
+}
+
+/* ================================================================
+   Keyboard focus — consolidated visible focus rings
+   Fills gaps flagged in the a11y audit. Placed last so it wins the
+   equal-specificity `outline: none` declarations these controls set.
+   ================================================================ */
+
+/* Zero-specificity global safety net: any interactive element that has
+   no bespoke focus style still gets a visible ring. `:where()` keeps
+   specificity at 0 so component-specific focus styles always win. */
+:where(
+  a,
+  button,
+  [role="button"],
+  [role="tab"],
+  summary,
+  [tabindex]
+):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Explicit rings for controls that set `outline: none` with no replacement. */
+.explore-category-tab:focus-visible,
+.profile-hero-action:focus-visible,
+.profile-form-button-secondary:focus-visible,
+.profile-form-button-secondary:focus-within,
+.directory-register-button:focus-visible,
+.text-link-button:focus-visible,
+.explore-search-submit:focus-visible,
+.signin-tab:focus-visible,
+.app-card:focus-visible,
+.app-fresh-card:focus-visible,
+.app-spotlight-card:focus-visible,
+.app-promo-card:focus-visible,
+.app-ranked-row:focus-visible,
+.app-category-tile:focus-visible,
+.app-pagination-link:focus-visible,
+.docs-nav-group a:focus-visible,
+.docs-toc a:focus-visible,
+.docs-card-link:focus-visible,
+.docs-code-copy:focus-visible,
+.docs-page-link:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Text inputs read better with an inset-style ring that hugs the field. */
+.explore-search-input:focus-visible,
+.signin-form-input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
 }

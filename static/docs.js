@@ -118,6 +118,16 @@ function initTocScrollSpy() {
   updateActiveSection();
 }
 
+function initTocDisclosure() {
+  const toc = document.querySelector("details.docs-toc");
+  if (!toc) return;
+  // On narrow screens the TOC sits above the content as a disclosure — start
+  // it collapsed so it doesn't push the article down. It stays open on desktop.
+  if (globalThis.matchMedia("(max-width: 1120px)").matches) {
+    toc.removeAttribute("open");
+  }
+}
+
 function initDocsNavPosition() {
   const nav = document.querySelector(".docs-nav");
   const active = nav?.querySelector("a.is-active");
@@ -148,6 +158,7 @@ document.addEventListener("click", (event) => {
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     initTocScrollSpy();
+    initTocDisclosure();
     initDocsNavPosition();
   });
 } else {

@@ -105,6 +105,22 @@ function HostDetailPage(
             <div class="profile-hero host-detail-hero glass">
               <div class="profile-hero-media host-detail-media">
                 <HostMark host={host} />
+                {host.profileHandle && host.bskyProfileVisible && (
+                  <div class="profile-hero-secondary-actions">
+                    <a
+                      class="profile-action profile-action--compact"
+                      href={bskyProfileHref(host.profileHandle)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Bluesky profile"
+                      title="Bluesky profile"
+                    >
+                      <span class="profile-action-icon profile-action-icon--brand">
+                        <BskyIcon class="profile-action-icon-svg" />
+                      </span>
+                    </a>
+                  </div>
+                )}
               </div>
               <div class="profile-hero-body">
                 <div class="profile-hero-name-row">
@@ -147,20 +163,6 @@ function HostDetailPage(
                     class="profile-form-button-secondary profile-form-button-secondary--lg"
                   >
                     Manage account
-                  </a>
-                )}
-                {host.profileHandle && host.bskyProfileVisible && (
-                  <a
-                    class="profile-action profile-action--compact"
-                    href={bskyProfileHref(host.profileHandle)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Bluesky profile"
-                    title="Bluesky profile"
-                  >
-                    <span class="profile-action-icon profile-action-icon--brand">
-                      <BskyIcon class="profile-action-icon-svg" />
-                    </span>
                   </a>
                 )}
               </div>
@@ -209,9 +211,7 @@ function HostDetailPage(
             </section>
 
             <details class="glass account-home-details host-detail-details">
-              <summary>
-                Technical details for developers and host operators
-              </summary>
+              <summary>Advanced</summary>
               <dl>
                 <Fact label="Host domain" value={host.host} />
                 <Fact

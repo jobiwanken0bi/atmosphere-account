@@ -4,6 +4,8 @@ import {
   buildHostServiceRecord,
   HOST_CAPABILITY_DASHBOARD,
   HOST_CAPABILITY_EXTERNAL,
+  HOST_CAPABILITY_OAUTH_GRANTS,
+  HOST_CAPABILITY_PLANNED,
   HOST_IMAGE_PURPOSE_AVATAR,
   HOST_LINK_ROLE_HOMEPAGE,
   HOST_LINK_ROLE_SUPPORT,
@@ -71,6 +73,13 @@ Deno.test("buildHostServiceRecord creates account.atmosphere.host.service shape"
       capability.id === HOST_CAPABILITY_DASHBOARD &&
       capability.status === HOST_CAPABILITY_EXTERNAL &&
       capability.url === "https://pds.pckt.cafe/account"
+    ),
+  );
+  assert(
+    (record.capabilities as Array<Record<string, string>>).some((capability) =>
+      capability.id === HOST_CAPABILITY_OAUTH_GRANTS &&
+      capability.status === HOST_CAPABILITY_PLANNED &&
+      !capability.url
     ),
   );
 });

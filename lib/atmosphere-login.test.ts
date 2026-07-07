@@ -8,6 +8,7 @@ import {
   LoginRequestError,
   readLoginRequest,
   resolveLoginAppForRequest,
+  verifyLoginAppDomainManifest,
 } from "./atmosphere-login.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -99,6 +100,24 @@ Deno.test("loginAppManifestUrl refuses private network homepages", () => {
     loginAppManifestUrl(app({ appUri: "https://app.example.com" })),
     "https://app.example.com/.well-known/atmosphere-login.json",
   );
+});
+
+Deno.test("verifyLoginAppDomainManifest does not follow app-controlled redirects", async () => {
+  let redirectMode: RequestRedirect | undefined;
+  const check = await verifyLoginAppDomainManifest(app(), {
+    fetchImpl: (_input, init) => {
+      redirectMode = init?.redirect;
+      return Promise.resolve(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://127.0.0.1/internal" },
+        }),
+      );
+    },
+  });
+
+  assertEquals(redirectMode, "manual");
+  assertEquals(check.status, "fail");
 });
 
 Deno.test("buildLoginAppIdentityChecks fails private HTTPS production URLs", () => {

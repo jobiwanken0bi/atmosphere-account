@@ -176,7 +176,7 @@ const SOURCE_RANK: Record<string, number> = {
   atmosphere_profile: 3,
 };
 
-const FEATURED_SECTION_SIZE = 3;
+const FEATURED_SECTION_SIZE = 4;
 const FEATURED_CANDIDATE_LIMIT = 18;
 const FEATURED_ROTATION_MS = 1000 * 60 * 60 * 12;
 const SEARCH_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -321,6 +321,31 @@ function sourceRank(draft: AppListingDraft): number {
   return SOURCE_RANK[draft.sourceType] ?? 99;
 }
 
+function isLocalDevListingDraft(draft: AppListingDraft): boolean {
+  return draft.repoDid.startsWith("did:plc:localdev") ||
+    draft.sourceUri.includes("did:plc:localdev") ||
+    (draft.productDid?.startsWith("did:plc:localdev") ?? false) ||
+    (draft.profileDid?.startsWith("did:plc:localdev") ?? false);
+}
+
+export function compareAppListingDraftPrecedence(
+  a: AppListingDraft,
+  b: AppListingDraft,
+): number {
+  const aLocal = isLocalDevListingDraft(a);
+  const bLocal = isLocalDevListingDraft(b);
+  if (aLocal !== bLocal) return aLocal ? 1 : -1;
+
+  const sourceDiff = sourceRank(a) - sourceRank(b);
+  if (sourceDiff !== 0) return sourceDiff;
+
+  const updatedDiff = (b.updatedAt ?? b.createdAt ?? 0) -
+    (a.updatedAt ?? a.createdAt ?? 0);
+  if (updatedDiff !== 0) return updatedDiff;
+
+  return a.sourceUri.localeCompare(b.sourceUri);
+}
+
 function displaySlug(draft: AppListingDraft): string {
   return slugify(
     draft.slug ?? draft.name ?? draft.productDid ?? draft.profileDid ??
@@ -398,7 +423,7 @@ function rowToAppListing(input: unknown): AppListing {
 }
 
 function mergeDrafts(drafts: AppListingDraft[]) {
-  const sorted = [...drafts].sort((a, b) => sourceRank(a) - sourceRank(b));
+  const sorted = [...drafts].sort(compareAppListingDraftPrecedence);
   const canonical = sorted[0]!;
   const first = <K extends keyof AppListingDraft>(key: K) =>
     sorted.find((draft) => draft[key] != null && draft[key] !== "")?.[key];

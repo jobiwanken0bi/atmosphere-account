@@ -6,6 +6,9 @@
 .env.local
 local.db
 
+# Local Claude Code config (launch configs, session state)
+.claude/
+
 # Fresh build directory
 _fresh/
 # npm + other dependencies

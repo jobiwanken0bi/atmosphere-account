@@ -133,15 +133,25 @@ When you add or modify a lexicon in `lexicons/`:
 
 ## OAuth integration notes
 
-The login flow currently requests explicit granular scopes (see `lib/oauth.ts`):
+The login flow currently requests a named permission set plus explicit granular
+fallback scopes (see `lib/oauth-scopes.ts`):
 
 ```
-atproto repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update blob:image/*
+atproto include:com.atmosphereaccount.registry.fullPermissions repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update repo:fyi.atstore.profile repo:fyi.atstore.listing.detail repo:fyi.atstore.listing.review repo:fyi.atstore.listing.favorite repo:community.lexicon.app.profile repo:account.atmosphere.host.profile repo:account.atmosphere.host.service blob:image/*
 ```
 
-- **`repo:...`** — direct write access to the Atmosphere profile, review, and
-  update collections. We request direct scopes so login keeps working on PDSes
-  that do not yet resolve DNS-backed permission sets correctly.
+- **`include:com.atmosphereaccount.registry.fullPermissions`** — lets compatible
+  authorization servers show the branded Atmosphere permission set.
+- **`repo:com.atmosphereaccount.registry.*`** — legacy Atmosphere app listing,
+  review, and update collections. New app listings should migrate to shared app
+  records, but these scopes keep older records editable while the migration
+  completes.
+- **`repo:fyi.atstore.*`** — shared ATStore profile, listing, review, and
+  favorite records used by the app directory and review/favorite flows.
+- **`repo:community.lexicon.app.profile`** — canonical community app identity
+  record used alongside ATStore listings.
+- **`repo:account.atmosphere.host.*`** — Atmosphere host profile and service
+  records used by the host directory and host account-page routing.
 - **`blob:image/*`** is a top-level scope on purpose. The atproto permission
   spec
   [explicitly disallows `blob` permissions inside

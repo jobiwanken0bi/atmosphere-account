@@ -23,6 +23,12 @@ export default define.page(function App(ctx) {
     url.pathname === "/account";
   const needsDocsScript = url.pathname === "/docs" ||
     url.pathname.startsWith("/docs/");
+  const needsBskyCdnPreconnect = url.pathname.startsWith("/apps") ||
+    url.pathname.startsWith("/hosts") ||
+    url.pathname.startsWith("/account") ||
+    url.pathname.startsWith("/signin") ||
+    url.pathname.startsWith("/login") ||
+    url.pathname.startsWith("/users");
   const socialImagePath = url.pathname.startsWith("/docs") ||
       url.pathname.startsWith("/developer-resources")
     ? "/og-developer.png"
@@ -57,6 +63,11 @@ export default define.page(function App(ctx) {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        {
+          /* Light-only design: opt out of browser auto-dark so the sky gradient
+            and native controls don't get force-darkened on dark-mode devices. */
+        }
+        <meta name="color-scheme" content="light" />
         <title>{pageTitle}</title>
         <meta name="description" content={pageDescription} />
         <meta property="og:title" content={pageMeta.title ?? t.meta.ogTitle} />
@@ -95,6 +106,9 @@ export default define.page(function App(ctx) {
         <link rel="icon" type="image/svg+xml" href="/union.svg" />
         <link rel="apple-touch-icon" href="/union.svg" />
         <link rel="stylesheet" href="/styles.css" />
+        {needsBskyCdnPreconnect && (
+          <link rel="preconnect" href="https://cdn.bsky.app" />
+        )}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"

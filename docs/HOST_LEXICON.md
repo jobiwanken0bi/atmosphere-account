@@ -45,10 +45,10 @@ token-backed `knownValues` so future host directories can add new roles without
 breaking old records.
 
 Atmosphere's register/manage flow should prefill this profile from the signed-in
-ATProto profile when possible. If the host uploads a custom avatar or logo, the
-image is uploaded to the host account's PDS as a blob and referenced from the
-`images` array; Atmosphere does not need R2 for these public host profile
-images.
+account's existing microblog profile when possible. If the host uploads a custom
+avatar or logo, the image is uploaded to the host account's PDS as a blob and
+referenced from the `images` array; Atmosphere does not need R2 for these public
+host profile images.
 
 ### `account.atmosphere.host.service`
 

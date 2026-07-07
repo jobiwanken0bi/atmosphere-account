@@ -279,7 +279,7 @@ const { sub: did, handle, pds_url } = result.claims;`;
               <option value="">
                 {appsLoaded.value
                   ? "Use the reference example app"
-                  : "Loading registered apps..."}
+                  : "Loading registered apps…"}
               </option>
             )}
             {registeredApps.value.map((app) => (
@@ -433,7 +433,9 @@ const { sub: did, handle, pds_url } = result.claims;`;
       <div class="login-console-verifier">
         <div>
           <p class="text-eyebrow">Verify a token</p>
-          <h4>Paste `selection_token`</h4>
+          <h3>
+            Paste <code>selection_token</code>
+          </h3>
           <p>
             The console checks the token signature and the same audience, state,
             and return URI bindings your callback should enforce.
@@ -458,7 +460,7 @@ const { sub: did, handle, pds_url } = result.claims;`;
             disabled={verifying.value}
             onClick={verifySelectionToken}
           >
-            {verifying.value ? "Verifying..." : "Verify token"}
+            {verifying.value ? "Verifying…" : "Verify token"}
           </button>
           {verification.value && (
             <span

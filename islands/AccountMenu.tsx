@@ -269,6 +269,16 @@ function SignedInMenu(
           >
             {t.manageAccount}
           </a>
+          <a
+            href="/account/reviews"
+            class="account-menu-item"
+            role="menuitem"
+            onClick={() => {
+              open.value = false;
+            }}
+          >
+            {t.manageReviews}
+          </a>
           <form
             method="POST"
             action="/oauth/logout"

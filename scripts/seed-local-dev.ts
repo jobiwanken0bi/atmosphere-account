@@ -25,6 +25,7 @@ const apps = [
       "A familiar microblogging app where many people first use their Atmosphere account.",
     url: "https://bsky.app",
     profile: "https://bsky.app/profile/bsky.app",
+    heroAsset: "bluesky.jpg",
     collections: ["social"],
     tags: ["microblogging", "social"],
   },
@@ -36,6 +37,7 @@ const apps = [
       "A writing and publishing app for articles, essays, and posts that travel with your account.",
     url: "https://grain.social",
     profile: "https://bsky.app/profile/grain.social",
+    heroAsset: "grain.svg",
     collections: ["articles", "creative"],
     tags: ["writing", "publishing"],
   },
@@ -91,6 +93,7 @@ const apps = [
       "A developer collaboration app that brings code, issues, and social context into the Atmosphere.",
     url: "https://tangled.sh",
     profile: "https://bsky.app/profile/tangled.org",
+    heroAsset: "tangled.jpg",
     collections: ["developer", "work"],
     tags: ["code", "collaboration"],
   },
@@ -124,6 +127,7 @@ const apps = [
       "A local development fixture representing Spark-style account and community tooling in the Atmosphere.",
     url: "https://sprk.so",
     profile: "https://bsky.app/profile/sprk.so",
+    heroAsset: "spark.png",
     collections: ["account tool", "community"],
     tags: ["spark", "accounts"],
   },
@@ -152,6 +156,9 @@ for (const app of apps) {
     slug: app.slug,
     primaryUrl: app.url,
     iconUrl,
+    heroUrl: "heroAsset" in app
+      ? `/atmosphere-apps/${app.heroAsset}`
+      : undefined,
     screenshotUrls: [],
     links: [
       { uri: app.url, label: "Explore", role: "web" },

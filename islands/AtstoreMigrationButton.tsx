@@ -171,7 +171,7 @@ export default function AtstoreMigrationButton(
         onClick={migrate}
       >
         {loading.value
-          ? "Migrating..."
+          ? "Migrating…"
           : uri.value
           ? "Shared listing active"
           : remoteRecordUri.value

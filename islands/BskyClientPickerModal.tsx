@@ -2,6 +2,7 @@ import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { BSKY_CLIENTS } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
+import { useDialog } from "../lib/use-dialog.ts";
 
 interface Props {
   /** Currently-selected client ids (controlled by the parent form). */
@@ -31,15 +32,8 @@ export default function BskyClientPickerModal(
     if (open) draft.value = selected;
   }, [open]);
 
-  // Esc to close.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    globalThis.addEventListener("keydown", handler);
-    return () => globalThis.removeEventListener("keydown", handler);
-  }, [open]);
+  // Esc to close, focus trap, and focus restore.
+  const dialogRef = useDialog<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
@@ -53,14 +47,18 @@ export default function BskyClientPickerModal(
   return (
     <div
       class="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="bsky-picker-title"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div class="modal-card">
+      <div
+        class="modal-card"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bsky-picker-title"
+        tabIndex={-1}
+      >
         <header class="modal-header">
           <h2 id="bsky-picker-title" class="modal-title">{t.title}</h2>
           <p class="modal-body-text">{t.body}</p>

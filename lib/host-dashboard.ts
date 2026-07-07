@@ -1,5 +1,9 @@
 import { type AccountHost, type AccountHostLookup } from "./account-hosts.ts";
-import { readResponseTextWithLimit } from "./security.ts";
+import { IS_DEV } from "./env.ts";
+import {
+  isPrivateNetworkHostname,
+  readResponseTextWithLimit,
+} from "./security.ts";
 
 export const HOST_DASHBOARD_SPEC_VERSION = "atmosphere.hostDashboard.v0.1";
 const HOST_DASHBOARD_WELL_KNOWN = "/.well-known/atmosphere-host-dashboard.json";
@@ -348,7 +352,10 @@ export function hostDashboardManifestUrl(input: string): string | null {
     return null;
   }
   if (url.username || url.password) return null;
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.protocol !== "https:" && !(IS_DEV && url.protocol === "http:")) {
+    return null;
+  }
+  if (!IS_DEV && isPrivateNetworkHostname(url.hostname)) return null;
   url.hash = "";
   const path = url.pathname.replace(/\/+$/, "");
   if (path && path !== "") return url.toString();
@@ -383,6 +390,7 @@ export async function fetchHostDashboardManifest(
   try {
     res = await fetchImpl(url, {
       headers: { accept: "application/json" },
+      redirect: "manual",
       signal: AbortSignal.timeout(opts.timeoutMs ?? 5000),
     });
   } catch (err) {

@@ -17,15 +17,19 @@ export default function DocsLayout(
             {groupedDocsPages().map((group) => (
               <div class="docs-nav-group" key={group.group}>
                 <p>{group.group}</p>
-                {group.pages.map((item) => (
-                  <a
-                    key={item.slug}
-                    href={docsHref(item.slug)}
-                    class={item.slug === page.slug ? "is-active" : ""}
-                  >
-                    {item.navTitle}
-                  </a>
-                ))}
+                {group.pages.map((item) => {
+                  const active = item.slug === page.slug;
+                  return (
+                    <a
+                      key={item.slug}
+                      href={docsHref(item.slug)}
+                      class={active ? "is-active" : ""}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      {item.navTitle}
+                    </a>
+                  );
+                })}
               </div>
             ))}
           </nav>
@@ -42,7 +46,11 @@ export default function DocsLayout(
             <h1>{page.title}</h1>
             <p>{page.description}</p>
             <div class="docs-summary-grid">
-              {page.summary.map((item) => <span key={item}>{item}</span>)}
+              {page.summary.map((item) => (
+                <span key={item}>
+                  <InlineText text={item} />
+                </span>
+              ))}
             </div>
             {(page.primaryCta || page.secondaryCta) && (
               <div class="docs-hero-actions">
@@ -87,14 +95,16 @@ export default function DocsLayout(
               ))}
             </article>
 
-            <aside class="docs-toc" aria-label="On this page">
-              <p>On this page</p>
-              {page.sections.map((section) => (
-                <a href={`#${section.id}`} key={section.id}>
-                  {section.title}
-                </a>
-              ))}
-            </aside>
+            <details class="docs-toc" open>
+              <summary class="docs-toc-summary">On this page</summary>
+              <div class="docs-toc-links">
+                {page.sections.map((section) => (
+                  <a href={`#${section.id}`} key={section.id}>
+                    {section.title}
+                  </a>
+                ))}
+              </div>
+            </details>
           </div>
 
           {page.nextSteps && page.nextSteps.length > 0 && (
@@ -120,7 +130,11 @@ export default function DocsLayout(
                   href={docsHref(previousPage(page)!.slug)}
                   class="docs-page-link docs-page-link--previous"
                 >
-                  <span>Previous</span>
+                  <span>
+                    Previous
+                    {previousPage(page)!.group !== page.group &&
+                      ` · ${previousPage(page)!.group}`}
+                  </span>
                   <strong>{previousPage(page)!.navTitle}</strong>
                 </a>
               )
@@ -131,7 +145,11 @@ export default function DocsLayout(
                   href={docsHref(nextPage(page)!.slug)}
                   class="docs-page-link docs-page-link--next"
                 >
-                  <span>Next</span>
+                  <span>
+                    Next
+                    {nextPage(page)!.group !== page.group &&
+                      ` · ${nextPage(page)!.group}`}
+                  </span>
                   <strong>{nextPage(page)!.navTitle}</strong>
                 </a>
               )
@@ -148,12 +166,18 @@ function DocsBlockView(
 ) {
   switch (block.type) {
     case "paragraph":
-      return <p class="docs-paragraph">{block.body}</p>;
+      return (
+        <p class="docs-paragraph">
+          <InlineText text={block.body} />
+        </p>
+      );
     case "callout":
       return (
         <div class={`docs-callout docs-callout--${block.tone ?? "blue"}`}>
           <strong>{block.title}</strong>
-          <p>{block.body}</p>
+          <p>
+            <InlineText text={block.body} />
+          </p>
         </div>
       );
     case "code":
@@ -165,7 +189,7 @@ function DocsBlockView(
               type="button"
               class="docs-code-copy"
               data-docs-copy
-              aria-label="Copy code"
+              aria-label={`Copy ${block.caption ?? block.language} code`}
             >
               Copy
             </button>
@@ -176,13 +200,21 @@ function DocsBlockView(
     case "list":
       return (
         <ul class="docs-list">
-          {block.items.map((item) => <li key={item}>{item}</li>)}
+          {block.items.map((item) => (
+            <li key={item}>
+              <InlineText text={item} />
+            </li>
+          ))}
         </ul>
       );
     case "checklist":
       return (
         <ul class="docs-checklist">
-          {block.items.map((item) => <li key={item}>{item}</li>)}
+          {block.items.map((item) => (
+            <li key={item}>
+              <InlineText text={item} />
+            </li>
+          ))}
         </ul>
       );
     case "cards":
@@ -191,7 +223,9 @@ function DocsBlockView(
           {block.items.map((item) => (
             <a href={item.href} class="docs-card-link" key={item.href}>
               <strong>{item.title}</strong>
-              <span>{item.body}</span>
+              <span>
+                <InlineText text={item.body} />
+              </span>
               {item.label && <em>{item.label}</em>}
             </a>
           ))}
@@ -206,7 +240,9 @@ function DocsBlockView(
               <article class="docs-diagram-node" key={item.title}>
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <strong>{item.title}</strong>
-                <p>{item.body}</p>
+                <p>
+                  <InlineText text={item.body} />
+                </p>
               </article>
             ))}
           </div>
@@ -219,7 +255,9 @@ function DocsBlockView(
             <article class="glass" key={item.title}>
               <span>{String(index + 1).padStart(2, "0")}</span>
               <h3>{item.title}</h3>
-              <p>{item.body}</p>
+              <p>
+                <InlineText text={item.body} />
+              </p>
             </article>
           ))}
         </div>
@@ -241,7 +279,7 @@ function DocsBlockView(
                       key={cell}
                       data-label={block.columns[index] ?? ""}
                     >
-                      {cell}
+                      <InlineText text={cell} />
                     </td>
                   ))}
                 </tr>
@@ -257,7 +295,9 @@ function DocsBlockView(
             <span>{block.method}</span>
             <code>{block.path}</code>
           </div>
-          <p>{block.body}</p>
+          <p>
+            <InlineText text={block.body} />
+          </p>
         </div>
       );
     case "iconDownloads":
@@ -269,6 +309,23 @@ function DocsBlockView(
     case "atmosphereLoginConsole":
       return <AtmosphereLoginConsole defaultOrigin={origin} />;
   }
+}
+
+function InlineText({ text }: { text: string }) {
+  const parts = text.split(/(`[^`]+`)/g).filter((part) => part.length > 0);
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.startsWith("`") && part.endsWith("`")
+          ? (
+            <code class="docs-inline-code" key={`${part}-${index}`}>
+              {part.slice(1, -1)}
+            </code>
+          )
+          : part
+      )}
+    </>
+  );
 }
 
 function docsHref(slug: string): string {

@@ -190,36 +190,33 @@ export function hostServiceCapabilities(
   supportUrl: string,
 ): Array<Record<string, string>> {
   const accountUrl = accountManagementUrl ?? undefined;
+  const supportTarget = supportUrl || accountUrl;
   return [
     hostCapability(
       HOST_CAPABILITY_DASHBOARD,
-      HOST_CAPABILITY_EXTERNAL,
+      accountUrl ? HOST_CAPABILITY_EXTERNAL : HOST_CAPABILITY_PLANNED,
       accountUrl,
     ),
     hostCapability(
       HOST_CAPABILITY_OAUTH_GRANTS,
-      HOST_CAPABILITY_EXTERNAL,
-      accountUrl,
+      HOST_CAPABILITY_PLANNED,
     ),
     hostCapability(
       HOST_CAPABILITY_ACTIVE_SESSIONS,
-      HOST_CAPABILITY_EXTERNAL,
-      accountUrl,
+      HOST_CAPABILITY_PLANNED,
     ),
     hostCapability(
       HOST_CAPABILITY_PASSWORD,
-      HOST_CAPABILITY_EXTERNAL,
-      accountUrl,
+      HOST_CAPABILITY_PLANNED,
     ),
     hostCapability(
       HOST_CAPABILITY_ACCOUNT_DELETION,
-      HOST_CAPABILITY_EXTERNAL,
-      accountUrl,
+      HOST_CAPABILITY_PLANNED,
     ),
     hostCapability(
       HOST_CAPABILITY_SUPPORT,
-      HOST_CAPABILITY_EXTERNAL,
-      supportUrl || accountUrl,
+      supportTarget ? HOST_CAPABILITY_EXTERNAL : HOST_CAPABILITY_PLANNED,
+      supportTarget,
     ),
     hostCapability(HOST_CAPABILITY_REPO_EXPORT, HOST_CAPABILITY_PLANNED),
     hostCapability(HOST_CAPABILITY_BLOB_EXPORT, HOST_CAPABILITY_PLANNED),

@@ -999,6 +999,7 @@ export async function verifyLoginAppDomainManifest(
   try {
     const response = await fetchImpl(manifestUrl, {
       headers: { accept: "application/json" },
+      redirect: "manual",
       signal: controller.signal,
     });
     if (!response.ok) {

@@ -118,6 +118,17 @@ Deno.test("hostDashboardManifestUrl preserves explicit manifest URLs", () => {
   );
 });
 
+Deno.test("hostDashboardManifestUrl rejects private production hosts", () => {
+  assertEquals(
+    hostDashboardManifestUrl("https://127.0.0.1/manifest.json"),
+    null,
+  );
+  assertEquals(
+    hostDashboardManifestUrl("https://192.168.1.20/manifest.json"),
+    null,
+  );
+});
+
 Deno.test("fetchHostDashboardManifest validates fetched JSON", async () => {
   const result = await fetchHostDashboardManifest("example.host", {
     fetchImpl: () =>
@@ -141,6 +152,25 @@ Deno.test("fetchHostDashboardManifest validates fetched JSON", async () => {
   assertEquals(result.ok, true);
   assertEquals(result.status, 200);
   assertEquals(result.manifest?.host, "example.host");
+});
+
+Deno.test("fetchHostDashboardManifest does not follow host-controlled redirects", async () => {
+  let redirectMode: RequestRedirect | undefined;
+  const result = await fetchHostDashboardManifest("example.host", {
+    fetchImpl: (_input, init) => {
+      redirectMode = init?.redirect;
+      return Promise.resolve(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://127.0.0.1/internal" },
+        }),
+      );
+    },
+  });
+
+  assertEquals(redirectMode, "manual");
+  assertEquals(result.ok, false);
+  assertEquals(result.status, 302);
 });
 
 Deno.test("buildHostDashboardState uses honest fallback capability states", () => {

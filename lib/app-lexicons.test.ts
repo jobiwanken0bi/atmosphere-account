@@ -1,4 +1,7 @@
-import { aliasesForDraft } from "./app-directory.ts";
+import {
+  aliasesForDraft,
+  compareAppListingDraftPrecedence,
+} from "./app-directory.ts";
 import {
   atmosphereProfileToDraft,
   ATSTORE_LISTING_NSID,
@@ -222,4 +225,51 @@ Deno.test("aliasesForDraft dedupes by DID, canonical URL, source URI, and ATStor
   assert(aliases.includes("url:https://www.leaflet.pub"));
   assert(!aliases.includes("slug:leaflet"));
   assertEquals(new Set(aliases).size, aliases.length);
+});
+
+Deno.test("real shared records outrank local dev app fixtures", () => {
+  const realAtstore = parseAtstoreListing({
+    uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/3lx`,
+    cid: "bafyrecord",
+    repoDid: "did:plc:store",
+    rkey: "3lx",
+    value: {
+      name: "Leaflet",
+      tagline: "Publish lightly",
+      externalUrl: "https://leaflet.pub/",
+      categorySlug: "apps/publishing",
+      productAccountDid: "did:plc:leaflet",
+      icon: { ref: { $link: "bafyicon" }, mimeType: "image/png" },
+      heroImage: { ref: { $link: "bafyhero" }, mimeType: "image/png" },
+      updatedAt: "2026-02-01T00:00:00.000Z",
+    },
+  });
+  const localFixture = parseAtstoreListing({
+    uri: `at://did:plc:localdevleaflet/${ATSTORE_LISTING_NSID}/leaflet`,
+    cid: "local-leaflet",
+    repoDid: "did:plc:localdevleaflet",
+    rkey: "leaflet",
+    value: {
+      name: "Leaflet",
+      tagline: "Publish lightly",
+      externalUrl: "https://leaflet.pub/",
+      categorySlug: "apps/publishing",
+      productAccountDid: "did:plc:localdevleaflet",
+      icon: { ref: { $link: "localicon" }, mimeType: "image/png" },
+      heroImage: { ref: { $link: "localhero" }, mimeType: "image/png" },
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    },
+  });
+
+  assert(realAtstore, "expected a real ATStore draft");
+  assert(localFixture, "expected a local fixture draft");
+  const sorted = [localFixture, realAtstore].sort(
+    compareAppListingDraftPrecedence,
+  );
+
+  assertEquals(sorted[0].sourceUri, realAtstore.sourceUri);
+  assert(
+    sorted[0].heroUrl?.includes("cid=bafyhero"),
+    "expected the real ATStore hero to win",
+  );
 });

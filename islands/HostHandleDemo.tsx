@@ -105,6 +105,7 @@ export default function HostHandleDemo(
         </span>
       </div>
       <div class="host-handle-demo-button" aria-hidden="true">
+        <img src="/union.svg" alt="" class="host-handle-demo-button-icon" />
         {demoButton}
       </div>
     </div>

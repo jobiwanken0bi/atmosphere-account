@@ -22,6 +22,7 @@ import {
   updateAppUserProfile,
 } from "../../lib/account-types.ts";
 import { observeAccountHost } from "../../lib/account-hosts.ts";
+import { isSafeRelativePath } from "../../lib/security.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -99,8 +100,7 @@ export const handler = define.handlers({
         }).catch(() => {});
         accountType = desired;
       }
-      const returnTo = result.returnTo && result.returnTo.startsWith("/") &&
-          !result.returnTo.startsWith("//")
+      const returnTo = isSafeRelativePath(result.returnTo)
         ? result.returnTo
         : null;
       const defaultLanding = accountType === "project"

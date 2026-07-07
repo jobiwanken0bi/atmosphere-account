@@ -4,6 +4,7 @@ import Footer from "../components/Footer.tsx";
 import SignInForm from "../islands/SignInForm.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import { isOAuthConfigured } from "../lib/oauth.ts";
+import { isSafeRelativePath } from "../lib/security.ts";
 
 export const handler = define.handlers({
   GET(ctx) {
@@ -35,8 +36,7 @@ export const handler = define.handlers({
 });
 
 function safeNext(raw: string | null): string | null {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
-  return raw;
+  return isSafeRelativePath(raw) ? raw : null;
 }
 
 function safeHandle(raw: string | null): string | undefined {

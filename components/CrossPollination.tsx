@@ -3,6 +3,7 @@ import ContentVisualIcon, {
   type ContentVisualIconName,
 } from "./icons/ContentVisualIcon.tsx";
 
+/** Icons paired by index with crossPollination.contentTypes (last = open-ended). */
 const contentTypeIcons: ContentVisualIconName[] = [
   "blog",
   "photo",
@@ -10,9 +11,14 @@ const contentTypeIcons: ContentVisualIconName[] = [
   "video",
   "calendar",
   "review",
+  "post",
+  "like",
+  "comment",
+  "list",
   "new",
 ];
 
+/** Icons paired by index with crossPollination.destinations (last = open-ended). */
 const destinationIcons: ContentVisualIconName[] = [
   "feed",
   "gallery",
@@ -20,13 +26,91 @@ const destinationIcons: ContentVisualIconName[] = [
   "player",
   "calendar",
   "reader",
+  "people",
+  "music",
+  "feed",
   "app",
 ];
 
+type Chip = { label: string; icon: ContentVisualIconName; open: boolean };
+
+function buildChips(
+  labels: readonly string[],
+  icons: ContentVisualIconName[],
+): Chip[] {
+  return labels.map((label, i) => ({
+    label,
+    icon: icons[i] ?? "new",
+    // The final example in each list is the open-ended "anything / not yet built" one.
+    open: i === labels.length - 1,
+  }));
+}
+
+/** A single scrolling rail. The chip list is rendered twice so the vertical
+ *  marquee can loop seamlessly, and the viewport is masked top + bottom so the
+ *  types dissolve into the sky — the stream reads as effectively infinite. */
+function FlowRail(
+  { chips, side, label }: {
+    chips: Chip[];
+    side: "left" | "right";
+    label: string;
+  },
+) {
+  const track = [...chips, ...chips];
+  return (
+    <div class={`flow-rail flow-rail-${side}`}>
+      <div class="flow-rail-label font-mono">{label}</div>
+      <div class="flow-rail-viewport">
+        <div class="flow-rail-track">
+          {track.map((chip, i) => (
+            <div
+              key={`${side}-${i}`}
+              class={`flow-chip glass-subtle flow-chip-${side}${
+                chip.open ? " flow-chip-open" : ""
+              }`}
+              // The duplicated half is a pure visual echo of the first.
+              aria-hidden="true"
+            >
+              <span class="flow-chip-icon">
+                <ContentVisualIcon
+                  name={chip.icon}
+                  class="flow-chip-icon-svg"
+                />
+              </span>
+              <span class="flow-chip-label">{chip.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A conduit of light particles flowing left → right between a rail and the hub. */
+function FlowConduit({ side }: { side: "left" | "right" }) {
+  return (
+    <div class={`flow-conduit flow-conduit-${side}`} aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <span
+          key={i}
+          class="flow-particle"
+          style={{ animationDelay: `${i * 0.6}s` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function CrossPollination() {
   const t = useT();
-  const contentTypes = t.crossPollination.contentTypes;
-  const destinations = t.crossPollination.destinations;
+  const createChips = buildChips(
+    t.crossPollination.contentTypes,
+    contentTypeIcons,
+  );
+  const appearChips = buildChips(
+    t.crossPollination.destinations,
+    destinationIcons,
+  );
 
   return (
     <section class="section reveal">
@@ -42,36 +126,28 @@ export default function CrossPollination() {
           </p>
         </div>
 
-        {/* Flow diagram */}
-        <div class="flow-diagram">
-          <div class="flow-column flow-column-left">
-            <div class="flow-column-label font-mono">
-              {t.crossPollination.youCreate}
-            </div>
-            {contentTypes.map((label, i) => (
-              <div
-                key={label}
-                class={`flow-node flow-node-left glass-subtle ${
-                  i === contentTypes.length - 1 ? "flow-node-open" : ""
-                }`}
-                style={{ animationDelay: `${i * 0.12}s` }}
-              >
-                <span class="flow-node-icon">
-                  <ContentVisualIcon
-                    name={contentTypeIcons[i] ?? "new"}
-                    class="flow-node-icon-svg"
-                  />
-                </span>
-                <span class="flow-node-label">{label}</span>
-              </div>
-            ))}
-          </div>
+        {
+          /* Animated flow. Decorative — described for assistive tech by the
+            visually-hidden summary that follows. */
+        }
+        <div
+          class="flow-stage"
+          role="img"
+          aria-label={t.crossPollination.ariaLabel}
+        >
+          <FlowRail
+            chips={createChips}
+            side="left"
+            label={t.crossPollination.youCreate}
+          />
 
-          <div class="flow-center">
+          <div class="flow-core" aria-hidden="true">
+            <FlowConduit side="left" />
             <div class="flow-hub glass">
+              <span class="flow-hub-glow" />
               <img
                 src="/union.svg"
-                alt={t.crossPollination.hubLogoAlt}
+                alt=""
                 width="36"
                 height="36"
                 class="flow-hub-logo"
@@ -80,50 +156,14 @@ export default function CrossPollination() {
                 {t.crossPollination.hubLabel}
               </span>
             </div>
-
-            {/* Animated connection lines */}
-            <div class="flow-lines flow-lines-left" aria-hidden="true">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div
-                  key={`l${i}`}
-                  class="flow-line"
-                  style={{ animationDelay: `${i * 0.15}s` }}
-                />
-              ))}
-            </div>
-            <div class="flow-lines flow-lines-right" aria-hidden="true">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div
-                  key={`r${i}`}
-                  class="flow-line"
-                  style={{ animationDelay: `${i * 0.15 + 0.6}s` }}
-                />
-              ))}
-            </div>
+            <FlowConduit side="right" />
           </div>
 
-          <div class="flow-column flow-column-right">
-            <div class="flow-column-label font-mono">
-              {t.crossPollination.itAppearsIn}
-            </div>
-            {destinations.map((label, i) => (
-              <div
-                key={label}
-                class={`flow-node flow-node-right glass-subtle ${
-                  i === destinations.length - 1 ? "flow-node-open" : ""
-                }`}
-                style={{ animationDelay: `${i * 0.12 + 0.3}s` }}
-              >
-                <span class="flow-node-icon">
-                  <ContentVisualIcon
-                    name={destinationIcons[i] ?? "app"}
-                    class="flow-node-icon-svg"
-                  />
-                </span>
-                <span class="flow-node-label">{label}</span>
-              </div>
-            ))}
-          </div>
+          <FlowRail
+            chips={appearChips}
+            side="right"
+            label={t.crossPollination.itAppearsIn}
+          />
         </div>
 
         <p

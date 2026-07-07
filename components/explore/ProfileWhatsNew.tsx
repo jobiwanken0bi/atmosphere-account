@@ -40,7 +40,7 @@ function isLongBody(body: string): boolean {
 
 function previewBody(body: string): string {
   if (!isLongBody(body)) return body;
-  return `${body.slice(0, BODY_PREVIEW_LENGTH).trimEnd()}...`;
+  return `${body.slice(0, BODY_PREVIEW_LENGTH).trimEnd()}…`;
 }
 
 function CommitLink(

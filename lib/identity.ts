@@ -213,6 +213,33 @@ export function findPdsEndpoint(doc: DidDocument): string {
   return normalizeServiceEndpoint(svc.serviceEndpoint);
 }
 
+function handleCandidatesFromDidDocument(doc: DidDocument): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const aka of doc.alsoKnownAs ?? []) {
+    if (!aka.startsWith("at://")) continue;
+    const handle = aka.slice("at://".length).toLowerCase();
+    if (!isHandle(handle) || seen.has(handle)) continue;
+    seen.add(handle);
+    out.push(handle);
+  }
+  return out;
+}
+
+async function verifiedHandleForDid(
+  did: string,
+  doc: DidDocument,
+): Promise<string | null> {
+  for (const handle of handleCandidatesFromDidDocument(doc)) {
+    try {
+      if (await resolveHandle(handle) === did) return handle;
+    } catch {
+      // Try the next alsoKnownAs handle before falling back to the DID.
+    }
+  }
+  return null;
+}
+
 /**
  * Resolve an identifier (handle or DID) end-to-end. Bidirectionally
  * verifies that, when starting from a handle, the resolved DID document
@@ -227,8 +254,7 @@ export async function resolveIdentity(
   if (isDid(id)) {
     did = id;
     const doc = await resolveDidDocument(did);
-    const aka = (doc.alsoKnownAs ?? []).find((u) => u.startsWith("at://"));
-    handle = aka ? aka.slice("at://".length) : did;
+    handle = await verifiedHandleForDid(did, doc) ?? did;
     return { did, handle, pdsUrl: findPdsEndpoint(doc), doc };
   }
   did = await resolveHandle(id);

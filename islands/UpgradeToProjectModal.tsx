@@ -1,6 +1,7 @@
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { createPortal } from "preact/compat";
+import { useDialog } from "../lib/use-dialog.ts";
 
 interface Props {
   /**
@@ -46,6 +47,12 @@ export default function UpgradeToProjectModal(
       globalThis.history.replaceState(null, "", next);
     }
   }, []);
+
+  const close = () => {
+    if (!submitting.value) open.value = false;
+  };
+
+  const dialogRef = useDialog<HTMLDivElement>(open.value, close);
 
   const onConfirm = async () => {
     submitting.value = true;
@@ -95,14 +102,21 @@ export default function UpgradeToProjectModal(
         <div
           class="modal-backdrop"
           onClick={(e) => {
-            if (e.target === e.currentTarget && !submitting.value) {
-              open.value = false;
-            }
+            if (e.target === e.currentTarget) close();
           }}
         >
-          <div class="modal-card">
+          <div
+            class="modal-card"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="upgrade-project-title"
+            tabIndex={-1}
+          >
             <div class="modal-header">
-              <p class="modal-title">{copy.modalTitle}</p>
+              <h2 id="upgrade-project-title" class="modal-title">
+                {copy.modalTitle}
+              </h2>
               <p class="modal-body-text">
                 {copy.modalBody}{" "}
                 <a href="/oauth/add-account?intent=project">
@@ -112,7 +126,10 @@ export default function UpgradeToProjectModal(
               </p>
             </div>
             {error.value && (
-              <p class="report-modal-status report-modal-status--error">
+              <p
+                class="report-modal-status report-modal-status--error"
+                role="alert"
+              >
                 {error.value}
               </p>
             )}
@@ -120,9 +137,7 @@ export default function UpgradeToProjectModal(
               <button
                 type="button"
                 class="profile-form-button-link"
-                onClick={() => {
-                  open.value = false;
-                }}
+                onClick={close}
                 disabled={submitting.value}
               >
                 {copy.cancel}

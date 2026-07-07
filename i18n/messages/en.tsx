@@ -14,12 +14,12 @@ import type { ComponentChildren, VNode } from "preact";
  */
 const en = {
   meta: {
-    title: "Atmosphere Account — The last social account you'll ever need.",
+    title: "Atmosphere Account — The last social account you’ll ever need.",
     description:
       "Your Atmosphere account is your passport to a growing ecosystem of apps. One account, all your data, your choice.",
     ogTitle: "Atmosphere Account",
     ogDescription:
-      "The last social account you'll ever need. One account for all your apps.",
+      "The last social account you’ll ever need. One account for all your apps.",
     ogImageAlt: "Atmosphere Account — sky, glass clouds, and hero headline",
   },
 
@@ -41,7 +41,7 @@ const en = {
       hostedBy: (host: string): string => `Hosted by ${host}`,
       manageAccount: "Manage account",
       manageProfile: "Manage app listing",
-      manageReviews: "Manage reviews",
+      manageReviews: "Your reviews",
       viewProfile: "View app listing",
       signOut: "Sign out",
       avatarAlt: "Account",
@@ -51,7 +51,7 @@ const en = {
       addAccount: "Add another account",
       forget: "Forget",
       forgetConfirm: (handle: string): string =>
-        `Forget @${handle} on this device? You'll need to sign in again to switch back.`,
+        `Forget @${handle} on this device? You’ll need to sign in again to switch back.`,
     },
   },
 
@@ -59,7 +59,7 @@ const en = {
     eyebrow: "Atmosphere Account",
     headline: (): VNode => (
       <>
-        The last social account <br />you'll ever need.
+        The last social account <br />you’ll ever need.
       </>
     ),
     subhead: "One account for all your apps. Yours to keep, wherever you go.",
@@ -81,13 +81,13 @@ const en = {
           Your <strong>Atmosphere Account</strong>{" "}
           is your passport to this entire ecosystem. One account unlocks every
           app — no more creating new logins, no more losing your stuff when you
-          switch. Sign in once, and you're home everywhere.
+          switch. Sign in once, and you’re home everywhere.
         </>
       ),
       (): VNode => (
         <>
-          The Atmosphere isn't owned or controlled by any single big-tech
-          company. This isn't just another "Sign in with Google", it's an{" "}
+          The Atmosphere isn’t owned or controlled by any single big-tech
+          company. This isn’t just another “Sign in with Google”, it’s an{" "}
           <strong>open social web</strong>.
         </>
       ),
@@ -95,7 +95,7 @@ const en = {
     blueskyNote: (icon: ComponentChildren): VNode => (
       <>
         You might have heard of Bluesky {icon}{" "}
-        — that's the first Atmosphere app, but there are many more. Anyone can
+        — that’s the first Atmosphere app, but there are many more. Anyone can
         build one, and new ones appear every day.
       </>
     ),
@@ -113,7 +113,7 @@ const en = {
     body:
       "All your stuff — from every Atmosphere app you use — lives in your one Atmosphere account. Sign in anywhere, pick up right where you left off.",
     examplesLabel:
-      "A few examples — there's no fixed list. New apps bring new kinds of data, all in one place.",
+      "A few examples — there’s no fixed list. New apps bring new kinds of data, all in one place.",
     items: [
       "Posts",
       "Likes",
@@ -134,12 +134,12 @@ const en = {
       universalIdentity: {
         title: "Universal identity",
         description:
-          "One login across Atmosphere apps, and the same @handle everywhere — so when someone mentions you, it's the same you, recognized across the network.",
+          "One login across Atmosphere apps, and the same @handle everywhere — so when someone mentions you, it’s the same you, recognized across the network.",
       },
       ownAccount: {
         title: "You own your account",
         description:
-          "Your data isn't trapped in any one app. Unlike traditional social accounts, where your profile and content belong to the platform, an Atmosphere account puts you in charge — you genuinely own your identity and your data.",
+          "Your data isn’t trapped in any one app. Unlike traditional social accounts, where your profile and content belong to the platform, an Atmosphere account puts you in charge — you genuinely own your identity and your data.",
       },
       anyoneBuilds: {
         title: "Anyone can build",
@@ -226,6 +226,10 @@ const en = {
       "Videos",
       "Events",
       "Reviews",
+      "Status posts",
+      "Likes",
+      "Comments",
+      "Lists",
       "Anything new",
     ],
     destinations: [
@@ -235,10 +239,15 @@ const en = {
       "Players",
       "Calendars",
       "Readers",
+      "Communities",
+      "Playlists",
+      "Timelines",
       "Apps not yet built",
     ],
     hubLabel: "Your Atmosphere Account",
     hubLogoAlt: "Atmosphere",
+    ariaLabel:
+      "Animation: the content you create — blog posts, photos, music, videos, events, reviews and more — flows through your one Atmosphere account and appears across every kind of app, from social feeds and galleries to players, calendars, readers, and apps not yet built.",
     footnote:
       "These are just examples. The Atmosphere is open — any app can create and surface any kind of content. The possibilities grow with every new app that joins.",
   },
@@ -251,7 +260,7 @@ const en = {
       moderation: {
         title: "Moderation",
         body:
-          "Subscribe to community-built moderation — labels, filters, and block lists made by the people who understand the problem best. Don't like an app's rules? Layer on your own, or switch apps entirely.",
+          "Subscribe to community-built moderation — labels, filters, and block lists made by the people who understand the problem best. Don’t like an app’s rules? Layer on your own, or switch apps entirely.",
       },
       algorithms: {
         title: "Algorithms",
@@ -329,7 +338,7 @@ const en = {
       downloadZip: "Download all SVGs (ZIP)",
       downloadSvg: "Download SVG",
       downloadSvgBw: "Download B/W SVG",
-      loading: "Loading current project icons...",
+      loading: "Loading current project icons…",
       count: "{count} SVG icons available",
       empty: "No verified project SVG icons are available yet.",
       emptyBw: "No verified projects have published a B/W icon yet.",
@@ -430,14 +439,14 @@ const en = {
           method: "GET",
           path: "/api/registry/avatar/:did",
           summary:
-            "Avatar bytes for the given DID — proxied + cached from the user's PDS. Long cache headers; safe to use directly in <img src>.",
+            "Avatar bytes for the given DID — proxied + cached from the user’s PDS. Long cache headers; safe to use directly in <img src>.",
           cache: "public, max-age=3600, s-maxage=86400",
         },
         icon: {
           method: "GET",
           path: "/api/registry/icon/:did",
           summary:
-            "Optional vector icon (SVG) provided by the project for developer use — sign-in badges, app showcases, programmatic listings. Sanitised on upload and served with strict CSP + nosniff so it's safe to embed via <img src>. Returns 404 when the project hasn't supplied an icon.",
+            "Optional vector icon (SVG) provided by the project for developer use — sign-in badges, app showcases, programmatic listings. Sanitised on upload and served with strict CSP + nosniff so it’s safe to embed via <img src>. Returns 404 when the project hasn’t supplied an icon.",
           cache: "public, max-age=3600, s-maxage=86400",
         },
       },
@@ -510,7 +519,7 @@ const en = {
 
   /**
    * Display labels used by `lib/atmosphere-links.ts#resolveLink` when
-   * an entry doesn't carry its own label.
+   * an entry doesn’t carry its own label.
    */
   linkKinds: {
     bsky: "Bluesky",
@@ -539,32 +548,36 @@ const en = {
     browseBy: "Browse by",
     nothingHere: "Nothing here yet.",
     nothingHereSubtle: "Be the first to add a project in this category.",
+    noMatch: "No apps match your search.",
+    noMatchSubtle:
+      "Try a different search, or clear the filters to see everything.",
+    clearFilters: "Clear filters",
     viewProfile: "View project page",
     by: "by",
     poweredByYou:
-      "Powered by you — every entry is created and signed by the app's own Atmosphere account.",
+      "Powered by you — every entry is created and signed by the app’s own Atmosphere account.",
     detail: {
       openOn: "Open on",
       lastUpdated: "Last updated",
       hostedOn: "Account Host",
       editProfile: "Edit app listing",
-      missingProfile: "We couldn't find a project page for that handle.",
+      missingProfile: "We couldn’t find a project page for that handle.",
       backToExplore: "Back to Apps",
       categoryLabel: "Category",
       whatsNew: {
-        heading: "What's New",
+        heading: "What’s New",
         empty: "No updates yet.",
         versionHistory: "Version History",
         viewCommit: "View commit",
         readFullUpdate: "Read full update",
       },
       notFoundTitle: "404",
-      notFoundBody: "We couldn't find a project page for that handle.",
+      notFoundBody: "We couldn’t find a project page for that handle.",
       share: {
         button: "Share",
         copyLink: "Copy link",
         copied: "Link copied",
-        copyFailed: "Couldn't copy. Long-press the URL bar to copy it.",
+        copyFailed: "Couldn’t copy. Long-press the URL bar to copy it.",
         shareTitle: (name: string) => `${name} on Atmosphere Apps`,
         bannerAlt: (name: string) => `${name} project banner`,
       },
@@ -573,12 +586,12 @@ const en = {
       eyebrow: "Add to Apps",
       headline: "Register an app",
       body:
-        "Sign in with the app's Atmosphere account. New app listings publish as shared ATStore records so reviews, favorites, and discovery can work across compatible directories.",
+        "Sign in with the app’s Atmosphere account. New app listings publish as shared ATStore records so reviews, favorites, and discovery can work across compatible directories.",
       signInLabel: "Sign in with your Atmosphere handle",
       handlePlaceholder: "yourhandle.com",
       signIn: "Sign in",
       configError:
-        "OAuth isn't configured on this deployment yet. Try again shortly.",
+        "OAuth isn’t configured on this deployment yet. Try again shortly.",
       previewLoading: "Looking up account…",
       previewNotFound: "No account found for that handle.",
     },
@@ -590,9 +603,9 @@ const en = {
       publishButton: "Publish app listing",
       updateButton: "Update app listing",
       savingButton: "Publishing…",
-      savedToast: "Saved. It'll appear in Apps shortly.",
+      savedToast: "Saved. It’ll appear in Apps shortly.",
       savedAtstoreToast:
-        "Published as a shared ATStore app record. It'll appear in Apps shortly.",
+        "Published as a shared ATStore app record. It’ll appear in Apps shortly.",
       deleteButton: "Remove from Apps",
       deletingButton: "Removing…",
       deletedToast: "Removed from Apps.",
@@ -613,7 +626,7 @@ const en = {
       nameLabel: "App name",
       namePlaceholder: "e.g. Bluesky",
       descriptionLabel: "Short description",
-      descriptionPlaceholder: "What does it do? Who's it for?",
+      descriptionPlaceholder: "What does it do? Who’s it for?",
       categoryLabel: "Category",
       categoryHint:
         "Choose App, Account Host, or both. Selected categories are shown as primary badges.",
@@ -732,11 +745,11 @@ const en = {
         bwUpload: "Upload B/W SVG",
         bwReplace: "Replace B/W SVG",
         bwRemove: "Remove B/W SVG",
-        viewOnDeveloperResources: "View on developer resources",
+        viewOnDeveloperResources: "View project icons in docs",
         invalidType: "Icon must be an SVG (image/svg+xml).",
         tooLarge: "Icon must be 200KB or smaller.",
         gate: {
-          /** Gate state when the project hasn't requested verification yet. */
+          /** Gate state when the project hasn’t requested verification yet. */
           lockedTitle: "Verification required",
           lockedBody:
             "Verified projects get a checkmark on their listing and unlock SVG icon uploads for the developer API. Submit a request and an admin will review your project.",
@@ -772,11 +785,11 @@ const en = {
           successBody: "An admin will review your project and reply by email.",
           invalidEmail: "Enter a valid email address.",
           /** Generic failure surface — server text appended after. */
-          errorPrefix: "Couldn't submit request",
+          errorPrefix: "Couldn’t submit request",
         },
       },
       profileUpdates: {
-        eyebrow: "What's New",
+        eyebrow: "What’s New",
         title: "Project updates",
         body:
           "Post release notes for your project page. Each update is saved as its own record on your project account.",
@@ -785,7 +798,7 @@ const en = {
         versionLabel: "Version (optional)",
         versionPlaceholder: "e.g. 1.2.0",
         notesLabel: "Update notes",
-        notesPlaceholder: "What's changed?",
+        notesPlaceholder: "What’s changed?",
         commitLabel: "Tangled commit link (optional)",
         commitPlaceholder: "https://tangled.org/…",
         publishButton: "Publish update",
@@ -826,7 +839,7 @@ const en = {
         "Curate the projects that appear in the featured rail at the top of Explore.",
       takedownsTitle: "Taken down",
       takedownsBody:
-        "Profiles removed from Explore. Restorable at any time — the user's PDS record is untouched.",
+        "Profiles removed from Explore. Restorable at any time — the user’s PDS record is untouched.",
     },
     statusBadge: {
       pending: "Pending review",
@@ -836,11 +849,11 @@ const en = {
     iconAccess: {
       headline: "Verification requests",
       subhead:
-        "Projects asking to be verified. Granting puts a checkmark next to the project name on its listing and detail page, and unlocks /api/registry/icon/:did + the developer API's `iconUrl`. Per-icon sanitisation still runs server-side. Denying (or revoking) drops the checkmark and hides any existing icon immediately.",
+        "Projects asking to be verified. Granting puts a checkmark next to the project name on its listing and detail page, and unlocks /api/registry/icon/:did + the developer API’s `iconUrl`. Per-icon sanitisation still runs server-side. Denying (or revoking) drops the checkmark and hides any existing icon immediately.",
       pendingHeading: "Pending requests",
       proactiveHeading: "Verify a project",
       proactiveInputLabel: "Project handle or DID",
-      proactivePlaceholder: "atmosphereaccount.com or did:plc:...",
+      proactivePlaceholder: "atmosphereaccount.com or did:plc:…",
       proactiveHelp:
         "Use this to verify a published profile even if the project has not submitted a request. Request emails still appear in the pending queue when projects ask for verification themselves.",
       proactiveSubmit: "Verify project",
@@ -859,7 +872,7 @@ const en = {
       deny: "Deny",
       revoke: "Revoke",
       denyPrompt:
-        "Optional: tell the project owner why you're denying / revoking. Press OK with the field empty to deny without a reason.",
+        "Optional: tell the project owner why you’re denying / revoking. Press OK with the field empty to deny without a reason.",
       markedGranted: "Verified",
       markedDenied: "Denied",
       requestedAtLabel: "Requested",
@@ -898,7 +911,7 @@ const en = {
     reviewReports: {
       headline: "Review reports",
       subhead:
-        "Reports submitted against user reviews. Hide or remove a review to close the report, or dismiss reports that don't need action.",
+        "Reports submitted against user reviews. Hide or remove a review to close the report, or dismiss reports that don’t need action.",
       empty: "No open review reports.",
       action: "Mark actioned",
       dismiss: "Dismiss",
@@ -927,7 +940,7 @@ const en = {
     takedowns: {
       headline: "Taken-down profiles",
       subhead:
-        "Profiles currently hidden from Explore and the public registry API. Restore returns them to /explore immediately. The user's PDS record is never touched.",
+        "Profiles currently hidden from Explore and the public registry API. Restore returns them to /explore immediately. The user’s PDS record is never touched.",
       empty: "No profiles are currently taken down.",
       reasonLabel: "Reason",
       byLabel: "Taken down by",
@@ -940,7 +953,7 @@ const en = {
     featured: {
       headline: "Curate featured",
       subhead:
-        "Pick the projects that appear in the featured rail. Drag to reorder. Save & publish writes the canonical record on the Atmosphere account's PDS.",
+        "Pick the projects that appear in the featured rail. Drag to reorder. Save & publish writes the canonical record on the Atmosphere account’s PDS.",
       saveAndPublish: "Save & publish",
       saving: "Publishing…",
       saved: "Published.",
@@ -959,7 +972,7 @@ const en = {
   },
 
   /**
-   * Banner shown on /explore/manage when the owner's profile has been
+   * Banner shown on /explore/manage when the owner’s profile has been
    * taken down by an admin. Explains the state and surfaces the
    * recorded reason; the Publish button below also returns 403 from
    * the API so the user gets a consistent message either way.
@@ -967,7 +980,7 @@ const en = {
   manageTakedown: {
     title: "Your profile has been removed from Explore",
     body:
-      "An Atmosphere admin took your profile down. Updates won't be published until it's restored. The record on your PDS is untouched — you can delete it from your PDS at any time.",
+      "An Atmosphere admin took your profile down. Updates won’t be published until it’s restored. The record on your PDS is untouched — you can delete it from your PDS at any time.",
     reasonLabel: "Reason given",
   },
 
@@ -980,8 +993,8 @@ const en = {
     buttonShort: "Report",
     modalTitle: "Report this profile",
     modalBody:
-      "Send a report to the Atmosphere admins. Reports are anonymous unless you're signed in.",
-    reasonLabel: "What's wrong?",
+      "Send a report to the Atmosphere admins. Reports are anonymous unless you’re signed in.",
+    reasonLabel: "What’s wrong?",
     detailsLabel: "Add details (optional)",
     detailsPlaceholder: "Anything we should know?",
     submit: "Send report",
@@ -990,8 +1003,8 @@ const en = {
     sentTitle: "Report sent",
     sentBody: "Thanks. An admin will review it shortly.",
     duplicate:
-      "You've already submitted this report recently. We'll review the existing one.",
-    error: "Couldn't send the report. Please try again.",
+      "You’ve already submitted this report recently. We’ll review the existing one.",
+    error: "Couldn’t send the report. Please try again.",
     reasons: {
       not_a_project: "Not a real project",
       harmful: "Harmful or hateful content",
@@ -1004,10 +1017,10 @@ const en = {
   accountType: {
     title: "How will you use Atmosphere?",
     body: (handle: string): string =>
-      `You're signed in as @${handle}. Choose whether this account represents you as a person or a project you want listed in Explore.`,
-    userTitle: "I'm a user",
+      `You’re signed in as @${handle}. Choose whether this account represents you as a person or a project you want listed in Explore.`,
+    userTitle: "I’m a user",
     userBody: "Create a user profile to write and manage your reviews.",
-    projectTitle: "I'm a project",
+    projectTitle: "I’m a project",
     projectBody:
       "Create and manage a public project profile in Explore with app links, screenshots, and developer details.",
   },
@@ -1017,7 +1030,7 @@ const en = {
     headline: "Your reviews",
     subhead: (handle: string): string => `Reviews written from @${handle}.`,
     reviewsHeading: "Review history",
-    empty: "You haven't reviewed any apps yet.",
+    empty: "You haven’t reviewed any apps yet.",
     explore: "Browse apps",
     viewProfile: "View public profile",
     nameLabel: "Display name",
@@ -1028,7 +1041,7 @@ const en = {
     displayBskyButton: "Display microblog profile",
     configureBskyClient: "Choose microblog viewer",
     saveClient: "Save profile",
-    saving: "Saving...",
+    saving: "Saving…",
     saved: "Profile saved.",
     saveError: "Could not save your profile.",
     cancel: "Cancel",
@@ -1037,18 +1050,18 @@ const en = {
     delete: "Delete review",
     deleting: "Deleting…",
     deleted: "Review deleted.",
-    error: "Couldn't update the review",
+    error: "Couldn’t update the review",
     upgrade: {
       button: "Register an app",
       modalTitle: "Is this account a project?",
       modalBody:
-        "Choosing yes converts this account into a project profile and unlocks the project dashboard. If this isn't your project's account,",
-      signInWithProjectLink: "sign in with your project's account here",
+        "Choosing yes converts this account into a project profile and unlocks the project dashboard. If this isn’t your project’s account,",
+      signInWithProjectLink: "sign in with your project’s account here",
       signInWithProjectSuffix: ".",
       yes: "Yes, convert this account",
       cancel: "Cancel",
       submitting: "Converting…",
-      error: "Couldn't convert this account.",
+      error: "Couldn’t convert this account.",
     },
   },
 
@@ -1077,7 +1090,7 @@ const en = {
       heading: "Write a review",
       modalBody: "Rate this project and add a short note for other people.",
       signedOut: "Sign in to rate and review this project.",
-      ownerNote: "You can't review your own project.",
+      ownerNote: "You can’t review your own project.",
       ratingLabel: "Rating",
       bodyLabel: "Review (optional)",
       bodyPlaceholder: "What should other people know?",
@@ -1091,7 +1104,7 @@ const en = {
       cancel: "Cancel",
       saved: "Review saved.",
       deleted: "Review deleted.",
-      error: "Couldn't save the review. Please try again.",
+      error: "Couldn’t save the review. Please try again.",
     },
     list: {
       heading: "Reviews",
@@ -1104,7 +1117,7 @@ const en = {
       button: "Report review",
       modalTitle: "Report this review",
       modalBody: "Send a report to the Atmosphere admins.",
-      reasonLabel: "What's wrong?",
+      reasonLabel: "What’s wrong?",
       detailsLabel: "Add details (optional)",
       detailsPlaceholder: "Anything we should know?",
       submit: "Send report",
@@ -1113,7 +1126,7 @@ const en = {
       sentTitle: "Report sent",
       sentBody: "Thanks. An admin will review it shortly.",
       signInRequired: "Sign in to report reviews.",
-      error: "Couldn't send the report. Please try again.",
+      error: "Couldn’t send the report. Please try again.",
       reasons: {
         harmful: "Harmful or hateful content",
         spam: "Spam",
@@ -1129,7 +1142,7 @@ const en = {
       submit: "Save response",
       submitting: "Saving…",
       cancel: "Cancel",
-      error: "Couldn't save the response",
+      error: "Couldn’t save the response",
     },
   },
 
@@ -1137,9 +1150,9 @@ const en = {
     errors: {
       generic: "Something went wrong with the sign-in flow. Please try again.",
       handleUnknown:
-        "We couldn't resolve that handle. Check the spelling and try again.",
+        "We couldn’t resolve that handle. Check the spelling and try again.",
       asUnreachable:
-        "Your account's authorization server is unreachable right now.",
+        "Your account’s authorization server is unreachable right now.",
       sessionExpired: "Your session has expired. Please sign in again.",
     },
   },

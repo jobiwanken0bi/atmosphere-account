@@ -55,7 +55,7 @@ export default function AdminIconAccessVerifyButton(p: Props) {
         onClick={onClick}
         disabled={submitting}
       >
-        {submitting ? "..." : p.label}
+        {submitting ? "…" : p.label}
       </button>
       {status.value.kind === "error" && (
         <p class="admin-icon-row-error">

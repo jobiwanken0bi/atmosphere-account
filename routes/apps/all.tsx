@@ -109,7 +109,11 @@ function BrowseAppsPage({ data }: { data: BrowseAppsData }) {
 
         <section class="section app-browse-results-section">
           <div class="container">
-            <AppGrid apps={data.result.apps} />
+            <AppGrid
+              apps={data.result.apps}
+              filtered={Boolean(data.query) || data.tags.length > 0}
+              resetHref="/apps/all"
+            />
             <AppPagination
               page={data.page}
               pageSize={data.pageSize}

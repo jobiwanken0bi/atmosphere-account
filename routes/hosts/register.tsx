@@ -16,6 +16,7 @@ import type { BlobRef } from "../../lib/lexicons.ts";
 import { publishHostRecords } from "../../lib/host-records.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile, uploadBlob } from "../../lib/pds.ts";
+import { getProfileByDid } from "../../lib/registry.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 
 interface RegisterValues {
@@ -275,17 +276,36 @@ async function buildRegisterPrefill(
   const bsky = session
     ? await getBskyProfile(session.pdsUrl, user.did).catch(() => null)
     : null;
+  /**
+   * An app that already has an ATStore/registry profile can "also" register
+   * as a host — reuse that profile's name, description, homepage, and avatar
+   * so they only fill in the host-specific fields. The app's own profile
+   * takes precedence over the Bluesky profile.
+   */
+  const appProfile = await getProfileByDid(user.did).catch(() => null);
+
   if (!values.host) values.host = user.handle;
-  if (!values.displayName) values.displayName = bsky?.displayName ?? "";
-  if (!values.description) values.description = bsky?.description ?? "";
+  if (!values.displayName) {
+    values.displayName = appProfile?.name || bsky?.displayName || "";
+  }
+  if (!values.description) {
+    values.description = appProfile?.description || bsky?.description || "";
+  }
+  if (!values.homepageUrl && appProfile?.mainLink) {
+    values.homepageUrl = appProfile.mainLink;
+  }
   if (!values.serviceEndpoint && session?.pdsUrl) {
     values.serviceEndpoint = session.pdsUrl;
   }
   if (!values.serviceEndpoint && values.homepageUrl) {
     values.serviceEndpoint = originFromUrl(values.homepageUrl);
   }
-  if (!values.avatarUrl && bsky?.avatar?.ref?.$link) {
-    values.avatarUrl = bskyCdnAvatarUrl(user.did, bsky.avatar.ref.$link);
+  if (!values.avatarUrl) {
+    if (appProfile?.avatarCid) {
+      values.avatarUrl = `/api/registry/avatar/${encodeURIComponent(user.did)}`;
+    } else if (bsky?.avatar?.ref?.$link) {
+      values.avatarUrl = bskyCdnAvatarUrl(user.did, bsky.avatar.ref.$link);
+    }
   }
   return { values, hasOAuthSession: !!session };
 }

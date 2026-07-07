@@ -1075,6 +1075,34 @@ export async function getProfileByDid(
   });
 }
 
+export async function listProfilesByDids(
+  dids: string[],
+  opts: ProfileLookupOptions = {},
+): Promise<Map<string, ProfileRow>> {
+  const uniqueDids = [
+    ...new Set(dids.map((did) => did.trim()).filter(Boolean)),
+  ];
+  if (uniqueDids.length === 0) return new Map();
+  const type = opts.profileType ?? "project";
+  const where = [
+    `p.did IN (${uniqueDids.map(() => "?").join(",")})`,
+    ...(opts.includeTakenDown ? [] : ["p.takedown_status IS NULL"]),
+    ...(type === "any" ? [] : ["p.profile_type = ?"]),
+  ];
+  const args: InValue[] = type === "any" ? uniqueDids : [...uniqueDids, type];
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `${SELECT_PROFILE} WHERE ${where.join(" AND ")}`,
+      args,
+    });
+    return new Map(
+      r.rows
+        .map((row) => rowToProfile(row as unknown as RawProfileRow))
+        .map((row) => [row.did, row]),
+    );
+  });
+}
+
 export async function getProfileByHandle(
   handle: string,
   opts: ProfileLookupOptions = {},

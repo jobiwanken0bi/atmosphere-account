@@ -1,6 +1,7 @@
 import { useSignal } from "@preact/signals";
 import { createPortal } from "preact/compat";
 import type { ReviewRow } from "../lib/reviews.ts";
+import { useDialog } from "../lib/use-dialog.ts";
 
 interface Props {
   targetId: string;
@@ -57,6 +58,15 @@ export default function ProfileReviewComposer(
     | { kind: "ok"; text: string }
     | { kind: "error"; text: string }
   >({ kind: "idle" });
+
+  const close = () => {
+    open.value = false;
+  };
+
+  const dialogRef = useDialog<HTMLDivElement>(
+    open.value && signedIn && !isOwner,
+    close,
+  );
 
   const submit = async () => {
     submitting.value = true;
@@ -145,12 +155,21 @@ export default function ProfileReviewComposer(
         <div
           class="modal-backdrop"
           onClick={(e) => {
-            if (e.target === e.currentTarget) open.value = false;
+            if (e.target === e.currentTarget) close();
           }}
         >
-          <div class="modal-card">
+          <div
+            class="modal-card"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-review-title"
+            tabIndex={-1}
+          >
             <div class="modal-header">
-              <p class="modal-title">{copy.heading}</p>
+              <h2 id="profile-review-title" class="modal-title">
+                {copy.heading}
+              </h2>
               <p class="modal-body-text">{copy.modalBody}</p>
             </div>
             <fieldset class="profile-review-rating-field">
@@ -186,9 +205,7 @@ export default function ProfileReviewComposer(
               <button
                 type="button"
                 class="profile-form-button-link"
-                onClick={() => {
-                  open.value = false;
-                }}
+                onClick={close}
                 disabled={submitting.value}
               >
                 {copy.cancel}
@@ -221,6 +238,7 @@ export default function ProfileReviewComposer(
                 class={status.value.kind === "ok"
                   ? "report-modal-status report-modal-status--ok"
                   : "report-modal-status report-modal-status--error"}
+                role={status.value.kind === "error" ? "alert" : "status"}
               >
                 {status.value.text}
               </p>

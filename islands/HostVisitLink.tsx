@@ -14,16 +14,6 @@ export default function HostVisitLink(
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      onClick={(event) => {
-        if (
-          event.defaultPrevented || event.button !== 0 || event.metaKey ||
-          event.ctrlKey || event.shiftKey || event.altKey
-        ) {
-          return;
-        }
-        event.preventDefault();
-        globalThis.open(href, "_blank", "noopener,noreferrer");
-      }}
     >
       <span class="profile-hero-action-icon">
         <WebsiteIcon class="profile-hero-action-icon-svg" />

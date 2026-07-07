@@ -88,7 +88,7 @@ export default function AdminIconAccessGrant({ copy }: Props) {
           class="profile-form-button-primary"
           disabled={submitting || !identifier.value.trim()}
         >
-          {submitting ? "..." : copy.submit}
+          {submitting ? "…" : copy.submit}
         </button>
       </div>
       <p class="signin-form-hint">{copy.help}</p>

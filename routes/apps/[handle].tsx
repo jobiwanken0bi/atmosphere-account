@@ -27,6 +27,7 @@ import type { Locale } from "../../i18n/mod.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
+  listProfilesByDids,
   type ProfileRow,
 } from "../../lib/registry.ts";
 import {
@@ -38,7 +39,7 @@ import {
 } from "../../lib/reviews.ts";
 import { accountHostName } from "../../lib/account-hosts.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getAppUser } from "../../lib/account-types.ts";
+import { getAppUser, listAppUsersByDids } from "../../lib/account-types.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import {
   listProfileUpdates,
@@ -70,7 +71,7 @@ import {
   appPrimaryCollection,
 } from "../../lib/app-display.ts";
 import { isAdmin } from "../../lib/admin.ts";
-import { isHandle, resolveDidDocument } from "../../lib/identity.ts";
+import { isHandle, resolveIdentity } from "../../lib/identity.ts";
 
 const DID_HANDLE_CACHE_TTL_MS = 30 * 60 * 1000;
 const DID_HANDLE_CACHE_MAX = 500;
@@ -1182,57 +1183,75 @@ function emptyReviewSummary(): ReviewSummary {
 }
 
 async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
-  return await Promise.all(
-    reviews.map(async (review) => {
-      const [appUser, profile] = await Promise.all([
-        getAppUser(review.reviewerDid).catch(() => null),
-        getProfileByDid(review.reviewerDid).catch(() => null),
-      ]);
-      const reviewerName = appUser?.displayName ?? profile?.name ?? null;
-      const reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
-      const reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
-        ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
-        : profile?.avatarCid
-        ? bskyCdnAvatarUrl(review.reviewerDid, profile.avatarCid)
-        : null;
-      return {
-        ...review,
-        reviewerName,
-        reviewerHandle,
-        reviewerAvatarUrl,
-        reviewerProfileHref: microblogProfileHref(reviewerHandle),
-      };
-    }),
-  );
+  const reviewerDids = uniqueDids(reviews.map((review) => review.reviewerDid));
+  const [appUsers, profiles] = await Promise.all([
+    listAppUsersByDids(reviewerDids).catch(() => new Map()),
+    listProfilesByDids(reviewerDids).catch(() => new Map()),
+  ]);
+  return reviews.map((review) => {
+    const appUser = appUsers.get(review.reviewerDid) ?? null;
+    const profile = profiles.get(review.reviewerDid) ?? null;
+    const reviewerName = appUser?.displayName ?? profile?.name ?? null;
+    const reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
+    const reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
+      ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
+      : profile?.avatarCid
+      ? bskyCdnAvatarUrl(review.reviewerDid, profile.avatarCid)
+      : null;
+    return {
+      ...review,
+      reviewerName,
+      reviewerHandle,
+      reviewerAvatarUrl,
+      reviewerProfileHref: microblogProfileHref(reviewerHandle),
+    };
+  });
 }
 
 async function enrichAppMirroredReviews(
   reviews: AppMirroredReview[],
 ): Promise<DisplayAppReview[]> {
-  return await Promise.all(
-    reviews.map(async (review) => {
-      const [appUser, profile, resolvedHandle] = await Promise.all([
-        getAppUser(review.authorDid).catch(() => null),
-        getProfileByDid(review.authorDid).catch(() => null),
-        resolveHandleForDid(review.authorDid),
-      ]);
-      const authorHandle = appUser?.handle ?? profile?.handle ??
-        resolvedHandle;
-      const authorName = appUser?.displayName ?? profile?.name ?? null;
-      const authorAvatarUrl = appUser?.avatarCid && appUser.avatarMime
-        ? bskyCdnAvatarUrl(review.authorDid, appUser.avatarCid)
-        : profile?.avatarCid
-        ? bskyCdnAvatarUrl(review.authorDid, profile.avatarCid)
-        : null;
-      return {
-        ...review,
-        authorHandle,
-        authorName,
-        authorAvatarUrl,
-        authorHref: microblogProfileHref(authorHandle),
-      };
-    }),
+  const authorDids = uniqueDids(reviews.map((review) => review.authorDid));
+  const [appUsers, profiles] = await Promise.all([
+    listAppUsersByDids(authorDids).catch(() => new Map()),
+    listProfilesByDids(authorDids).catch(() => new Map()),
+  ]);
+  const unresolvedDids = authorDids.filter((did) =>
+    !appUsers.has(did) && !profiles.has(did)
   );
+  const resolvedHandles = new Map(
+    await Promise.all(
+      unresolvedDids.map(
+        async (did): Promise<[string, string | null]> => [
+          did,
+          await resolveHandleForDid(did),
+        ],
+      ),
+    ),
+  );
+  return reviews.map((review) => {
+    const appUser = appUsers.get(review.authorDid) ?? null;
+    const profile = profiles.get(review.authorDid) ?? null;
+    const authorHandle = appUser?.handle ?? profile?.handle ??
+      resolvedHandles.get(review.authorDid) ?? null;
+    const authorName = appUser?.displayName ?? profile?.name ?? null;
+    const authorAvatarUrl = appUser?.avatarCid && appUser.avatarMime
+      ? bskyCdnAvatarUrl(review.authorDid, appUser.avatarCid)
+      : profile?.avatarCid
+      ? bskyCdnAvatarUrl(review.authorDid, profile.avatarCid)
+      : null;
+    return {
+      ...review,
+      authorHandle,
+      authorName,
+      authorAvatarUrl,
+      authorHref: microblogProfileHref(authorHandle),
+    };
+  });
+}
+
+function uniqueDids(dids: string[]): string[] {
+  return [...new Set(dids.map((did) => did.trim()).filter(Boolean))];
 }
 
 function microblogProfileHref(handle: string | null): string | null {
@@ -1245,9 +1264,8 @@ async function resolveHandleForDid(did: string): Promise<string | null> {
   if (cached && cached.expiresAt > Date.now()) return cached.value;
   if (cached) didHandleCache.delete(did);
   try {
-    const doc = await resolveDidDocument(did);
-    const aka = (doc.alsoKnownAs ?? []).find((uri) => uri.startsWith("at://"));
-    const value = aka ? aka.slice("at://".length) : null;
+    const identity = await resolveIdentity(did);
+    const value = identity.handle.startsWith("did:") ? null : identity.handle;
     rememberDidHandle(did, value);
     return value;
   } catch {

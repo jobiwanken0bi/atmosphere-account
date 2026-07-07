@@ -167,7 +167,7 @@ export default function SignInForm(
           data-preview-loading={t.explore.create.previewLoading}
           data-preview-not-found={t.explore.create.previewNotFound}
           data-submit-label={rich ? "Continue" : t.explore.create.signIn}
-          data-submitting-label="Redirecting..."
+          data-submitting-label="Redirecting…"
           hidden={rich && !manualInitiallyVisible}
         >
           {returnTo && <input type="hidden" name="next" value={returnTo} />}
@@ -195,7 +195,7 @@ export default function SignInForm(
                   required
                   value={initialHandle ?? ""}
                   placeholder={rich
-                    ? "search by handle..."
+                    ? "search by handle…"
                     : t.explore.create.handlePlaceholder}
                   class="signin-form-input"
                   aria-autocomplete="list"

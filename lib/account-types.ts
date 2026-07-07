@@ -82,6 +82,33 @@ export async function getAppUser(did: string): Promise<AppUserRow | null> {
   });
 }
 
+export async function listAppUsersByDids(
+  dids: string[],
+): Promise<Map<string, AppUserRow>> {
+  const uniqueDids = [
+    ...new Set(dids.map((did) => did.trim()).filter(Boolean)),
+  ];
+  if (uniqueDids.length === 0) return new Map();
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `
+        SELECT did, handle, display_name, avatar_cid, avatar_mime,
+               bio, bsky_client_id, bsky_button_visible,
+               website_url, website_visible, account_type,
+               created_at, updated_at
+        FROM app_user
+        WHERE did IN (${uniqueDids.map(() => "?").join(",")})
+      `,
+      args: uniqueDids,
+    });
+    return new Map(
+      r.rows
+        .map((row) => rowToAppUser(row as unknown as RawAppUserRow))
+        .map((row) => [row.did, row]),
+    );
+  });
+}
+
 export async function getAppUserByHandle(
   handle: string,
 ): Promise<AppUserRow | null> {

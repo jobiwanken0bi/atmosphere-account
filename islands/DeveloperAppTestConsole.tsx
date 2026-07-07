@@ -284,7 +284,7 @@ export default function DeveloperAppTestConsole(
             disabled={verifying.value}
             onClick={verify}
           >
-            {verifying.value ? "Verifying..." : "Verify handoff"}
+            {verifying.value ? "Verifying…" : "Verify handoff"}
           </button>
           {verification.value && (
             <span

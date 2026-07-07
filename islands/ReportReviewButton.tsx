@@ -1,4 +1,5 @@
 import { useSignal } from "@preact/signals";
+import { useDialog } from "../lib/use-dialog.ts";
 
 interface Props {
   reviewId: number;
@@ -48,6 +49,8 @@ export default function ReportReviewButton(
     status.value = { kind: "idle" };
   };
 
+  const dialogRef = useDialog<HTMLDivElement>(open.value, close);
+
   const submit = async () => {
     if (!signedIn) {
       status.value = { kind: "error", text: copy.signInRequired };
@@ -94,9 +97,21 @@ export default function ReportReviewButton(
             if (e.target === e.currentTarget) close();
           }}
         >
-          <div class="modal-card">
+          <div
+            class="modal-card"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`report-review-title-${reviewId}`}
+            tabIndex={-1}
+          >
             <div class="modal-header">
-              <p class="modal-title">{copy.modalTitle}</p>
+              <h2
+                id={`report-review-title-${reviewId}`}
+                class="modal-title"
+              >
+                {copy.modalTitle}
+              </h2>
               <p class="modal-body-text">
                 {signedIn ? copy.modalBody : copy.signInRequired}
               </p>
@@ -158,7 +173,10 @@ export default function ReportReviewButton(
                     />
                   </label>
                   {status.value.kind === "error" && (
-                    <p class="report-modal-status report-modal-status--error">
+                    <p
+                      class="report-modal-status report-modal-status--error"
+                      role="alert"
+                    >
                       {copy.error}: {status.value.text}
                     </p>
                   )}

@@ -15,6 +15,7 @@ export default function AppFavoriteButton(
 ) {
   const busy = useSignal(false);
   const favorited = useSignal(initiallyFavorited);
+  const saveCount = useSignal(count);
   const error = useSignal("");
 
   if (!signedIn) {
@@ -38,8 +39,11 @@ export default function AppFavoriteButton(
         { method: favorited.value ? "DELETE" : "POST" },
       );
       if (!res.ok) throw new Error(await res.text());
-      favorited.value = !favorited.value;
-      globalThis.location.reload();
+      // Update in place instead of a full reload — keeps scroll position and
+      // any in-progress review draft, and reflects the new state instantly.
+      const nowFavorited = !favorited.value;
+      favorited.value = nowFavorited;
+      saveCount.value = Math.max(0, saveCount.value + (nowFavorited ? 1 : -1));
     } catch (err) {
       error.value = err instanceof Error ? err.message : "Could not save";
     } finally {
@@ -57,10 +61,21 @@ export default function AppFavoriteButton(
         aria-pressed={favorited.value}
       >
         {favorited.value ? "Saved" : "Save"}
-        {count > 0 && <span>{count}</span>}
+        {saveCount.value > 0 && (
+          <span
+            aria-label={`${saveCount.value} ${
+              saveCount.value === 1 ? "save" : "saves"
+            }`}
+          >
+            {saveCount.value}
+          </span>
+        )}
       </button>
       {error.value && (
-        <p class="report-modal-status report-modal-status--error">
+        <p
+          class="report-modal-status report-modal-status--error"
+          role="alert"
+        >
           {error.value}
         </p>
       )}

@@ -93,15 +93,9 @@ function iconPreviewRoute(
   }`;
 }
 
-function developerResourcesIconHref(
-  handle: string,
-  variant: "color" | "bw",
-): string {
-  const params = new URLSearchParams({
-    icon: handle,
-    variant,
-  });
-  return `/developer-resources?${params.toString()}#project-icons`;
+function developerResourcesIconHref(): string {
+  // Icon exports moved into the docs resources page.
+  return "/docs/resources#project-icons";
 }
 
 interface Props {
@@ -1624,10 +1618,7 @@ export default function CreateProfileForm(
           {(iconKeep.value || iconBwKeep.value) && (
             <div class="profile-form-icon-resource-actions">
               <a
-                href={developerResourcesIconHref(
-                  handle,
-                  iconKeep.value ? "color" : "bw",
-                )}
+                href={developerResourcesIconHref()}
                 class="profile-form-button-secondary profile-form-icon-resource-link"
               >
                 {tIcon.viewOnDeveloperResources}
@@ -1689,7 +1680,7 @@ export default function CreateProfileForm(
       </div>
       {!hydrated.value && (
         <p class="profile-form-hydration-note">
-          Loading editor controls...
+          Loading editor controls…
         </p>
       )}
 
