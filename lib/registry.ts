@@ -3,7 +3,7 @@
  * (read APIs and SSR pages) and the indexer worker (writes).
  */
 import type { InValue } from "@libsql/client";
-import { dbBackend, withDb } from "./db.ts";
+import { isPostgresBackend, withDb } from "./db.ts";
 import type {
   AccountIndicator,
   FeaturedBadge,
@@ -1160,7 +1160,7 @@ export async function searchProfiles(
 
   if (opts.query && opts.query.trim()) {
     const q = opts.query.trim().replace(/["']/g, "");
-    if (dbBackend() === "neon") {
+    if (isPostgresBackend()) {
       where.push(`p.search_vector @@ plainto_tsquery('simple', ?)`);
       args.push(q);
     } else {
@@ -1172,7 +1172,7 @@ export async function searchProfiles(
   }
   if (opts.category) {
     where.push(
-      dbBackend() === "neon"
+      isPostgresBackend()
         ? `EXISTS (
           SELECT 1
           FROM jsonb_array_elements_text(p.categories::jsonb) AS category(value)
@@ -1184,7 +1184,7 @@ export async function searchProfiles(
   }
   if (opts.subcategory) {
     where.push(
-      dbBackend() === "neon"
+      isPostgresBackend()
         ? `EXISTS (
           SELECT 1
           FROM jsonb_array_elements_text(p.subcategories::jsonb) AS subcategory(value)

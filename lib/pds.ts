@@ -32,6 +32,20 @@ function fetchWithTimeout(
   });
 }
 
+export class PublicRecordFetchError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(
+      `getRecord failed: HTTP ${status}${
+        body.trim() ? `: ${body.trim().slice(0, 240)}` : ""
+      }`,
+    );
+    this.name = "PublicRecordFetchError";
+  }
+}
+
 export async function putProfileRecord(
   did: string,
   pdsUrl: string,
@@ -229,7 +243,9 @@ export async function getRecordPublic(
   url.searchParams.set("rkey", rkey);
   const res = await fetchWithTimeout(url.toString());
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`getRecord failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    throw new PublicRecordFetchError(res.status, await res.text());
+  }
   return await res.json() as { uri: string; cid: string; value: unknown };
 }
 

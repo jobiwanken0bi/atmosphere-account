@@ -33,7 +33,7 @@ function usage(exitCode = 2): never {
   const write = exitCode === 0 ? console.log : console.error;
   write(
     [
-      "Usage: deno task db:smoke [--backend=turso|neon|both]",
+      "Usage: deno task db:smoke [--backend=turso|neon|postgres|both]",
       "",
       "Runs route-shaped DB reads against Turso and/or Neon.",
       "Default backend is both when Neon env exists, otherwise turso.",
@@ -54,13 +54,40 @@ function selectedBackends(): DatabaseBackend[] {
   if (args.includes("--help") || args.includes("-h")) usage(0);
   const raw = readFlag(args, "--backend")?.toLowerCase();
   if (!raw) {
-    return Deno.env.get("NEON_DATABASE_URL") ||
-        Deno.env.get("NEON_DIRECT_DATABASE_URL")
-      ? ["turso", "neon"]
-      : ["turso"];
+    const backends: DatabaseBackend[] = ["turso"];
+    if (
+      Deno.env.get("NEON_DATABASE_URL") ||
+      Deno.env.get("NEON_DIRECT_DATABASE_URL")
+    ) {
+      backends.push("neon");
+    }
+    if (
+      Deno.env.get("POSTGRES_DATABASE_URL") ||
+      Deno.env.get("DATABASE_URL") ||
+      Deno.env.get("POSTGRES_URL")
+    ) {
+      backends.push("postgres");
+    }
+    return backends;
   }
-  if (raw === "both") return ["turso", "neon"];
-  if (raw === "turso" || raw === "neon") return [raw];
+  if (raw === "both") {
+    const backends: DatabaseBackend[] = ["turso"];
+    if (
+      Deno.env.get("NEON_DATABASE_URL") ||
+      Deno.env.get("NEON_DIRECT_DATABASE_URL")
+    ) {
+      backends.push("neon");
+    }
+    if (
+      Deno.env.get("POSTGRES_DATABASE_URL") ||
+      Deno.env.get("DATABASE_URL") ||
+      Deno.env.get("POSTGRES_URL")
+    ) {
+      backends.push("postgres");
+    }
+    return backends;
+  }
+  if (raw === "turso" || raw === "neon" || raw === "postgres") return [raw];
   throw new Error(`Unsupported --backend=${raw}`);
 }
 

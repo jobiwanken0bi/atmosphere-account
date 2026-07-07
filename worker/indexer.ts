@@ -41,7 +41,7 @@ import {
   upsertProfileUpdate,
 } from "../lib/profile-updates.ts";
 import { findPdsEndpoint, resolveDidDocument } from "../lib/identity.ts";
-import { getRecordPublic } from "../lib/pds.ts";
+import { getRecordPublic, PublicRecordFetchError } from "../lib/pds.ts";
 import { COMMUNITY_APP_LEXICON_ENABLED, JETSTREAM_URL } from "../lib/env.ts";
 import { upsertProfileFromRecord } from "../lib/profile-sync.ts";
 import {
@@ -409,12 +409,31 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
   }
 
   const pdsUrl = await resolvePdsForDid(event.did, eventObservedAt(event));
-  const fetched = await getRecordPublic(
-    pdsUrl,
-    event.did,
-    commit.collection,
-    commit.rkey,
-  );
+  let fetched: Awaited<ReturnType<typeof getRecordPublic>>;
+  try {
+    fetched = await getRecordPublic(
+      pdsUrl,
+      event.did,
+      commit.collection,
+      commit.rkey,
+    );
+  } catch (err) {
+    if (err instanceof PublicRecordFetchError && isPermanentFetchMiss(err)) {
+      console.warn(
+        `[indexer] app record fetch failed permanently for ${uri}: HTTP ${err.status}`,
+      );
+      await recordAppRecordFailure({
+        uri,
+        collection: commit.collection,
+        sourceType: appDirectorySourceType(commit.collection),
+        repoDid: event.did,
+        rkey: commit.rkey,
+        reason: `get_record_http_${err.status}`,
+      });
+      return;
+    }
+    throw err;
+  }
   if (!fetched) {
     await recordAppRecordFailure({
       uri,
@@ -567,6 +586,10 @@ function appDirectorySourceType(collection: string): string {
   if (collection === COMMUNITY_APP_PROFILE_NSID) return "community_profile";
   if (collection === COMMUNITY_APP_ENTRY_NSID) return "community_entry";
   return "unknown";
+}
+
+function isPermanentFetchMiss(err: PublicRecordFetchError): boolean {
+  return err.status >= 400 && err.status < 500;
 }
 
 async function processEvent(event: JetstreamEvent): Promise<void> {

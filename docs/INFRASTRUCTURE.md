@@ -7,7 +7,7 @@ is intentionally split into two deployable units:
   app reviews/favorites, and admin surfaces.
 - **Indexer worker:** one always-on process that consumes Jetstream, fetches
   authoritative PDS records, and updates the local appview projection.
-- **Database:** Turso/libSQL as the current relational appview database. It
+- **Database:** Railway Postgres as the current relational appview database. It
   stores source records, deduped listings, aggregates, account hosts, moderation
   state, OAuth state, sessions, and the worker lease.
 
@@ -20,20 +20,21 @@ interop, host claims, moderation, jobs, and admin observability.
 
 Recommended target:
 
-- **Web app:** Deno Deploy. Keep the public web app, hosted Atmosphere Login
-  picker, OAuth metadata/JWKS, account pages, app pages, and admin pages on Deno
-  Deploy. If production is still on Deploy Classic, migrate to the new Deno
-  Deploy platform before the Classic shutdown on July 20, 2026. See
-  [DENO_DEPLOY_MIGRATION.md](./DENO_DEPLOY_MIGRATION.md). Production should
-  serve the consumer site from `atmosphereaccount.com` and the standalone
-  picker/OAuth surface from `login.atmosphereaccount.com` on the same Deno
-  Deploy app.
-- **Primary database:** Neon Postgres. The appview is now write-concurrent,
-  relational, query-heavy, and needs safer migrations, branching, backfills, and
-  operational visibility.
-- **Indexer worker:** Railway. The worker should stay separate from the web app
-  because it holds a long-lived Jetstream WebSocket and performs remote PDS
-  fetches. Railway now replaces the old Fly worker for this always-on process.
+- **Public client/web shell:** Deno Deploy can continue to serve mostly static
+  public pages, docs, and the standalone picker surface. If Deno remains in the
+  architecture, it should call a Railway appview API for DB-backed data rather
+  than connecting directly to Railway Postgres over a public TCP proxy.
+- **Appview runtime:** Railway. DB-backed routes for apps, hosts, login state,
+  developer registration, admin jobs, and account surfaces should run in Railway
+  when they need direct database access. This lets Postgres traffic stay on
+  Railway private networking.
+- **Primary database:** Railway Postgres. The appview is write-concurrent,
+  relational, query-heavy, and shares operational locality with the always-on
+  indexer and backfill/admin jobs.
+- **Indexer worker:** Railway. The worker should stay separate from the
+  web/appview service because it holds a long-lived Jetstream WebSocket and
+  performs remote PDS fetches. Railway now replaces the old Fly worker for this
+  always-on process.
 - **Object/media storage:** AT Protocol blobs stay canonical on the user's PDS.
   Avatar/icon display should prefer Bluesky's CDN when a DID/CID pair is
   available. Add S3/R2/Railway object storage only for generated or non-protocol
@@ -46,19 +47,20 @@ Recommended target:
 
 Railway migration state lives in [RAILWAY_MIGRATION.md](./RAILWAY_MIGRATION.md).
 
-There is no active Railway web service. Do not point `atmosphereaccount.com` at
-Railway unless we intentionally create a new Railway web service and move the
-public web app away from Deno Deploy later.
+Do not point `atmosphereaccount.com` at Railway until the intended public web
+hosting model is confirmed. A Railway web/appview service can be used as the
+server-side runtime, while Deno Deploy can remain the client/docs/picker host
+after the appview boundary is made explicit.
 
-Why Neon now:
+Why Railway Postgres now:
 
 - The app directory and login app tables are relational read models with dedupe,
   aggregates, review/favorite counts, admin queues, and backfill jobs.
 - Hosted sign-in can create bursty request traffic from many third-party apps.
   Postgres plus pooled connections is a better fit than request-time SQLite
   migrations and raw FTS tables.
-- Neon branching gives us production-like preview/test databases for risky
-  migrations and backfills.
+- Keeping the appview runtime, indexer, jobs, and database in one Railway
+  project gives us private service networking and one operational control plane.
 - The codebase needs a real migration history rather than lazy additive schema
   bootstrapping in `lib/db.ts`.
 
@@ -68,10 +70,57 @@ Why not switch by env var only:
   SQLite-specific upserts, SQLite FTS5, `AUTOINCREMENT`, and request-time schema
   creation. A direct `DATABASE_URL=postgres://...` change would fail or produce
   subtle result-shape bugs.
-- The safe migration is staged: schema parity, DB adapter, dual-write/backfill,
-  diff, read cutover, write cutover, then Turso retirement.
+- The safe migration is staged: schema parity, DB adapter, backfill/copy, smoke
+  tests, read/write cutover, then Turso/Neon variable retirement.
+
+## Railway Postgres Cutover
+
+The generic Postgres runtime uses:
+
+```sh
+ATMOSPHERE_DB_BACKEND=postgres
+POSTGRES_DATABASE_URL=${{Postgres.DATABASE_URL}}
+POSTGRES_SSL_MODE=disable
+```
+
+Inside Railway, `${{Postgres.DATABASE_URL}}` resolves to the private database
+connection string. Local operator scripts may use Railway's public database URL
+temporarily for migration and copy tasks, but that is not the desired permanent
+web runtime shape.
+
+Postgres runtime tasks:
+
+```sh
+# Apply sql/neon/001_initial.sql to a generic Postgres database.
+deno task db:migrate:postgres
+
+# Dry-run Neon -> Railway Postgres copy.
+deno task db:copy:postgres
+
+# Copy rows into Railway Postgres. Use --reset only during an intentional
+# cutover/backfill window.
+deno task db:copy:postgres -- --write --reset
+
+# Exercise route-shaped reads against Railway Postgres.
+ATMOSPHERE_DB_BACKEND=postgres deno task db:smoke -- --backend=postgres
+```
+
+Cutover acceptance checks:
+
+- Railway Postgres contains the copied appview rows.
+- Railway indexer owns a fresh `worker_lease` heartbeat and writes to Railway
+  Postgres.
+- `/apps`, `/hosts`, app detail pages, login app registration, and account
+  surfaces pass route-shaped smoke checks against the Postgres backend.
+- Production web traffic either runs on Railway or calls a Railway appview API.
+  Avoid a permanent Deno Deploy to Railway public database connection.
+- Neon and Turso env vars are removed only after the production web/appview
+  runtime has been verified on Railway Postgres through one release window.
 
 ## Neon Migration Track
+
+This section is retained for historical comparison and rollback experiments.
+Neon is no longer the target primary appview database.
 
 The first Postgres baseline lives at:
 
@@ -79,8 +128,8 @@ The first Postgres baseline lives at:
 sql/neon/001_initial.sql
 ```
 
-Apply it to a new Neon database with a direct connection string, not a pooled
-string:
+Apply it to a Neon database with a direct connection string, not a pooled
+string, only when running a Neon comparison branch:
 
 ```sh
 deno task db:migrate:neon
@@ -113,11 +162,10 @@ deno task db:smoke -- --backend=neon
 
 These tasks require `NEON_DIRECT_DATABASE_URL` or `NEON_DATABASE_URL`.
 
-Runtime backend selection is controlled with `ATMOSPHERE_DB_BACKEND=turso|neon`.
-When unset, the runtime uses Neon if `NEON_DATABASE_URL` or
-`NEON_DIRECT_DATABASE_URL` is present; otherwise it falls back to Turso/libSQL.
-Set `ATMOSPHERE_DB_BACKEND=turso` explicitly when you need to inspect the legacy
-Turso database.
+Runtime backend selection is controlled with
+`ATMOSPHERE_DB_BACKEND=turso|neon|postgres`. In production Railway services, set
+`ATMOSPHERE_DB_BACKEND=postgres`. Set `ATMOSPHERE_DB_BACKEND=turso` explicitly
+when you need to inspect the legacy Turso database.
 
 The Neon migration scripts load `.env` automatically and preserve already
 exported shell variables. This lets an operator keep Turso credentials in `.env`
@@ -126,7 +174,7 @@ reports every Turso table as `0 rows ready`, check that `TURSO_DATABASE_URL` and
 `TURSO_AUTH_TOKEN` are present in `.env` or exported in the shell; the scripts
 now refuse to use the implicit `file:./local.db` fallback for backfill/diff.
 
-Cutover sequence:
+Historical Neon cutover sequence:
 
 1. Provision Neon project in the same broad region as the web and worker
    traffic, likely US East while the worker is in `iad`.
@@ -151,7 +199,7 @@ Cutover sequence:
 8. Flip writes after the login picker and OAuth state tests pass against Neon.
 9. Keep Turso read-only for rollback through one full release window.
 
-Acceptance checks before production cutover:
+Acceptance checks before any Postgres production cutover:
 
 - `/signin`, `https://login.atmosphereaccount.com/login/select`, and
   selection-token verification pass end to end.
@@ -161,7 +209,8 @@ Acceptance checks before production cutover:
   under Postgres.
 - Migration is run explicitly during deploy; request-time migrations are off in
   hosted production.
-- Backups/restore are tested from a Neon branch before the production switch.
+- Backups/restore are tested from a disposable branch or copy before the
+  production switch.
 
 ## Current Architecture Findings
 
@@ -174,7 +223,7 @@ Strengths:
 - Admin backfill and failure tables now exist, which is the right observability
   direction for ATStore ingestion.
 
-Risks to address while moving to Neon:
+Risks to address while operating on Postgres:
 
 - `lib/db.ts` contains schema, migrations, runtime connection logic, and health
   checks in one file. Split schema migrations from runtime clients.

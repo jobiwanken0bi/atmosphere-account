@@ -3,7 +3,7 @@
  * they power Explore profile ratings and can be hidden/removed by admins
  * without changing a user's PDS records.
  */
-import { dbBackend, withDb } from "./db.ts";
+import { isPostgresBackend, withDb } from "./db.ts";
 import { REVIEW_NSID, type ReviewRecord } from "./lexicons.ts";
 
 export const MAX_REVIEW_BODY_LENGTH = 300;
@@ -520,7 +520,7 @@ export async function createReviewReport(input: {
   details?: string | null;
 }): Promise<{ ok: true; id: number } | { ok: false; reason: "duplicate" }> {
   return await withDb(async (c) => {
-    const backend = dbBackend();
+    const postgres = isPostgresBackend();
     if (input.ipHash) {
       const dup = await c.execute({
         sql: `
@@ -544,7 +544,7 @@ export async function createReviewReport(input: {
           review_id, reporter_did, reporter_ip_hash, reason, details,
           status, created_at
         ) VALUES (?, ?, ?, ?, ?, 'open', ?)
-        ${backend === "neon" ? "RETURNING id" : ""}
+        ${postgres ? "RETURNING id" : ""}
       `,
       args: [
         input.reviewId,
@@ -555,7 +555,7 @@ export async function createReviewReport(input: {
         Date.now(),
       ],
     });
-    const id = backend === "neon"
+    const id = postgres
       ? Number(r.rows[0]?.id ?? 0)
       : Number(r.lastInsertRowid ?? 0);
     return { ok: true, id };

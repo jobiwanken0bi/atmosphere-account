@@ -21,8 +21,12 @@ import {
   type DbExecuteClient,
   neonRuntimeDatabaseUrl,
 } from "./neon.ts";
+import {
+  createPostgresExecuteClient,
+  postgresDatabaseUrl,
+} from "./postgres.ts";
 
-export type DatabaseBackend = "turso" | "neon";
+export type DatabaseBackend = "turso" | "neon" | "postgres";
 
 export type DbClient = DbExecuteClient;
 
@@ -55,19 +59,28 @@ function getEnv(key: string): string | undefined {
 export function dbBackend(): DatabaseBackend {
   const raw = getEnv("ATMOSPHERE_DB_BACKEND")?.trim().toLowerCase();
   if (!raw) {
-    return getEnv("NEON_DATABASE_URL") || getEnv("NEON_DIRECT_DATABASE_URL")
+    return getEnv("POSTGRES_DATABASE_URL") || getEnv("DATABASE_URL") ||
+        getEnv("POSTGRES_URL")
+      ? "postgres"
+      : getEnv("NEON_DATABASE_URL") || getEnv("NEON_DIRECT_DATABASE_URL")
       ? "neon"
       : "turso";
   }
   if (raw === "turso" || raw === "libsql" || raw === "sqlite") {
     return "turso";
   }
-  if (raw === "neon" || raw === "postgres" || raw === "postgresql") {
+  if (raw === "neon") {
     return "neon";
   }
+  if (raw === "postgres" || raw === "postgresql") return "postgres";
   throw new Error(
-    `Unsupported ATMOSPHERE_DB_BACKEND=${raw}. Expected "turso" or "neon".`,
+    `Unsupported ATMOSPHERE_DB_BACKEND=${raw}. Expected "turso", "neon", or "postgres".`,
   );
+}
+
+export function isPostgresBackend(): boolean {
+  const backend = dbBackend();
+  return backend === "neon" || backend === "postgres";
 }
 
 /** Hosted runtimes must have an explicit Turso URL. Falling back to a
@@ -102,7 +115,7 @@ function shouldLoadNativeFileClient(url: string): boolean {
 }
 
 function shouldRunRequestMigrations(): boolean {
-  if (dbBackend() === "neon") return false;
+  if (dbBackend() === "neon" || dbBackend() === "postgres") return false;
   const setting = getEnv("ATMOSPHERE_REQUEST_MIGRATIONS");
   if (setting) return /^(1|true|yes)$/i.test(setting);
   return shouldLoadNativeFileClient(resolveDbUrl());
@@ -123,6 +136,12 @@ function getClient(): Promise<DbClient> {
       if (backend === "neon") {
         dbRuntimeState.client = createNeonExecuteClient(
           neonRuntimeDatabaseUrl(),
+        );
+        return dbRuntimeState.client;
+      }
+      if (backend === "postgres") {
+        dbRuntimeState.client = createPostgresExecuteClient(
+          postgresDatabaseUrl(),
         );
         return dbRuntimeState.client;
       }
@@ -1156,9 +1175,9 @@ async function applyAdditiveMigrations(
 }
 
 export function migrate(): Promise<void> {
-  if (dbBackend() === "neon") {
+  if (dbBackend() === "neon" || dbBackend() === "postgres") {
     throw new Error(
-      "SQLite request migrations cannot run against Neon. Use `deno task db:migrate:neon` before running with ATMOSPHERE_DB_BACKEND=neon.",
+      "SQLite request migrations cannot run against Postgres. Use `deno task db:migrate:postgres` before running with ATMOSPHERE_DB_BACKEND=postgres.",
     );
   }
   if (dbRuntimeState.migrated) return Promise.resolve();
@@ -1190,7 +1209,7 @@ export async function checkDbHealth(): Promise<
   {
     ok: true;
     latencyMs: number;
-    databaseKind: "file" | "remote" | "neon";
+    databaseKind: "file" | "remote" | "neon" | "postgres";
     backend: DatabaseBackend;
   }
 > {
@@ -1203,6 +1222,8 @@ export async function checkDbHealth(): Promise<
     latencyMs: Math.max(0, Math.round(performance.now() - started)),
     databaseKind: dbBackend() === "neon"
       ? "neon"
+      : dbBackend() === "postgres"
+      ? "postgres"
       : resolveDbUrl().startsWith("file:")
       ? "file"
       : "remote",

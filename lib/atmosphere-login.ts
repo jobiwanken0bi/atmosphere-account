@@ -1,4 +1,4 @@
-import { dbBackend, withDb } from "./db.ts";
+import { isPostgresBackend, withDb } from "./db.ts";
 import {
   b64uDecode,
   loadClientPrivateKey,
@@ -379,7 +379,7 @@ export async function listLoginAppsForOwner(
   ownerDid: string,
 ): Promise<LoginApp[]> {
   return await withDb(async (c) => {
-    const appNameOrder = dbBackend() === "neon"
+    const appNameOrder = isPostgresBackend()
       ? "lower(app_name)"
       : "app_name COLLATE NOCASE";
     const result = await c.execute({

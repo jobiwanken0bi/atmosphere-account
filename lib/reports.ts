@@ -8,7 +8,7 @@
  * raw address. Authenticated reports additionally record the
  * reporter's DID.
  */
-import { dbBackend, withDb } from "./db.ts";
+import { isPostgresBackend, withDb } from "./db.ts";
 import { reportIpSecret } from "./env.ts";
 
 export const REPORT_REASONS = [
@@ -110,7 +110,7 @@ export async function createReport(
   input: CreateReportInput,
 ): Promise<CreateReportResult> {
   return await withDb(async (c) => {
-    const backend = dbBackend();
+    const postgres = isPostgresBackend();
     if (input.ipHash) {
       const since = Date.now() - DEDUP_WINDOW_MS;
       const dup = await c.execute({
@@ -131,7 +131,7 @@ export async function createReport(
           target_did, reporter_did, reporter_ip_hash, reason, details,
           status, created_at
         ) VALUES (?, ?, ?, ?, ?, 'open', ?)
-        ${backend === "neon" ? "RETURNING id" : ""}
+        ${postgres ? "RETURNING id" : ""}
       `,
       args: [
         input.targetDid,
@@ -142,7 +142,7 @@ export async function createReport(
         Date.now(),
       ],
     });
-    const id = backend === "neon"
+    const id = postgres
       ? Number(r.rows[0]?.id ?? 0)
       : Number(r.lastInsertRowid ?? 0);
     return { ok: true, id };

@@ -74,6 +74,9 @@ await setVars("web", [
   "DENO_ENV=production",
   "FRESH_PUBLIC_SITE_URL=https://atmosphereaccount.com",
   "FRESH_PUBLIC_LOGIN_URL=https://login.atmosphereaccount.com",
+  "ATMOSPHERE_DB_BACKEND=postgres",
+  "POSTGRES_DATABASE_URL=${{Postgres.DATABASE_URL}}",
+  "POSTGRES_SSL_MODE=disable",
   "JETSTREAM_URL=wss://jetstream2.us-east.bsky.network/subscribe",
   "ATPROTO_FETCH_TIMEOUT_MS=10000",
   "COMMUNITY_APP_LEXICON_ENABLED=false",
@@ -94,6 +97,9 @@ await setVars("web", [
 
 await setVars("indexer", [
   "DENO_ENV=production",
+  "ATMOSPHERE_DB_BACKEND=postgres",
+  "POSTGRES_DATABASE_URL=${{Postgres.DATABASE_URL}}",
+  "POSTGRES_SSL_MODE=disable",
   "JETSTREAM_URL=wss://jetstream2.us-east.bsky.network/subscribe",
   "ATPROTO_FETCH_TIMEOUT_MS=10000",
   "COMMUNITY_APP_LEXICON_ENABLED=false",

@@ -1,4 +1,4 @@
-import { dbBackend, withDb } from "./db.ts";
+import { isPostgresBackend, withDb } from "./db.ts";
 
 export interface DatabaseMaintenanceResult {
   expiredOauthStates: number;
@@ -42,7 +42,7 @@ export async function runDatabaseMaintenance(
     );
 
     let optimized = false;
-    if (dbBackend() !== "neon") {
+    if (!isPostgresBackend()) {
       try {
         await c.execute("PRAGMA optimize");
         optimized = true;

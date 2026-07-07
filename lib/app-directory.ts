@@ -1,5 +1,5 @@
 import type { InValue } from "@libsql/client";
-import { dbBackend, withDb } from "./db.ts";
+import { isPostgresBackend, withDb } from "./db.ts";
 import {
   type AppDirectoryLink,
   type AppFavoriteDraft,
@@ -1458,7 +1458,7 @@ function appWhere(query?: string, tags?: string | string[]) {
   const args: InValue[] = [];
   if (query?.trim()) {
     const raw = query.trim();
-    if (dbBackend() === "neon") {
+    if (isPostgresBackend()) {
       where.push(
         `(l.search_vector @@ plainto_tsquery('simple', ?) OR l.slug ILIKE ? OR l.name ILIKE ?)`,
       );
@@ -1478,7 +1478,7 @@ function appWhere(query?: string, tags?: string | string[]) {
   );
   if (aliases.length > 0) {
     const placeholders = aliases.map(() => "?").join(",");
-    const tagClause = dbBackend() === "neon"
+    const tagClause = isPostgresBackend()
       ? `(
         EXISTS (
           SELECT 1
@@ -1514,7 +1514,7 @@ function orderForSort(sort: AppDirectorySort) {
 }
 
 function caseInsensitiveOrder(column: string): string {
-  return dbBackend() === "neon"
+  return isPostgresBackend()
     ? `lower(${column}) ASC`
     : `${column} COLLATE NOCASE ASC`;
 }

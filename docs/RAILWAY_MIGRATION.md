@@ -1,51 +1,66 @@
-# Railway Worker Migration
+# Railway Appview Migration
 
-Atmosphere Account now has a Railway project for the always-on Jetstream
-indexer. The public web app can continue to run on Deno Deploy while Railway
-owns the worker/appview indexing process.
+Atmosphere Account now has a Railway project for the always-on Jetstream indexer
+and Railway Postgres appview database. The public web/client layer can continue
+to run on Deno Deploy after the appview boundary is explicit, but any DB-backed
+runtime should run on Railway or call a Railway appview API.
 
 - Project: `Atmosphere Account`
 - Project ID: `f6fc622b-1fff-469e-9bb2-42210ac4a70c`
 - Environment: `production`
 - Services:
+  - `web` / appview runtime (`dd06ab3e-e2d0-4b53-b4a5-124794ec9b83`)
   - `indexer` (`6899add1-fe1b-4e40-a720-8e5f9bf88349`)
+  - `Postgres` (`da15565c-bcbd-4c6e-8ab2-356fc8f7566c`)
 
 Repo-side deployment files:
 
 - `railway.indexer.Dockerfile` runs the Jetstream indexer.
+- `railway.web.Dockerfile` runs the Fresh/Deno web/appview server when the
+  server-side runtime is deployed on Railway.
 
 ## Current State
 
 Completed:
 
 - Created the Railway project.
-- Created separate `web` and `indexer` services during migration.
+- Created separate `web`, `indexer`, and `Postgres` services during migration.
 - Added Railway Dockerfiles for both deploy targets.
 - Added `deno task railway:seed-secrets` for the operator to copy local `.env`
   secrets to Railway from their own terminal.
 - Imported production variables with `deno task railway:seed-secrets`.
-- Deployed `web` and `indexer` successfully to Railway during migration.
-- Verified `/api/health`, `/api/health/ready`, and the indexer worker lease
-  before deleting the standby web service.
+- Applied the Postgres schema to Railway Postgres with
+  `deno task db:migrate:postgres`.
+- Copied appview data into Railway Postgres with `deno task db:copy:postgres`.
+- Deployed `indexer` successfully to Railway against Railway Postgres.
+- Verified the indexer worker lease heartbeat in Railway Postgres.
 - Added Railway custom domains for `atmosphereaccount.com` and
   `www.atmosphereaccount.com`, but do not point DNS at Railway unless we
   intentionally move the public web app from Deno Deploy to Railway.
-- Deleted the unused Railway `web` service after confirming Deno Deploy remains
-  the production web host.
+- Recreated the Railway `web` service as a Postgres-backed appview/web runtime
+  for verification.
 - Stopped the old Fly indexer by scaling the `worker` process group to zero.
 - Seeded non-secret production variables:
   - `DENO_ENV`
   - `FRESH_PUBLIC_SITE_URL`
+  - `FRESH_PUBLIC_LOGIN_URL`
+  - `ATMOSPHERE_DB_BACKEND=postgres`
+  - `POSTGRES_DATABASE_URL=${{Postgres.DATABASE_URL}}`
+  - `POSTGRES_SSL_MODE=disable`
   - `JETSTREAM_URL`
   - `ATPROTO_FETCH_TIMEOUT_MS`
   - `COMMUNITY_APP_LEXICON_ENABLED`
 
 Remaining cutover work:
 
-- Keep production DNS on Deno Deploy unless we intentionally cut the public web
-  app over to Railway later.
-- Continue the separate Turso to Neon migration track in
-  [INFRASTRUCTURE.md](./INFRASTRUCTURE.md).
+- Decide the public web boundary:
+  - short-term simple path: run the DB-backed web/appview service on Railway.
+  - longer-term split path: keep Deno Deploy for the client/docs/picker shell
+    and have it call a Railway appview API.
+- Keep production DNS on Deno Deploy unless we intentionally cut public web
+  traffic to Railway.
+- Remove Neon and Turso runtime variables only after the production appview
+  runtime is verified against Railway Postgres through a release window.
 
 Codex cannot upload local `.env` secrets to Railway directly in this
 environment, even with operator approval. Run this locally from the repo root
@@ -57,21 +72,26 @@ deno task railway:seed-secrets
 
 ## Required Secret Variables
 
-Set these on `indexer`:
+Set these on `web` and `indexer`:
 
-- `TURSO_DATABASE_URL`
-- `TURSO_AUTH_TOKEN`
+- `ATMOSPHERE_DB_BACKEND=postgres`
+- `POSTGRES_DATABASE_URL=${{Postgres.DATABASE_URL}}`
+- `POSTGRES_SSL_MODE=disable`
 - `ATMOSPHERE_DID`
 - `ATSTORE_REPO_DID` if configured
 - `ATSTORE_SOCIAL_REPO_DIDS` if configured
+
+Keep `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` only for rollback or legacy
+inspection while the cutover is fresh.
 
 Do not copy local loopback values such as
 `FRESH_PUBLIC_SITE_URL=http://127.0.0.1:5174` to production.
 
 ## Service Build Settings
 
-The `indexer` service should use Dockerfile builds:
+Services should use Dockerfile builds:
 
+- `web`: `railway.web.Dockerfile`
 - `indexer`: `railway.indexer.Dockerfile`
 
 If the Railway CLI readback still reports `RAILPACK`, set these in the Railway
@@ -92,6 +112,9 @@ wasted Jetstream/PDS/DB traffic.
 After secrets and Dockerfile settings are in place:
 
 ```sh
+railway up --service web --environment production --detach \
+  -m "Deploy Atmosphere Account web/appview"
+
 railway up --service indexer --environment production --detach \
   -m "Deploy Atmosphere Account indexer"
 ```
@@ -99,29 +122,32 @@ railway up --service indexer --environment production --detach \
 Verify:
 
 ```sh
+railway logs --service web --environment production --lines 200 --json
 railway logs --service indexer --environment production --lines 200 --json
 ```
 
 Health checks:
 
-- Indexer health: check `GET https://atmosphereaccount.com/api/health/ready` for
-  a fresh worker lease.
+- Web/appview health: check the Railway service domain or production domain for
+  `GET /api/health` and `GET /api/health/ready`.
+- Indexer health: check `GET /api/health/ready` for a fresh worker lease and
+  verify `worker_lease` in Railway Postgres.
 
 ## Worker Cutover
 
 1. Deploy `indexer` and confirm the worker lease heartbeat is fresh.
 2. Stop the Fly indexer only after Railway has owned the lease for at least one
    full lease window.
-3. Leave production DNS on Deno Deploy unless we intentionally move the public
-   web app to Railway.
+3. Verify the web/appview runtime against Railway Postgres before changing any
+   production DNS.
 4. Keep Fly config in the repo until the Railway worker has survived at least
    one production release.
 
 ### Optional Railway Web DNS
 
-Railway briefly had custom domains registered for the optional web service.
-Those are not required for the worker migration. Do not change Porkbun DNS while
-Deno Deploy remains the public web host.
+Railway previously had custom domains registered for the optional web service.
+Those are not required for the appview database/indexer migration. Do not change
+Porkbun DNS while Deno Deploy remains the public web host.
 
 If we later decide to move the public web app from Deno Deploy to Railway, set:
 
