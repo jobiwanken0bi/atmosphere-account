@@ -1,5 +1,8 @@
 import {
   type AccountHost,
+  type AccountHostClaim,
+  getAccountHost,
+  getAccountHostClaim,
   hydrateAccountHostProfiles,
   listAccountHosts,
   listSeededAccountHostFallback,
@@ -18,6 +21,11 @@ const APPVIEW_FETCH_TIMEOUT_MS = Math.max(
   1000,
   Number(Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS") ?? "5000") || 5000,
 );
+
+export interface PublicHostDetail {
+  host: AccountHost | null;
+  claim: AccountHostClaim | null;
+}
 
 export function appviewBaseUrl(): string | null {
   return APPVIEW_BASE_URL ? APPVIEW_BASE_URL.replace(/\/+$/, "") : null;
@@ -83,6 +91,19 @@ export async function listHostsFromAppview(input: {
   return await listPublicAccountHosts(input);
 }
 
+export async function getHostDetailFromAppview(
+  host: string,
+): Promise<PublicHostDetail> {
+  const remote = appviewBaseUrl();
+  if (remote) {
+    return await fetchAppviewJson<PublicHostDetail>(
+      remote,
+      `/api/appview/hosts/${encodeURIComponent(host)}`,
+    );
+  }
+  return await getPublicHostDetail(host);
+}
+
 export async function proxyAppviewResponse(
   pathWithSearch: string,
   currentUrl?: URL,
@@ -125,6 +146,22 @@ export async function listPublicAccountHosts(input: {
     );
   }
   return visibleHosts;
+}
+
+export async function getPublicHostDetail(
+  hostId: string,
+): Promise<PublicHostDetail> {
+  let host = await getAccountHost(hostId).catch(() => null);
+  if (host) {
+    host = (await hydrateAccountHostProfiles([host]).catch((err) => {
+      console.warn("[appview] hydrate host profile failed:", err);
+      return [host as AccountHost];
+    }))[0] ?? host;
+  }
+  const claim = host
+    ? await getAccountHostClaim(host.host).catch(() => null)
+    : null;
+  return { host, claim };
 }
 
 async function fetchAppviewJson<T>(

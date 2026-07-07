@@ -9,11 +9,9 @@ import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHost,
   type AccountHostClaim,
-  getAccountHost,
-  getAccountHostClaim,
   type HostVerificationStatus,
-  hydrateAccountHostProfiles,
 } from "../../lib/account-hosts.ts";
+import { getHostDetailFromAppview } from "../../lib/appview-client.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
 import { buildHostAccountRoute } from "../../lib/host-account-routing.ts";
 import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
@@ -21,16 +19,12 @@ import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
 export const handler = define.handlers({
   async GET(ctx) {
     const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
-    let host = await getAccountHost(hostId).catch(() => null);
-    if (host) {
-      host = (await hydrateAccountHostProfiles([host]).catch((err) => {
-        console.warn("[host] hydrate profile avatar failed:", err);
-        return [host as AccountHost];
-      }))[0] ?? host;
-    }
-    const claim = host
-      ? await getAccountHostClaim(host.host).catch(() => null)
-      : null;
+    const { host, claim } = await getHostDetailFromAppview(hostId).catch(
+      (err) => {
+        console.warn("[host] appview host detail failed:", err);
+        return { host: null, claim: null };
+      },
+    );
     if (host) {
       const friendly = hostFriendlyProfile(host);
       ctx.state.pageMeta = {
