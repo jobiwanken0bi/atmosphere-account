@@ -5962,13 +5962,11 @@ body {
 .atmosphere-handle-icon {
   display: inline-block;
   flex: 0 0 auto;
-  width: 0.74em;
-  height: 0.74em;
-  width: 1cap;
-  height: 1cap;
+  width: 0.72em;
+  height: 0.72em;
   background-color: currentColor;
   opacity: 1;
-  transform: translateY(0.04em);
+  transform: translateY(0.03em);
   -webkit-mask: url("/union.svg") center / contain no-repeat;
   mask: url("/union.svg") center / contain no-repeat;
 }
@@ -9509,10 +9507,12 @@ body {
 
 .login-picker-page {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
-.login-picker-section {
+.signin-page-section.login-picker-section {
   min-height: 100vh;
+  min-height: 100dvh;
   padding: clamp(2rem, 7vw, 4.5rem) 0;
 }
 
@@ -9544,8 +9544,14 @@ body {
   gap: 1rem;
 }
 
+.signin-page-card.login-picker-card {
+  margin-top: 0;
+  padding: clamp(1.15rem, 3vw, 1.75rem);
+}
+
 .login-picker-app {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.9rem;
   padding: 0.95rem;
@@ -9563,6 +9569,7 @@ body {
   color: #0e1428;
   font-size: 1.18rem;
   line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .login-picker-app p {
@@ -9619,7 +9626,7 @@ body {
 }
 
 .login-picker-status {
-  margin-left: auto;
+  justify-self: end;
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 0.22rem 0.55rem;
@@ -9692,10 +9699,12 @@ body {
 }
 
 .login-picker-account-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   width: 100%;
   align-items: center;
   gap: 0.85rem;
+  min-height: 4.45rem;
   border: 0;
   border-top: 1px solid rgba(18, 26, 47, 0.07);
   padding: 0.9rem 1rem;
@@ -9749,8 +9758,99 @@ body {
   text-transform: uppercase;
 }
 
+@media (max-width: 560px) {
+  .signin-page-section.login-picker-section {
+    padding: max(1rem, env(safe-area-inset-top)) 0
+      max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .login-picker-container {
+    padding: 0 0.85rem;
+  }
+
+  .login-picker-title {
+    gap: 0.55rem;
+    margin-bottom: 0.8rem;
+    font-size: clamp(1.55rem, 8vw, 2.1rem);
+    line-height: 1.05;
+  }
+
+  .login-picker-title img {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .signin-page-card.login-picker-card {
+    padding: 1rem;
+    border-radius: 22px;
+  }
+
+  .login-picker-app {
+    grid-template-columns: 2.65rem minmax(0, 1fr);
+    gap: 0.72rem;
+    padding: 0.82rem;
+    border-radius: 18px;
+  }
+
+  .login-picker-app-mark {
+    width: 2.65rem;
+    height: 2.65rem;
+  }
+
+  .login-picker-status {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: -0.18rem;
+  }
+
+  .login-picker-notice {
+    padding: 0.75rem 0.8rem;
+    border-radius: 16px;
+    font-size: 0.86rem;
+  }
+
+  .login-picker-account-row {
+    gap: 0.68rem;
+    min-height: 4.25rem;
+    padding: 0.8rem;
+  }
+
+  .login-picker-avatar {
+    width: 2.45rem;
+    height: 2.45rem;
+  }
+
+  .login-picker-account-copy strong {
+    font-size: 0.94rem;
+  }
+
+  .login-picker-account-copy span {
+    line-height: 1.35;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 420px) {
+  .login-picker-card {
+    gap: 0.8rem;
+  }
+
+  .login-picker-account-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .login-picker-account-action {
+    display: none;
+  }
+
+  .login-picker-account-copy > span {
+    display: none;
+  }
+}
+
 .login-picker-secondary {
   width: 100%;
+  min-height: 2.75rem;
   justify-content: center;
 }
 
