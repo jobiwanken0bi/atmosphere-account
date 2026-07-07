@@ -266,6 +266,7 @@ function appviewRequestHeaders(
 
 function proxiedHeaders(source: Headers, remote: string): Headers {
   const headers = new Headers(source);
+  headers.set("x-atmosphere-appview-proxy", remote);
   headers.set("x-atmosphere-appview-page-proxy", remote);
   headers.delete("content-length");
   return headers;
