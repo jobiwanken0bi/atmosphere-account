@@ -1,4 +1,5 @@
 import { define } from "../../../utils.ts";
+import { appviewBaseUrl } from "../../../lib/appview-client.ts";
 import { checkDbHealth } from "../../../lib/db.ts";
 import { IS_DEV } from "../../../lib/env.ts";
 import { getWorkerLeaseStatus } from "../../../lib/worker-lease.ts";
@@ -8,6 +9,10 @@ const INDEXER_LEASE = "jetstream-indexer";
 export const handler = define.handlers({
   async GET(): Promise<Response> {
     try {
+      const appview = appviewBaseUrl();
+      if (appview) {
+        return await appviewReadiness(appview);
+      }
       const [database, indexer] = await Promise.all([
         checkDbHealth(),
         getWorkerLeaseStatus(INDEXER_LEASE).catch(() => null),
@@ -41,6 +46,30 @@ export const handler = define.handlers({
     }
   },
 });
+
+async function appviewReadiness(appview: string): Promise<Response> {
+  const url = new URL("/api/health/ready", appview);
+  const res = await fetch(url, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(5000),
+  });
+  const body = await res.json().catch(() => ({
+    ok: false,
+    error: "invalid_appview_readiness_response",
+  })) as Record<string, unknown>;
+  return json(
+    {
+      ...body,
+      service: "atmosphere-account-web-shell",
+      appview: {
+        ok: res.ok && body.ok === true,
+        url: appview,
+      },
+      timestamp: new Date().toISOString(),
+    },
+    { status: res.ok ? 200 : 503 },
+  );
+}
 
 function json(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {

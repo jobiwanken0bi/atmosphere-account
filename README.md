@@ -49,9 +49,10 @@ gets `node_modules` before Vite runs. `start` serves from `_fresh/server.js`.
 5. **Run command:** `deno task start` (or `deno serve -A _fresh/server.js` per
    `deno.json`).
 
-The public Deno Deploy app can host static/docs/client surfaces, but any
-DB-backed appview runtime should run on Railway or call a Railway appview API so
-Postgres traffic stays on Railway private networking.
+The public Deno Deploy app should remain the main website and login picker. Set
+`ATMOSPHERE_APPVIEW_URL` on Deno Deploy when it should read public appview data
+from Railway's appview API. Do not set a Railway Postgres database URL on Deno
+Deploy as the permanent architecture.
 
 If production is still on Deploy Classic (`dash.deno.com` / `alias.deno.net`),
 migrate it to the new Deno Deploy platform before the Classic shutdown. See

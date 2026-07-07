@@ -112,10 +112,30 @@ Cutover acceptance checks:
   Postgres.
 - `/apps`, `/hosts`, app detail pages, login app registration, and account
   surfaces pass route-shaped smoke checks against the Postgres backend.
-- Production web traffic either runs on Railway or calls a Railway appview API.
+- Production web traffic stays on Deno Deploy and calls a Railway appview API.
   Avoid a permanent Deno Deploy to Railway public database connection.
 - Neon and Turso env vars are removed only after the production web/appview
   runtime has been verified on Railway Postgres through one release window.
+
+## Deno Web Shell + Railway Appview Mode
+
+Set this on Deno Deploy when keeping Deno as the public web shell:
+
+```sh
+ATMOSPHERE_APPVIEW_URL=https://web-production-001c9.up.railway.app
+APPVIEW_FETCH_TIMEOUT_MS=5000
+```
+
+With this set, public app/host list pages read from Railway appview JSON
+endpoints instead of querying a local Deno-side database. `/api/health/ready`
+also proxies Railway appview readiness so production health reflects the
+Postgres-backed appview and fresh indexer lease.
+
+Railway's HTTP service is the appview/API service, even if the Railway UI still
+labels it `web`. Deno remains the public website, docs, static SDK, and hosted
+picker. Detail pages and authenticated write flows should be moved behind the
+appview API in later slices before Neon and Turso variables are fully removed
+from the Deno app.
 
 ## Neon Migration Track
 

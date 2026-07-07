@@ -53,12 +53,14 @@ Completed:
 
 Remaining cutover work:
 
-- Decide the public web boundary:
-  - short-term simple path: run the DB-backed web/appview service on Railway.
-  - longer-term split path: keep Deno Deploy for the client/docs/picker shell
-    and have it call a Railway appview API.
-- Keep production DNS on Deno Deploy unless we intentionally cut public web
-  traffic to Railway.
+- Keep the public website, docs, static SDK, and hosted picker on Deno Deploy.
+- Treat Railway's HTTP service as the appview/API service, not the public web
+  app. Renaming the Railway service from `web` to `appview` is recommended once
+  the current release is stable.
+- Set `ATMOSPHERE_APPVIEW_URL` on Deno Deploy to the Railway appview service URL
+  after the Railway service is verified.
+- Keep production DNS on Deno Deploy unless we intentionally decide to leave the
+  Deno architecture later.
 - Remove Neon and Turso runtime variables only after the production appview
   runtime is verified against Railway Postgres through a release window.
 

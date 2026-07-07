@@ -8,8 +8,8 @@ import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AppDirectorySort,
   type AppSearchResult,
-  searchAppDirectory,
 } from "../../lib/app-directory.ts";
+import { searchAppsFromAppview } from "../../lib/appview-client.ts";
 import { appCollectionLabel } from "../../lib/app-collections.ts";
 
 interface BrowseAppsData {
@@ -31,13 +31,11 @@ export const handler = define.handlers({
     const query = url.searchParams.get("q")?.trim() ?? "";
     const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
 
-    const result = await searchAppDirectory({
+    const result = await searchAppsFromAppview({
       query: query || undefined,
       tag: tags.length > 0 ? tags : undefined,
       sort,
       page,
-      includeSections: false,
-      syncLegacy: false,
     }).catch(() => ({
       apps: [],
       featured: [],

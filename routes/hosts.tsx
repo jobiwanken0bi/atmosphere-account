@@ -4,33 +4,16 @@ import Footer from "../components/Footer.tsx";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import HostMark from "../components/hosts/HostMark.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
-import {
-  type AccountHost,
-  hydrateAccountHostProfiles,
-  listAccountHosts,
-  listSeededAccountHostFallback,
-} from "../lib/account-hosts.ts";
+import type { AccountHost } from "../lib/account-hosts.ts";
+import { listHostsFromAppview } from "../lib/appview-client.ts";
 import { hostFriendlyProfile } from "../lib/host-friendly.ts";
 
 export default define.page(async function HostsPage(ctx) {
   const query = ctx.url.searchParams.get("q")?.trim() ?? "";
-  const hosts = await listAccountHosts({
-    query,
-  }).catch((err) => {
-    console.warn("[hosts] list account hosts failed:", err);
-    return listSeededAccountHostFallback({ query });
+  const visibleHosts = await listHostsFromAppview({ query }).catch((err) => {
+    console.warn("[hosts] appview host list failed:", err);
+    return [];
   });
-  let visibleHosts = hosts.length === 0 && !query
-    ? listSeededAccountHostFallback()
-    : hosts;
-  if (visibleHosts.length > 0) {
-    visibleHosts = await hydrateAccountHostProfiles(visibleHosts).catch(
-      (err) => {
-        console.warn("[hosts] hydrate profile avatars failed:", err);
-        return visibleHosts;
-      },
-    );
-  }
   return (
     <div id="page-top">
       <div class="content-layer">

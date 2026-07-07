@@ -8,10 +8,8 @@ import {
   AppSpotlight,
 } from "../components/explore/AppDirectoryShowcase.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
-import {
-  type AppSearchResult,
-  searchAppDirectory,
-} from "../lib/app-directory.ts";
+import type { AppSearchResult } from "../lib/app-directory.ts";
+import { loadAppsHomeFromAppview } from "../lib/appview-client.ts";
 
 interface ExploreData {
   result: AppSearchResult;
@@ -71,12 +69,7 @@ async function loadAppsHomeResult(): Promise<AppSearchResult> {
 
 function refreshAppsHomeCache(): Promise<AppSearchResult> {
   if (appsHomeCache?.refreshPromise) return appsHomeCache.refreshPromise;
-  const refreshPromise = searchAppDirectory({
-    includeSections: true,
-    includeApps: false,
-    includeTotal: false,
-    syncLegacy: false,
-  })
+  const refreshPromise = loadAppsHomeFromAppview()
     .then((result) => {
       appsHomeCache = { result, refreshedAt: Date.now() };
       return result;
