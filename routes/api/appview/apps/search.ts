@@ -3,9 +3,15 @@ import {
   type AppDirectorySort,
   searchAppDirectory,
 } from "../../../../lib/app-directory.ts";
+import { proxyAppviewResponse } from "../../../../lib/appview-client.ts";
 
 export const handler = define.handlers({
   async GET(ctx): Promise<Response> {
+    const proxied = await proxyAppviewResponse(
+      `${ctx.url.pathname}${ctx.url.search}`,
+      ctx.url,
+    );
+    if (proxied) return proxied;
     const url = ctx.url;
     const query = url.searchParams.get("q")?.trim() || undefined;
     const tag = readTags(url.searchParams);

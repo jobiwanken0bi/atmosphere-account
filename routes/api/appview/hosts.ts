@@ -1,8 +1,16 @@
 import { define } from "../../../utils.ts";
-import { listPublicAccountHosts } from "../../../lib/appview-client.ts";
+import {
+  listPublicAccountHosts,
+  proxyAppviewResponse,
+} from "../../../lib/appview-client.ts";
 
 export const handler = define.handlers({
   async GET(ctx): Promise<Response> {
+    const proxied = await proxyAppviewResponse(
+      `${ctx.url.pathname}${ctx.url.search}`,
+      ctx.url,
+    );
+    if (proxied) return proxied;
     const query = ctx.url.searchParams.get("q")?.trim() ?? "";
     const hosts = await listPublicAccountHosts({ query });
     return json(hosts, {

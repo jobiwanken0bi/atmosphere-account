@@ -83,6 +83,28 @@ export async function listHostsFromAppview(input: {
   return await listPublicAccountHosts(input);
 }
 
+export async function proxyAppviewResponse(
+  pathWithSearch: string,
+  currentUrl?: URL,
+): Promise<Response | null> {
+  const remote = appviewBaseUrl();
+  if (!remote) return null;
+  const url = new URL(pathWithSearch, remote);
+  if (currentUrl && url.origin === currentUrl.origin) return null;
+  const res = await fetch(url, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
+  });
+  const headers = new Headers(res.headers);
+  headers.set("x-atmosphere-appview-proxy", remote);
+  headers.delete("content-length");
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
 export async function listPublicAccountHosts(input: {
   query?: string;
 } = {}): Promise<AccountHost[]> {

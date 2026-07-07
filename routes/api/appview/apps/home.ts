@@ -1,8 +1,11 @@
 import { define } from "../../../../utils.ts";
 import { searchAppDirectory } from "../../../../lib/app-directory.ts";
+import { proxyAppviewResponse } from "../../../../lib/appview-client.ts";
 
 export const handler = define.handlers({
-  async GET(): Promise<Response> {
+  async GET(ctx): Promise<Response> {
+    const proxied = await proxyAppviewResponse(ctx.url.pathname, ctx.url);
+    if (proxied) return proxied;
     const result = await searchAppDirectory({
       includeSections: true,
       includeApps: false,
