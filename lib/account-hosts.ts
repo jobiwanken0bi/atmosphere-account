@@ -1554,27 +1554,41 @@ export async function observeAccountHost(
       const serviceEndpoint = normalizePublicServiceEndpoint(pdsUrl) ??
         seed.serviceEndpoint ?? null;
       const accountManagementUrl = seed.accountManagementUrl ?? null;
-      await c.execute({
-        sql: `UPDATE account_host
+      if (accountManagementUrl) {
+        await c.execute({
+          sql: `UPDATE account_host
             SET service_endpoint = COALESCE(service_endpoint, ?),
-                account_management_url = CASE
-                  WHEN ? IS NOT NULL THEN ?
-                  ELSE account_management_url
-                END,
+                account_management_url = ?,
                 service_observed_at = COALESCE(service_observed_at, ?),
                 last_observed_at = ?,
                 updated_at = ?
             WHERE host = ?`,
-        args: [
-          serviceEndpoint,
-          accountManagementUrl,
-          accountManagementUrl,
-          serviceEndpoint ? ts : null,
-          ts,
-          ts,
-          seed.host,
-        ],
-      });
+          args: [
+            serviceEndpoint,
+            accountManagementUrl,
+            serviceEndpoint ? ts : null,
+            ts,
+            ts,
+            seed.host,
+          ],
+        });
+      } else {
+        await c.execute({
+          sql: `UPDATE account_host
+            SET service_endpoint = COALESCE(service_endpoint, ?),
+                service_observed_at = COALESCE(service_observed_at, ?),
+                last_observed_at = ?,
+                updated_at = ?
+            WHERE host = ?`,
+          args: [
+            serviceEndpoint,
+            serviceEndpoint ? ts : null,
+            ts,
+            ts,
+            seed.host,
+          ],
+        });
+      }
       return;
     }
     const origin = normalizeEndpoint(pdsUrl)?.origin ?? `https://${host}`;

@@ -184,13 +184,30 @@ async function updateAccountHostDiscoveryStats(
   },
 ): Promise<void> {
   const ts = now();
+  if (input.lastIndexedAccountAt == null) {
+    await c.execute({
+      sql: `UPDATE account_host
+        SET observed_account_count = ?,
+            observed_active_account_count = ?,
+            last_indexed_account_at = NULL,
+            updated_at = ?
+        WHERE host = ?`,
+      args: [
+        input.observedAccountCount,
+        input.observedActiveAccountCount,
+        ts,
+        input.accountHost,
+      ],
+    });
+    return;
+  }
+
   await c.execute({
     sql: `UPDATE account_host
       SET observed_account_count = ?,
           observed_active_account_count = ?,
           last_indexed_account_at = ?,
           last_observed_at = CASE
-            WHEN ? IS NULL THEN last_observed_at
             WHEN last_observed_at IS NULL OR last_observed_at < ? THEN ?
             ELSE last_observed_at
           END,
@@ -199,7 +216,6 @@ async function updateAccountHostDiscoveryStats(
     args: [
       input.observedAccountCount,
       input.observedActiveAccountCount,
-      input.lastIndexedAccountAt,
       input.lastIndexedAccountAt,
       input.lastIndexedAccountAt,
       input.lastIndexedAccountAt,
