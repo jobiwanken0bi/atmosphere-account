@@ -70,6 +70,7 @@ import {
   appDisplayTaxonomy,
   appPrimaryCollection,
 } from "../../lib/app-display.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle, resolveIdentity } from "../../lib/identity.ts";
 
@@ -82,6 +83,14 @@ const didHandleCache = new Map<
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => {
+        console.warn("[apps] appview page proxy failed:", err);
+        return null;
+      },
+    );
+    if (proxied) return proxied;
+
     const handle = decodeURIComponent(ctx.params.handle).toLowerCase();
     const user = ctx.state.user;
     const appReviewSort = readAppReviewSort(

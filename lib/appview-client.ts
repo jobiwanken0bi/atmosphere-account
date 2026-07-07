@@ -126,6 +126,44 @@ export async function proxyAppviewResponse(
   });
 }
 
+export async function proxyAppviewPageResponse(
+  currentUrl: URL,
+  request: Request,
+): Promise<Response | null> {
+  const remote = appviewBaseUrl();
+  if (!remote) return null;
+  const url = new URL(`${currentUrl.pathname}${currentUrl.search}`, remote);
+  if (url.origin === currentUrl.origin) return null;
+
+  const res = await fetch(url, {
+    headers: appviewPageHeaders(request.headers, currentUrl),
+    redirect: "manual",
+    signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
+  });
+  const headers = proxiedHeaders(res.headers, remote);
+
+  const location = headers.get("location");
+  if (location) {
+    headers.set("location", rewriteAppviewUrl(location, remote, currentUrl));
+  }
+
+  const contentType = headers.get("content-type") ?? "";
+  if (!contentType.includes("text/html")) {
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
+  }
+
+  const body = rewriteAppviewHtml(await res.text(), remote, currentUrl);
+  return new Response(body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
 export async function listPublicAccountHosts(input: {
   query?: string;
 } = {}): Promise<AccountHost[]> {
@@ -162,6 +200,59 @@ export async function getPublicHostDetail(
     ? await getAccountHostClaim(host.host).catch(() => null)
     : null;
   return { host, claim };
+}
+
+function appviewPageHeaders(
+  requestHeaders: Headers,
+  currentUrl: URL,
+): Headers {
+  const headers = new Headers();
+  for (
+    const name of [
+      "accept",
+      "accept-language",
+      "cookie",
+      "user-agent",
+    ]
+  ) {
+    const value = requestHeaders.get(name);
+    if (value) headers.set(name, value);
+  }
+  headers.set("x-forwarded-host", currentUrl.host);
+  headers.set("x-forwarded-proto", currentUrl.protocol.replace(":", ""));
+  headers.set("x-atmosphere-public-origin", currentUrl.origin);
+  return headers;
+}
+
+function proxiedHeaders(source: Headers, remote: string): Headers {
+  const headers = new Headers(source);
+  headers.set("x-atmosphere-appview-page-proxy", remote);
+  headers.delete("content-length");
+  return headers;
+}
+
+function rewriteAppviewHtml(
+  body: string,
+  remote: string,
+  currentUrl: URL,
+): string {
+  return body.replaceAll(appviewBaseUrlForRewrite(remote), currentUrl.origin);
+}
+
+function rewriteAppviewUrl(
+  value: string,
+  remote: string,
+  currentUrl: URL,
+): string {
+  const remoteBase = appviewBaseUrlForRewrite(remote);
+  if (value.startsWith(remoteBase)) {
+    return `${currentUrl.origin}${value.slice(remoteBase.length)}`;
+  }
+  return value;
+}
+
+function appviewBaseUrlForRewrite(remote: string): string {
+  return remote.replace(/\/+$/, "");
 }
 
 async function fetchAppviewJson<T>(
