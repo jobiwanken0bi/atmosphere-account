@@ -13,6 +13,10 @@ import {
   resolveLoginAppForRequest,
   signLoginSelection,
 } from "../../lib/atmosphere-login.ts";
+import {
+  proxyAppviewApiResponse,
+  proxyAppviewPageResponse,
+} from "../../lib/appview-client.ts";
 import { loginPickerOriginForRequest } from "../../lib/atmosphere-origins.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
@@ -36,6 +40,11 @@ const MAX_PICKER_FORM_BYTES = 16_384;
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("login picker page", err),
+    );
+    if (proxied) return proxied;
+
     const props = await buildPickerPageProps(ctx);
     return ctx.render(<LoginPickerPage {...props} />, {
       status: props.status,
@@ -44,6 +53,11 @@ export const handler = define.handlers({
   },
 
   async POST(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("login picker selection", err),
+    );
+    if (proxied) return proxied;
+
     let request: LoginRequest;
     try {
       const large = rejectLargeRequest(ctx.req, MAX_PICKER_FORM_BYTES);
@@ -100,6 +114,17 @@ export const handler = define.handlers({
     }
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Atmosphere Login is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 function readLoginRequestFromForm(form: FormData): LoginRequest {
   const url = new URL("https://local.invalid/login/select");
