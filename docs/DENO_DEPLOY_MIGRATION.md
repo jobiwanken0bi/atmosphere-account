@@ -20,14 +20,18 @@ Official docs:
 ## Target Runtime Split
 
 - **Deno Deploy:** public Fresh web app, OAuth routes, hosted Atmosphere Login
-  picker, account/app/admin pages, public APIs, client metadata, and JWKS.
-- **Railway:** always-on Jetstream indexer and heavier background jobs.
-- **Neon:** future primary Postgres database after adapter, backfill, and
-  cutover work.
-- **Turso:** current production database until Neon cutover is complete.
+  picker, docs, static SDK assets, client metadata, and JWKS.
+- **Railway appview/API:** public directory read model APIs for apps, hosts,
+  search, reviews, favorites, admin status, and heavier appview reads.
+- **Railway indexer/jobs:** always-on Jetstream indexer, backfills, rescoring,
+  and heavier background jobs.
+- **Railway Postgres:** canonical appview database used by the Railway appview
+  and indexer services over Railway networking.
 
 Do not point `atmosphereaccount.com` at Railway while Deno Deploy remains the
-public web host.
+public web host. Do not set a Railway Postgres URL on Deno Deploy as the
+permanent architecture; set `ATMOSPHERE_APPVIEW_URL` and let Deno call the
+Railway appview API instead.
 
 ## Current Production State
 
@@ -86,7 +90,7 @@ Deploy Classic used one environment set. The new Deno Deploy platform supports
 separate production/development contexts, so copy production secrets into the
 production context first.
 
-Required production variables while Turso is primary:
+Required production variables for the Deno public web shell:
 
 - `TURSO_DATABASE_URL`
 - `TURSO_AUTH_TOKEN`
@@ -103,7 +107,14 @@ Required production variables while Turso is primary:
 - `FRESH_PUBLIC_LOGIN_URL=https://login.atmosphereaccount.com`
 - `DENO_ENV=production`
 - `ATPROTO_FETCH_TIMEOUT_MS=10000`
+- `ATMOSPHERE_APPVIEW_URL=https://web-production-001c9.up.railway.app`
+- `APPVIEW_FETCH_TIMEOUT_MS=5000`
 - `COMMUNITY_APP_LEXICON_ENABLED=false` unless intentionally enabled
+
+Keep legacy Turso/Neon variables only while there are Deno routes still reading
+from the local app database. Remove them after detail pages and authenticated
+write flows are routed through the Railway appview/API or otherwise verified on
+the final architecture.
 
 Do not set local loopback values such as
 `FRESH_PUBLIC_SITE_URL=http://127.0.0.1:5174` in production.
@@ -124,7 +135,9 @@ curl -I https://<new-deno-app-url>/oauth/jwks.json
 Expected:
 
 - `/api/health` returns `ok: true`.
-- `/api/health/ready` returns DB OK and a fresh Railway indexer heartbeat.
+- `/api/health/ready` returns `service: atmosphere-account-web-shell`, an
+  `appview.ok: true` object, Railway Postgres DB OK, and a fresh Railway indexer
+  heartbeat.
 - Login/OAuth/JWKS routes return successfully and do not expose secrets.
 
 ## Custom Domain Cutover
