@@ -4,10 +4,8 @@ import Footer from "../../components/Footer.tsx";
 import StoreHero from "../../components/explore/StoreHero.tsx";
 import { AppCategoryGrid } from "../../components/explore/AppDirectoryShowcase.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import {
-  type AppTagSummary,
-  searchAppDirectory,
-} from "../../lib/app-directory.ts";
+import type { AppTagSummary } from "../../lib/app-directory.ts";
+import { loadAppsHomeFromAppview } from "../../lib/appview-client.ts";
 
 interface AppCategoriesData {
   tags: AppTagSummary[];
@@ -16,12 +14,7 @@ interface AppCategoriesData {
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const result = await searchAppDirectory({
-      includeSections: false,
-      includeApps: false,
-      includeTotal: false,
-      syncLegacy: false,
-    }).catch(() => ({
+    const result = await loadAppsHomeFromAppview().catch(() => ({
       apps: [],
       featured: [],
       trending: [],
