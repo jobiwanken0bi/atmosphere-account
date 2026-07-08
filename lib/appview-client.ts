@@ -41,7 +41,10 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
     console.error("[appview] early proxy failed:", err);
     return appviewEarlyProxyUnavailable(ctx.url.pathname);
   });
-  if (proxied) return proxied;
+  if (proxied) {
+    proxied.headers.set("x-atmosphere-appview-early-proxy", "1");
+    return proxied;
+  }
   return await ctx.next();
 });
 
