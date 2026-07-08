@@ -2507,6 +2507,7 @@ AtmosphereLogin.continueWithAtmosphere({
 
 const selection = AtmosphereLogin.consumeSelection({
   clientId: "https://app.example.com/oauth/client-metadata.json",
+  expectedState: stateFromSession,
 });
 
 // By default, consumeSelection removes Atmosphere Login callback parameters

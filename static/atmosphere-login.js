@@ -99,8 +99,18 @@
     const params = new URL(location.href).searchParams;
     const token = params.get("selection_token");
     const state = params.get("state");
-    const clientId = params.get("client_id") || options && options.clientId;
+    const paramClientId = params.get("client_id");
+    const expectedClientId = options && options.clientId;
+    const clientId = expectedClientId || paramClientId;
     if (!token || !state || !clientId) return null;
+    if (
+      expectedClientId && paramClientId && paramClientId !== expectedClientId
+    ) {
+      throw new Error("Atmosphere Login client_id mismatch");
+    }
+    if (options && options.expectedState && options.expectedState !== state) {
+      throw new Error("Atmosphere Login state mismatch");
+    }
     let stored = null;
     try {
       stored = JSON.parse(

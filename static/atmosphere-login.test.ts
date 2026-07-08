@@ -14,6 +14,7 @@ type AtmosphereLoginGlobal = {
   consumeSelection(options?: {
     clientId?: string;
     clearUrl?: boolean;
+    expectedState?: string;
   }): {
     token: string;
     state: string;
@@ -118,3 +119,55 @@ Deno.test("browser SDK consumeSelection can preserve callback URL for custom rou
     sdk.cleanup();
   }
 });
+
+Deno.test("browser SDK consumeSelection rejects callback client_id mismatch", async () => {
+  const clientId = "https://app.example/client.json";
+  const wrongClientId = "https://other.example/client.json";
+  const sdk = await loadBrowserSdk(
+    `https://app.example/callback?selection_token=token-123&client_id=${
+      encodeURIComponent(wrongClientId)
+    }&state=state-123`,
+  );
+  try {
+    assertThrows(
+      () => sdk.login.consumeSelection({ clientId }),
+      "Atmosphere Login client_id mismatch",
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK consumeSelection can bind an expected state", async () => {
+  const clientId = "https://app.example/client.json";
+  const sdk = await loadBrowserSdk(
+    `https://app.example/callback?selection_token=token-123&client_id=${
+      encodeURIComponent(clientId)
+    }&state=state-123`,
+  );
+  try {
+    assertThrows(
+      () =>
+        sdk.login.consumeSelection({
+          clientId,
+          expectedState: "state-from-app-session",
+        }),
+      "Atmosphere Login state mismatch",
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+function assertThrows(fn: () => unknown, expectedMessage: string): void {
+  try {
+    fn();
+  } catch (error) {
+    assertEquals(
+      error instanceof Error ? error.message : String(error),
+      expectedMessage,
+    );
+    return;
+  }
+  throw new Error(`Expected ${expectedMessage} to throw`);
+}
