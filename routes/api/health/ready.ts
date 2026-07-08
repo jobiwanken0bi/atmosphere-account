@@ -95,10 +95,13 @@ async function appviewReadiness(
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(5000),
   });
-  const body = await res.json().catch(() => ({
+  const rawBody = await res.json().catch(() => ({
     ok: false,
     error: "invalid_appview_readiness_response",
-  })) as Record<string, unknown>;
+  }));
+  const body = isRecord(rawBody)
+    ? rawBody
+    : { ok: false, error: "invalid_appview_readiness_response" };
   const { release: appviewRelease, ...bodyWithoutRelease } = body;
   const appviewOk = res.ok && body.ok === true;
   return {
