@@ -32,7 +32,12 @@ function isAllowedLoginHostPath(pathname: string): boolean {
     return true;
   }
   return pathname.startsWith("/_fresh/") ||
+    pathname.startsWith("/assets/") ||
     pathname.startsWith("/api/registry/avatar/");
+}
+
+export function isAllowedLoginHostPathForTest(pathname: string): boolean {
+  return isAllowedLoginHostPath(pathname);
 }
 
 function redirectTo(url: string, status = 302): Response {
