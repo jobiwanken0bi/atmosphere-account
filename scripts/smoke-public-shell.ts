@@ -20,7 +20,7 @@ function usage(exitCode = 2): never {
       "Usage: deno task smoke:public-shell [options]",
       "",
       "Checks production public-shell liveness, readiness, OAuth metadata, JWKS,",
-      "core HTML pages, and standalone SDK assets.",
+      "release metadata, core HTML pages, and standalone SDK assets.",
       "",
       "Options:",
       "  --site-origin=https://atmosphereaccount.com",
@@ -156,6 +156,17 @@ function assertObject(
   return value as Record<string, unknown>;
 }
 
+function assertRelease(value: unknown, label: string): void {
+  const release = assertObject(value, label);
+  assertString(release.runtime, `${label}.runtime`);
+  if (release.gitSha !== null && release.gitSha !== undefined) {
+    assertString(release.gitSha, `${label}.gitSha`);
+  }
+  if (release.deploymentId !== null && release.deploymentId !== undefined) {
+    assertString(release.deploymentId, `${label}.deploymentId`);
+  }
+}
+
 function assertArray(value: unknown, label: string): unknown[] {
   if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
   return value;
@@ -214,6 +225,7 @@ async function smokeHealth(origin: string): Promise<void> {
   assertContentType(response, url, "json");
   assertEquals(body.ok, true, `${url} ok`);
   assertString(body.service, `${url} service`);
+  assertRelease(body.release, `${url} release`);
   assertString(body.timestamp, `${url} timestamp`);
   console.log(`[smoke:public-shell] ok health ${url}`);
 }
@@ -238,7 +250,12 @@ async function smokeReadiness(
       true,
       `${url} appview.ok`,
     );
+    assertRelease(
+      (appview as Record<string, unknown>).release,
+      `${url} appview.release`,
+    );
   }
+  assertRelease(body.release, `${url} release`);
   console.log(`[smoke:public-shell] ok readiness ${url}`);
 }
 

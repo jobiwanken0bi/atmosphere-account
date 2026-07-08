@@ -2,6 +2,7 @@ import { define } from "../../../utils.ts";
 import { appviewBaseUrl } from "../../../lib/appview-client.ts";
 import { checkDbHealth } from "../../../lib/db.ts";
 import { IS_DEV } from "../../../lib/env.ts";
+import { runtimeRelease } from "../../../lib/release.ts";
 import { getWorkerLeaseStatus } from "../../../lib/worker-lease.ts";
 
 const INDEXER_LEASE = "jetstream-indexer";
@@ -38,6 +39,7 @@ export const handler = define.handlers({
         {
           ok: false,
           service: "atmosphere-account-web",
+          release: runtimeRelease(),
           database: { ok: false },
           error: "readiness_check_failed",
           ...(IS_DEV && err instanceof Error ? { detail: err.message } : {}),
@@ -62,6 +64,7 @@ async function computeReadiness(): Promise<ReadinessResult> {
     body: {
       ok: true,
       service: "atmosphere-account-web",
+      release: runtimeRelease(),
       database,
       indexer: indexer
         ? {
@@ -86,18 +89,25 @@ async function appviewReadiness(appview: string): Promise<ReadinessResult> {
     ok: false,
     error: "invalid_appview_readiness_response",
   })) as Record<string, unknown>;
+  const { release: appviewRelease, ...bodyWithoutRelease } = body;
   return {
     status: res.ok ? 200 : 503,
     body: {
-      ...body,
+      ...bodyWithoutRelease,
       service: "atmosphere-account-web-shell",
+      release: runtimeRelease(),
       appview: {
         ok: res.ok && body.ok === true,
         url: appview,
+        release: isRecord(appviewRelease) ? appviewRelease : null,
       },
       timestamp: new Date().toISOString(),
     },
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function readinessJson(

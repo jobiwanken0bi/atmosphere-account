@@ -1,10 +1,12 @@
 import { define } from "../../utils.ts";
+import { runtimeRelease } from "../../lib/release.ts";
 
 export const handler = define.handlers({
   GET(): Response {
     return json({
       ok: true,
       service: "atmosphere-account-web",
+      release: runtimeRelease(),
       timestamp: new Date().toISOString(),
     });
   },

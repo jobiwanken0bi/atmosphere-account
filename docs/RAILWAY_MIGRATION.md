@@ -131,14 +131,17 @@ railway logs --service indexer --environment production --lines 200 --json
 Health checks:
 
 - Web/appview health: check the Railway service domain or production domain for
-  `GET /api/health` and `GET /api/health/ready`.
+  `GET /api/health` and `GET /api/health/ready`. Both endpoints include a
+  `release` object with runtime/deployment metadata when the host provides it.
+  When Deno proxies Railway readiness, the shell release remains top-level and
+  the appview release appears at `appview.release`.
 - Indexer health: check `GET /api/health/ready` for a fresh worker lease and
   verify `worker_lease` in Railway Postgres.
 - Production smoke suite: run `deno task smoke:production` after Deno or Railway
   appview deploys. It checks liveness/readiness, OAuth metadata, JWKS, core
-  HTML, standalone SDK assets, and the hosted picker asset chain. The public
-  picker remains on Deno Deploy, but its generated Fresh chunks are proxied from
-  the appview bundle on trusted Atmosphere domains.
+  HTML, standalone SDK assets, release metadata, and the hosted picker asset
+  chain. The public picker remains on Deno Deploy, but its generated Fresh
+  chunks are proxied from the appview bundle on trusted Atmosphere domains.
 
 ## Worker Cutover
 

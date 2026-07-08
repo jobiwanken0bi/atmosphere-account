@@ -104,8 +104,9 @@ hourly and can be triggered manually after a Deno or Railway deploy.
 
 Health endpoints:
 
-- `/api/health` — liveness, no DB dependency
-- `/api/health/ready` — DB readiness and indexer heartbeat
+- `/api/health` — liveness and release metadata, no DB dependency
+- `/api/health/ready` — DB readiness, indexer heartbeat, and proxied appview
+  release metadata when Deno is serving as the public shell
 
 ## Contributing
 

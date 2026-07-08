@@ -139,9 +139,12 @@ from the Deno app.
 
 Run `deno task smoke:production` after Deno or Railway appview deploys. It runs
 `smoke:public-shell` for production liveness/readiness, OAuth metadata, JWKS,
-core HTML pages, and standalone SDK assets. It also runs `smoke:picker-assets`
-because the hosted picker is Deno-facing while Fresh-generated island chunks may
-come from the appview bundle proxy. The picker smoke checks HTML, CSS, static
+core HTML pages, and standalone SDK assets. The public shell health response and
+proxied appview readiness response must both expose `release.runtime`; this
+catches stale appview deployments where the Deno shell is current but Railway is
+still serving an older server bundle. It also runs `smoke:picker-assets` because
+the hosted picker is Deno-facing while Fresh-generated island chunks may come
+from the appview bundle proxy. The picker smoke checks HTML, CSS, static
 scripts, and generated `/assets` imports on both `login.atmosphereaccount.com`
 and `atmosphereaccount.com`.
 
