@@ -10,6 +10,7 @@ import {
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import type { AppSearchResult } from "../lib/app-directory.ts";
 import { loadAppsHomeFromAppview } from "../lib/appview-client.ts";
+import { EdgeStaleCache } from "../lib/edge-cache.ts";
 
 interface ExploreData {
   result: AppSearchResult;
@@ -19,13 +20,10 @@ interface ExploreData {
 const APPS_HOME_CACHE_TTL_MS = 2 * 60 * 1000;
 const APPS_HOME_STALE_MS = 15 * 60 * 1000;
 
-let appsHomeCache:
-  | {
-    result: AppSearchResult;
-    refreshedAt: number;
-    refreshPromise?: Promise<AppSearchResult>;
-  }
-  | null = null;
+const appsHomeCache = new EdgeStaleCache<AppSearchResult>({
+  freshMs: APPS_HOME_CACHE_TTL_MS,
+  staleMs: APPS_HOME_STALE_MS,
+});
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -50,41 +48,7 @@ export const handler = define.handlers({
 });
 
 async function loadAppsHomeResult(): Promise<AppSearchResult> {
-  const now = Date.now();
-  if (
-    appsHomeCache &&
-    now - appsHomeCache.refreshedAt < APPS_HOME_CACHE_TTL_MS
-  ) {
-    return appsHomeCache.result;
-  }
-  if (
-    appsHomeCache &&
-    now - appsHomeCache.refreshedAt < APPS_HOME_STALE_MS
-  ) {
-    refreshAppsHomeCache();
-    return appsHomeCache.result;
-  }
-  return await refreshAppsHomeCache();
-}
-
-function refreshAppsHomeCache(): Promise<AppSearchResult> {
-  if (appsHomeCache?.refreshPromise) return appsHomeCache.refreshPromise;
-  const refreshPromise = loadAppsHomeFromAppview()
-    .then((result) => {
-      appsHomeCache = { result, refreshedAt: Date.now() };
-      return result;
-    })
-    .catch((err) => {
-      if (appsHomeCache) return appsHomeCache.result;
-      throw err;
-    })
-    .finally(() => {
-      if (appsHomeCache) delete appsHomeCache.refreshPromise;
-    });
-  appsHomeCache = appsHomeCache
-    ? { ...appsHomeCache, refreshPromise }
-    : { result: emptyAppsHomeResult(), refreshedAt: 0, refreshPromise };
-  return refreshPromise;
+  return await appsHomeCache.get("home", () => loadAppsHomeFromAppview());
 }
 
 function emptyAppsHomeResult(): AppSearchResult {

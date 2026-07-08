@@ -6,6 +6,7 @@ import { AppCategoryGrid } from "../../components/explore/AppDirectoryShowcase.t
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import type { AppTagSummary } from "../../lib/app-directory.ts";
 import { loadAppsHomeFromAppview } from "../../lib/appview-client.ts";
+import { EdgeStaleCache } from "../../lib/edge-cache.ts";
 
 interface AppCategoriesData {
   tags: AppTagSummary[];
@@ -15,13 +16,10 @@ interface AppCategoriesData {
 const APP_CATEGORIES_CACHE_TTL_MS = 2 * 60 * 1000;
 const APP_CATEGORIES_STALE_MS = 15 * 60 * 1000;
 
-let appCategoriesCache:
-  | {
-    tags: AppTagSummary[];
-    refreshedAt: number;
-    refreshPromise?: Promise<AppTagSummary[]>;
-  }
-  | null = null;
+const appCategoriesCache = new EdgeStaleCache<AppTagSummary[]>({
+  freshMs: APP_CATEGORIES_CACHE_TTL_MS,
+  staleMs: APP_CATEGORIES_STALE_MS,
+});
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -37,46 +35,10 @@ export const handler = define.handlers({
 });
 
 async function loadAppCategories(): Promise<AppTagSummary[]> {
-  const now = Date.now();
-  if (
-    appCategoriesCache &&
-    now - appCategoriesCache.refreshedAt < APP_CATEGORIES_CACHE_TTL_MS
-  ) {
-    return appCategoriesCache.tags;
-  }
-  if (
-    appCategoriesCache &&
-    now - appCategoriesCache.refreshedAt < APP_CATEGORIES_STALE_MS
-  ) {
-    refreshAppCategoriesCache();
-    return appCategoriesCache.tags;
-  }
-  return await refreshAppCategoriesCache();
-}
-
-function refreshAppCategoriesCache(): Promise<AppTagSummary[]> {
-  if (appCategoriesCache?.refreshPromise) {
-    return appCategoriesCache.refreshPromise;
-  }
-
-  const refreshPromise = loadAppsHomeFromAppview()
-    .then((result) => {
-      const tags = result.tagSummaries;
-      appCategoriesCache = { tags, refreshedAt: Date.now() };
-      return tags;
-    })
-    .catch((err) => {
-      if (appCategoriesCache) return appCategoriesCache.tags;
-      throw err;
-    })
-    .finally(() => {
-      if (appCategoriesCache) delete appCategoriesCache.refreshPromise;
-    });
-
-  appCategoriesCache = appCategoriesCache
-    ? { ...appCategoriesCache, refreshPromise }
-    : { tags: [], refreshedAt: 0, refreshPromise };
-  return refreshPromise;
+  return await appCategoriesCache.get(
+    "categories",
+    () => loadAppsHomeFromAppview().then((result) => result.tagSummaries),
+  );
 }
 
 export default function AppCategoriesPage(

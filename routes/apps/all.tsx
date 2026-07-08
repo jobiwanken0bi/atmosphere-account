@@ -11,6 +11,7 @@ import {
 } from "../../lib/app-directory.ts";
 import { searchAppsFromAppview } from "../../lib/appview-client.ts";
 import { appCollectionLabel } from "../../lib/app-collections.ts";
+import { EdgeStaleCache } from "../../lib/edge-cache.ts";
 
 interface BrowseAppsData {
   query: string;
@@ -27,14 +28,11 @@ const APP_BROWSE_CACHE_TTL_MS = 30 * 1000;
 const APP_BROWSE_STALE_MS = 5 * 60 * 1000;
 const APP_BROWSE_CACHE_MAX_ENTRIES = 48;
 
-const appBrowseCache = new Map<
-  string,
-  {
-    result: AppSearchResult;
-    refreshedAt: number;
-    refreshPromise?: Promise<AppSearchResult>;
-  }
->();
+const appBrowseCache = new EdgeStaleCache<AppSearchResult>({
+  freshMs: APP_BROWSE_CACHE_TTL_MS,
+  staleMs: APP_BROWSE_STALE_MS,
+  maxEntries: APP_BROWSE_CACHE_MAX_ENTRIES,
+});
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -69,77 +67,13 @@ async function loadAppBrowseResult(input: {
   page: number;
 }): Promise<AppSearchResult> {
   const key = appBrowseCacheKey(input);
-  const entry = appBrowseCache.get(key);
-  const now = Date.now();
-
-  if (entry && now - entry.refreshedAt < APP_BROWSE_CACHE_TTL_MS) {
-    return entry.result;
-  }
-  if (entry && now - entry.refreshedAt < APP_BROWSE_STALE_MS) {
-    refreshAppBrowseCache(input, key);
-    return entry.result;
-  }
-  return await refreshAppBrowseCache(input, key);
-}
-
-function refreshAppBrowseCache(
-  input: {
-    query: string;
-    tags: string[];
-    sort: AppDirectorySort;
-    page: number;
-  },
-  key = appBrowseCacheKey(input),
-): Promise<AppSearchResult> {
-  const entry = appBrowseCache.get(key);
-  if (entry?.refreshPromise) return entry.refreshPromise;
-
-  const refreshPromise = searchAppsFromAppview({
-    query: input.query || undefined,
-    tag: input.tags.length > 0 ? input.tags : undefined,
-    sort: input.sort,
-    page: input.page,
-  })
-    .then((result) => {
-      setAppBrowseCacheEntry(key, { result, refreshedAt: Date.now() });
-      return result;
-    })
-    .catch((err) => {
-      if (entry) return entry.result;
-      throw err;
-    })
-    .finally(() => {
-      const current = appBrowseCache.get(key);
-      if (current) delete current.refreshPromise;
-    });
-
-  setAppBrowseCacheEntry(
-    key,
-    entry ? { ...entry, refreshPromise } : {
-      result: emptyBrowseResult(input.page),
-      refreshedAt: 0,
-      refreshPromise,
-    },
-  );
-  return refreshPromise;
-}
-
-function setAppBrowseCacheEntry(
-  key: string,
-  entry: {
-    result: AppSearchResult;
-    refreshedAt: number;
-    refreshPromise?: Promise<AppSearchResult>;
-  },
-) {
-  if (
-    !appBrowseCache.has(key) &&
-    appBrowseCache.size >= APP_BROWSE_CACHE_MAX_ENTRIES
-  ) {
-    const oldestKey = appBrowseCache.keys().next().value;
-    if (oldestKey) appBrowseCache.delete(oldestKey);
-  }
-  appBrowseCache.set(key, entry);
+  return await appBrowseCache.get(key, () =>
+    searchAppsFromAppview({
+      query: input.query || undefined,
+      tag: input.tags.length > 0 ? input.tags : undefined,
+      sort: input.sort,
+      page: input.page,
+    }));
 }
 
 function appBrowseCacheKey(input: {
