@@ -1319,14 +1319,21 @@ function hostsRelated(a: string, b: string): boolean {
 
 export async function resolveLoginAppForRequest(
   req: LoginRequest,
+  options: {
+    getLoginApp?: typeof getLoginApp;
+  } = {},
 ): Promise<{ app: LoginApp; returnUri: URL }> {
   const client = parseAbsoluteUrl(req.clientId, "client_id");
   const returnUri = parseAbsoluteUrl(req.returnUri, "return_uri");
+  const normalizedClientId = normalizeHref(client);
+  const normalizedReturn = normalizeHref(returnUri);
   assertSafeWebUrl(client, "client_id");
   assertSafeWebUrl(returnUri, "return_uri");
 
-  const registered = await getLoginApp(req.clientId);
-  const app = registered ?? appFromClientId(req.clientId);
+  const registered = await (options.getLoginApp ?? getLoginApp)(
+    normalizedClientId,
+  );
+  const app = registered ?? appFromClientId(normalizedClientId);
   if (app.status === "blocked") {
     throw new LoginRequestError(
       "This app is blocked and cannot use Atmosphere Login.",
@@ -1334,7 +1341,6 @@ export async function resolveLoginAppForRequest(
     );
   }
 
-  const normalizedReturn = normalizeHref(new URL(returnUri));
   const exactAllowed = app.allowedReturnUris.some((value) => {
     try {
       return normalizeHref(new URL(value)) === normalizedReturn;

@@ -231,3 +231,25 @@ Deno.test("resolveLoginAppForRequest rejects private-network HTTPS return URIs b
     assertEquals(err.message, "return_uri must use a public HTTPS host");
   }
 });
+
+Deno.test("resolveLoginAppForRequest normalizes client IDs before registered lookup", async () => {
+  let lookedUpClientId: string | null = null;
+  const resolved = await resolveLoginAppForRequest({
+    clientId: "https://app.example/client.json#ignored",
+    returnUri: "https://app.example/callback#ignored",
+    state: "state",
+    scope: null,
+  }, {
+    getLoginApp: (clientId) => {
+      lookedUpClientId = clientId;
+      return Promise.resolve(app({
+        clientId,
+        allowedReturnUris: ["https://app.example/callback"],
+      }));
+    },
+  });
+
+  assertEquals(lookedUpClientId, "https://app.example/client.json");
+  assertEquals(resolved.app.clientId, "https://app.example/client.json");
+  assertEquals(resolved.returnUri.toString(), "https://app.example/callback");
+});
