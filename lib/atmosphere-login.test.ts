@@ -253,3 +253,48 @@ Deno.test("resolveLoginAppForRequest normalizes client IDs before registered loo
   assertEquals(resolved.app.clientId, "https://app.example/client.json");
   assertEquals(resolved.returnUri.toString(), "https://app.example/callback");
 });
+
+Deno.test("resolveLoginAppForRequest keeps query strings exact for registered callbacks", async () => {
+  const resolved = await resolveLoginAppForRequest({
+    clientId: "https://app.example/client.json",
+    returnUri: "https://app.example/callback?mode=popup#ignored",
+    state: "state",
+    scope: null,
+  }, {
+    getLoginApp: (clientId) =>
+      Promise.resolve(app({
+        clientId,
+        allowedReturnUris: ["https://app.example/callback?mode=popup"],
+      })),
+  });
+
+  assertEquals(
+    resolved.returnUri.toString(),
+    "https://app.example/callback?mode=popup",
+  );
+});
+
+Deno.test("resolveLoginAppForRequest rejects registered callbacks with mismatched query strings", async () => {
+  try {
+    await resolveLoginAppForRequest({
+      clientId: "https://app.example/client.json",
+      returnUri: "https://app.example/callback?mode=popup",
+      state: "state",
+      scope: null,
+    }, {
+      getLoginApp: (clientId) =>
+        Promise.resolve(app({
+          clientId,
+          allowedReturnUris: ["https://app.example/callback?mode=redirect"],
+        })),
+    });
+    throw new Error("Expected resolveLoginAppForRequest to throw");
+  } catch (err) {
+    if (!(err instanceof LoginRequestError)) throw err;
+    assertEquals(
+      err.message,
+      "return_uri must exactly match an allowed return URI for this registered app",
+    );
+    assertEquals(err.status, 403);
+  }
+});
