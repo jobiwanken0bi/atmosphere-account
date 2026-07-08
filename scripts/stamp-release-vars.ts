@@ -2,6 +2,7 @@ interface Options {
   sha: string;
   branch: string;
   write: boolean;
+  allowDirty: boolean;
   deno: boolean;
   railway: boolean;
   denoOrg: string;
@@ -17,30 +18,35 @@ const DEFAULT_RAILWAY_PROJECT = "f6fc622b-1fff-469e-9bb2-42210ac4a70c";
 const DEFAULT_RAILWAY_ENVIRONMENT = "production";
 const DEFAULT_RAILWAY_SERVICE = "web";
 
-const options = await parseOptions();
-const releaseVars = [
-  ["ATMOSPHERE_RELEASE_SHA", options.sha],
-  ["ATMOSPHERE_RELEASE_BRANCH", options.branch],
-] as const;
+if (import.meta.main) {
+  const options = await parseOptions();
+  if (options.write && !options.allowDirty) {
+    assertCleanWorktreeForRelease(await git(["status", "--porcelain"]));
+  }
+  const releaseVars = [
+    ["ATMOSPHERE_RELEASE_SHA", options.sha],
+    ["ATMOSPHERE_RELEASE_BRANCH", options.branch],
+  ] as const;
 
-console.log(
-  `[release:stamp] ${
-    options.write ? "writing" : "dry-run"
-  } sha=${options.sha} branch=${options.branch}`,
-);
-
-if (options.deno) await stampDenoDeploy(options, releaseVars);
-if (options.railway) await stampRailway(options, releaseVars);
-
-if (!options.write) {
   console.log(
-    "[release:stamp] dry-run only; pass --write to update providers.",
+    `[release:stamp] ${
+      options.write ? "writing" : "dry-run"
+    } sha=${options.sha} branch=${options.branch}`,
+  );
+
+  if (options.deno) await stampDenoDeploy(options, releaseVars);
+  if (options.railway) await stampRailway(options, releaseVars);
+
+  if (!options.write) {
+    console.log(
+      "[release:stamp] dry-run only; pass --write to update providers.",
+    );
+  }
+
+  console.log(
+    "[release:stamp] deploy both Deno shell and Railway appview before running exact production smoke.",
   );
 }
-
-console.log(
-  "[release:stamp] deploy both Deno shell and Railway appview before running exact production smoke.",
-);
 
 async function parseOptions(): Promise<Options> {
   const args = Deno.args.filter((arg) => arg !== "--");
@@ -61,6 +67,7 @@ async function parseOptions(): Promise<Options> {
     sha,
     branch,
     write: args.includes("--write"),
+    allowDirty: args.includes("--allow-dirty"),
     deno: denoOnly || !railwayOnly,
     railway: railwayOnly || !denoOnly,
     denoOrg: readFlag(args, "--deno-org") ?? env("DENO_DEPLOY_ORG") ??
@@ -87,6 +94,7 @@ function usage(exitCode: number): never {
     "",
     "Options:",
     "  --write                         Update provider variables",
+    "  --allow-dirty                   Allow --write with uncommitted changes",
     "  --deno                          Stamp only Deno Deploy",
     "  --railway                       Stamp only Railway",
     "  --sha=<git-sha>                 Release SHA, defaults to git rev-parse HEAD",
@@ -98,6 +106,17 @@ function usage(exitCode: number): never {
     "  --railway-service=<name>        Railway service",
   ].join("\n"));
   Deno.exit(exitCode);
+}
+
+export function assertCleanWorktreeForRelease(statusPorcelain: string): void {
+  if (!statusPorcelain.trim()) return;
+  throw new Error(
+    [
+      "release:stamp --write requires a clean git worktree.",
+      "Commit or stash local changes before stamping a production release,",
+      "or pass --allow-dirty if you intentionally want release metadata to point at HEAD while deploying local edits.",
+    ].join(" "),
+  );
 }
 
 async function stampDenoDeploy(
