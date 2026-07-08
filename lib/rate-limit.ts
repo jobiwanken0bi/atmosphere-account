@@ -22,6 +22,17 @@ const CAPACITY = 60;
  */
 const REFILL_MS = 60_000;
 
+export interface RateLimitOptions {
+  capacity?: number;
+  refillMs?: number;
+  scope?: string;
+  now?: number;
+}
+
+export type RateLimitResult =
+  | { ok: true }
+  | { ok: false; retryAfter: number };
+
 interface Bucket {
   /** Tokens currently available (float; refills linearly). */
   tokens: number;
@@ -36,26 +47,31 @@ const buckets = new Map<string, Bucket>();
  * we haven't seen recently. Keeps memory bounded under a sustained
  * scan from a botnet without a full LRU impl.
  */
-function maybeTrim(now: number): void {
+function maybeTrim(now: number, refillMs: number): void {
   if (buckets.size < 2_000) return;
   for (const [ip, b] of buckets) {
-    if (now - b.last > REFILL_MS * 5) buckets.delete(ip);
+    if (now - b.last > refillMs * 5) buckets.delete(ip);
   }
 }
 
 /** Returns true if the request is allowed; false if it should be rejected. */
-function take(ip: string, now: number): boolean {
-  let b = buckets.get(ip);
+function take(
+  key: string,
+  now: number,
+  capacity: number,
+  refillMs: number,
+): boolean {
+  let b = buckets.get(key);
   if (!b) {
-    b = { tokens: CAPACITY, last: now };
-    buckets.set(ip, b);
-    maybeTrim(now);
+    b = { tokens: capacity, last: now };
+    buckets.set(key, b);
+    maybeTrim(now, refillMs);
   } else {
     const elapsed = now - b.last;
     if (elapsed > 0) {
       b.tokens = Math.min(
-        CAPACITY,
-        b.tokens + (elapsed / REFILL_MS) * CAPACITY,
+        capacity,
+        b.tokens + (elapsed / refillMs) * capacity,
       );
       b.last = now;
     }
@@ -83,6 +99,24 @@ function callerIp(req: Request): string {
   return "anonymous";
 }
 
+export function checkRateLimit(
+  req: Request,
+  options: RateLimitOptions = {},
+): RateLimitResult {
+  const capacity = positiveInteger(options.capacity, CAPACITY);
+  const refillMs = positiveInteger(options.refillMs, REFILL_MS);
+  const scope = options.scope ?? "default";
+  const key = `${scope}:${callerIp(req)}`;
+  const now = options.now ?? Date.now();
+  if (take(key, now, capacity, refillMs)) return { ok: true };
+  return { ok: false, retryAfter: Math.ceil(refillMs / 1000) };
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  const parsed = Math.floor(value ?? fallback);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 // deno-lint-ignore no-explicit-any
 type FreshHandler = (ctx: any) => Response | Promise<Response>;
 
@@ -94,11 +128,13 @@ type FreshHandler = (ctx: any) => Response | Promise<Response>;
  * On 429 we return a small JSON body and a `Retry-After` header (in
  * seconds) so well-behaved clients can back off.
  */
-export function withRateLimit<H extends FreshHandler>(handler: H): H {
+export function withRateLimit<H extends FreshHandler>(
+  handler: H,
+  options: RateLimitOptions = {},
+): H {
   return ((ctx) => {
-    const ip = callerIp(ctx.req);
-    const now = Date.now();
-    if (!take(ip, now)) {
+    const result = checkRateLimit(ctx.req, options);
+    if (!result.ok) {
       return new Response(
         JSON.stringify({ error: "rate_limited" }),
         {
@@ -107,7 +143,7 @@ export function withRateLimit<H extends FreshHandler>(handler: H): H {
             "content-type": "application/json; charset=utf-8",
             // Suggest waiting a full window for capacity to refill;
             // callers can retry sooner since the bucket refills linearly.
-            "retry-after": String(Math.ceil(REFILL_MS / 1000)),
+            "retry-after": String(result.retryAfter),
           },
         },
       );

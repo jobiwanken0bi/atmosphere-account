@@ -259,6 +259,10 @@ Risks to address while operating on Postgres:
 - Hosted web logs slow requests by path only, with query strings omitted so
   OAuth and login parameters do not leak. Set `LOG_SLOW_REQUESTS=false` to
   disable it or `SLOW_REQUEST_LOG_MS=1500` to tune the threshold.
+- Hosted picker selection and selection-token verification use scoped in-memory
+  rate limits. These are soft per-isolate guardrails for abuse and cost control;
+  move the same scopes to Redis/Valkey if cross-region hard limits become
+  necessary.
 - OAuth state and app sessions are DB-backed. That is fine on Postgres, but
   high-volume hosted login may eventually need Redis for hot ephemeral state and
   replay guards.

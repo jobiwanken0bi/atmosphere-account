@@ -1,6 +1,7 @@
 import { define } from "../../../utils.ts";
 import type { AtmosphereSelectionClaims } from "../../../lib/atmosphere-login-sdk.ts";
 import { verifyLoginSelectionTokenDetailed } from "../../../lib/atmosphere-login.ts";
+import { checkRateLimit } from "../../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../../lib/security.ts";
 
 export interface SelectionVerificationInput {
@@ -13,6 +14,11 @@ export interface SelectionVerificationInput {
 
 const MAX_SELECTION_TOKEN_LENGTH = 8_192;
 const MAX_SELECTION_REQUEST_BODY_BYTES = 16_384;
+const SELECTION_VERIFICATION_RATE_LIMIT = {
+  scope: "login-selection-verification",
+  capacity: 120,
+  refillMs: 60_000,
+} as const;
 
 function json(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -95,6 +101,13 @@ async function readInput(
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
+  const limited = checkRateLimit(ctx.req, SELECTION_VERIFICATION_RATE_LIMIT);
+  if (!limited.ok) {
+    return json({ active: false, error: "rate_limited" }, {
+      status: 429,
+      headers: { "retry-after": String(limited.retryAfter) },
+    });
+  }
   const large = rejectLargeRequest(ctx.req, MAX_SELECTION_REQUEST_BODY_BYTES);
   if (large) {
     return json({ active: false, error: "request body too large" }, {

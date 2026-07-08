@@ -19,6 +19,7 @@ import {
 } from "../../lib/appview-client.ts";
 import { loginPickerOriginForRequest } from "../../lib/atmosphere-origins.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
+import { checkRateLimit } from "../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 
 interface PickerAccount {
@@ -37,6 +38,11 @@ interface PickerPageProps {
 }
 
 const MAX_PICKER_FORM_BYTES = 16_384;
+const PICKER_SELECTION_RATE_LIMIT = {
+  scope: "login-picker-selection",
+  capacity: 30,
+  refillMs: 60_000,
+} as const;
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -60,6 +66,20 @@ export const handler = define.handlers({
 
     let request: LoginRequest;
     try {
+      const limited = checkRateLimit(ctx.req, PICKER_SELECTION_RATE_LIMIT);
+      if (!limited.ok) {
+        return new Response(
+          "Too many account picker attempts. Try again soon.",
+          {
+            status: 429,
+            headers: {
+              "cache-control": "no-store",
+              "content-type": "text/plain; charset=utf-8",
+              "retry-after": String(limited.retryAfter),
+            },
+          },
+        );
+      }
       const large = rejectLargeRequest(ctx.req, MAX_PICKER_FORM_BYTES);
       if (large) return large;
       const form = await ctx.req.formData();
