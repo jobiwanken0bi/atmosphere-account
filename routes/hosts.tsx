@@ -8,9 +8,22 @@ import type { AccountHost } from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
 import { hostFriendlyProfile } from "../lib/host-friendly.ts";
 
+const HOSTS_CACHE_TTL_MS = 2 * 60 * 1000;
+const HOSTS_STALE_MS = 15 * 60 * 1000;
+const HOSTS_CACHE_MAX_ENTRIES = 24;
+
+const hostsCache = new Map<
+  string,
+  {
+    hosts: AccountHost[];
+    refreshedAt: number;
+    refreshPromise?: Promise<AccountHost[]>;
+  }
+>();
+
 export default define.page(async function HostsPage(ctx) {
   const query = ctx.url.searchParams.get("q")?.trim() ?? "";
-  const visibleHosts = await listHostsFromAppview({ query }).catch((err) => {
+  const visibleHosts = await loadHostsResult(query).catch((err) => {
     console.warn("[hosts] appview host list failed:", err);
     return [];
   });
@@ -86,6 +99,70 @@ export default define.page(async function HostsPage(ctx) {
     </div>
   );
 });
+
+async function loadHostsResult(query: string): Promise<AccountHost[]> {
+  const key = hostCacheKey(query);
+  const entry = hostsCache.get(key);
+  const now = Date.now();
+
+  if (entry && now - entry.refreshedAt < HOSTS_CACHE_TTL_MS) {
+    return entry.hosts;
+  }
+  if (entry && now - entry.refreshedAt < HOSTS_STALE_MS) {
+    refreshHostListCache(query, key);
+    return entry.hosts;
+  }
+  return await refreshHostListCache(query, key);
+}
+
+function refreshHostListCache(
+  query: string,
+  key = hostCacheKey(query),
+): Promise<AccountHost[]> {
+  const entry = hostsCache.get(key);
+  if (entry?.refreshPromise) return entry.refreshPromise;
+
+  const refreshPromise = listHostsFromAppview({ query })
+    .then((hosts) => {
+      setHostsCacheEntry(key, { hosts, refreshedAt: Date.now() });
+      return hosts;
+    })
+    .catch((err) => {
+      if (entry) return entry.hosts;
+      throw err;
+    })
+    .finally(() => {
+      const current = hostsCache.get(key);
+      if (current) delete current.refreshPromise;
+    });
+
+  setHostsCacheEntry(
+    key,
+    entry
+      ? { ...entry, refreshPromise }
+      : { hosts: [], refreshedAt: 0, refreshPromise },
+  );
+  return refreshPromise;
+}
+
+function setHostsCacheEntry(
+  key: string,
+  entry: {
+    hosts: AccountHost[];
+    refreshedAt: number;
+    refreshPromise?: Promise<AccountHost[]>;
+  },
+) {
+  if (!hostsCache.has(key) && hostsCache.size >= HOSTS_CACHE_MAX_ENTRIES) {
+    const oldestKey = hostsCache.keys().next().value;
+    if (oldestKey) hostsCache.delete(oldestKey);
+  }
+  hostsCache.set(key, entry);
+}
+
+function hostCacheKey(query: string): string {
+  return query.trim().toLocaleLowerCase();
+}
 
 function DirectoryRegisterCta(
   { href, label }: { href: string; label: string },
