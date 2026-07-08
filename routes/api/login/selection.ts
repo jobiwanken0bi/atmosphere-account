@@ -150,6 +150,9 @@ export function verifySelectionBinding(
   claims: AtmosphereSelectionClaims,
   input: SelectionVerificationInput,
 ): string | null {
+  if (input.expectedIssuer && claims.iss !== input.expectedIssuer) {
+    return "issuer mismatch";
+  }
   if (input.expectedClientId && claims.aud !== input.expectedClientId) {
     return "audience mismatch";
   }

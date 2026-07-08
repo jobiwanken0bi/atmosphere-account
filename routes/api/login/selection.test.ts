@@ -60,7 +60,20 @@ Deno.test("verifySelectionBinding reports the first binding mismatch", () => {
   assertEquals(
     verifySelectionBinding(claims(), {
       token: "token",
-      expectedIssuer: null,
+      expectedIssuer: "https://other.atmosphere.example",
+      expectedClientId: "https://other.example.com/client.json",
+      expectedReturnUri: "https://app.example.com/other",
+      expectedState: "other-state",
+    }),
+    "issuer mismatch",
+  );
+});
+
+Deno.test("verifySelectionBinding reports audience mismatch after issuer matches", () => {
+  assertEquals(
+    verifySelectionBinding(claims(), {
+      token: "token",
+      expectedIssuer: "https://atmosphereaccount.com",
       expectedClientId: "https://other.example.com/client.json",
       expectedReturnUri: "https://app.example.com/other",
       expectedState: "other-state",
