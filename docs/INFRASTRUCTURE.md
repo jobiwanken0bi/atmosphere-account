@@ -293,7 +293,8 @@ Run schema bootstrap explicitly before deploys and after additive DB changes:
 deno task db:migrate
 ```
 
-Run cleanup for expired OAuth/app sessions and stale worker leases:
+Run cleanup for expired OAuth/app sessions, Atmosphere Login replay keys, and
+stale worker leases:
 
 ```sh
 deno task db:maintain
