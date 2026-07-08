@@ -37,6 +37,7 @@ Deno.test("early appview proxy covers DB-backed APIs before session hydration", 
       "/api/registry/profile",
       "/api/appview/apps/home",
       "/api/atproto/blob",
+      "/api/identity/preview",
       "/api/me/avatar",
     ]
   ) {

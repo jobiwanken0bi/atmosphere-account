@@ -63,6 +63,7 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/registry" || pathname.startsWith("/api/registry/") ||
     pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
     pathname === "/api/atproto/blob" ||
+    pathname === "/api/identity/preview" ||
     pathname === "/api/me/avatar";
 }
 
