@@ -15,7 +15,7 @@ import {
 } from "../../lib/session.ts";
 import {
   readRememberedAccountsFromHeader,
-  removeRememberedAccountCookie,
+  removeRememberedAccountCookies,
 } from "../../lib/remembered-accounts.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 
@@ -57,10 +57,9 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   await deleteSession(did).catch(() => {});
 
   const headers = new Headers({ location: "/account" });
-  headers.append(
-    "set-cookie",
-    await removeRememberedAccountCookie(remembered, did),
-  );
+  for (const cookie of await removeRememberedAccountCookies(remembered, did)) {
+    headers.append("set-cookie", cookie);
+  }
 
   /** If they're forgetting the account they're currently signed in
    *  as, clear the live app session too. */

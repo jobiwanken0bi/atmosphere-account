@@ -14,7 +14,7 @@ import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 import {
-  addRememberedAccountCookie,
+  addRememberedAccountCookies,
   readRememberedAccountsFromHeader,
 } from "../../lib/remembered-accounts.ts";
 import {
@@ -65,7 +65,7 @@ export const handler = define.handlers({
       const remembered = await readRememberedAccountsFromHeader(
         ctx.req.headers.get("cookie"),
       );
-      const rememberedCookie = await addRememberedAccountCookie(remembered, {
+      const rememberedCookies = await addRememberedAccountCookies(remembered, {
         did: result.did,
         handle: result.handle,
         pdsUrl: result.pdsUrl,
@@ -123,7 +123,9 @@ export const handler = define.handlers({
         location: returnTo ?? defaultLanding,
       });
       headers.append("set-cookie", sessionCookie);
-      headers.append("set-cookie", rememberedCookie);
+      for (const cookie of rememberedCookies) {
+        headers.append("set-cookie", cookie);
+      }
       return new Response(null, { status: 303, headers });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

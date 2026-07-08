@@ -1,5 +1,6 @@
 import {
   addRememberedAccountCookie,
+  legacyHostOnlyRememberedAccountsClearCookieForTest,
   readRememberedAccountsFromHeader,
   rememberedAccountsCookieDomainForTest,
   rememberedAccountsCookieFlagsForTest,
@@ -34,6 +35,19 @@ Deno.test("remembered accounts cookie domain spans the site and login subdomain 
       "Domain=atmosphereaccount.com",
       "Secure",
     ],
+  );
+});
+
+Deno.test("remembered accounts clear legacy host-only cookie when sharing domain cookie", () => {
+  const legacyClear = legacyHostOnlyRememberedAccountsClearCookieForTest({
+    site: "https://atmosphereaccount.com",
+    login: "https://login.atmosphereaccount.com",
+    dev: false,
+  });
+
+  assertEquals(
+    legacyClear,
+    "atmo_accounts=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure",
   );
 });
 
@@ -72,3 +86,37 @@ Deno.test("remembered account cookies roundtrip signed account hints", async () 
     },
   ]);
 });
+
+Deno.test("remembered account reader merges duplicate scoped cookies", async () => {
+  const first = await addRememberedAccountCookie([], {
+    did: "did:plc:one",
+    handle: "one.example.com",
+    pdsUrl: "https://pds.one.example.com",
+  });
+  const second = await addRememberedAccountCookie([], {
+    did: "did:plc:two",
+    handle: "two.example.com",
+    pdsUrl: "https://pds.two.example.com",
+  });
+
+  const accounts = await readRememberedAccountsFromHeader(
+    `${cookiePair(first)}; ${cookiePair(second)}`,
+  );
+
+  assertEquals(accounts, [
+    {
+      did: "did:plc:one",
+      handle: "one.example.com",
+      pdsUrl: "https://pds.one.example.com",
+    },
+    {
+      did: "did:plc:two",
+      handle: "two.example.com",
+      pdsUrl: "https://pds.two.example.com",
+    },
+  ]);
+});
+
+function cookiePair(setCookie: string): string {
+  return setCookie.split(";")[0];
+}

@@ -8,7 +8,7 @@ import {
 } from "../../lib/session.ts";
 import { setAppUserType } from "../../lib/account-types.ts";
 import {
-  addRememberedAccountCookie,
+  addRememberedAccountCookies,
   readRememberedAccountsFromHeader,
   type RememberedAccount,
 } from "../../lib/remembered-accounts.ts";
@@ -87,7 +87,7 @@ export const handler = define.handlers({
       ...existing,
       ...DEMO_ACCOUNTS,
     ]);
-    const rememberedCookie = await addRememberedAccountCookie(
+    const rememberedCookies = await addRememberedAccountCookies(
       seed,
       currentAccount,
     );
@@ -97,7 +97,9 @@ export const handler = define.handlers({
       "location": "/account",
     });
     if (sessionCookie) headers.append("set-cookie", sessionCookie);
-    headers.append("set-cookie", rememberedCookie);
+    for (const cookie of rememberedCookies) {
+      headers.append("set-cookie", cookie);
+    }
 
     return new Response(null, {
       status: 303,

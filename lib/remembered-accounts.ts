@@ -34,9 +34,7 @@ const MAX_ACCOUNTS = 8;
 export async function readRememberedAccounts(
   req: Request,
 ): Promise<RememberedAccount[]> {
-  const raw = readCookieValue(req.headers.get("cookie"));
-  if (!raw) return [];
-  return await parseSignedValue(raw);
+  return await readRememberedAccountsFromHeader(req.headers.get("cookie"));
 }
 
 /** Same as `readRememberedAccounts` but takes the raw cookie header
@@ -45,9 +43,9 @@ export async function readRememberedAccounts(
 export async function readRememberedAccountsFromHeader(
   cookieHeader: string | null,
 ): Promise<RememberedAccount[]> {
-  const raw = readCookieValue(cookieHeader);
-  if (!raw) return [];
-  return await parseSignedValue(raw);
+  const raw = readCookieValues(cookieHeader);
+  if (raw.length === 0) return [];
+  return await parseSignedValues(raw);
 }
 
 /** Build a Set-Cookie header that adds `account` to the remembered
@@ -58,9 +56,16 @@ export async function addRememberedAccountCookie(
   current: RememberedAccount[],
   account: RememberedAccount,
 ): Promise<string> {
+  return (await addRememberedAccountCookies(current, account)).at(-1) ?? "";
+}
+
+export async function addRememberedAccountCookies(
+  current: RememberedAccount[],
+  account: RememberedAccount,
+): Promise<string[]> {
   const filtered = current.filter((a) => a.did !== account.did);
   const next = [account, ...filtered].slice(0, MAX_ACCOUNTS);
-  return await buildCookie(next);
+  return withLegacyHostOnlyClear(await buildCookie(next));
 }
 
 /** Build a Set-Cookie header that removes `did` from the remembered
@@ -70,9 +75,16 @@ export async function removeRememberedAccountCookie(
   current: RememberedAccount[],
   did: string,
 ): Promise<string> {
+  return (await removeRememberedAccountCookies(current, did)).at(-1) ?? "";
+}
+
+export async function removeRememberedAccountCookies(
+  current: RememberedAccount[],
+  did: string,
+): Promise<string[]> {
   const next = current.filter((a) => a.did !== did);
-  if (next.length === 0) return clearRememberedAccountsCookie();
-  return await buildCookie(next);
+  if (next.length === 0) return clearRememberedAccountsCookies();
+  return withLegacyHostOnlyClear(await buildCookie(next));
 }
 
 /** Set-Cookie value that clears the cookie. Sent on logout flows
@@ -80,19 +92,45 @@ export async function removeRememberedAccountCookie(
  *  on the standard sign-out — only when explicitly forgetting all
  *  accounts). */
 export function clearRememberedAccountsCookie(): string {
+  return clearRememberedAccountsCookies().at(-1) ?? "";
+}
+
+export function clearRememberedAccountsCookies(): string[] {
   const flags = rememberedAccountsCookieFlags(0);
-  return `${COOKIE_NAME}=; ${flags.join("; ")}`;
+  return withLegacyHostOnlyClear(`${COOKIE_NAME}=; ${flags.join("; ")}`);
 }
 
 /* ---------------- internals ---------------- */
 
-function readCookieValue(cookieHeader: string | null): string | null {
-  if (!cookieHeader) return null;
-  const target = cookieHeader.split(";").map((c) => c.trim()).find((c) =>
-    c.startsWith(`${COOKIE_NAME}=`)
-  );
-  if (!target) return null;
-  return decodeURIComponent(target.slice(COOKIE_NAME.length + 1));
+function readCookieValues(cookieHeader: string | null): string[] {
+  if (!cookieHeader) return [];
+  const values: string[] = [];
+  for (const cookie of cookieHeader.split(";").map((c) => c.trim())) {
+    if (!cookie.startsWith(`${COOKIE_NAME}=`)) continue;
+    try {
+      values.push(decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1)));
+    } catch {
+      // Ignore just this malformed cookie; another scoped cookie may be valid.
+    }
+  }
+  return values;
+}
+
+async function parseSignedValues(
+  values: string[],
+): Promise<RememberedAccount[]> {
+  const out: RememberedAccount[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const accounts = await parseSignedValue(value);
+    for (const account of accounts) {
+      if (seen.has(account.did)) continue;
+      seen.add(account.did);
+      out.push(account);
+      if (out.length >= MAX_ACCOUNTS) return out;
+    }
+  }
+  return out;
 }
 
 async function parseSignedValue(value: string): Promise<RememberedAccount[]> {
@@ -174,6 +212,33 @@ function rememberedAccountsCookieFlags(
   return flags;
 }
 
+function legacyHostOnlyRememberedAccountsClearCookie(
+  options: {
+    dev?: boolean;
+    site?: string;
+    login?: string;
+  } = {},
+): string | null {
+  const dev = options.dev ?? IS_DEV;
+  const site = options.site ?? siteOrigin();
+  const login = options.login ?? loginOrigin();
+  const flags = rememberedAccountsCookieFlags(0, { dev, site, login }).filter(
+    (flag) => !flag.startsWith("Domain="),
+  );
+  return rememberedAccountsCookieDomain({
+      dev,
+      site,
+      login,
+    })
+    ? `${COOKIE_NAME}=; ${flags.join("; ")}`
+    : null;
+}
+
+function withLegacyHostOnlyClear(cookie: string): string[] {
+  const legacyClear = legacyHostOnlyRememberedAccountsClearCookie();
+  return legacyClear ? [legacyClear, cookie] : [cookie];
+}
+
 function rememberedAccountsCookieDomain(
   options: { dev: boolean; site: string; login: string },
 ): string | null {
@@ -211,6 +276,12 @@ export function rememberedAccountsCookieFlagsForTest(
   options: { dev: boolean; site: string; login: string },
 ): string[] {
   return rememberedAccountsCookieFlags(maxAgeSec, options);
+}
+
+export function legacyHostOnlyRememberedAccountsClearCookieForTest(
+  options: { dev: boolean; site: string; login: string },
+): string | null {
+  return legacyHostOnlyRememberedAccountsClearCookie(options);
 }
 
 /* Local base64url helpers — kept here (rather than importing from

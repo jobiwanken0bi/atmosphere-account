@@ -1,7 +1,7 @@
 import { define } from "../../utils.ts";
 import { IS_DEV } from "../../lib/env.ts";
 import {
-  addRememberedAccountCookie,
+  addRememberedAccountCookies,
   type RememberedAccount,
 } from "../../lib/remembered-accounts.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
@@ -39,7 +39,7 @@ export const handler = define.handlers({
       did: current.did,
       handle: current.handle,
     });
-    const rememberedCookie = await addRememberedAccountCookie(
+    const rememberedCookies = await addRememberedAccountCookies(
       DEV_PICKER_ACCOUNTS,
       current,
     );
@@ -64,7 +64,9 @@ export const handler = define.handlers({
       "location": `${picker.pathname}${picker.search}`,
     });
     headers.append("set-cookie", buildSessionCookie(sessionValue));
-    headers.append("set-cookie", rememberedCookie);
+    for (const cookie of rememberedCookies) {
+      headers.append("set-cookie", cookie);
+    }
 
     return new Response(null, { status: 303, headers });
   },
