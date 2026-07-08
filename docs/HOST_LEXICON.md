@@ -11,7 +11,8 @@ The namespace is `account.atmosphere.host.*`.
 - Support host account routing and optional compatibility metadata without
   making Atmosphere the authority for keys, backups, devices, grants, or
   recovery.
-- Treat the PDS `/account` page as the primary account-management surface.
+- Treat the host-published account page as the primary account-management
+  surface; `/account` on the PDS is the recommended convention when it exists.
 - Make the Hosts page dynamic from AT Protocol records plus local moderation.
 
 ## Records
@@ -59,8 +60,7 @@ Use this for the actual Hosts page entry:
 - canonical host address, such as `pckt.cafe`
 - friendly display name
 - PDS service endpoint
-- optional account management URL override; otherwise clients derive `/account`
-  from the PDS service endpoint
+- optional account management URL for a known-working host-owned account page
 - signup status and URL
 - optional compatibility manifest URL
 - host match patterns, such as `bsky.network` and `*.bsky.network`
@@ -138,9 +138,10 @@ Implementation notes:
 
 ## Account Management Boundary
 
-The reference PDS now exposes account management at `/account` on the PDS
-itself. Atmosphere Account should therefore route users to the host-owned PDS
-account page for:
+The reference PDS exposes account management at `/account` on the PDS itself
+when the host has enabled that surface. Atmosphere Account should therefore
+route users to the host-owned account page when the host publishes an explicit
+working URL for:
 
 - OAuth grants and connected apps
 - signed-in devices and sessions
@@ -151,7 +152,8 @@ account page for:
 Atmosphere-owned UI should stay limited to Atmosphere Login picker connections,
 host discovery, host claims, app directory state, and compatibility metadata. If
 a host publishes extended compatibility metadata, treat it as optional
-enhancement data; do not require it before routing to the PDS `/account` page.
+enhancement data; do not use it as a substitute for an explicit host account
+page URL.
 
 ## OAuth Scopes
 

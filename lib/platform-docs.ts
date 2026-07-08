@@ -93,7 +93,7 @@ export const docsPages: DocsPage[] = [
       {
         title: "Route to host account pages",
         body:
-          "Publish a host service record with a PDS endpoint so Atmosphere can send users to the host-owned account page.",
+          "Publish a host service record with a PDS endpoint and working account page URL so Atmosphere can send users to host-owned controls.",
         href: "/docs/host-dashboard",
         label: "Host guide",
       },
@@ -146,7 +146,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "Host account routing",
                 body:
-                  "PDS hosts publish a service record. Atmosphere shows where the account lives and links users to the account page the host owns.",
+                  "PDS hosts publish a service record. Atmosphere shows where the account lives and links users to the account page the host explicitly publishes.",
               },
               {
                 title: "Developer ecosystem",
@@ -200,7 +200,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "PDS hosts",
                 body:
-                  "Publish host service records so Atmosphere can route users to your PDS-owned account page without duplicating it.",
+                  "Publish host service records and a working account page URL so Atmosphere can route users without duplicating account controls.",
                 href: "/docs/host-dashboard",
                 label: "Read the host guide",
               },
@@ -238,7 +238,7 @@ export const docsPages: DocsPage[] = [
               [
                 "A PDS host",
                 "Host service record",
-                "Atmosphere can route people to the host-published account page without duplicating account controls.",
+                "Atmosphere can route people to the explicitly published account page without duplicating account controls.",
               ],
               [
                 "A directory or compatibility badge",

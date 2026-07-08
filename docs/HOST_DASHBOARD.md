@@ -86,9 +86,9 @@ Minimal example:
 }
 ```
 
-This manifest is not required before Atmosphere can link users to the host's PDS
-account page. It should not be used to mirror PDS-owned controls inside
-Atmosphere. An example file is available at
+This manifest is not required before Atmosphere can link users to a host's
+published account page URL. It should not be used to mirror PDS-owned controls
+inside Atmosphere. An example file is available at
 `/examples/atmosphere-host-dashboard.example.json`; the JSON schema is available
 at `/atmosphere-host-dashboard.schema.json`.
 

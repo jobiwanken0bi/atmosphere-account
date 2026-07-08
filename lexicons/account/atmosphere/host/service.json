@@ -37,7 +37,7 @@
             "type": "string",
             "format": "uri",
             "maxLength": 512,
-            "description": "Optional host-owned account management page. If omitted, clients should derive it as /account on serviceEndpoint."
+            "description": "Optional host-owned account management page. Clients should only show a direct account-management link when this is present and known to work; /account on serviceEndpoint is the recommended convention when supported."
           },
           "hostPatterns": {
             "type": "array",

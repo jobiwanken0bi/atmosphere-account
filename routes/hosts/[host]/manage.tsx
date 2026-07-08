@@ -998,7 +998,7 @@ function redirectToSignin(host: string, url: URL): Response {
 }
 
 function valuesFromHost(host: AccountHost): ManageFormValues {
-  const derivedAccountUrl = host.accountManagementUrl ??
+  const savedAccountPageUrl = host.accountManagementUrl ??
     host.dashboardUrl ??
     "";
   return {
@@ -1010,7 +1010,7 @@ function valuesFromHost(host: AccountHost): ManageFormValues {
     profileHandle: host.profileHandle ?? "",
     bskyProfileVisible: host.bskyProfileVisible,
     serviceEndpoint: host.serviceEndpoint ?? "",
-    accountManagementUrl: derivedAccountUrl,
+    accountManagementUrl: savedAccountPageUrl,
     manifestUrl: host.capabilityManifestUrl ?? "",
     supportUrl: host.supportUrl ?? "",
   };
