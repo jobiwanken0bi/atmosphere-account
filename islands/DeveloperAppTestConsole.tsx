@@ -1,7 +1,7 @@
 import { useSignal } from "@preact/signals";
 import { buildAtmosphereLoginUrl } from "../lib/atmosphere-login-sdk.ts";
 
-interface DeveloperAppTestApp {
+export interface DeveloperAppTestApp {
   clientId: string;
   appName: string;
   appUri: string | null;
@@ -9,6 +9,10 @@ interface DeveloperAppTestApp {
   allowedReturnUris: string[];
   status: string;
 }
+
+export type DeveloperAppPickerMode = "redirect" | "popup";
+
+const PICKER_MODES: DeveloperAppPickerMode[] = ["redirect", "popup"];
 
 interface VerificationCheck {
   label: string;
@@ -39,6 +43,7 @@ export default function DeveloperAppTestConsole(
 ) {
   const returnUri = useSignal(app.allowedReturnUris[0] ?? "");
   const state = useSignal(randomState());
+  const mode = useSignal<DeveloperAppPickerMode>("redirect");
   const copied = useSignal<string | null>(null);
   const verificationInput = useSignal("");
   const verification = useSignal<VerificationResult | null>(null);
@@ -171,6 +176,7 @@ export default function DeveloperAppTestConsole(
 
   const url = pickerUrl();
   const payload = expectedPayload();
+  const buttonMarkup = loginButtonSnippet(app, returnUri.value, mode.value);
 
   return (
     <section class="glass account-developer-test-console">
@@ -179,8 +185,9 @@ export default function DeveloperAppTestConsole(
           <p class="text-eyebrow">Test picker</p>
           <h2>Generate and verify a real handoff</h2>
           <p>
-            Use one of this app's saved return URIs, open the picker, then paste
-            the callback URL or `selection_token` here to verify the binding.
+            Use one of this app's saved return URIs, choose redirect or popup
+            button mode, then paste the callback URL or `selection_token` here
+            to verify the binding.
           </p>
         </div>
       </div>
@@ -220,6 +227,33 @@ export default function DeveloperAppTestConsole(
             </button>
           </span>
         </label>
+
+        <div class="profile-form-field">
+          <span class="profile-form-label">Button mode</span>
+          <div
+            class="login-console-mode-control"
+            role="group"
+            aria-label="Button mode"
+          >
+            {PICKER_MODES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                class={`login-console-mode-option ${
+                  mode.value === option ? "is-active" : ""
+                }`}
+                aria-pressed={mode.value === option}
+                onClick={() => (mode.value = option)}
+              >
+                {option === "redirect" ? "Redirect" : "Popup"}
+              </button>
+            ))}
+          </div>
+          <span class="profile-form-hint">
+            Redirect is the default. Popup keeps the app page open and uses the
+            SDK completion event.
+          </span>
+        </div>
       </div>
 
       <div class="login-console-actions">
@@ -254,9 +288,9 @@ export default function DeveloperAppTestConsole(
         />
         <Snippet
           label="Button metadata"
-          text={buttonSnippet(app, returnUri.value)}
+          text={buttonMarkup}
           copied={copied.value === "button"}
-          onCopy={() => copy(buttonSnippet(app, returnUri.value), "button")}
+          onCopy={() => copy(buttonMarkup, "button")}
         />
       </div>
 
@@ -345,16 +379,34 @@ function Snippet(
   );
 }
 
-function buttonSnippet(app: DeveloperAppTestApp, returnUri: string): string {
-  return `<button
-  data-atmosphere-login
-  data-client-id="${app.clientId}"
-  data-return-uri="${returnUri}"
-  data-scope="atproto"
-  data-app-name="${app.appName}"
-  data-app-logo="${app.logoUri ?? ""}"
-  data-app-homepage="${app.appUri ?? ""}"
-></button>`;
+export function loginButtonSnippet(
+  app: DeveloperAppTestApp,
+  returnUri: string,
+  mode: DeveloperAppPickerMode,
+): string {
+  const attributes = [
+    "data-atmosphere-login",
+    attr("data-client-id", app.clientId),
+    attr("data-return-uri", returnUri),
+    attr("data-scope", "atproto"),
+    attr("data-mode", mode),
+    attr("data-app-name", app.appName),
+  ];
+  if (app.logoUri) attributes.push(attr("data-app-logo", app.logoUri));
+  if (app.appUri) attributes.push(attr("data-app-homepage", app.appUri));
+  return `<button\n  ${attributes.join("\n  ")}\n></button>`;
+}
+
+function attr(name: string, value: string): string {
+  return `${name}="${htmlAttr(value)}"`;
+}
+
+function htmlAttr(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function extractSelection(value: string): {

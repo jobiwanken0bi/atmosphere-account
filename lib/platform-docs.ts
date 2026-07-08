@@ -636,7 +636,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "test-console",
         title: "Try it locally",
         intro:
-          "Generate a picker URL from the reference app or your registered app metadata, inspect the callback payload, and paste a token to check pass/fail verification.",
+          "Generate a picker URL from the reference app or your registered app metadata, inspect redirect and popup button snippets, and paste a token to check pass/fail verification.",
         blocks: [{ type: "atmosphereLoginConsole" }],
       },
       {

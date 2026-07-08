@@ -14209,6 +14209,44 @@ body {
   align-items: center;
 }
 
+.login-console-mode-control {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 0.25rem;
+  padding: 0.24rem;
+  border: 1px solid rgba(18, 26, 47, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
+}
+
+.login-console-mode-option {
+  min-height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.42rem 0.72rem;
+  background: transparent;
+  color: rgba(18, 26, 47, 0.66);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.login-console-mode-option:hover {
+  background: rgba(22, 119, 255, 0.08);
+  color: #0e1428;
+}
+
+.login-console-mode-option.is-active {
+  background: #0f4ec4;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(15, 78, 196, 0.22);
+}
+
 .login-console-actions {
   display: flex;
   flex-wrap: wrap;
@@ -14561,6 +14599,14 @@ body {
     gap: 0.5rem;
   }
 
+  .login-console-mode-control {
+    width: 100%;
+  }
+
+  .login-console-mode-option {
+    flex: 1 1 0;
+  }
+
   .login-console-actions > a,
   .login-console-actions > button {
     justify-content: center;
@@ -14657,6 +14703,27 @@ body {
 .dark-phase .login-console-url {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.72);
+}
+
+.dark-phase .login-console-mode-control {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.dark-phase .login-console-mode-option {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.dark-phase .login-console-mode-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3f5fb;
+}
+
+.dark-phase .login-console-mode-option.is-active {
+  background: #78b7ff;
+  color: #081226;
+  box-shadow: 0 8px 20px rgba(120, 183, 255, 0.18);
 }
 
 /* ---- Endpoint reference ---- */
