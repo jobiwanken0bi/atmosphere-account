@@ -15,6 +15,7 @@ import { getHostDetailFromAppview } from "../../lib/appview-client.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
 import { buildHostAccountRoute } from "../../lib/host-account-routing.ts";
 import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
+import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -27,13 +28,14 @@ export const handler = define.handlers({
     );
     if (host) {
       const friendly = hostFriendlyProfile(host);
+      const publicOrigin = trustedRequestOrigin(ctx.url, ctx.req.headers);
       ctx.state.pageMeta = {
         title: `${host.displayName} on Atmosphere Hosts`,
         description: friendly.summary,
         ogType: "website",
         canonicalUrl: new URL(
           `/hosts/${encodeURIComponent(host.host)}`,
-          ctx.url.origin,
+          publicOrigin,
         ).href,
         imageUrl: host.avatarUrl ?? undefined,
       };

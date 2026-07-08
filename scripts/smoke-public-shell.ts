@@ -4,6 +4,12 @@ interface Options {
   requireAppview: boolean;
 }
 
+interface HtmlSmokeOptions {
+  expectedText: string | string[];
+  forbiddenText?: string[];
+  canonicalPath?: string;
+}
+
 const DEFAULT_SITE_ORIGIN = "https://atmosphereaccount.com";
 const DEFAULT_LOGIN_ORIGIN = "https://login.atmosphereaccount.com";
 
@@ -159,16 +165,44 @@ function assertContains(text: string, value: string, label: string): void {
   if (!text.includes(value)) throw new Error(`${label} missing ${value}`);
 }
 
+function assertNotContains(text: string, value: string, label: string): void {
+  if (text.includes(value)) {
+    throw new Error(`${label} unexpectedly included ${value}`);
+  }
+}
+
 async function smokeHtml(
   origin: string,
   path: string,
-  expectedText: string,
+  options: HtmlSmokeOptions,
 ): Promise<void> {
   const url = new URL(path, origin);
   const { response, text } = await fetchText(url);
   assertStatus(response, url);
   assertContentType(response, url, "html");
-  assertContains(text, expectedText, url.toString());
+  for (
+    const expected of Array.isArray(options.expectedText)
+      ? options.expectedText
+      : [options.expectedText]
+  ) {
+    assertContains(text, expected, url.toString());
+  }
+  for (const forbidden of options.forbiddenText ?? []) {
+    assertNotContains(text, forbidden, url.toString());
+  }
+  if (options.canonicalPath) {
+    const canonicalUrl = new URL(options.canonicalPath, origin).href;
+    assertContains(
+      text,
+      `<link rel="canonical" href="${canonicalUrl}"`,
+      url.toString(),
+    );
+    assertContains(
+      text,
+      `<meta property="og:url" content="${canonicalUrl}"`,
+      url.toString(),
+    );
+  }
   assertContains(text, "/styles.css", url.toString());
   console.log(`[smoke:public-shell] ok html ${url}`);
 }
@@ -323,11 +357,33 @@ console.log(
 await smokeHealth(options.siteOrigin);
 await smokeReadiness(options.siteOrigin, options.requireAppview);
 await smokeAppviewData(options.siteOrigin);
-await smokeHtml(options.siteOrigin, "/", "Atmosphere Account");
+await smokeHtml(options.siteOrigin, "/", {
+  expectedText: "Atmosphere Account",
+});
+await smokeHtml(options.siteOrigin, "/apps", {
+  expectedText: ["Apps", "Popular right now", "Fresh apps just added"],
+});
+await smokeHtml(options.siteOrigin, "/apps/bluesky", {
+  expectedText: ["Bluesky on Atmosphere Apps", "Bluesky"],
+  forbiddenText: ["up.railway.app"],
+  canonicalPath: "/apps/bluesky/",
+});
+await smokeHtml(options.siteOrigin, "/hosts", {
+  expectedText: ["Account hosts", "bsky.network"],
+  forbiddenText: [
+    "No account hosts match those filters.",
+    "We couldn't load account hosts",
+  ],
+});
+await smokeHtml(options.siteOrigin, "/hosts/bsky.network", {
+  expectedText: ["Bluesky on Atmosphere Hosts", "bsky.network"],
+  forbiddenText: ["up.railway.app"],
+  canonicalPath: "/hosts/bsky.network",
+});
 await smokeHtml(
   options.siteOrigin,
   "/docs/atmosphere-login",
-  "Atmosphere Login",
+  { expectedText: "Atmosphere Login" },
 );
 
 for (const origin of [options.siteOrigin, options.loginOrigin]) {

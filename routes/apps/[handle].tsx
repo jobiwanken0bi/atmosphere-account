@@ -73,6 +73,7 @@ import {
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle, resolveIdentity } from "../../lib/identity.ts";
+import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 
 const DID_HANDLE_CACHE_TTL_MS = 30 * 60 * 1000;
 const DID_HANDLE_CACHE_MAX = 500;
@@ -209,17 +210,22 @@ export const handler = define.handlers({
      *
      * Bluesky source: https://github.com/bluesky-social/social-app/blob/main/src/lib/link-meta/link-meta.ts
      */
+    const publicOrigin = trustedRequestOrigin(ctx.url, ctx.req.headers);
+    const currentPublicUrl = new URL(
+      `${ctx.url.pathname}${ctx.url.search}`,
+      publicOrigin,
+    );
     const shareUrl = profile
       ? new URL(
         `/apps/${encodeURIComponent(profile.handle)}/`,
-        ctx.url.origin,
+        publicOrigin,
       ).href
       : appListing
       ? new URL(
         `/apps/${encodeURIComponent(appListing.slug)}/`,
-        ctx.url.origin,
+        publicOrigin,
       ).href
-      : ctx.url.href;
+      : currentPublicUrl.href;
     /**
      * Per-page social meta. When the project has a banner, use the
      * dedicated OG JPEG route (~1200×630, tens of KB) for og:image so link
@@ -237,7 +243,7 @@ export const handler = define.handlers({
         ogType: "website",
         canonicalUrl: shareUrl,
         imageUrl: imageUrl?.startsWith("/")
-          ? new URL(imageUrl, ctx.url.origin).href
+          ? new URL(imageUrl, publicOrigin).href
           : imageUrl,
         imageAlt: appListing.name,
       };
@@ -249,7 +255,7 @@ export const handler = define.handlers({
       const ogImageUrl = profile.bannerCid
         ? new URL(
           `/api/registry/project-og/${encodeURIComponent(profile.handle)}`,
-          ctx.url.origin,
+          publicOrigin,
         ).href
         : undefined;
       ctx.state.pageMeta = {
