@@ -137,13 +137,13 @@ picker. Detail pages and authenticated write flows should be moved behind the
 appview API in later slices before Neon and Turso variables are fully removed
 from the Deno app.
 
-Run `deno task smoke:public-shell` after Deno or Railway appview deploys to
-check production liveness/readiness, OAuth metadata, JWKS, core HTML pages, and
-standalone SDK assets. Because the hosted picker is Deno-facing while
-Fresh-generated island chunks may come from the appview bundle proxy, also run
-`deno task smoke:picker-assets` after deploys that change Fresh output or proxy
-behavior. It checks picker HTML, CSS, static scripts, and generated `/assets`
-imports on both `login.atmosphereaccount.com` and `atmosphereaccount.com`.
+Run `deno task smoke:production` after Deno or Railway appview deploys. It runs
+`smoke:public-shell` for production liveness/readiness, OAuth metadata, JWKS,
+core HTML pages, and standalone SDK assets. It also runs `smoke:picker-assets`
+because the hosted picker is Deno-facing while Fresh-generated island chunks may
+come from the appview bundle proxy. The picker smoke checks HTML, CSS, static
+scripts, and generated `/assets` imports on both `login.atmosphereaccount.com`
+and `atmosphereaccount.com`.
 
 ## Neon Migration Track
 

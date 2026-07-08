@@ -167,8 +167,7 @@ curl -I https://atmosphereaccount.com/login/select
 curl -I https://login.atmosphereaccount.com/login/select
 curl -I https://login.atmosphereaccount.com/oauth/client-metadata.json
 curl -I https://login.atmosphereaccount.com/oauth/jwks.json
-deno task smoke:public-shell
-deno task smoke:picker-assets
+deno task smoke:production
 ```
 
 Deno's migration guide says DNS propagation may take up to 48 hours. Keep any
