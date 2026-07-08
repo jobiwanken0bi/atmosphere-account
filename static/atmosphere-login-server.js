@@ -90,11 +90,15 @@ export async function verifyAtmosphereSelectionToken(options) {
   if (options.expectedState && claims.state !== options.expectedState) {
     return { ok: false, error: "state mismatch", claims };
   }
-  if (
-    options.expectedReturnUri &&
-    normalizeUrl(claims.return_uri) !== normalizeUrl(options.expectedReturnUri)
-  ) {
-    return { ok: false, error: "return URI mismatch", claims };
+  if (options.expectedReturnUri) {
+    const claimReturnUri = normalizeUrl(claims.return_uri);
+    const expectedReturnUri = normalizeUrl(options.expectedReturnUri);
+    if (!claimReturnUri || !expectedReturnUri) {
+      return { ok: false, error: "return URI mismatch", claims };
+    }
+    if (claimReturnUri !== expectedReturnUri) {
+      return { ok: false, error: "return URI mismatch", claims };
+    }
   }
   if (options.replayStore) {
     const seen = await options.replayStore.has(claims.jti);
@@ -196,7 +200,11 @@ function isSafeAbsoluteUrl(value) {
 }
 
 function normalizeUrl(value) {
-  const url = new URL(value);
-  url.hash = "";
-  return url.toString();
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }

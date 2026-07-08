@@ -73,6 +73,19 @@ Deno.test("verifyAtmosphereSelectionToken rejects state mismatch", async () => {
   assertEquals(result.ok ? null : result.error, "state mismatch");
 });
 
+Deno.test("verifyAtmosphereSelectionToken rejects malformed expected return URIs without throwing", async () => {
+  const { token, publicJwk } = await signedSelection();
+  const result = await verifyAtmosphereSelectionToken({
+    token,
+    publicJwk,
+    expectedReturnUri: "not a url",
+    nowSec: 1_010,
+  });
+
+  assertEquals(result.ok, false);
+  assertEquals(result.ok ? null : result.error, "return URI mismatch");
+});
+
 Deno.test("verifyAtmosphereSelectionToken rejects expired selections", async () => {
   const { token, publicJwk } = await signedSelection();
   const result = await verifyAtmosphereSelectionToken({
