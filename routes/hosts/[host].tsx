@@ -15,6 +15,10 @@ import { getHostDetailFromAppview } from "../../lib/appview-client.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
 import { buildHostAccountRoute } from "../../lib/host-account-routing.ts";
 import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
+import {
+  fetchPdsServerDescription,
+  type PdsServerDescription,
+} from "../../lib/pds-server-description.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 
 export const handler = define.handlers({
@@ -40,10 +44,17 @@ export const handler = define.handlers({
         imageUrl: host.avatarUrl ?? undefined,
       };
     }
+    const pdsDescription = host?.serviceEndpoint
+      ? await fetchPdsServerDescription(host.serviceEndpoint).catch((err) => {
+        console.warn("[host] PDS describeServer failed:", err);
+        return null;
+      })
+      : null;
     return ctx.render(
       <HostDetailPage
         host={host}
         claim={claim}
+        pdsDescription={pdsDescription}
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}
         account={buildAccountMenuProps(ctx.state)}
@@ -54,9 +65,10 @@ export const handler = define.handlers({
 });
 
 function HostDetailPage(
-  { host, claim, claimed, managed, account }: {
+  { host, claim, pdsDescription, claimed, managed, account }: {
     host: AccountHost | null;
     claim: AccountHostClaim | null;
+    pdsDescription: PdsServerDescription | null;
     claimed: boolean;
     managed: boolean;
     account: ReturnType<typeof buildAccountMenuProps>;
@@ -75,7 +87,7 @@ function HostDetailPage(
               <div class="glass hosts-empty" style={{ marginTop: "1rem" }}>
                 <p class="text-subsection">Host not found.</p>
                 <p class="text-body mt-2">
-                  This account host may not have been observed or listed yet.
+                  This account host may not be listed yet.
                 </p>
               </div>
             </div>
@@ -89,6 +101,8 @@ function HostDetailPage(
   const dashboard = buildHostDashboardState({ host });
   const accountUrl = accountRoute?.accountManagementUrl ?? null;
   const friendly = hostFriendlyProfile(host);
+  const signupSummary = hostSignupSummary(host, pdsDescription);
+  const handleSummary = hostHandleSummary(friendly, pdsDescription);
   const isManagedByCurrentAccount = Boolean(
     claim && account.user && claim.claimantDid === account.user.did,
   );
@@ -143,7 +157,7 @@ function HostDetailPage(
                       {friendly.location}
                     </span>
                     <span class="profile-card-category">
-                      {friendly.signupLabel}
+                      {signupSummary.label}
                     </span>
                   </div>
                 </div>
@@ -196,9 +210,9 @@ function HostDetailPage(
                   <HostDetailIcon name="handle" />
                 </span>
                 <div>
-                  <p class="text-eyebrow">Handle domain</p>
-                  <h2>{friendly.handleLabel}</h2>
-                  <p>{friendly.handleDetail}</p>
+                  <p class="text-eyebrow">Handle endings</p>
+                  <h2>{handleSummary.label}</h2>
+                  <p>{handleSummary.detail}</p>
                 </div>
               </article>
               <article class="glass host-detail-choice-card">
@@ -207,8 +221,8 @@ function HostDetailPage(
                 </span>
                 <div>
                   <p class="text-eyebrow">Joining</p>
-                  <h2>{friendly.signupLabel}</h2>
-                  <p>{friendly.signupDetail}</p>
+                  <h2>{signupSummary.label}</h2>
+                  <p>{signupSummary.detail}</p>
                 </div>
               </article>
             </section>
@@ -241,6 +255,47 @@ function HostDetailPage(
                   <Fact
                     label="PDS service endpoint"
                     value={host.serviceEndpoint}
+                  />
+                )}
+                {pdsDescription && (
+                  <Fact
+                    label="PDS signup facts"
+                    value={pdsSignupFactsLabel(pdsDescription)}
+                  />
+                )}
+                {pdsDescription?.availableUserDomains.length
+                  ? (
+                    <Fact
+                      label="PDS handle endings"
+                      value={pdsDescription.availableUserDomains.join(", ")}
+                    />
+                  )
+                  : null}
+                {pdsDescription?.termsOfServiceUrl && (
+                  <Fact
+                    label="PDS terms"
+                    value={pdsDescription.termsOfServiceUrl}
+                  />
+                )}
+                {pdsDescription?.privacyPolicyUrl && (
+                  <Fact
+                    label="PDS privacy"
+                    value={pdsDescription.privacyPolicyUrl}
+                  />
+                )}
+                {pdsDescription?.contactEmail && (
+                  <Fact
+                    label="PDS contact"
+                    value={pdsDescription.contactEmail}
+                  />
+                )}
+                {pdsDescription?.did && (
+                  <Fact label="PDS DID" value={pdsDescription.did} />
+                )}
+                {pdsDescription && (
+                  <Fact
+                    label="PDS checked"
+                    value={formatDate(pdsDescription.checkedAt)}
                   />
                 )}
                 {host.accountManagementUrl && (
@@ -394,6 +449,103 @@ function bskyProfileHref(handle: string): string {
   return `https://bsky.app/profile/${encodeURIComponent(handle)}`;
 }
 
+function hostSignupSummary(
+  host: AccountHost,
+  pds: PdsServerDescription | null,
+): { label: string; detail: string } {
+  const friendly = hostFriendlyProfile(host);
+  if (host.signupStatus === "closed") {
+    return {
+      label: "Closed for now",
+      detail: "This host is not currently advertising new account signups.",
+    };
+  }
+
+  if (pds) {
+    const invite = pds.inviteCodeRequired === true;
+    const phone = pds.phoneVerificationRequired === true;
+    const knowsInvite = pds.inviteCodeRequired !== null;
+    const knowsPhone = pds.phoneVerificationRequired !== null;
+    if (invite && phone) {
+      return {
+        label: "Invite and phone required",
+        detail:
+          "This host asks for an invite code and phone verification when creating a new account.",
+      };
+    }
+    if (invite) {
+      return {
+        label: "Invite required",
+        detail:
+          "This host asks for an invite code before creating a new account.",
+      };
+    }
+    if (phone) {
+      return {
+        label: "Phone required",
+        detail:
+          "This host asks for phone verification when creating a new account.",
+      };
+    }
+    if (
+      (knowsInvite || knowsPhone || pds.availableUserDomains.length > 0) &&
+      pds.inviteCodeRequired !== true &&
+      pds.phoneVerificationRequired !== true
+    ) {
+      return {
+        label: "Open signup",
+        detail:
+          "This host says new accounts do not need an invite or phone verification.",
+      };
+    }
+  }
+
+  return { label: friendly.signupLabel, detail: friendly.signupDetail };
+}
+
+function hostHandleSummary(
+  friendly: ReturnType<typeof hostFriendlyProfile>,
+  pds: PdsServerDescription | null,
+): { label: string; detail: string } {
+  if (!pds?.availableUserDomains.length) {
+    return {
+      label: friendly.handleLabel,
+      detail: `${
+        friendly.handleDetail.replace(/\.$/, "")
+      }. You can also use your own domain.`,
+    };
+  }
+
+  const domains = pds.availableUserDomains;
+  const visible = domains.slice(0, 3).join(", ");
+  const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
+  return {
+    label: `${visible}${extra}`,
+    detail:
+      "These are the handle endings this host can give new accounts. You can also use your own domain.",
+  };
+}
+
+function pdsSignupFactsLabel(pds: PdsServerDescription): string {
+  const facts: string[] = [];
+  if (pds.inviteCodeRequired === true) {
+    facts.push("invite required");
+  } else if (pds.inviteCodeRequired === false) {
+    facts.push("no invite required");
+  }
+  if (pds.phoneVerificationRequired === true) {
+    facts.push("phone required");
+  } else if (pds.phoneVerificationRequired === false) {
+    facts.push("no phone required");
+  }
+  if (pds.availableUserDomains.length > 0) {
+    facts.push(
+      `handle endings: ${pds.availableUserDomains.slice(0, 5).join(", ")}`,
+    );
+  }
+  return facts.length ? facts.join("; ") : "No public signup facts advertised";
+}
+
 function formatDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
@@ -406,7 +558,7 @@ function registryStatusLabel(host: AccountHost): string {
     case "manual":
       return "Needs host record";
     default:
-      return "Observed from sign-in";
+      return "Seen through account activity";
   }
 }
 
@@ -417,6 +569,6 @@ function verificationLabel(status: HostVerificationStatus): string {
     case "claimed":
       return "Claimed";
     default:
-      return "Observed";
+      return "Listed";
   }
 }

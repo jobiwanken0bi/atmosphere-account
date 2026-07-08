@@ -7,6 +7,11 @@
  * recognizable even before an observation row exists.
  */
 import { type DbClient, withDb } from "./db.ts";
+import {
+  hostClaimProofMessage,
+  hostServiceRecordMatchesUser,
+  verifyHostClaimDomainProof,
+} from "./host-claim-proof.ts";
 import { isPrivateNetworkUrl } from "./security.ts";
 
 export type HostSignupStatus =
@@ -1111,6 +1116,18 @@ export async function claimAccountHost(
       claim: existingClaim,
     };
   }
+  if (!existingClaim) {
+    const proof = await verifyHostClaimDomainProof(row, user);
+    if (!proof.ok) {
+      return {
+        ok: false,
+        reason: "not_authorized",
+        host: row,
+        authority,
+        claim: existingClaim,
+      };
+    }
+  }
   const ts = now();
   const claim: AccountHostClaim = {
     host: row.host,
@@ -1402,6 +1419,41 @@ export async function registerAccountHost(
         host: existing,
       };
     }
+  }
+
+  const proofHost = {
+    host,
+    source: existing?.source ?? "manual",
+    claimHandle: existing?.claimHandle ?? null,
+    profileHandle: existing?.profileHandle ?? profileHandle,
+    serviceRecordUri: input.serviceRecordUri ?? existing?.serviceRecordUri ??
+      null,
+    serviceRecordCid: input.serviceRecordCid ?? existing?.serviceRecordCid ??
+      null,
+  };
+  const domainProof = await verifyHostClaimDomainProof(proofHost, user);
+  if (!domainProof.ok) {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      message: hostClaimProofMessage(),
+      host: existing,
+    };
+  }
+  const hasPublishedServiceRecord = hostServiceRecordMatchesUser(
+    host,
+    proofHost.serviceRecordUri,
+    proofHost.serviceRecordCid,
+    user,
+  );
+  if (!hasPublishedServiceRecord && domainProof.method !== "local-dev") {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      message:
+        "Host registration needs to publish a host service record from the signed-in account. Sign in again and try registering the host once more.",
+      host: existing,
+    };
   }
 
   const ts = now();

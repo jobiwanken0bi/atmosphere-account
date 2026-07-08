@@ -398,7 +398,7 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
           class="profile-form-button-secondary profile-form-button-secondary--lg"
           href="/apps/create"
         >
-          Register app listing
+          Register an app
         </a>
       </section>
 

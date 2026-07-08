@@ -15,6 +15,10 @@ import {
   getAccountHostClaim,
   resolveAccountHostClaimAuthority,
 } from "../../../lib/account-hosts.ts";
+import {
+  hostClaimProofMessage,
+  verifyHostClaimDomainProof,
+} from "../../../lib/host-claim-proof.ts";
 
 type ClaimState =
   | "ready"
@@ -98,7 +102,7 @@ export const handler = define.handlers({
       result.reason === "already_claimed"
         ? "This host has already been claimed."
         : result.reason === "not_authorized"
-        ? "That account cannot claim this host."
+        ? hostClaimProofMessage()
         : "This host is not ready to be claimed yet.",
     );
     return ctx.render(<HostClaimPage {...page} />, { status: 403 });
@@ -134,7 +138,8 @@ async function buildClaimPageProps(
   } else if (
     authority && accountHostClaimAuthorityMatchesUser(authority, user)
   ) {
-    state = "ready";
+    const proof = await verifyHostClaimDomainProof(host, user);
+    state = proof.ok ? "ready" : "not-claimable";
   } else if (authority) {
     state = "not-authorized";
   }
@@ -315,9 +320,9 @@ function ClaimBody(
       )}
       <p class="host-claim-panel-title">Manual review needed</p>
       <p class="text-body">
-        This host does not have a host account attached yet. Sign in with the
-        ATProto account that represents the host, then register the host from
-        there.
+        This host needs proof from the host domain before it can be claimed.
+        Sign in with the account whose handle matches the host domain, or add
+        the Atmosphere host proof file to the host website.
       </p>
       <a
         class="directory-register-button host-claim-secondary-action"

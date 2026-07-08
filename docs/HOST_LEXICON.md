@@ -94,13 +94,46 @@ Atmosphere should derive trust from:
 - OAuth claim flow from the expected admin account.
 - Host handle/domain alignment.
 - PDS service endpoint reachability.
-- Optional `.well-known` or DNS proof later.
+- Optional `.well-known` proof when the host account handle is different from
+  the host domain.
 - Local moderation state.
 - Future third-party attestations if needed.
 
 This means a host card can show the publishing account, while "verified" remains
 an Atmosphere-local or conformance-test result. A self-published record alone
 does not prove that the author controls every hostname it names.
+
+## Claim Proof
+
+Known hosts can be pre-bound to a specific operator account, for example
+`pckt.cafe` can be claimed by `pckt.blog`. New self-serve host claims need a
+domain proof so someone cannot claim an arbitrary PDS domain by only submitting
+a form.
+
+Atmosphere accepts these claim paths:
+
+- Pre-bound seeded authority, such as `blacksky.community` claimed by
+  `blackskyweb.xyz`.
+- Signed-in account handle exactly matches the host domain.
+- `/.well-known/atmosphere-host.json` on the host domain names the signed-in DID
+  or handle.
+- Local `.test` hosts in development only, for visual testing.
+
+Host registration also needs to publish
+`account.atmosphere.host.service/{normalized-host}` from the signed-in account.
+The DB-only fallback is only for local `.test` visual fixtures.
+
+Example `/.well-known/atmosphere-host.json`:
+
+```json
+{
+  "host": "pds.example.com",
+  "owner": {
+    "did": "did:plc:examplehost",
+    "handle": "example.com"
+  }
+}
+```
 
 ## Hosts Page Read Model
 

@@ -542,9 +542,9 @@ function RegisterHostPage(
               <p class="text-eyebrow">Register account host</p>
               <h1 class="host-claim-title">List your account host</h1>
               <p class="text-body host-claim-copy">
-                Register with the ATProto account that represents the host. This
-                creates a claimed listing you can manage without emailing
-                Atmosphere.
+                Register with the Atmosphere account that represents the host.
+                If the account handle is different from the host domain, add the
+                host proof file to the host website first.
               </p>
               {user && (
                 <div class="host-claim-panel host-claim-panel-ok">
@@ -553,7 +553,8 @@ function RegisterHostPage(
                   </p>
                   <p class="text-body">
                     This account will be shown as the host owner and can manage
-                    the listing after registration.
+                    the listing after registration once the host proof checks
+                    pass.
                   </p>
                 </div>
               )}
