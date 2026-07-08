@@ -19,19 +19,30 @@ Official docs:
 
 ## Target Runtime Split
 
-- **Deno Deploy:** public Fresh web app, OAuth routes, hosted Atmosphere Login
-  picker, docs, static SDK assets, client metadata, and JWKS.
+- **Deno Deploy:** public Fresh web app, hosted Atmosphere Login picker, docs,
+  static SDK assets, client metadata, JWKS, and light OAuth/public metadata
+  routes.
 - **Railway appview/API:** public directory read model APIs for apps, hosts,
-  search, reviews, favorites, admin status, and heavier appview reads.
+  search, reviews, favorites, admin status, DB-backed Atmosphere Login routes,
+  developer app registration, and heavier appview reads.
 - **Railway indexer/jobs:** always-on Jetstream indexer, backfills, rescoring,
   and heavier background jobs.
 - **Railway Postgres:** canonical appview database used by the Railway appview
-  and indexer services over Railway networking.
+  and indexer services over Railway networking. It also stores off-protocol
+  hosted-login control-plane state such as registered apps, allowed return URIs,
+  picker connections, replay protection, rate limits, sessions, and review
+  state.
 
 Do not point `atmosphereaccount.com` at Railway while Deno Deploy remains the
 public web host. Do not set a Railway Postgres URL on Deno Deploy as the
 permanent architecture; set `ATMOSPHERE_APPVIEW_URL` and let Deno call the
 Railway appview API instead.
+
+The login origin can still be Deno-facing. That does not mean durable auth data
+lives at the edge. `/login/select`, static SDK assets, client metadata, and JWKS
+can be served quickly by Deno, while DB-backed writes and verification endpoints
+such as `/api/login/selection` should be handled by or proxied to the Railway
+appview/API so trust decisions remain strongly consistent.
 
 ## Current Production State
 

@@ -631,9 +631,15 @@ const SCHEMA_STATEMENTS: string[] = [
     updated_by TEXT
   )`,
   /**
-   * Atmosphere Login app registrations. Apps can use the hosted account
-   * picker without becoming OAuth token clients of Atmosphere; this table
-   * controls which return URLs and origins are trusted for selection tokens.
+   * Off-protocol Atmosphere Login control-plane tables. They currently share
+   * Railway Postgres with the appview read model, but they are not indexed
+   * AT Protocol records and should not be treated as rebuildable projection
+   * data. Keep durable writes appview/Railway-owned; the Deno public shell
+   * should proxy these routes rather than connect directly to Postgres.
+   *
+   * Apps can use the hosted account picker without becoming OAuth token
+   * clients of Atmosphere; this table controls which return URLs and origins
+   * are trusted for selection tokens.
    */
   `CREATE TABLE IF NOT EXISTS login_app (
     client_id TEXT PRIMARY KEY,

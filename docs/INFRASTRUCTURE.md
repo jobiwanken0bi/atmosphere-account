@@ -2,7 +2,8 @@
 
 Atmosphere Account is an AT Protocol appview plus a public web app. Production
 is intentionally split into a public shell, an appview/API runtime, an indexer,
-and a relational appview database:
+and a relational Postgres store for appview data plus off-protocol control-plane
+state:
 
 - **Public web shell:** Fresh/Deno server on Deno Deploy for public pages, docs,
   OAuth metadata, the hosted login picker, static SDK assets, and light edge
@@ -13,9 +14,12 @@ and a relational appview database:
   architecturally it is the appview/API service.
 - **Indexer worker:** one always-on Railway process that consumes Jetstream,
   fetches authoritative PDS records, and updates the local appview projection.
-- **Database:** Railway Postgres as the current relational appview database. It
-  stores source records, deduped listings, aggregates, account hosts, moderation
-  state, OAuth state, sessions, and the worker lease.
+- **Database:** Railway Postgres as the current relational store. It stores the
+  appview read model, including source records, deduped listings, aggregates,
+  account hosts, moderation state, and the worker lease. It also stores
+  off-protocol control-plane state for hosted sign-in, including OAuth/session
+  state, registered login apps, exact return URI policy, picker connections,
+  replay protection, durable rate limits, and trust review state.
 
 ## Provider Direction
 
@@ -69,6 +73,42 @@ Why Railway Postgres now:
   project gives us private service networking and one operational control plane.
 - The codebase needs a real migration history rather than lazy additive schema
   bootstrapping in `lib/db.ts`.
+
+## Auth And Off-Protocol Control Plane
+
+`login.atmosphereaccount.com` should feel like an edge-native sign-in surface,
+but the edge is not the authority for Atmosphere Login. Deno Deploy owns the
+fast public experience: the picker shell, SDK assets, public metadata, JWKS, and
+safe cached reads. Railway owns the durable decisions that must be consistent
+across every request.
+
+Durable auth/control-plane state stays in Railway Postgres:
+
+- registered developer apps and app identity shown in the picker
+- exact allowed return URI policy
+- development, unverified, trusted, and blocked app states
+- saved Atmosphere picker connections
+- selection-token replay protection
+- durable rate-limit buckets for high-risk login flows
+- OAuth/session state, admin review state, and audit-friendly timestamps
+
+These tables are logically separate from indexed AT Protocol records even while
+they share the same Railway Postgres service. The indexed appview read model can
+be rebuilt from protocol records and backfills. The control plane cannot be
+treated that way: if an app is blocked, a return URI is removed, or a selection
+token has already been consumed, every region and every request must agree.
+
+Current implementation note: DB-backed login routes should execute in the
+Railway appview/API runtime or be proxied there from Deno. Deno should not
+become a permanent public-TCP Postgres client just because the login page is
+Deno-facing.
+
+If the control plane outgrows the shared database, split it by schema first
+(`auth.*` or `control_plane.*`) or into a second Railway Postgres service. Add
+Redis/Valkey only for high-volume ephemeral concerns such as rate limits,
+short-lived replay guards, or safe app metadata cache entries. Do not move the
+authoritative trust, return URI, or connection records to an eventually
+consistent edge cache.
 
 Why not switch by env var only:
 
