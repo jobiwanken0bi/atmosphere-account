@@ -1,8 +1,17 @@
 import { define } from "../../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../../lib/appview-client.ts";
 import { listLoginAppsForOwner } from "../../../../lib/atmosphere-login.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => {
+        console.error("[appview] developer apps API proxy failed:", err);
+        return json({ error: "appview_unavailable" }, 503);
+      },
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) {
       return json({ apps: [] }, 200);

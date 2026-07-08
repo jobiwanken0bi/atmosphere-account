@@ -3,6 +3,7 @@ import Footer from "../../../../components/Footer.tsx";
 import DeveloperAppTestConsole from "../../../../islands/DeveloperAppTestConsole.tsx";
 import LoginAppLogoReachability from "../../../../islands/LoginAppLogoReachability.tsx";
 import { define } from "../../../../utils.ts";
+import { proxyAppviewPageResponse } from "../../../../lib/appview-client.ts";
 import { buildAccountMenuProps } from "../../../../lib/account-menu-props.ts";
 import {
   buildLoginAppProductionChecks,
@@ -44,6 +45,11 @@ const MAX_DEVELOPER_APP_DETAIL_FORM_BYTES = 32_768;
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("developer app detail page", err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return redirectToSignin(ctx.url);
 
@@ -88,6 +94,11 @@ export const handler = define.handlers({
   },
 
   async POST(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("developer app detail update", err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return redirectToSignin(ctx.url);
 
@@ -163,6 +174,20 @@ export const handler = define.handlers({
     }
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response(
+    "Developer app registration is temporarily unavailable.",
+    {
+      status: 503,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "text/plain; charset=utf-8",
+      },
+    },
+  );
+}
 
 function DeveloperAppDetailPage(
   {

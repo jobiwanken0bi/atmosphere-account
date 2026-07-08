@@ -134,9 +134,12 @@ export async function proxyAppviewPageResponse(
   if (!remote) return null;
   const url = new URL(`${currentUrl.pathname}${currentUrl.search}`, remote);
   if (url.origin === currentUrl.origin) return null;
+  const bodyless = request.method === "GET" || request.method === "HEAD";
 
   const res = await fetch(url, {
-    headers: appviewPageHeaders(request.headers, currentUrl),
+    method: request.method,
+    headers: appviewPageHeaders(request.headers, currentUrl, bodyless),
+    body: bodyless ? undefined : request.body,
     redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
@@ -235,9 +238,10 @@ export async function getPublicHostDetail(
 function appviewPageHeaders(
   requestHeaders: Headers,
   currentUrl: URL,
+  bodyless: boolean,
 ): Headers {
   const headers = appviewRequestHeaders(requestHeaders, currentUrl);
-  headers.delete("content-type");
+  if (bodyless) headers.delete("content-type");
   return headers;
 }
 
