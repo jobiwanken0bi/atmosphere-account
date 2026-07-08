@@ -195,37 +195,55 @@ export function isCrossOriginReadonlyRequest(
     pathname === "/api/login/selection";
 }
 
-export const securityHeadersMiddleware = define.middleware(async (ctx) => {
-  const response = await ctx.next();
+function isTokenBearingLoginRoute(pathname: string): boolean {
+  return pathname === "/login/select" ||
+    pathname === "/api/login/selection" ||
+    pathname === "/examples/atmosphere-login/callback";
+}
 
-  const applySecurityHeaders = (headers: Headers) => {
-    setDefault(headers, "x-content-type-options", "nosniff");
-    setDefault(headers, "x-frame-options", "DENY");
-    setDefault(headers, "referrer-policy", "strict-origin-when-cross-origin");
+function applySecurityHeaders(headers: Headers, pathname: string): void {
+  setDefault(headers, "x-content-type-options", "nosniff");
+  setDefault(headers, "x-frame-options", "DENY");
+  setDefault(headers, "referrer-policy", "strict-origin-when-cross-origin");
+  setDefault(
+    headers,
+    "permissions-policy",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+  );
+  setDefault(headers, "cross-origin-opener-policy", "same-origin");
+  setDefault(headers, "content-security-policy", IS_DEV ? DEV_CSP : PROD_CSP);
+  if (!IS_DEV) {
     setDefault(
       headers,
-      "permissions-policy",
-      "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+      "strict-transport-security",
+      "max-age=31536000; includeSubDomains",
     );
-    setDefault(headers, "cross-origin-opener-policy", "same-origin");
-    setDefault(headers, "content-security-policy", IS_DEV ? DEV_CSP : PROD_CSP);
-    if (!IS_DEV) {
-      setDefault(
-        headers,
-        "strict-transport-security",
-        "max-age=31536000; includeSubDomains",
-      );
-    }
-    if (
-      ctx.url.pathname === "/atmosphere-login.js" ||
-      ctx.url.pathname === "/atmosphere-login-server.js"
-    ) {
-      setDefault(headers, "access-control-allow-origin", "*");
-    }
-  };
+  }
+  if (isTokenBearingLoginRoute(pathname)) {
+    headers.set("referrer-policy", "no-referrer");
+    headers.set("cache-control", "no-store");
+    headers.set("x-robots-tag", "noindex, nofollow");
+  }
+  if (
+    pathname === "/atmosphere-login.js" ||
+    pathname === "/atmosphere-login-server.js"
+  ) {
+    setDefault(headers, "access-control-allow-origin", "*");
+  }
+}
 
+export function applySecurityHeadersForTest(
+  pathname: string,
+  headers = new Headers(),
+): Headers {
+  applySecurityHeaders(headers, pathname);
+  return headers;
+}
+
+export const securityHeadersMiddleware = define.middleware(async (ctx) => {
+  const response = await ctx.next();
   try {
-    applySecurityHeaders(response.headers);
+    applySecurityHeaders(response.headers, ctx.url.pathname);
     return response;
   } catch {
     return response;

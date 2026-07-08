@@ -1,4 +1,5 @@
 import {
+  applySecurityHeadersForTest,
   isCrossOriginReadonlyRequest,
   isPrivateNetworkUrl,
   isSafeRelativePath,
@@ -87,4 +88,28 @@ Deno.test("bounded response reader rejects oversized responses", async () => {
     4,
   );
   assertEquals(tooLarge.ok, false);
+});
+
+Deno.test("token-bearing Atmosphere Login pages force private browser headers", () => {
+  for (
+    const pathname of [
+      "/login/select",
+      "/api/login/selection",
+      "/examples/atmosphere-login/callback",
+    ]
+  ) {
+    const headers = applySecurityHeadersForTest(pathname);
+    assertEquals(headers.get("referrer-policy"), "no-referrer");
+    assertEquals(headers.get("cache-control"), "no-store");
+    assertEquals(headers.get("x-robots-tag"), "noindex, nofollow");
+  }
+});
+
+Deno.test("ordinary pages keep the default referrer policy", () => {
+  const headers = applySecurityHeadersForTest("/apps");
+  assertEquals(
+    headers.get("referrer-policy"),
+    "strict-origin-when-cross-origin",
+  );
+  assertEquals(headers.has("cache-control"), false);
 });
