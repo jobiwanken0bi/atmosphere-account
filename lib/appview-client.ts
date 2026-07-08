@@ -13,7 +13,7 @@ import {
   searchAppDirectory,
 } from "./app-directory.ts";
 import { define } from "../utils.ts";
-import { isLoginRequestOrigin } from "./atmosphere-origins.ts";
+import { trustedAtmosphereOrigins } from "./atmosphere-origins.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -41,20 +41,20 @@ export interface PublicHostDetail {
   claim: AccountHostClaim | null;
 }
 
-export const appviewLoginAssetProxyMiddleware = define.middleware(
+export const appviewAssetProxyMiddleware = define.middleware(
   async (ctx) => {
-    if (!shouldProxyAppviewLoginAsset(ctx.url, ctx.req.headers)) {
+    if (!shouldProxyAppviewAsset(ctx.url)) {
       return await ctx.next();
     }
 
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
       (err) => {
-        console.error("[appview] login asset proxy failed:", err);
+        console.error("[appview] asset proxy failed:", err);
         return appviewEarlyProxyUnavailable(ctx.url.pathname);
       },
     );
     if (proxied) {
-      proxied.headers.set("x-atmosphere-appview-login-asset-proxy", "1");
+      proxied.headers.set("x-atmosphere-appview-asset-proxy", "1");
       return proxied;
     }
     return await ctx.next();
@@ -102,9 +102,12 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/me/avatar";
 }
 
-function shouldProxyAppviewLoginAsset(url: URL, headers?: Headers): boolean {
+function shouldProxyAppviewAsset(
+  url: URL,
+  trustedOrigins = trustedAtmosphereOrigins(),
+): boolean {
   return isGeneratedAppviewAssetPath(url.pathname) &&
-    isLoginRequestOrigin(url, headers);
+    trustedOrigins.includes(url.origin.replace(/\/$/, ""));
 }
 
 function isGeneratedAppviewAssetPath(pathname: string): boolean {
@@ -113,6 +116,13 @@ function isGeneratedAppviewAssetPath(pathname: string): boolean {
 
 export function isGeneratedAppviewAssetPathForTest(pathname: string): boolean {
   return isGeneratedAppviewAssetPath(pathname);
+}
+
+export function shouldProxyAppviewAssetForTest(
+  url: URL,
+  trustedOrigins?: string[],
+): boolean {
+  return shouldProxyAppviewAsset(url, trustedOrigins);
 }
 
 function isEdgeOwnedOauthDocument(pathname: string): boolean {

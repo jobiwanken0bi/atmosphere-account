@@ -3,6 +3,7 @@ import {
   appviewRequestHeadersForTest,
   isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
+  shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
 
@@ -83,7 +84,7 @@ Deno.test("early appview proxy leaves static, docs, and health routes on the Den
   }
 });
 
-Deno.test("login-domain generated assets can be proxied from the appview bundle", () => {
+Deno.test("generated assets can be proxied from the appview bundle", () => {
   assertEquals(
     isGeneratedAppviewAssetPathForTest("/assets/client-entry.js"),
     true,
@@ -97,6 +98,41 @@ Deno.test("login-domain generated assets can be proxied from the appview bundle"
   assertEquals(isGeneratedAppviewAssetPathForTest("/styles.css"), false);
   assertEquals(
     isGeneratedAppviewAssetPathForTest("/atmosphere-login.js"),
+    false,
+  );
+});
+
+Deno.test("appview asset proxy is limited to trusted Atmosphere origins", () => {
+  const trustedOrigins = [
+    "https://atmosphereaccount.com",
+    "https://login.atmosphereaccount.com",
+  ];
+  assertEquals(
+    shouldProxyAppviewAssetForTest(
+      new URL("https://atmosphereaccount.com/assets/client-entry.js"),
+      trustedOrigins,
+    ),
+    true,
+  );
+  assertEquals(
+    shouldProxyAppviewAssetForTest(
+      new URL("https://login.atmosphereaccount.com/assets/client-entry.js"),
+      trustedOrigins,
+    ),
+    true,
+  );
+  assertEquals(
+    shouldProxyAppviewAssetForTest(
+      new URL("https://example.com/assets/client-entry.js"),
+      trustedOrigins,
+    ),
+    false,
+  );
+  assertEquals(
+    shouldProxyAppviewAssetForTest(
+      new URL("https://atmosphereaccount.com/styles.css"),
+      trustedOrigins,
+    ),
     false,
   );
 });
