@@ -1,4 +1,5 @@
 import { IS_DEV, sessionSecret } from "./env.ts";
+import type { AtmosphereSelectionReplayStore } from "./atmosphere-login-sdk.ts";
 import { b64uDecode, b64uEncode, hmacSign, hmacVerify } from "./jose.ts";
 import {
   type CallbackResult,
@@ -9,6 +10,7 @@ import {
 
 const EXAMPLE_SESSION_COOKIE = "atmo_example_app";
 const EXAMPLE_SESSION_TTL_SEC = 30 * 60;
+const EXAMPLE_REPLAY_MAX_ENTRIES = 500;
 export const EXAMPLE_ATPROTO_OAUTH_SCOPE = "atproto";
 
 export interface ExampleAppSession {
@@ -65,6 +67,36 @@ export function isExampleAtmosphereLoginPopupCallback(url: URL): boolean {
 export function isExampleAtmosphereLoginPopupHandoff(url: URL): boolean {
   return url.searchParams.get("handoff") === "1";
 }
+
+export function createMemorySelectionReplayStore(
+  maxEntries = EXAMPLE_REPLAY_MAX_ENTRIES,
+  nowSec = () => Math.floor(Date.now() / 1000),
+): AtmosphereSelectionReplayStore {
+  const seen = new Map<string, number>();
+  const prune = () => {
+    const now = nowSec();
+    for (const [jti, expiresAtSec] of seen) {
+      if (expiresAtSec <= now) seen.delete(jti);
+    }
+    if (seen.size <= maxEntries) return;
+    const oldest = [...seen.entries()].sort((a, b) => a[1] - b[1]);
+    for (const [jti] of oldest.slice(0, seen.size - maxEntries)) {
+      seen.delete(jti);
+    }
+  };
+  return {
+    has(jti: string): boolean {
+      prune();
+      return seen.has(jti);
+    },
+    add(jti: string, expiresAtSec: number): void {
+      prune();
+      seen.set(jti, expiresAtSec);
+    },
+  };
+}
+
+export const exampleSelectionReplayStore = createMemorySelectionReplayStore();
 
 export function exampleAtprotoOAuthClientId(origin: string): string {
   return new URL(

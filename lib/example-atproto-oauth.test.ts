@@ -5,6 +5,7 @@ import {
 import {
   buildExampleAppSessionCookie,
   buildExampleOAuthStartPath,
+  createMemorySelectionReplayStore,
   exampleAtmosphereLoginCallbackUri,
   exampleAtmosphereLoginClientId,
   exampleAtmosphereLoginPopupCallbackUri,
@@ -99,6 +100,27 @@ Deno.test("example callback return URI preserves fixed params and removes callba
     exampleAtmosphereLoginVerifiedReturnUri(url),
     "https://app.example/examples/atmosphere-login/callback?mode=popup",
   );
+});
+
+Deno.test("example replay store rejects active JTIs and prunes expired entries", async () => {
+  let now = 10;
+  const replayStore = createMemorySelectionReplayStore(10, () => now);
+  await replayStore.add("selection-a", 12);
+  assertEquals(await replayStore.has("selection-a"), true);
+
+  now = 13;
+  assertEquals(await replayStore.has("selection-a"), false);
+});
+
+Deno.test("example replay store caps retained entries", async () => {
+  const replayStore = createMemorySelectionReplayStore(2, () => 10);
+  await replayStore.add("selection-a", 20);
+  await replayStore.add("selection-b", 30);
+  await replayStore.add("selection-c", 40);
+
+  assertEquals(await replayStore.has("selection-a"), false);
+  assertEquals(await replayStore.has("selection-b"), true);
+  assertEquals(await replayStore.has("selection-c"), true);
 });
 
 Deno.test("example OAuth metadata helpers use the example app routes", () => {

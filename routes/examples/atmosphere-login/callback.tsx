@@ -6,11 +6,13 @@ import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import {
   decodeSelectionTokenUnsafe,
   verifyLoginSelectionToken,
+  verifyLoginSelectionTokenDetailed,
 } from "../../../lib/atmosphere-login.ts";
 import { loginPickerOriginForRequest } from "../../../lib/atmosphere-origins.ts";
 import {
   buildExampleOAuthStartPath,
   exampleAtmosphereLoginVerifiedReturnUri,
+  exampleSelectionReplayStore,
   isExampleAtmosphereLoginPopupCallback,
   isExampleAtmosphereLoginPopupHandoff,
 } from "../../../lib/example-atproto-oauth.ts";
@@ -67,12 +69,41 @@ export const handler = define.handlers({
           />,
         );
       }
+      const consumed = await verifyLoginSelectionTokenDetailed(token, {
+        expectedAudience: clientId ?? undefined,
+        expectedState: state ?? undefined,
+        expectedReturnUri,
+        replayStore: exampleSelectionReplayStore,
+      });
+      if (!consumed.ok) {
+        return ctx.render(
+          <CallbackPage
+            account={buildAccountMenuProps(ctx.state)}
+            token={token}
+            decoded={decoded}
+            verified={verified}
+            checks={[
+              ...checks.filter((check) => check.label !== "Replay key"),
+              {
+                label: "Replay key",
+                ok: false,
+                detail: consumed.error === "replayed token"
+                  ? "This selection was already used. Restart the picker flow."
+                  : consumed.error,
+              },
+            ]}
+            expectedReturnUri={expectedReturnUri}
+            clientId={clientId}
+            state={state}
+          />,
+        );
+      }
       return new Response(null, {
         status: 303,
         headers: {
           location: buildExampleOAuthStartPath({
-            handle: verified.handle,
-            did: verified.sub,
+            handle: consumed.claims.handle,
+            did: consumed.claims.sub,
           }),
         },
       });

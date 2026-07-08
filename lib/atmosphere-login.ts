@@ -8,6 +8,7 @@ import {
 } from "./jose.ts";
 import {
   type AtmosphereSelectionClaims,
+  type AtmosphereSelectionReplayStore,
   type AtmosphereSelectionVerificationResult,
   verifyAtmosphereSelectionToken,
 } from "./atmosphere-login-sdk.ts";
@@ -1418,6 +1419,7 @@ export async function verifyLoginSelectionTokenDetailed(
     expectedAudience?: string;
     expectedState?: string;
     expectedReturnUri?: string;
+    replayStore?: AtmosphereSelectionReplayStore;
   },
 ): Promise<AtmosphereSelectionVerificationResult> {
   if (!OAUTH_PUBLIC_JWK) {
@@ -1427,6 +1429,7 @@ export async function verifyLoginSelectionTokenDetailed(
     };
   }
   const publicJwk = parseJwkEnv("OAUTH_PUBLIC_JWK", OAUTH_PUBLIC_JWK);
+  const replayStore = expected?.replayStore;
   const result = await verifyAtmosphereSelectionToken({
     token,
     publicJwk,
@@ -1444,6 +1447,17 @@ export async function verifyLoginSelectionTokenDetailed(
       error: "issuer mismatch",
       claims: result.claims,
     };
+  }
+  if (replayStore) {
+    const seen = await replayStore.has(result.claims.jti);
+    if (seen) {
+      return {
+        ok: false,
+        error: "replayed token",
+        claims: result.claims,
+      };
+    }
+    await replayStore.add(result.claims.jti, result.claims.exp);
   }
   return result;
 }

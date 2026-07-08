@@ -583,6 +583,13 @@ return redirect("/oauth/start?" + new URLSearchParams({
           },
           {
             type: "callout",
+            tone: "blue",
+            title: "Reference replay storage",
+            body:
+              "The example app uses a small in-memory replay store so the final callback rejects a reused selection token. Production apps should put replay keys in durable storage shared by every app instance until the token expires.",
+          },
+          {
+            type: "callout",
             title: "Keep the token boundary clear",
             body:
               "Do not send AT Protocol OAuth access tokens to Atmosphere. The relying app owns its OAuth session, refresh behavior, scopes, and logout semantics.",
