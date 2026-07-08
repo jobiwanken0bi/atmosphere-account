@@ -25,8 +25,36 @@ Deno.test("early appview proxy covers DB-backed app surfaces before session hydr
       "/admin/app-directory",
       "/users/joebasser.com",
       "/login/select",
+      "/oauth/add-account",
       "/oauth/callback",
+      "/oauth/forget",
       "/oauth/login",
+      "/oauth/logout",
+      "/oauth/switch",
+    ]
+  ) {
+    assertEquals(shouldProxyAppviewBeforeSession(path), true);
+  }
+});
+
+Deno.test("early appview proxy keeps only public OAuth documents on the Deno edge", () => {
+  for (
+    const path of [
+      "/oauth/client-metadata.json",
+      "/oauth/jwks.json",
+    ]
+  ) {
+    assertEquals(shouldProxyAppviewBeforeSession(path), false);
+  }
+
+  for (
+    const path of [
+      "/oauth/add-account",
+      "/oauth/callback",
+      "/oauth/forget",
+      "/oauth/login",
+      "/oauth/logout",
+      "/oauth/switch",
     ]
   ) {
     assertEquals(shouldProxyAppviewBeforeSession(path), true);
