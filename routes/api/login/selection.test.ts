@@ -94,3 +94,29 @@ Deno.test("verifySelectionBinding reports return URI mismatch", () => {
     "return URI mismatch",
   );
 });
+
+Deno.test("verifySelectionBinding treats malformed expected return URIs as mismatches", () => {
+  assertEquals(
+    verifySelectionBinding(claims(), {
+      token: "token",
+      expectedIssuer: null,
+      expectedClientId: null,
+      expectedReturnUri: "not a url",
+      expectedState: null,
+    }),
+    "return URI mismatch",
+  );
+});
+
+Deno.test("verifySelectionBinding treats malformed token return URIs as mismatches", () => {
+  assertEquals(
+    verifySelectionBinding(claims({ return_uri: "not a url" }), {
+      token: "token",
+      expectedIssuer: null,
+      expectedClientId: null,
+      expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
+      expectedState: null,
+    }),
+    "return URI mismatch",
+  );
+});

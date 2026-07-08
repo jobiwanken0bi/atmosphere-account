@@ -159,20 +159,27 @@ export function verifySelectionBinding(
   if (input.expectedState && claims.state !== input.expectedState) {
     return "state mismatch";
   }
-  if (
-    input.expectedReturnUri &&
-    normalizeReturnUri(claims.return_uri) !==
-      normalizeReturnUri(input.expectedReturnUri)
-  ) {
-    return "return URI mismatch";
+  if (input.expectedReturnUri) {
+    const claimReturnUri = normalizeReturnUri(claims.return_uri);
+    const expectedReturnUri = normalizeReturnUri(input.expectedReturnUri);
+    if (!claimReturnUri || !expectedReturnUri) {
+      return "return URI mismatch";
+    }
+    if (claimReturnUri !== expectedReturnUri) {
+      return "return URI mismatch";
+    }
   }
   return null;
 }
 
-function normalizeReturnUri(value: string): string {
-  const url = new URL(value);
-  url.hash = "";
-  return url.toString();
+function normalizeReturnUri(value: string): string | null {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 export const handler = define.handlers({
