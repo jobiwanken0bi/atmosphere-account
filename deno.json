@@ -3,6 +3,7 @@
   "license": "MIT",
   "tasks": {
     "check": "deno fmt --check . && deno lint . && deno check",
+    "test": "deno test -A",
     "dev": "vite",
     "dev:local": "ATMOSPHERE_DB_BACKEND=turso TURSO_DATABASE_URL=file:./local.db deno task dev --host 127.0.0.1",
     "dev:seed": "deno run -A scripts/seed-local-dev.ts",

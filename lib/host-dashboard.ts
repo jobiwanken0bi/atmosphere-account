@@ -1,5 +1,4 @@
 import { type AccountHost, type AccountHostLookup } from "./account-hosts.ts";
-import { IS_DEV } from "./env.ts";
 import {
   isPrivateNetworkHostname,
   readResponseTextWithLimit,
@@ -352,10 +351,8 @@ export function hostDashboardManifestUrl(input: string): string | null {
     return null;
   }
   if (url.username || url.password) return null;
-  if (url.protocol !== "https:" && !(IS_DEV && url.protocol === "http:")) {
-    return null;
-  }
-  if (!IS_DEV && isPrivateNetworkHostname(url.hostname)) return null;
+  if (url.protocol !== "https:") return null;
+  if (isPrivateNetworkHostname(url.hostname)) return null;
   url.hash = "";
   const path = url.pathname.replace(/\/+$/, "");
   if (path && path !== "") return url.toString();
