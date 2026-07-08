@@ -12,6 +12,7 @@ import {
   type AppSearchResult,
   searchAppDirectory,
 } from "./app-directory.ts";
+import { define } from "../utils.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -25,6 +26,58 @@ const APPVIEW_FETCH_TIMEOUT_MS = Math.max(
 export interface PublicHostDetail {
   host: AccountHost | null;
   claim: AccountHostClaim | null;
+}
+
+export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
+  if (!shouldProxyAppviewBeforeSession(ctx.url.pathname)) {
+    return await ctx.next();
+  }
+
+  const proxied = await (
+    ctx.url.pathname.startsWith("/api/")
+      ? proxyAppviewApiResponse(ctx.url, ctx.req)
+      : proxyAppviewPageResponse(ctx.url, ctx.req)
+  ).catch((err) => {
+    console.error("[appview] early proxy failed:", err);
+    return appviewEarlyProxyUnavailable(ctx.url.pathname);
+  });
+  if (proxied) return proxied;
+  return await ctx.next();
+});
+
+export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
+  return pathname === "/apps" || pathname.startsWith("/apps/") ||
+    pathname === "/hosts" || pathname.startsWith("/hosts/") ||
+    pathname === "/account" || pathname.startsWith("/account/") ||
+    pathname === "/admin" || pathname.startsWith("/admin/") ||
+    pathname === "/users" || pathname.startsWith("/users/") ||
+    pathname === "/login/select" ||
+    pathname === "/oauth" || pathname.startsWith("/oauth/") ||
+    pathname === "/api/apps" || pathname.startsWith("/api/apps/") ||
+    pathname === "/api/hosts" || pathname.startsWith("/api/hosts/") ||
+    pathname === "/api/account" || pathname.startsWith("/api/account/") ||
+    pathname === "/api/admin" || pathname.startsWith("/api/admin/") ||
+    pathname === "/api/registry" || pathname.startsWith("/api/registry/") ||
+    pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
+    pathname === "/api/me/avatar";
+}
+
+function appviewEarlyProxyUnavailable(pathname: string): Response {
+  const isApi = pathname.startsWith("/api/");
+  return new Response(
+    isApi
+      ? JSON.stringify({ error: "appview_unavailable" })
+      : "This page is temporarily unavailable.",
+    {
+      status: 503,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": isApi
+          ? "application/json; charset=utf-8"
+          : "text/plain; charset=utf-8",
+      },
+    },
+  );
 }
 
 export function appviewBaseUrl(): string | null {
