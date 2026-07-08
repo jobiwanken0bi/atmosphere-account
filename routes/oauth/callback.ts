@@ -8,6 +8,7 @@
  * on this browser.
  */
 import { define } from "../../utils.ts";
+import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { completeCallback, isOAuthConfigured } from "../../lib/oauth.ts";
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
@@ -27,6 +28,11 @@ import { isSafeRelativePath } from "../../lib/security.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("oauth callback", err),
+    );
+    if (proxied) return proxied;
+
     const oauth = oauthClientConfigForRequest(ctx.url, ctx.req.headers);
     if (
       !isOAuthConfigured({
@@ -125,3 +131,14 @@ export const handler = define.handlers({
     }
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Sign in callback is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

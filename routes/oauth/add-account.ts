@@ -16,6 +16,7 @@
  * relative `next` path, which is forwarded to /signin.
  */
 import { define } from "../../utils.ts";
+import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { clearSessionCookie, destroySession } from "../../lib/session.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
 
@@ -32,6 +33,11 @@ function safeNext(raw: string | null | undefined): string | null {
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
+  const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+    (err) => appviewUnavailable("oauth add account", err),
+  );
+  if (proxied) return proxied;
+
   if (ctx.req.method !== "GET") {
     const large = rejectLargeRequest(ctx.req, MAX_ADD_ACCOUNT_BODY_BYTES);
     if (large) return large;
@@ -63,3 +69,14 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
 }
 
 export const handler = define.handlers({ GET: handle, POST: handle });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Adding another account is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

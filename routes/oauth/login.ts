@@ -13,6 +13,7 @@ import {
   startLogin,
 } from "../../lib/oauth.ts";
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
+import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
 
 const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
@@ -75,6 +76,11 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
+  const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+    (err) => appviewUnavailable("oauth login", err),
+  );
+  if (proxied) return proxied;
+
   if (ctx.req.method !== "GET") {
     const large = rejectLargeRequest(ctx.req, MAX_OAUTH_LOGIN_BODY_BYTES);
     if (large) return large;
@@ -128,6 +134,17 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
 }
 
 export const handler = define.handlers({ GET: handle, POST: handle });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Sign in is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {

@@ -6,6 +6,7 @@
  * session cookie is cleared as well so the user is signed out.
  */
 import { define } from "../../utils.ts";
+import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { deleteSession } from "../../lib/oauth.ts";
 import {
   clearSessionCookie,
@@ -35,6 +36,12 @@ async function readDid(req: Request): Promise<string | null> {
 }
 
 async function handle(ctx: { req: Request }): Promise<Response> {
+  const url = new URL(ctx.req.url);
+  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch((err) =>
+    appviewUnavailable("oauth forget", err)
+  );
+  if (proxied) return proxied;
+
   const large = rejectLargeRequest(ctx.req, MAX_FORGET_BODY_BYTES);
   if (large) return large;
   const did = await readDid(ctx.req);
@@ -67,3 +74,14 @@ async function handle(ctx: { req: Request }): Promise<Response> {
 }
 
 export const handler = define.handlers({ POST: handle });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Removing this account is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

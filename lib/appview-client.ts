@@ -257,6 +257,7 @@ function appviewRequestHeaders(
       "cookie",
       "content-type",
       "user-agent",
+      "x-atmosphere-login",
     ]
   ) {
     const value = requestHeaders.get(name);

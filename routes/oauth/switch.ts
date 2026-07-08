@@ -19,6 +19,7 @@
  * browser.
  */
 import { define } from "../../utils.ts";
+import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { getValidSession } from "../../lib/oauth.ts";
 import {
   buildSessionCookie,
@@ -88,6 +89,12 @@ async function withTimeout<T>(
 }
 
 async function handle(ctx: { req: Request }): Promise<Response> {
+  const url = new URL(ctx.req.url);
+  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch((err) =>
+    appviewUnavailable("oauth switch", err)
+  );
+  if (proxied) return proxied;
+
   const large = rejectLargeRequest(ctx.req, MAX_SWITCH_BODY_BYTES);
   if (large) return large;
   const { did, next } = await readInput(ctx.req);
@@ -142,3 +149,14 @@ async function handle(ctx: { req: Request }): Promise<Response> {
 }
 
 export const handler = define.handlers({ POST: handle });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Account switching is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
