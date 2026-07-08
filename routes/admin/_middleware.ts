@@ -9,8 +9,14 @@
  */
 import { define } from "../../utils.ts";
 import { isAdmin } from "../../lib/admin.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 
-export const handler = define.middleware((ctx) => {
+export const handler = define.middleware(async (ctx) => {
+  const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+    (err) => appviewUnavailable("admin page", err),
+  );
+  if (proxied) return proxied;
+
   const user = ctx.state.user;
   if (!user) {
     const url = new URL(ctx.req.url);
@@ -25,3 +31,14 @@ export const handler = define.middleware((ctx) => {
   }
   return ctx.next();
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Admin is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
