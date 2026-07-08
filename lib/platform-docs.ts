@@ -2756,7 +2756,7 @@ iss=https://login.atmosphereaccount.com`,
             method: "POST",
             path: "/api/login/selection",
             body:
-              "Debug/verification endpoint for development consoles. Send `token` plus expected `client_id`, `return_uri`, `state`, and `iss`; production apps should verify locally with the JWKS.",
+              "Debug/verification endpoint for development consoles. Send `token` plus expected `client_id`, `return_uri`, `state`, and `iss`; browser-readable responses are limited to registered app return origins, and production apps should verify locally with the JWKS.",
           },
         ],
       },

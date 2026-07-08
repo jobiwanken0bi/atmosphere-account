@@ -263,6 +263,10 @@ Risks to address while operating on Postgres:
   rate limits. These are soft per-isolate guardrails for abuse and cost control;
   move the same scopes to Redis/Valkey if cross-region hard limits become
   necessary.
+- Browser-readable selection-token verification responses are CORS-bound to the
+  registered app return origin. Preflight stays permissive enough for browsers
+  to reach the endpoint, but actual JSON responses only expose themselves to
+  exact registered callbacks or loopback-only local dev apps.
 - OAuth state and app sessions are DB-backed. That is fine on Postgres, but
   high-volume hosted login may eventually need Redis for hot ephemeral state and
   replay guards.

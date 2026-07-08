@@ -1,6 +1,11 @@
 import { define } from "../../../utils.ts";
 import type { AtmosphereSelectionClaims } from "../../../lib/atmosphere-login-sdk.ts";
-import { verifyLoginSelectionTokenDetailed } from "../../../lib/atmosphere-login.ts";
+import {
+  getLoginApp,
+  isUnregisteredDevLoginReturnAllowed,
+  type LoginApp,
+  verifyLoginSelectionTokenDetailed,
+} from "../../../lib/atmosphere-login.ts";
 import { checkRateLimit } from "../../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../../lib/security.ts";
 
@@ -20,15 +25,24 @@ const SELECTION_VERIFICATION_RATE_LIMIT = {
   refillMs: 60_000,
 } as const;
 
-function json(body: unknown, init: ResponseInit = {}): Response {
+function json(
+  body: unknown,
+  init: ResponseInit = {},
+  corsHeaders: HeadersInit = {},
+): Response {
+  const headers = new Headers(init.headers);
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json; charset=utf-8");
+  }
+  if (!headers.has("cache-control")) {
+    headers.set("cache-control", "no-store");
+  }
+  for (const [name, value] of new Headers(corsHeaders)) {
+    headers.set(name, value);
+  }
   return new Response(JSON.stringify(body), {
     ...init,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "access-control-allow-origin": "*",
-      ...(init.headers ?? {}),
-    },
+    headers,
   });
 }
 
@@ -115,48 +129,73 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     });
   }
   const input = await readInput(ctx.req, ctx.url);
+  const corsHeaders = await selectionCorsHeaders(ctx.req, input);
   const token = input.token;
   if (!token) {
-    return json({ active: false, error: "missing token" }, { status: 400 });
+    return json(
+      { active: false, error: "missing token" },
+      { status: 400 },
+      corsHeaders,
+    );
   }
   if (token.length > MAX_SELECTION_TOKEN_LENGTH) {
-    return json({ active: false, error: "token is too long" }, { status: 400 });
+    return json(
+      { active: false, error: "token is too long" },
+      { status: 400 },
+      corsHeaders,
+    );
   }
   const hasBindingExpectation = Boolean(
     input.expectedClientId || input.expectedReturnUri ||
       input.expectedState || input.expectedIssuer,
   );
   if (!hasBindingExpectation) {
-    return json({
-      active: false,
-      bound: false,
-      error:
-        "binding expectations are required: provide client_id, return_uri, state, or iss",
-    }, { status: 400 });
+    return json(
+      {
+        active: false,
+        bound: false,
+        error:
+          "binding expectations are required: provide client_id, return_uri, state, or iss",
+      },
+      { status: 400 },
+      corsHeaders,
+    );
   }
   const result = await verifyLoginSelectionTokenDetailed(token, {
     expectedIssuer: input.expectedIssuer ?? undefined,
   });
   if (!result.ok) {
-    return json({
-      active: false,
-      bound: false,
-      error: result.error,
-    }, { status: 401 });
+    return json(
+      {
+        active: false,
+        bound: false,
+        error: result.error,
+      },
+      { status: 401 },
+      corsHeaders,
+    );
   }
   const bindingError = verifySelectionBinding(result.claims, input);
   if (bindingError) {
-    return json({
-      active: true,
-      bound: false,
-      error: bindingError,
-    }, { status: 200 });
+    return json(
+      {
+        active: true,
+        bound: false,
+        error: bindingError,
+      },
+      { status: 200 },
+      corsHeaders,
+    );
   }
-  return json({
-    active: true,
-    bound: true,
-    payload: result.claims,
-  });
+  return json(
+    {
+      active: true,
+      bound: true,
+      payload: result.claims,
+    },
+    {},
+    corsHeaders,
+  );
 }
 
 export function verifySelectionBinding(
@@ -195,6 +234,89 @@ function normalizeReturnUri(value: string): string | null {
   }
 }
 
+function normalizeOrigin(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function registeredAppAllowsReturnUri(
+  app: LoginApp,
+  expectedReturnUri: string,
+): boolean {
+  const expected = normalizeUrl(expectedReturnUri);
+  if (!expected) return false;
+  return app.allowedReturnUris.some((allowed) =>
+    normalizeUrl(allowed) === expected
+  );
+}
+
+export function canOriginReadSelectionVerification(
+  origin: string | null,
+  input: SelectionVerificationInput,
+  app: LoginApp | null,
+  options: { dev?: boolean } = {},
+): boolean {
+  const normalizedOrigin = normalizeOrigin(origin);
+  const clientId = normalizeUrl(input.expectedClientId);
+  const returnUri = normalizeUrl(input.expectedReturnUri);
+  if (!normalizedOrigin || !clientId || !returnUri) return false;
+  if (normalizeOrigin(returnUri) !== normalizedOrigin) return false;
+  if (app) {
+    return app.status !== "blocked" && app.clientId === clientId &&
+      registeredAppAllowsReturnUri(app, returnUri);
+  }
+  return isUnregisteredDevLoginReturnAllowed(clientId, returnUri, {
+    dev: options.dev,
+  });
+}
+
+export async function selectionCorsHeaders(
+  req: Request,
+  input: SelectionVerificationInput | null,
+  options: {
+    getLoginApp?: typeof getLoginApp;
+    dev?: boolean;
+  } = {},
+): Promise<Headers> {
+  const headers = new Headers();
+  const origin = normalizeOrigin(req.headers.get("origin"));
+  if (!origin) return headers;
+  headers.set("vary", "origin");
+
+  if (req.method.toUpperCase() === "OPTIONS") {
+    headers.set("access-control-allow-origin", origin);
+    headers.set("access-control-allow-methods", "POST, OPTIONS");
+    headers.set("access-control-allow-headers", "content-type");
+    headers.set("access-control-max-age", "86400");
+    return headers;
+  }
+
+  if (!input) return headers;
+  const clientId = normalizeUrl(input.expectedClientId);
+  const app = clientId
+    ? await (options.getLoginApp ?? getLoginApp)(clientId)
+    : null;
+  if (canOriginReadSelectionVerification(origin, input, app, options)) {
+    headers.set("access-control-allow-origin", origin);
+  }
+  return headers;
+}
+
 export const handler = define.handlers({
   GET() {
     return json({
@@ -207,15 +329,11 @@ export const handler = define.handlers({
     });
   },
   POST: handle,
-  OPTIONS() {
+  async OPTIONS(ctx) {
+    const corsHeaders = await selectionCorsHeaders(ctx.req, null);
     return new Response(null, {
       status: 204,
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-methods": "POST, OPTIONS",
-        "access-control-allow-headers": "content-type",
-        "access-control-max-age": "86400",
-      },
+      headers: corsHeaders,
     });
   },
 });
