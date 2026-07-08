@@ -456,67 +456,71 @@ async function smokeAppviewData(origin: string): Promise<void> {
   );
 }
 
-const options = parseOptions();
-console.log(
-  `[smoke:public-shell] site=${options.siteOrigin} login=${options.loginOrigin}`,
-);
+export async function main(): Promise<void> {
+  const options = parseOptions();
+  console.log(
+    `[smoke:public-shell] site=${options.siteOrigin} login=${options.loginOrigin}`,
+  );
 
-const healthRelease = await smokeHealth(
-  options.siteOrigin,
-  options.expectedReleaseSha,
-);
-const { shellRelease } = await smokeReadiness(
-  options.siteOrigin,
-  options.requireAppview,
-  options.expectedReleaseSha,
-);
-assertMatchingReleaseShas(
-  healthRelease,
-  `${options.siteOrigin}/api/health release`,
-  shellRelease,
-  `${options.siteOrigin}/api/health/ready release`,
-);
-await smokeAppviewData(options.siteOrigin);
-await smokeSiteStyles(options.siteOrigin);
-await smokeHtml(options.siteOrigin, "/", {
-  expectedText: "Atmosphere Account",
-});
-await smokeHtml(options.siteOrigin, "/apps", {
-  expectedText: ["Apps", "Popular right now", "Fresh apps just added"],
-});
-await smokeHtml(options.siteOrigin, "/apps/bluesky", {
-  expectedText: ["Bluesky on Atmosphere Apps", "Bluesky"],
-  forbiddenText: ["up.railway.app"],
-  canonicalPath: "/apps/bluesky/",
-});
-await smokeHtml(options.siteOrigin, "/hosts", {
-  expectedText: ["Account hosts", "bsky.network"],
-  forbiddenText: [
-    "No account hosts match those filters.",
-    "We couldn't load account hosts",
-  ],
-});
-await smokeHtml(options.siteOrigin, "/hosts/bsky.network", {
-  expectedText: ["Bluesky on Atmosphere Hosts", "bsky.network"],
-  forbiddenText: ["up.railway.app"],
-  canonicalPath: "/hosts/bsky.network",
-});
-await smokeHtml(
-  options.siteOrigin,
-  "/docs/atmosphere-login",
-  { expectedText: "Atmosphere Login" },
-);
-await smokeHtml(options.siteOrigin, "/examples/atmosphere-login/app", {
-  expectedText: [
-    "Reference app",
-    "Continue with Atmosphere",
-    "/app-icon.svg",
-  ],
-  forbiddenText: ["Continue with Atmosphere..."],
-});
+  const healthRelease = await smokeHealth(
+    options.siteOrigin,
+    options.expectedReleaseSha,
+  );
+  const { shellRelease } = await smokeReadiness(
+    options.siteOrigin,
+    options.requireAppview,
+    options.expectedReleaseSha,
+  );
+  assertMatchingReleaseShas(
+    healthRelease,
+    `${options.siteOrigin}/api/health release`,
+    shellRelease,
+    `${options.siteOrigin}/api/health/ready release`,
+  );
+  await smokeAppviewData(options.siteOrigin);
+  await smokeSiteStyles(options.siteOrigin);
+  await smokeHtml(options.siteOrigin, "/", {
+    expectedText: "Atmosphere Account",
+  });
+  await smokeHtml(options.siteOrigin, "/apps", {
+    expectedText: ["Apps", "Popular right now", "Fresh apps just added"],
+  });
+  await smokeHtml(options.siteOrigin, "/apps/bluesky", {
+    expectedText: ["Bluesky on Atmosphere Apps", "Bluesky"],
+    forbiddenText: ["up.railway.app"],
+    canonicalPath: "/apps/bluesky/",
+  });
+  await smokeHtml(options.siteOrigin, "/hosts", {
+    expectedText: ["Account hosts", "bsky.network"],
+    forbiddenText: [
+      "No account hosts match those filters.",
+      "We couldn't load account hosts",
+    ],
+  });
+  await smokeHtml(options.siteOrigin, "/hosts/bsky.network", {
+    expectedText: ["Bluesky on Atmosphere Hosts", "bsky.network"],
+    forbiddenText: ["up.railway.app"],
+    canonicalPath: "/hosts/bsky.network",
+  });
+  await smokeHtml(
+    options.siteOrigin,
+    "/docs/atmosphere-login",
+    { expectedText: "Atmosphere Login" },
+  );
+  await smokeHtml(options.siteOrigin, "/examples/atmosphere-login/app", {
+    expectedText: [
+      "Reference app",
+      "Continue with Atmosphere",
+      "/app-icon.svg",
+    ],
+    forbiddenText: ["Continue with Atmosphere..."],
+  });
 
-for (const origin of [options.siteOrigin, options.loginOrigin]) {
-  await smokeOauthMetadata(origin);
-  await smokeJwks(origin);
-  await smokeSdkAsset(origin);
+  for (const origin of [options.siteOrigin, options.loginOrigin]) {
+    await smokeOauthMetadata(origin);
+    await smokeJwks(origin);
+    await smokeSdkAsset(origin);
+  }
 }
+
+if (import.meta.main) await main();

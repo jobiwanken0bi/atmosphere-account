@@ -18,7 +18,7 @@
     "db:copy:postgres": "deno run -A scripts/copy-postgres.ts",
     "db:diff:neon": "deno run -A scripts/diff-neon.ts",
     "db:smoke": "deno run -A scripts/smoke-db-runtime.ts",
-    "smoke:production": "deno task smoke:public-shell && deno task smoke:picker-assets",
+    "smoke:production": "deno run --allow-env --allow-net scripts/smoke-production.ts",
     "smoke:public-shell": "deno run --allow-env --allow-net scripts/smoke-public-shell.ts",
     "smoke:picker-assets": "deno run --allow-env --allow-net scripts/smoke-picker-assets.ts",
     "release:stamp": "deno run --allow-env --allow-run=git,deno,railway scripts/stamp-release-vars.ts",

@@ -231,53 +231,57 @@ async function smokeGeneratedAssets(
   return seen.size;
 }
 
-const options = parseOptions();
-const loginUrl = pickerUrl(options);
-console.log(`[smoke:picker-assets] picker=${loginUrl}`);
+export async function main(): Promise<void> {
+  const options = parseOptions();
+  const loginUrl = pickerUrl(options);
+  console.log(`[smoke:picker-assets] picker=${loginUrl}`);
 
-const { response: pickerResponse, text: pickerHtml } = await fetchText(
-  loginUrl,
-);
-assertStatus(pickerResponse, loginUrl);
-assertContentType(pickerResponse, loginUrl, "html");
-assertContains(pickerHtml, "Continue with Atmosphere", "picker HTML");
-assertNotContains(
-  pickerHtml,
-  "Continue with Atmosphere...",
-  "picker HTML",
-);
-assertContains(pickerHtml, "SignInForm", "picker island boot script");
-assertContains(pickerHtml, "/app-icon.svg", "picker reference app logo");
-
-const assets = extractHtmlAssetPaths(pickerHtml);
-if (assets.stylesheets.length === 0) {
-  throw new Error("picker HTML did not include any stylesheets");
-}
-if (assets.staticScripts.length === 0) {
-  throw new Error("picker HTML did not include any static scripts");
-}
-if (assets.generatedAssets.length === 0) {
-  throw new Error("picker HTML did not include generated /assets scripts");
-}
-
-console.log(
-  `[smoke:picker-assets] html ok stylesheets=${assets.stylesheets.length} staticScripts=${assets.staticScripts.length} generated=${assets.generatedAssets.length}`,
-);
-
-for (const origin of options.assetOrigins) {
-  for (const path of assets.stylesheets) {
-    const css = await smokePath(origin, path, "css");
-    assertContains(css, ".login-picker", `${origin}${path}`);
-  }
-  for (const path of assets.staticScripts) {
-    await smokePath(origin, path, "javascript");
-  }
-  const generatedCount = await smokeGeneratedAssets(
-    origin,
-    assets.generatedAssets,
-    options.requireProxyHeaders,
+  const { response: pickerResponse, text: pickerHtml } = await fetchText(
+    loginUrl,
   );
+  assertStatus(pickerResponse, loginUrl);
+  assertContentType(pickerResponse, loginUrl, "html");
+  assertContains(pickerHtml, "Continue with Atmosphere", "picker HTML");
+  assertNotContains(
+    pickerHtml,
+    "Continue with Atmosphere...",
+    "picker HTML",
+  );
+  assertContains(pickerHtml, "SignInForm", "picker island boot script");
+  assertContains(pickerHtml, "/app-icon.svg", "picker reference app logo");
+
+  const assets = extractHtmlAssetPaths(pickerHtml);
+  if (assets.stylesheets.length === 0) {
+    throw new Error("picker HTML did not include any stylesheets");
+  }
+  if (assets.staticScripts.length === 0) {
+    throw new Error("picker HTML did not include any static scripts");
+  }
+  if (assets.generatedAssets.length === 0) {
+    throw new Error("picker HTML did not include generated /assets scripts");
+  }
+
   console.log(
-    `[smoke:picker-assets] ok origin=${origin} generatedAssets=${generatedCount}`,
+    `[smoke:picker-assets] html ok stylesheets=${assets.stylesheets.length} staticScripts=${assets.staticScripts.length} generated=${assets.generatedAssets.length}`,
   );
+
+  for (const origin of options.assetOrigins) {
+    for (const path of assets.stylesheets) {
+      const css = await smokePath(origin, path, "css");
+      assertContains(css, ".login-picker", `${origin}${path}`);
+    }
+    for (const path of assets.staticScripts) {
+      await smokePath(origin, path, "javascript");
+    }
+    const generatedCount = await smokeGeneratedAssets(
+      origin,
+      assets.generatedAssets,
+      options.requireProxyHeaders,
+    );
+    console.log(
+      `[smoke:picker-assets] ok origin=${origin} generatedAssets=${generatedCount}`,
+    );
+  }
 }
+
+if (import.meta.main) await main();
