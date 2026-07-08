@@ -20,6 +20,7 @@
     "smoke:production": "deno task smoke:public-shell && deno task smoke:picker-assets",
     "smoke:public-shell": "deno run --allow-env --allow-net scripts/smoke-public-shell.ts",
     "smoke:picker-assets": "deno run --allow-env --allow-net scripts/smoke-picker-assets.ts",
+    "release:stamp": "deno run --allow-env --allow-run=git,deno,railway scripts/stamp-release-vars.ts",
     "db:maintain": "deno run -A scripts/maintain-db.ts",
     "railway:seed-secrets": "deno run -A scripts/seed-railway-secrets.ts",
     "indexer": "deno run -A worker/indexer.ts",

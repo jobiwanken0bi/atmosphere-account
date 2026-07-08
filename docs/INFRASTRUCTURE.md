@@ -150,6 +150,17 @@ Railway before deploying, then run:
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
 
+The helper below stamps the current git SHA and branch onto Deno Deploy and the
+Railway appview service without triggering a Railway deploy. Run it before
+deploying both layers from the same working tree:
+
+```sh
+deno task release:stamp -- --write
+deno deploy --prod
+railway up --service web --environment production --detach -m "Deploy $(git rev-parse --short HEAD)"
+SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
+```
+
 When both layers expose `release.gitSha`, the public-shell smoke also verifies
 that Deno and Railway are serving the same commit. It also runs
 `smoke:picker-assets` because the hosted picker is Deno-facing while

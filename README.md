@@ -121,6 +121,15 @@ SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 The same SHA can be supplied as `expected_release_sha` when manually running the
 GitHub `Production Smoke` workflow.
 
+Use the release-stamping helper before an exact release:
+
+```sh
+deno task release:stamp -- --write
+deno deploy --prod
+railway up --service web --environment production --detach -m "Deploy $(git rev-parse --short HEAD)"
+SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
+```
+
 ## Contributing
 
 PRs and forks welcome on either forge:
