@@ -80,6 +80,39 @@ Deno.test("buildHostAccountRoute prefers explicit account management URL", () =>
   assertEquals(route.source, "explicit_account_management_url");
 });
 
+Deno.test("buildHostAccountRoute rejects unsafe persisted account management URLs", () => {
+  const unsafeValues = [
+    "/account",
+    "http://example.host/account",
+    "https://user:pass@example.host/account",
+    "https://localhost/account",
+    "https://127.0.0.1/account",
+  ];
+
+  for (const value of unsafeValues) {
+    const route = buildHostAccountRoute({
+      host: host({ accountManagementUrl: value }),
+    });
+
+    assert(route);
+    assertEquals(route.accountManagementUrl, null);
+    assertEquals(route.source, "unknown");
+  }
+});
+
+Deno.test("buildHostAccountRoute rejects unsafe legacy dashboard URLs", () => {
+  const route = buildHostAccountRoute({
+    host: host({
+      accountManagementUrl: null,
+      dashboardUrl: "/account",
+    }),
+  });
+
+  assert(route);
+  assertEquals(route.accountManagementUrl, null);
+  assertEquals(route.source, "unknown");
+});
+
 Deno.test("buildHostAccountRoute does not fall back to homepage as an account page", () => {
   const route = buildHostAccountRoute({
     host: host({

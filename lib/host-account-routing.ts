@@ -1,4 +1,5 @@
 import { type AccountHost, type AccountHostLookup } from "./account-hosts.ts";
+import { isPrivateNetworkHostname } from "./security.ts";
 
 export interface HostAccountRouteState {
   host: string;
@@ -24,12 +25,15 @@ export function buildHostAccountRoute(input: {
   const serviceEndpoint = input.host?.serviceEndpoint ??
     input.lookup?.endpoint ??
     null;
-  const accountManagementUrl = input.host?.accountManagementUrl ??
-    input.host?.dashboardUrl ??
-    null;
-  const source = input.host?.accountManagementUrl
+  const explicitAccountManagementUrl = safePublicHostUrl(
+    input.host?.accountManagementUrl,
+  );
+  const legacyDashboardUrl = safePublicHostUrl(input.host?.dashboardUrl);
+  const accountManagementUrl = explicitAccountManagementUrl ??
+    legacyDashboardUrl;
+  const source = explicitAccountManagementUrl
     ? "explicit_account_management_url"
-    : input.host?.dashboardUrl
+    : legacyDashboardUrl
     ? "legacy_dashboard_url"
     : "unknown";
 
@@ -39,8 +43,25 @@ export function buildHostAccountRoute(input: {
     accountManagementUrl,
     serviceEndpoint,
     directoryUrl: `/hosts/${encodeURIComponent(host)}`,
-    supportUrl: input.host?.supportUrl ?? null,
-    manifestUrl: input.host?.capabilityManifestUrl ?? null,
+    supportUrl: safePublicHostUrl(input.host?.supportUrl),
+    manifestUrl: safePublicHostUrl(input.host?.capabilityManifestUrl),
     source,
   };
+}
+
+export function safePublicHostUrl(
+  value: string | null | undefined,
+): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return null;
+    if (url.username || url.password) return null;
+    if (isPrivateNetworkHostname(url.hostname)) return null;
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
