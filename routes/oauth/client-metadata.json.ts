@@ -11,7 +11,7 @@ import { DEFAULT_OAUTH_SCOPE } from "../../lib/oauth-scopes.ts";
 
 export const handler = define.handlers({
   GET(ctx): Response {
-    const oauth = oauthClientConfigForRequest(ctx.url);
+    const oauth = oauthClientConfigForRequest(ctx.url, ctx.req.headers);
     const body = {
       client_id: oauth.clientId,
       application_type: "web",

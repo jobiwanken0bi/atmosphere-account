@@ -66,7 +66,7 @@ export const handler = define.handlers({
       request = readLoginRequestFromForm(form);
       const { app, returnUri } = await resolveLoginAppForRequest(request);
       const pickerAccounts = getPickerAccounts(ctx.state);
-      const issuer = loginPickerOriginForRequest(ctx.url);
+      const issuer = loginPickerOriginForRequest(ctx.url, ctx.req.headers);
       const did = String(form.get("did") ?? "").trim();
       const selected = pickerAccounts.find((account) => account.did === did);
       if (!selected) {

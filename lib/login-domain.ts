@@ -46,7 +46,7 @@ function redirectTo(url: string, status = 302): Response {
 }
 
 export const loginDomainMiddleware = define.middleware((ctx) => {
-  const origin = trustedRequestOrigin(ctx.url);
+  const origin = trustedRequestOrigin(ctx.url, ctx.req.headers);
 
   if (
     !IS_DEV &&
@@ -57,7 +57,7 @@ export const loginDomainMiddleware = define.middleware((ctx) => {
     return redirectTo(loginPickerUrlForRequest(ctx.url), 308);
   }
 
-  if (!isLoginRequestOrigin(ctx.url)) return ctx.next();
+  if (!isLoginRequestOrigin(ctx.url, ctx.req.headers)) return ctx.next();
 
   if (isAllowedLoginHostPath(ctx.url.pathname)) return ctx.next();
 

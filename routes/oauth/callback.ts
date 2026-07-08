@@ -27,7 +27,7 @@ import { isSafeRelativePath } from "../../lib/security.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const oauth = oauthClientConfigForRequest(ctx.url);
+    const oauth = oauthClientConfigForRequest(ctx.url, ctx.req.headers);
     if (
       !isOAuthConfigured({
         clientId: oauth.clientId,

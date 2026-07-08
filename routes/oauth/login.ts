@@ -81,7 +81,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   }
   const wantsJson = ctx.req.headers.get("x-atmosphere-login") === "1" ||
     (ctx.req.headers.get("accept") ?? "").includes("application/json");
-  const oauth = oauthClientConfigForRequest(ctx.url);
+  const oauth = oauthClientConfigForRequest(ctx.url, ctx.req.headers);
   const oauthOptions = {
     clientId: oauth.clientId,
     redirectUri: oauth.redirectUri,

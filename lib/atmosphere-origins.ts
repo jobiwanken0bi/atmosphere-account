@@ -41,18 +41,31 @@ export function isTrustedAtmosphereOrigin(origin: string): boolean {
   return IS_DEV && isLoopbackOrigin(normalized);
 }
 
-export function trustedRequestOrigin(url: URL): string {
+function forwardedTrustedOrigin(headers?: Headers): string | null {
+  const forwarded = headers?.get("x-atmosphere-public-origin");
+  const normalized = forwarded ? normalizeOrigin(forwarded) : null;
+  return normalized && isTrustedAtmosphereOrigin(normalized)
+    ? normalized
+    : null;
+}
+
+export function trustedRequestOrigin(url: URL, headers?: Headers): string {
   const normalized = normalizeOrigin(url.origin);
   if (normalized && isTrustedAtmosphereOrigin(normalized)) return normalized;
+  const forwarded = forwardedTrustedOrigin(headers);
+  if (forwarded) return forwarded;
   return siteOrigin();
 }
 
-export function isLoginRequestOrigin(url: URL): boolean {
-  return trustedRequestOrigin(url) === loginOrigin();
+export function isLoginRequestOrigin(url: URL, headers?: Headers): boolean {
+  return trustedRequestOrigin(url, headers) === loginOrigin();
 }
 
-export function loginPickerOriginForRequest(url: URL): string {
-  const origin = trustedRequestOrigin(url);
+export function loginPickerOriginForRequest(
+  url: URL,
+  headers?: Headers,
+): string {
+  const origin = trustedRequestOrigin(url, headers);
   return origin === siteOrigin() && !IS_DEV ? loginOrigin() : origin;
 }
 
@@ -61,13 +74,13 @@ export function loginPickerUrlForRequest(url: URL): string {
   return target.toString();
 }
 
-export function oauthClientConfigForRequest(url: URL): {
+export function oauthClientConfigForRequest(url: URL, headers?: Headers): {
   origin: string;
   clientId: string;
   redirectUri: string;
   jwksUri: string;
 } {
-  const origin = trustedRequestOrigin(url);
+  const origin = trustedRequestOrigin(url, headers);
   return {
     origin,
     clientId: clientIdForOrigin(origin),
