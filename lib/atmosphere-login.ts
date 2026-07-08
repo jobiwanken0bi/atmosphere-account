@@ -37,6 +37,9 @@ export const ATMOSPHERE_LOGIN_MANIFEST_VERSION = "atmosphere.login.v0.1";
 const ATMOSPHERE_LOGIN_MANIFEST_PATH = "/.well-known/atmosphere-login.json";
 const ATMOSPHERE_LOGIN_MANIFEST_TIMEOUT_MS = 3_000;
 const MAX_ATMOSPHERE_LOGIN_MANIFEST_BYTES = 64_000;
+const EXAMPLE_LOGIN_CLIENT_METADATA_PATH =
+  "/examples/atmosphere-login/client-metadata.json";
+const EXAMPLE_APP_ICON_PATH = "/app-icon.svg";
 
 export interface LoginRequest {
   clientId: string;
@@ -154,12 +157,38 @@ function nullableNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function isExampleLoginClientId(clientId: string): boolean {
+  try {
+    return new URL(clientId).pathname === EXAMPLE_LOGIN_CLIENT_METADATA_PATH;
+  } catch {
+    return false;
+  }
+}
+
+function exampleLoginAppLogoUri(
+  clientId: string,
+  appUri?: string | null,
+): string | null {
+  if (!isExampleLoginClientId(clientId)) return null;
+  try {
+    return new URL(
+      EXAMPLE_APP_ICON_PATH,
+      new URL(appUri || clientId).origin,
+    ).toString();
+  } catch {
+    return null;
+  }
+}
+
 function rowToLoginApp(row: Record<string, unknown>): LoginApp {
+  const clientId = String(row.client_id);
+  const appUri = typeof row.app_uri === "string" ? row.app_uri : null;
   return {
-    clientId: String(row.client_id),
+    clientId,
     appName: String(row.app_name),
-    appUri: typeof row.app_uri === "string" ? row.app_uri : null,
-    logoUri: typeof row.logo_uri === "string" ? row.logo_uri : null,
+    appUri,
+    logoUri: exampleLoginAppLogoUri(clientId, appUri) ??
+      (typeof row.logo_uri === "string" ? row.logo_uri : null),
     allowedReturnUris: jsonArray(row.allowed_return_uris),
     allowedOrigins: jsonArray(row.allowed_origins),
     status: readStatus(row.status),
@@ -176,6 +205,11 @@ function rowToLoginApp(row: Record<string, unknown>): LoginApp {
     contactDid: typeof row.contact_did === "string" ? row.contact_did : null,
     registered: true,
   };
+}
+
+function withExampleLoginAppLogo(app: LoginApp): LoginApp {
+  const logoUri = exampleLoginAppLogoUri(app.clientId, app.appUri);
+  return logoUri && app.logoUri !== logoUri ? { ...app, logoUri } : app;
 }
 
 function parseAbsoluteUrl(value: string, label: string): URL {
@@ -302,8 +336,7 @@ function appFromClientId(clientId: string): LoginApp {
   assertSafeWebUrl(client, "client_id");
   const isDev = client.protocol === "http:" &&
     isLoopbackHostname(client.hostname);
-  const isReferenceApp = isDev &&
-    client.pathname === "/examples/atmosphere-login/client-metadata.json";
+  const isReferenceApp = isExampleLoginClientId(clientId);
   return {
     clientId,
     appName: isReferenceApp
@@ -314,7 +347,7 @@ function appFromClientId(clientId: string): LoginApp {
     appUri: isReferenceApp
       ? new URL("/examples/atmosphere-login/app", client.origin).toString()
       : client.origin,
-    logoUri: null,
+    logoUri: exampleLoginAppLogoUri(clientId, client.origin),
     allowedReturnUris: [],
     allowedOrigins: [],
     status: isDev ? "development" : "unverified",
@@ -1331,9 +1364,10 @@ export async function resolveLoginAppForRequest(
   assertSafeWebUrl(client, "client_id");
   assertSafeWebUrl(returnUri, "return_uri");
 
-  const registered = await (options.getLoginApp ?? getLoginApp)(
+  const foundApp = await (options.getLoginApp ?? getLoginApp)(
     normalizedClientId,
   );
+  const registered = foundApp ? withExampleLoginAppLogo(foundApp) : null;
   const app = registered ?? appFromClientId(normalizedClientId);
   if (app.status === "blocked") {
     throw new LoginRequestError(

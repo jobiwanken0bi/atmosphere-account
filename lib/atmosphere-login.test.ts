@@ -274,6 +274,34 @@ Deno.test("resolveLoginAppForRequest keeps query strings exact for registered ca
   );
 });
 
+Deno.test("resolveLoginAppForRequest uses generic icon for registered reference app", async () => {
+  const resolved = await resolveLoginAppForRequest({
+    clientId:
+      "https://atmosphereaccount.com/examples/atmosphere-login/client-metadata.json",
+    returnUri:
+      "https://atmosphereaccount.com/examples/atmosphere-login/callback",
+    state: "state",
+    scope: null,
+  }, {
+    getLoginApp: (clientId) =>
+      Promise.resolve(app({
+        clientId,
+        appName: "Atmosphere Login reference app",
+        appUri: "https://atmosphereaccount.com/examples/atmosphere-login/app",
+        logoUri: "https://atmosphereaccount.com/union.svg",
+        allowedReturnUris: [
+          "https://atmosphereaccount.com/examples/atmosphere-login/callback",
+        ],
+        status: "trusted",
+      })),
+  });
+
+  assertEquals(
+    resolved.app.logoUri,
+    "https://atmosphereaccount.com/app-icon.svg",
+  );
+});
+
 Deno.test("resolveLoginAppForRequest rejects registered callbacks with mismatched query strings", async () => {
   try {
     await resolveLoginAppForRequest({

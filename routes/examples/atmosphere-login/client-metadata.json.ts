@@ -12,6 +12,7 @@ export const handler = define.handlers({
       client_id: exampleAtmosphereLoginClientId(origin),
       client_name: "Atmosphere Login reference app",
       client_uri: new URL("/examples/atmosphere-login/app", origin).toString(),
+      logo_uri: new URL("/app-icon.svg", origin).toString(),
       allowed_return_uris: [
         exampleAtmosphereLoginCallbackUri(origin),
         exampleAtmosphereLoginPopupCallbackUri(origin),

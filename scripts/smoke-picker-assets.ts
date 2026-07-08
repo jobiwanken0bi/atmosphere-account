@@ -236,6 +236,7 @@ assertStatus(pickerResponse, loginUrl);
 assertContentType(pickerResponse, loginUrl, "html");
 assertContains(pickerHtml, "Continue with Atmosphere", "picker HTML");
 assertContains(pickerHtml, "SignInForm", "picker island boot script");
+assertContains(pickerHtml, "/app-icon.svg", "picker reference app logo");
 
 const assets = extractHtmlAssetPaths(pickerHtml);
 if (assets.stylesheets.length === 0) {

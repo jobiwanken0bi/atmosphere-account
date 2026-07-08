@@ -14,7 +14,7 @@ export const handler = define.handlers({
       application_type: "web",
       client_name: "Atmosphere Login reference app",
       client_uri: new URL("/examples/atmosphere-login/app", origin).toString(),
-      logo_uri: new URL("/union.svg", origin).toString(),
+      logo_uri: new URL("/app-icon.svg", origin).toString(),
       tos_uri: origin,
       policy_uri: origin,
       grant_types: ["authorization_code", "refresh_token"],
