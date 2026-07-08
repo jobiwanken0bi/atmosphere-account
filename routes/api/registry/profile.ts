@@ -39,7 +39,6 @@ import {
   deleteAppRecord,
   upsertLegacyProfileAsApp,
 } from "../../../lib/app-directory.ts";
-import { coverJpeg } from "../../../lib/image-processing.ts";
 import {
   atmosphereProfileAtUri,
   findExistingAtstoreListingForProfile,
@@ -66,6 +65,7 @@ const PROFILE_JSON_MAX_BYTES = 36_000_000;
  *  caller can proceed without crashing the whole profile save. */
 async function generateOgJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
   try {
+    const { coverJpeg } = await import("../../../lib/image-processing.ts");
     return await coverJpeg(bytes, OG_W, OG_H, OG_JPEG_QUALITY);
   } catch (err) {
     console.warn("[profile] og-jpeg pre-generation failed:", err);
