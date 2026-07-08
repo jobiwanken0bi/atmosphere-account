@@ -30,6 +30,7 @@ export const NEON_APP_TABLES = [
   "login_app",
   "login_app_connection",
   "login_selection_replay",
+  "rate_limit_bucket",
   "worker_lease",
 ] as const;
 
