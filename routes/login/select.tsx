@@ -203,6 +203,10 @@ function getPickerAccounts(
   return [...out.values()];
 }
 
+export function pickerAccountsForStateForTest(state: State): PickerAccount[] {
+  return getPickerAccounts(state);
+}
+
 function LoginPickerPage(props: PickerPageProps) {
   const { app, request, selectPath, pickerAccounts, error } = props;
   return (
