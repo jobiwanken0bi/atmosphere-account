@@ -1,5 +1,6 @@
 import {
   appviewFetchTimeoutMs,
+  appviewRequestHeadersForTest,
   proxiedHeadersForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
@@ -124,4 +125,44 @@ Deno.test("proxied appview response headers strip transport metadata but keep co
   assertEquals(headers.has("x-railway-edge"), false);
   assertEquals(headers.has("x-railway-request-id"), false);
   assertEquals(headers.getSetCookie().length, 2);
+});
+
+Deno.test("appview request headers preserve browser CSRF context and overwrite proxy-owned headers", () => {
+  const input = new Headers({
+    accept: "text/html",
+    "accept-language": "en-US",
+    authorization: "Bearer should-not-forward",
+    cookie: "atmo_sid=session",
+    "content-type": "application/json",
+    origin: "https://atmosphereaccount.com",
+    referer: "https://atmosphereaccount.com/account",
+    "sec-fetch-site": "same-origin",
+    "user-agent": "test-agent",
+    "x-atmosphere-login": "1",
+    "x-atmosphere-public-origin": "https://evil.example",
+    "x-forwarded-host": "evil.example",
+    "x-forwarded-proto": "http",
+  });
+
+  const headers = appviewRequestHeadersForTest(
+    input,
+    new URL("https://atmosphereaccount.com/account"),
+  );
+
+  assertEquals(headers.get("accept"), "text/html");
+  assertEquals(headers.get("accept-language"), "en-US");
+  assertEquals(headers.get("authorization"), null);
+  assertEquals(headers.get("cookie"), "atmo_sid=session");
+  assertEquals(headers.get("content-type"), "application/json");
+  assertEquals(headers.get("origin"), "https://atmosphereaccount.com");
+  assertEquals(headers.get("referer"), "https://atmosphereaccount.com/account");
+  assertEquals(headers.get("sec-fetch-site"), "same-origin");
+  assertEquals(headers.get("user-agent"), "test-agent");
+  assertEquals(headers.get("x-atmosphere-login"), "1");
+  assertEquals(headers.get("x-forwarded-host"), "atmosphereaccount.com");
+  assertEquals(headers.get("x-forwarded-proto"), "https");
+  assertEquals(
+    headers.get("x-atmosphere-public-origin"),
+    "https://atmosphereaccount.com",
+  );
 });

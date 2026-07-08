@@ -340,6 +340,9 @@ function appviewRequestHeaders(
       "accept-language",
       "cookie",
       "content-type",
+      "origin",
+      "referer",
+      "sec-fetch-site",
       "user-agent",
       "x-atmosphere-login",
     ]
@@ -412,6 +415,13 @@ export function proxiedHeadersForTest(
   options: { page?: boolean } = {},
 ): Headers {
   return proxiedHeaders(source, { page: options.page ?? false });
+}
+
+export function appviewRequestHeadersForTest(
+  requestHeaders: Headers,
+  currentUrl: URL,
+): Headers {
+  return appviewRequestHeaders(requestHeaders, currentUrl);
 }
 
 function rewriteAppviewHtml(

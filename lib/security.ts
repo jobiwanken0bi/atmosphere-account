@@ -1,4 +1,5 @@
 import { define } from "../utils.ts";
+import { trustedRequestOrigin } from "./atmosphere-origins.ts";
 import { IS_DEV } from "./env.ts";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -263,8 +264,20 @@ export const csrfMiddleware = define.middleware((ctx) => {
   if (isCrossOriginReadonlyRequest(ctx.req, ctx.url.pathname)) {
     return ctx.next();
   }
-  if (isSameOriginUnsafeRequest(ctx.req, ctx.url.origin)) {
+  if (
+    isSameOriginUnsafeRequest(
+      ctx.req,
+      trustedRequestOrigin(ctx.url, ctx.req.headers),
+    )
+  ) {
     return ctx.next();
   }
   return new Response("cross-site request rejected", { status: 403 });
 });
+
+export function csrfExpectedOriginForTest(
+  url: URL,
+  headers?: Headers,
+): string {
+  return trustedRequestOrigin(url, headers);
+}

@@ -1,5 +1,6 @@
 import {
   applySecurityHeadersForTest,
+  csrfExpectedOriginForTest,
   isCrossOriginReadonlyRequest,
   isPrivateNetworkUrl,
   isSafeRelativePath,
@@ -21,6 +22,38 @@ Deno.test("CSRF rejects cross-site unsafe requests by default", () => {
   });
   assertEquals(
     isSameOriginUnsafeRequest(req, "https://atmosphereaccount.com"),
+    false,
+  );
+});
+
+Deno.test("CSRF uses the trusted public origin for appview-proxied requests", () => {
+  const appviewUrl = new URL(
+    "https://web-production-001c9.up.railway.app/account",
+  );
+  const forwarded = new Headers({
+    origin: "https://atmosphereaccount.com",
+    "x-atmosphere-public-origin": "https://atmosphereaccount.com",
+  });
+  const expectedOrigin = csrfExpectedOriginForTest(appviewUrl, forwarded);
+  const sameOriginWrite = new Request(appviewUrl, {
+    method: "POST",
+    headers: forwarded,
+  });
+  const crossSiteWrite = new Request(appviewUrl, {
+    method: "POST",
+    headers: {
+      origin: "https://evil.example",
+      "x-atmosphere-public-origin": "https://atmosphereaccount.com",
+    },
+  });
+
+  assertEquals(expectedOrigin, "https://atmosphereaccount.com");
+  assertEquals(
+    isSameOriginUnsafeRequest(sameOriginWrite, expectedOrigin),
+    true,
+  );
+  assertEquals(
+    isSameOriginUnsafeRequest(crossSiteWrite, expectedOrigin),
     false,
   );
 });
