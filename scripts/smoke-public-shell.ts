@@ -84,9 +84,9 @@ async function fetchText(
   return { response, text: await response.text() };
 }
 
-async function fetchJson(
+async function fetchUnknownJson(
   url: URL,
-): Promise<{ response: Response; body: Record<string, unknown> }> {
+): Promise<{ response: Response; body: unknown }> {
   const { response, text } = await fetchText(url);
   let body: unknown;
   try {
@@ -94,10 +94,14 @@ async function fetchJson(
   } catch {
     throw new Error(`${url} did not return valid JSON`);
   }
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error(`${url} returned non-object JSON`);
-  }
-  return { response, body: body as Record<string, unknown> };
+  return { response, body };
+}
+
+async function fetchJson(
+  url: URL,
+): Promise<{ response: Response; body: Record<string, unknown> }> {
+  const { response, body } = await fetchUnknownJson(url);
+  return { response, body: assertObject(body, `${url} body`) };
 }
 
 function assertStatus(response: Response, url: URL): void {
@@ -134,6 +138,16 @@ function assertString(value: unknown, label: string): string {
     throw new Error(`${label} must be a non-empty string`);
   }
   return value;
+}
+
+function assertObject(
+  value: unknown,
+  label: string,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
 }
 
 function assertArray(value: unknown, label: string): unknown[] {
@@ -256,6 +270,51 @@ async function smokeSdkAsset(origin: string): Promise<void> {
   console.log(`[smoke:public-shell] ok sdk ${url}`);
 }
 
+function assertAppSection(
+  body: Record<string, unknown>,
+  section: string,
+  url: URL,
+): number {
+  const items = assertArray(body[section], `${url} ${section}`);
+  if (items.length === 0) throw new Error(`${url} ${section} is empty`);
+  const first = assertObject(items[0], `${url} ${section}[0]`);
+  assertString(first.slug, `${url} ${section}[0].slug`);
+  assertString(first.name, `${url} ${section}[0].name`);
+  return items.length;
+}
+
+async function smokeAppviewData(origin: string): Promise<void> {
+  const appsUrl = new URL("/api/appview/apps/home", origin);
+  const { response: appsResponse, body: appsBody } = await fetchJson(appsUrl);
+  assertStatus(appsResponse, appsUrl);
+  assertContentType(appsResponse, appsUrl, "json");
+  const featuredCount = assertAppSection(appsBody, "featured", appsUrl);
+  const trendingCount = assertAppSection(appsBody, "trending", appsUrl);
+  const freshCount = assertAppSection(appsBody, "fresh", appsUrl);
+
+  const hostsUrl = new URL("/api/appview/hosts", origin);
+  const { response: hostsResponse, body: hostsBody } = await fetchUnknownJson(
+    hostsUrl,
+  );
+  assertStatus(hostsResponse, hostsUrl);
+  assertContentType(hostsResponse, hostsUrl, "json");
+  const hosts = assertArray(hostsBody, `${hostsUrl} hosts`);
+  if (hosts.length === 0) throw new Error(`${hostsUrl} returned no hosts`);
+  const hostRecords = hosts.map((host, index) =>
+    assertObject(host, `${hostsUrl} host[${index}]`)
+  );
+  if (!hostRecords.some((host) => host.host === "bsky.network")) {
+    throw new Error(`${hostsUrl} missing bsky.network host`);
+  }
+  const firstHost = hostRecords[0];
+  assertString(firstHost.host, `${hostsUrl} host[0].host`);
+  assertString(firstHost.displayName, `${hostsUrl} host[0].displayName`);
+
+  console.log(
+    `[smoke:public-shell] ok appview data apps featured=${featuredCount} trending=${trendingCount} fresh=${freshCount} hosts=${hosts.length}`,
+  );
+}
+
 const options = parseOptions();
 console.log(
   `[smoke:public-shell] site=${options.siteOrigin} login=${options.loginOrigin}`,
@@ -263,6 +322,7 @@ console.log(
 
 await smokeHealth(options.siteOrigin);
 await smokeReadiness(options.siteOrigin, options.requireAppview);
+await smokeAppviewData(options.siteOrigin);
 await smokeHtml(options.siteOrigin, "/", "Atmosphere Account");
 await smokeHtml(
   options.siteOrigin,
