@@ -11,6 +11,14 @@ interface MockStorage {
 }
 
 type AtmosphereLoginGlobal = {
+  continueWithAtmosphere(options: {
+    clientId: string;
+    returnUri: string;
+    state?: string;
+    scope?: string;
+    atmosphereOrigin?: string;
+    popup?: boolean;
+  }): { state: string; url: string };
   consumeSelection(options?: {
     clientId?: string;
     clearUrl?: boolean;
@@ -27,15 +35,38 @@ type AtmosphereLoginGlobal = {
 
 async function loadBrowserSdk(inputUrl: string): Promise<{
   login: AtmosphereLoginGlobal;
+  storage: Map<string, string>;
   replacedUrl: () => string | null;
   cleanup: () => void;
 }> {
-  const previous = {
-    document: (globalThis as Record<string, unknown>).document,
-    location: (globalThis as Record<string, unknown>).location,
-    sessionStorage: (globalThis as Record<string, unknown>).sessionStorage,
-    history: (globalThis as Record<string, unknown>).history,
-    AtmosphereLogin: (globalThis as Record<string, unknown>).AtmosphereLogin,
+  const globalKeys = [
+    "document",
+    "location",
+    "sessionStorage",
+    "history",
+    "AtmosphereLogin",
+  ] as const;
+  const previous = new Map<PropertyKey, PropertyDescriptor | undefined>(
+    globalKeys.map((
+      key,
+    ) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
+  );
+  const setGlobal = (key: typeof globalKeys[number], value: unknown) => {
+    Object.defineProperty(globalThis, key, {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  };
+  const restore = () => {
+    for (const key of globalKeys) {
+      const descriptor = previous.get(key);
+      if (descriptor) {
+        Object.defineProperty(globalThis, key, descriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
+    }
   };
   let replacement: string | null = null;
   const storage = new Map<string, string>();
@@ -44,25 +75,28 @@ async function loadBrowserSdk(inputUrl: string): Promise<{
     `atmosphere_login_state:${clientId}`,
     JSON.stringify({ state: "state-123", createdAt: Date.now() }),
   );
-  (globalThis as Record<string, unknown>).document = {
+  setGlobal("document", {
     currentScript: {
       src: "https://login.atmosphereaccount.com/atmosphere-login.js",
     },
     readyState: "complete",
     querySelectorAll: () => [],
-  };
-  (globalThis as Record<string, unknown>).location = { href: inputUrl };
-  (globalThis as Record<string, unknown>).sessionStorage = {
-    getItem: (key: string) => storage.get(key) ?? null,
-    setItem: (key: string, value: string) => storage.set(key, value),
-    removeItem: (key: string) => storage.delete(key),
-  } satisfies MockStorage;
-  (globalThis as Record<string, unknown>).history = {
+  });
+  setGlobal("location", { href: inputUrl });
+  setGlobal(
+    "sessionStorage",
+    {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    } satisfies MockStorage,
+  );
+  setGlobal("history", {
     state: { app: "state" },
     replaceState: (_state: unknown, _title: string, url: string) => {
       replacement = url;
     },
-  };
+  });
 
   try {
     const source = await Deno.readTextFile(
@@ -73,13 +107,12 @@ async function loadBrowserSdk(inputUrl: string): Promise<{
       login: (globalThis as typeof globalThis & {
         AtmosphereLogin: AtmosphereLoginGlobal;
       }).AtmosphereLogin,
+      storage,
       replacedUrl: () => replacement,
-      cleanup: () => {
-        Object.assign(globalThis as Record<string, unknown>, previous);
-      },
+      cleanup: restore,
     };
   } catch (err) {
-    Object.assign(globalThis as Record<string, unknown>, previous);
+    restore();
     throw err;
   }
 }
@@ -153,6 +186,72 @@ Deno.test("browser SDK consumeSelection can bind an expected state", async () =>
           expectedState: "state-from-app-session",
         }),
       "Atmosphere Login state mismatch",
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK stores exact state keys for parallel attempts", async () => {
+  const clientId = "https://app.example/client.json";
+  const sdk = await loadBrowserSdk("https://app.example/start");
+  try {
+    sdk.login.continueWithAtmosphere({
+      clientId,
+      returnUri: "https://app.example/callback",
+      state: "state-first",
+    });
+    sdk.login.continueWithAtmosphere({
+      clientId,
+      returnUri: "https://app.example/callback",
+      state: "state-second",
+    });
+
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}:state-first`),
+      true,
+    );
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}:state-second`),
+      true,
+    );
+    assertEquals(
+      JSON.parse(sdk.storage.get(`atmosphere_login_state:${clientId}`) || "{}")
+        .state,
+      "state-second",
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK consumeSelection prefers exact state over overwritten legacy state", async () => {
+  const clientId = "https://app.example/client.json";
+  const sdk = await loadBrowserSdk(
+    `https://app.example/callback?selection_token=token-123&client_id=${
+      encodeURIComponent(clientId)
+    }&state=state-first`,
+  );
+  try {
+    sdk.storage.set(
+      `atmosphere_login_state:${clientId}:state-first`,
+      JSON.stringify({ state: "state-first", createdAt: Date.now() - 2000 }),
+    );
+    sdk.storage.set(
+      `atmosphere_login_state:${clientId}`,
+      JSON.stringify({ state: "state-second", createdAt: Date.now() - 1000 }),
+    );
+
+    const selection = sdk.login.consumeSelection({ clientId });
+
+    assertEquals(selection?.state, "state-first");
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}:state-first`),
+      false,
+    );
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}`),
+      false,
     );
   } finally {
     sdk.cleanup();

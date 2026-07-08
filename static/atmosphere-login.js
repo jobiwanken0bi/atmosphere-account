@@ -34,8 +34,12 @@
     );
   }
 
-  function storageKey(clientId) {
+  function legacyStorageKey(clientId) {
     return `${STATE_PREFIX}${clientId}`;
+  }
+
+  function stateStorageKey(clientId, state) {
+    return `${STATE_PREFIX}${clientId}:${state}`;
   }
 
   function buildUrl(options) {
@@ -58,9 +62,17 @@
   function continueWithAtmosphere(options) {
     const built = buildUrl(options);
     try {
-      sessionStorage.setItem(
-        storageKey(options.clientId),
-        JSON.stringify({ state: built.state, createdAt: Date.now() }),
+      const storedState = JSON.stringify({
+        state: built.state,
+        createdAt: Date.now(),
+      });
+      globalThis.sessionStorage.setItem(
+        stateStorageKey(options.clientId, built.state),
+        storedState,
+      );
+      globalThis.sessionStorage.setItem(
+        legacyStorageKey(options.clientId),
+        storedState,
       );
     } catch {
       // State is still sent to the app; storage is just a convenience check.
@@ -73,7 +85,7 @@
       );
       if (popup) return { popup, state: built.state, url: built.url };
     }
-    location.href = built.url;
+    globalThis.location.href = built.url;
     return { state: built.state, url: built.url };
   }
 
@@ -96,7 +108,7 @@
   }
 
   function consumeSelection(options) {
-    const params = new URL(location.href).searchParams;
+    const params = new URL(globalThis.location.href).searchParams;
     const token = params.get("selection_token");
     const state = params.get("state");
     const paramClientId = params.get("client_id");
@@ -111,10 +123,14 @@
     if (options && options.expectedState && options.expectedState !== state) {
       throw new Error("Atmosphere Login state mismatch");
     }
+    const exactKey = stateStorageKey(clientId, state);
+    const legacyKey = legacyStorageKey(clientId);
     let stored = null;
     try {
       stored = JSON.parse(
-        sessionStorage.getItem(storageKey(clientId)) || "null",
+        globalThis.sessionStorage.getItem(exactKey) ||
+          globalThis.sessionStorage.getItem(legacyKey) ||
+          "null",
       );
     } catch {
       stored = null;
@@ -123,7 +139,8 @@
       throw new Error("Atmosphere Login state mismatch");
     }
     try {
-      sessionStorage.removeItem(storageKey(clientId));
+      globalThis.sessionStorage.removeItem(exactKey);
+      globalThis.sessionStorage.removeItem(legacyKey);
     } catch {
       // Ignore storage failures.
     }
@@ -144,7 +161,7 @@
   function clearSelectionFromUrl() {
     if (!globalThis.history || !globalThis.history.replaceState) return;
     try {
-      const url = new URL(location.href);
+      const url = new URL(globalThis.location.href);
       for (
         const key of [
           "selection_token",
