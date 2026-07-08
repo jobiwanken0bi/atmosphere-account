@@ -171,12 +171,17 @@ export const handler = define.handlers({
           : Promise.resolve([] as AppAliasRow[]),
       ])
       : [[], [] as AppMirroredReview[], null, null, [] as AppAliasRow[]];
-    const [reviewSummary, reviews, ownReview, updates] = profile
+    const legacyProfile = profile && !appListing?.atstoreListingUri
+      ? profile
+      : null;
+    const [reviewSummary, reviews, ownReview, updates] = legacyProfile
       ? await Promise.all([
-        getReviewSummary(profile.did).catch(() => emptyReviewSummary()),
-        listVisibleReviews(profile.did, { limit: 20 }).catch(() => []),
-        user ? getOwnReview(profile.did, user.did).catch(() => null) : null,
-        listProfileUpdates(profile.did, { limit: 6 }).catch(() => []),
+        getReviewSummary(legacyProfile.did).catch(() => emptyReviewSummary()),
+        listVisibleReviews(legacyProfile.did, { limit: 20 }).catch(() => []),
+        user
+          ? getOwnReview(legacyProfile.did, user.did).catch(() => null)
+          : null,
+        listProfileUpdates(legacyProfile.did, { limit: 6 }).catch(() => []),
       ])
       : [
         emptyReviewSummary(),
@@ -185,7 +190,7 @@ export const handler = define.handlers({
         [] as ProfileUpdateRow[],
       ];
     const [displayReviews, displayAppReviews] = await Promise.all([
-      profile ? enrichReviews(reviews) : Promise.resolve([]),
+      legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
       enrichAppMirroredReviews(appReviews),
     ]);
     /**
