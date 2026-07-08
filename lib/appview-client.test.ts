@@ -98,27 +98,30 @@ Deno.test("proxied appview response headers strip transport metadata but keep co
     "content-length": "123",
     "content-type": "text/html; charset=utf-8",
     "etag": '"abc"',
+    "server": "railway-hikari",
     "transfer-encoding": "chunked",
+    "x-hikari-trace": "ord1.test",
+    "x-railway-edge": "ord1",
+    "x-railway-request-id": "request-id",
   });
   source.append("set-cookie", "atmo_sid=one; Path=/; HttpOnly");
   source.append("set-cookie", "atmo_remembered_accounts=two; Path=/; HttpOnly");
 
-  const headers = proxiedHeadersForTest(
-    source,
-    "https://web-production-001c9.up.railway.app",
-  );
+  const headers = proxiedHeadersForTest(source, { page: true });
 
   assertEquals(headers.get("cache-control"), "no-store");
   assertEquals(headers.get("content-type"), "text/html; charset=utf-8");
-  assertEquals(
-    headers.get("x-atmosphere-appview-proxy"),
-    "https://web-production-001c9.up.railway.app",
-  );
+  assertEquals(headers.get("x-atmosphere-appview-proxy"), "1");
+  assertEquals(headers.get("x-atmosphere-appview-page-proxy"), "1");
   assertEquals(headers.has("alt-svc"), false);
   assertEquals(headers.has("connection"), false);
   assertEquals(headers.has("content-encoding"), false);
   assertEquals(headers.has("content-length"), false);
   assertEquals(headers.has("etag"), false);
+  assertEquals(headers.has("server"), false);
   assertEquals(headers.has("transfer-encoding"), false);
+  assertEquals(headers.has("x-hikari-trace"), false);
+  assertEquals(headers.has("x-railway-edge"), false);
+  assertEquals(headers.has("x-railway-request-id"), false);
   assertEquals(headers.getSetCookie().length, 2);
 });

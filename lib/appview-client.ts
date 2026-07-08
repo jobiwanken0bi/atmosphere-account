@@ -200,7 +200,7 @@ export async function proxyAppviewResponse(
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
-  const headers = proxiedHeaders(res.headers, remote);
+  const headers = proxiedHeaders(res.headers, { page: false });
   return new Response(res.body, {
     status: res.status,
     statusText: res.statusText,
@@ -225,7 +225,7 @@ export async function proxyAppviewPageResponse(
     redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
-  const headers = proxiedHeaders(res.headers, remote);
+  const headers = proxiedHeaders(res.headers, { page: true });
 
   const location = headers.get("location");
   if (location) {
@@ -269,7 +269,7 @@ export async function proxyAppviewApiResponse(
     redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
-  const headers = proxiedHeaders(res.headers, remote);
+  const headers = proxiedHeaders(res.headers, { page: false });
   const location = headers.get("location");
   if (location) {
     headers.set("location", rewriteAppviewUrl(location, remote, currentUrl));
@@ -353,17 +353,33 @@ function appviewRequestHeaders(
   return headers;
 }
 
-function proxiedHeaders(source: Headers, remote: string): Headers {
+function proxiedHeaders(
+  source: Headers,
+  options: { page: boolean },
+): Headers {
   const headers = new Headers(source);
-  headers.set("x-atmosphere-appview-proxy", remote);
-  headers.set("x-atmosphere-appview-page-proxy", remote);
+  headers.set("x-atmosphere-appview-proxy", "1");
+  if (options.page) headers.set("x-atmosphere-appview-page-proxy", "1");
   for (const header of HOP_BY_HOP_RESPONSE_HEADERS) {
     headers.delete(header);
   }
-  headers.delete("alt-svc");
-  headers.delete("content-encoding");
-  headers.delete("content-length");
-  headers.delete("etag");
+  for (const header of INFRA_RESPONSE_HEADERS) {
+    headers.delete(header);
+  }
+  const providerHeaders: string[] = [];
+  for (const [header] of headers) {
+    const name = header.toLowerCase();
+    if (
+      PROVIDER_RESPONSE_HEADER_PREFIXES.some((prefix) =>
+        name.startsWith(prefix)
+      )
+    ) {
+      providerHeaders.push(header);
+    }
+  }
+  for (const header of providerHeaders) {
+    headers.delete(header);
+  }
   return headers;
 }
 
@@ -378,11 +394,24 @@ const HOP_BY_HOP_RESPONSE_HEADERS = [
   "upgrade",
 ];
 
+const INFRA_RESPONSE_HEADERS = [
+  "alt-svc",
+  "content-encoding",
+  "content-length",
+  "etag",
+  "server",
+];
+
+const PROVIDER_RESPONSE_HEADER_PREFIXES = [
+  "x-hikari-",
+  "x-railway-",
+];
+
 export function proxiedHeadersForTest(
   source: Headers,
-  remote: string,
+  options: { page?: boolean } = {},
 ): Headers {
-  return proxiedHeaders(source, remote);
+  return proxiedHeaders(source, { page: options.page ?? false });
 }
 
 function rewriteAppviewHtml(
