@@ -2,6 +2,7 @@
  * Persist the signed-in account's local role: normal user or project.
  */
 import { define } from "../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import {
   type AccountType,
   setAppUserType,
@@ -18,6 +19,11 @@ const MAX_ACCOUNT_TYPE_FORM_BYTES = 8_192;
 
 export const handler = define.handlers({
   async POST(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("account type update", err),
+    );
+    if (proxied) return proxied;
+
     const large = rejectLargeRequest(ctx.req, MAX_ACCOUNT_TYPE_FORM_BYTES);
     if (large) return large;
 
@@ -75,3 +81,14 @@ export const handler = define.handlers({
     });
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Updating this account is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

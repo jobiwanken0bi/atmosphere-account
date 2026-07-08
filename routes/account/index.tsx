@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
-import { define } from "../../utils.ts";
+import type { PageProps } from "fresh";
+import { define, type State } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
@@ -7,6 +8,7 @@ import SignInForm from "../../islands/SignInForm.tsx";
 import UserMicroblogViewerButton from "../../islands/UserMicroblogViewerButton.tsx";
 import UpgradeToProjectModal from "../../islands/UpgradeToProjectModal.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getAppUser } from "../../lib/account-types.ts";
 import {
   listLoginConnectionsForAccount,
@@ -55,7 +57,30 @@ const APP_UPGRADE_COPY = {
   error: "Couldn't create the app profile.",
 };
 
-export default define.page(async function AccountPage(ctx) {
+export const handler = define.handlers({
+  async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("account home", err),
+    );
+    if (proxied) return proxied;
+    return ctx.render(await AccountPage(ctx));
+  },
+});
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Account home is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
+
+async function AccountPage(
+  ctx: PageProps<unknown, State>,
+) {
   const account = buildAccountMenuProps(ctx.state);
   const user = ctx.state.user;
   const next = safeNext(ctx.url.searchParams.get("next")) ?? "/account";
@@ -307,7 +332,9 @@ export default define.page(async function AccountPage(ctx) {
       </div>
     </div>
   );
-});
+}
+
+export default define.page(AccountPage);
 
 function ProfileSourcePanel(
   { profileUrl, profileViewerName, hostManagementUrl }: {

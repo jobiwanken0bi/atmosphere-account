@@ -4,6 +4,7 @@
  * their microblog profile appears on their public Atmosphere profile.
  */
 import { define } from "../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import {
   getAppUser,
   getEffectiveAccountType,
@@ -30,6 +31,11 @@ const MAX_PROFILE_FORM_BYTES = AVATAR_MAX_BYTES + 64_000;
 
 export const handler = define.handlers({
   async POST(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("account profile update", err),
+    );
+    if (proxied) return proxied;
+
     const large = rejectLargeRequest(ctx.req, MAX_PROFILE_FORM_BYTES);
     if (large) return large;
 
@@ -206,6 +212,17 @@ export const handler = define.handlers({
     });
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Updating this profile is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 function fileFromForm(
   value: FormDataEntryValue | null | undefined,

@@ -11,6 +11,7 @@
  * the request to the appropriate dashboard.
  */
 import { define } from "../../utils.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import {
   getEffectiveAccountType,
   setAppUserType,
@@ -18,6 +19,11 @@ import {
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("account type redirect", err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) {
       return new Response(null, {
@@ -55,3 +61,14 @@ export const handler = define.handlers({
     });
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Account setup is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

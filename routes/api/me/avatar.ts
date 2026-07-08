@@ -13,6 +13,7 @@
  * and the registry/PDS endpoints already return long-lived blobs.
  */
 import { define } from "../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import { getProfileByDid } from "../../../lib/registry.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
@@ -24,6 +25,11 @@ function notFound(): Response {
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("account avatar", err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return notFound();
 
@@ -58,3 +64,14 @@ export const handler = define.handlers({
     });
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Avatar is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

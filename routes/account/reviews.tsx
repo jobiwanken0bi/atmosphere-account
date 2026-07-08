@@ -4,6 +4,7 @@ import Footer from "../../components/Footer.tsx";
 import UserReviewRow from "../../islands/UserReviewRow.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { listReviewsByReviewer, type ReviewRow } from "../../lib/reviews.ts";
@@ -15,6 +16,11 @@ interface ReviewWithTarget extends ReviewRow {
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("account reviews", err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) {
       return new Response(null, {
@@ -56,6 +62,17 @@ export const handler = define.handlers({
     );
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Account reviews are temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 interface AccountReviewsPageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
