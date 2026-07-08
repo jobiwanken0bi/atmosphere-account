@@ -18,6 +18,12 @@ export interface AtmosphereSelectionClaims {
 export interface AtmosphereSelectionReplayStore {
   has(jti: string): boolean | Promise<boolean>;
   add(jti: string, expiresAtSec: number): void | Promise<void>;
+  /**
+   * Atomically records a token ID if it has not been seen yet. Return false
+   * when the token has already been consumed. Stores that run across multiple
+   * app instances should implement this to avoid has/add race windows.
+   */
+  consume?(jti: string, expiresAtSec: number): boolean | Promise<boolean>;
 }
 
 export type AtmosphereSelectionVerificationResult =
@@ -124,9 +130,17 @@ export async function verifyAtmosphereSelectionToken(
     }
   }
   if (options.replayStore) {
-    const seen = await options.replayStore.has(claims.jti);
-    if (seen) return { ok: false, error: "replayed token", claims };
-    await options.replayStore.add(claims.jti, claims.exp);
+    if (options.replayStore.consume) {
+      const consumed = await options.replayStore.consume(
+        claims.jti,
+        claims.exp,
+      );
+      if (!consumed) return { ok: false, error: "replayed token", claims };
+    } else {
+      const seen = await options.replayStore.has(claims.jti);
+      if (seen) return { ok: false, error: "replayed token", claims };
+      await options.replayStore.add(claims.jti, claims.exp);
+    }
   }
   return { ok: true, claims };
 }

@@ -1449,15 +1449,19 @@ export async function verifyLoginSelectionTokenDetailed(
     };
   }
   if (replayStore) {
-    const seen = await replayStore.has(result.claims.jti);
-    if (seen) {
+    const consumed = replayStore.consume
+      ? await replayStore.consume(result.claims.jti, result.claims.exp)
+      : !await replayStore.has(result.claims.jti);
+    if (!consumed) {
       return {
         ok: false,
         error: "replayed token",
         claims: result.claims,
       };
     }
-    await replayStore.add(result.claims.jti, result.claims.exp);
+    if (!replayStore.consume) {
+      await replayStore.add(result.claims.jti, result.claims.exp);
+    }
   }
   return result;
 }

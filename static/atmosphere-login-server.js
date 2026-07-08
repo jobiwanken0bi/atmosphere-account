@@ -239,9 +239,17 @@ export async function verifyAtmosphereSelectionToken(options) {
     }
   }
   if (options.replayStore) {
-    const seen = await options.replayStore.has(claims.jti);
-    if (seen) return { ok: false, error: "replayed token", claims };
-    await options.replayStore.add(claims.jti, claims.exp);
+    if (options.replayStore.consume) {
+      const consumed = await options.replayStore.consume(
+        claims.jti,
+        claims.exp,
+      );
+      if (!consumed) return { ok: false, error: "replayed token", claims };
+    } else {
+      const seen = await options.replayStore.has(claims.jti);
+      if (seen) return { ok: false, error: "replayed token", claims };
+      await options.replayStore.add(claims.jti, claims.exp);
+    }
   }
   return { ok: true, claims };
 }

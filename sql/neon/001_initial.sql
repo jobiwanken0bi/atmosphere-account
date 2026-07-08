@@ -569,6 +569,14 @@ CREATE TABLE IF NOT EXISTS login_app_connection (
 
 CREATE INDEX IF NOT EXISTS login_app_connection_did ON login_app_connection(did, last_selected_at);
 
+CREATE TABLE IF NOT EXISTS login_selection_replay (
+  jti text PRIMARY KEY,
+  expires_at bigint NOT NULL,
+  consumed_at bigint NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS login_selection_replay_expires ON login_selection_replay(expires_at);
+
 CREATE TABLE IF NOT EXISTS worker_lease (
   name text PRIMARY KEY,
   owner_id text NOT NULL,

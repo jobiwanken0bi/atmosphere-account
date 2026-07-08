@@ -668,6 +668,16 @@ const SCHEMA_STATEMENTS: string[] = [
     PRIMARY KEY (client_id, did)
   )`,
   /**
+   * Durable replay protection for Atmosphere Login selection tokens. Rows are
+   * tiny and expire with the token, giving reference/relying app flows a
+   * multi-instance-safe way to reject repeated `jti` values.
+   */
+  `CREATE TABLE IF NOT EXISTS login_selection_replay (
+    jti TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL,
+    consumed_at INTEGER NOT NULL
+  )`,
+  /**
    * Coarse-grained operational leases. The Jetstream indexer is idempotent,
    * but running two long-lived consumers wastes relay/PDS/DB capacity and can
    * move the shared cursor in surprising ways during deploy overlap. A short
@@ -743,6 +753,7 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS login_app_review_status ON login_app(review_status, review_requested_at)`,
   `CREATE INDEX IF NOT EXISTS login_app_contact_did ON login_app(contact_did, updated_at)`,
   `CREATE INDEX IF NOT EXISTS login_app_connection_did ON login_app_connection(did, last_selected_at)`,
+  `CREATE INDEX IF NOT EXISTS login_selection_replay_expires ON login_selection_replay(expires_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_state_expires ON oauth_state(expires_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_session_expires ON oauth_session(expires_at)`,
   `CREATE INDEX IF NOT EXISTS app_session_expires ON app_session(expires_at)`,

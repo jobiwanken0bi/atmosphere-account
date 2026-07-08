@@ -32,6 +32,7 @@ interface CallbackProps {
   expectedReturnUri: string;
   clientId: string | null;
   state: string | null;
+  continueHref: string | null;
 }
 
 interface PopupCompletionProps {
@@ -95,6 +96,7 @@ export const handler = define.handlers({
             expectedReturnUri={expectedReturnUri}
             clientId={clientId}
             state={state}
+            continueHref={null}
           />,
         );
       }
@@ -124,6 +126,7 @@ export const handler = define.handlers({
         expectedReturnUri={expectedReturnUri}
         clientId={clientId}
         state={state}
+        continueHref={token && allPassed ? callbackHandoffHref(ctx.url) : null}
       />,
     );
   },
@@ -139,6 +142,7 @@ function CallbackPage(props: CallbackProps) {
     expectedReturnUri,
     clientId,
     state,
+    continueHref,
   } = props;
   const allPassed = checks.length > 0 && checks.every((check) => check.ok);
   const handle = verified?.handle ?? readString(decoded, "handle");
@@ -203,7 +207,8 @@ function CallbackPage(props: CallbackProps) {
                     {allPassed && handle && (
                       <a
                         class="explore-cta-primary login-example-oauth"
-                        href={buildExampleOAuthStartPath({ handle, did })}
+                        href={continueHref ??
+                          buildExampleOAuthStartPath({ handle, did })}
                       >
                         Start app OAuth with{" "}
                         <AtmosphereHandle handle={handle} />
@@ -324,9 +329,16 @@ function buildChecks(input: {
       ok: Boolean(verified.jti),
       detail: `Store ${verified.jti} until ${
         new Date(verified.exp * 1000).toISOString()
-      } and reject repeat use.`,
+      }. This reference app consumes it before starting app OAuth.`,
     },
   ];
+}
+
+function callbackHandoffHref(url: URL): string {
+  const out = new URL(url);
+  out.searchParams.delete("inspect");
+  out.searchParams.set("handoff", "1");
+  return `${out.pathname}${out.search}`;
 }
 
 function readString(value: unknown, key: string): string | null {

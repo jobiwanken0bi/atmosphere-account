@@ -65,8 +65,8 @@ Claims:
 - `app_name`: display name shown in the picker.
 - `iat`: issued-at seconds.
 - `exp`: expiry seconds.
-- `jti`: unique token id. Apps should store/reject reused IDs for replay
-  protection when the flow is security-sensitive.
+- `jti`: unique token id. Apps should store/reject reused IDs in durable storage
+  until the token expires.
 
 ## Verification
 

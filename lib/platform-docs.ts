@@ -586,7 +586,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             tone: "blue",
             title: "Reference replay storage",
             body:
-              "The example app uses a small in-memory replay store so the final callback rejects a reused selection token. Production apps should put replay keys in durable storage shared by every app instance until the token expires.",
+              "The example app consumes replay keys in the app database so the final callback rejects a reused selection token across app instances. Production apps should use their own durable store and keep each key until the token expires.",
           },
           {
             type: "callout",

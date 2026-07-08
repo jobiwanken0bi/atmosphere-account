@@ -1,5 +1,6 @@
 import { IS_DEV, sessionSecret } from "./env.ts";
 import type { AtmosphereSelectionReplayStore } from "./atmosphere-login-sdk.ts";
+import { createDbSelectionReplayStore } from "./atmosphere-login-replay.ts";
 import { b64uDecode, b64uEncode, hmacSign, hmacVerify } from "./jose.ts";
 import {
   type CallbackResult,
@@ -96,7 +97,7 @@ export function createMemorySelectionReplayStore(
   };
 }
 
-export const exampleSelectionReplayStore = createMemorySelectionReplayStore();
+export const exampleSelectionReplayStore = createDbSelectionReplayStore();
 
 export function exampleAtprotoOAuthClientId(origin: string): string {
   return new URL(

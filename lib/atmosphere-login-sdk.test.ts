@@ -129,6 +129,43 @@ Deno.test("verifyAtmosphereSelectionToken rejects replayed selections when a rep
   assertEquals(second.ok ? null : second.error, "replayed token");
 });
 
+Deno.test("verifyAtmosphereSelectionToken prefers atomic replay consumption", async () => {
+  const { token, publicJwk, payload } = await signedSelection();
+  const consumed = new Set<string>();
+  const replayStore = {
+    has(_jti: string) {
+      throw new Error("has should not be called when consume is available");
+    },
+    add(_jti: string, _expiresAtSec: number) {
+      throw new Error("add should not be called when consume is available");
+    },
+    consume(jti: string, expiresAtSec: number) {
+      assertEquals(expiresAtSec, payload.exp);
+      if (consumed.has(jti)) return false;
+      consumed.add(jti);
+      return true;
+    },
+  };
+
+  const first = await verifyAtmosphereSelectionToken({
+    token,
+    publicJwk,
+    replayStore,
+    nowSec: 1_010,
+  });
+  const second = await verifyAtmosphereSelectionToken({
+    token,
+    publicJwk,
+    replayStore,
+    nowSec: 1_011,
+  });
+
+  assert(first.ok, first.ok ? undefined : first.error);
+  assertEquals(consumed.has(payload.jti), true);
+  assertEquals(second.ok, false);
+  assertEquals(second.ok ? null : second.error, "replayed token");
+});
+
 Deno.test("verifyAtmosphereSelectionToken rejects malformed core claims", async () => {
   const { token, publicJwk } = await signedSelection({
     handle: "@user.example",
