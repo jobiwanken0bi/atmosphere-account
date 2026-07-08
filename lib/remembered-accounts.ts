@@ -16,7 +16,7 @@
  * Cookie name:   `atmo_accounts`
  */
 import { hmacSign, hmacVerify } from "./jose.ts";
-import { IS_DEV, sessionSecret } from "./env.ts";
+import { IS_DEV, loginOrigin, sessionSecret, siteOrigin } from "./env.ts";
 
 export interface RememberedAccount {
   did: string;
@@ -80,8 +80,7 @@ export async function removeRememberedAccountCookie(
  *  on the standard sign-out — only when explicitly forgetting all
  *  accounts). */
 export function clearRememberedAccountsCookie(): string {
-  const flags = ["Path=/", "Max-Age=0", "HttpOnly", "SameSite=Lax"];
-  if (!IS_DEV) flags.push("Secure");
+  const flags = rememberedAccountsCookieFlags(0);
   return `${COOKIE_NAME}=; ${flags.join("; ")}`;
 }
 
@@ -146,14 +145,72 @@ async function buildCookie(accounts: RememberedAccount[]): Promise<string> {
   const payload = b64uEncodeBytes(new TextEncoder().encode(json));
   const sig = await hmacSign(sessionSecret(), payload);
   const value = `${payload}.${sig}`;
+  const flags = rememberedAccountsCookieFlags(COOKIE_MAX_AGE_SEC);
+  return `${COOKIE_NAME}=${encodeURIComponent(value)}; ${flags.join("; ")}`;
+}
+
+function rememberedAccountsCookieFlags(
+  maxAgeSec: number,
+  options: {
+    dev?: boolean;
+    site?: string;
+    login?: string;
+  } = {},
+): string[] {
+  const dev = options.dev ?? IS_DEV;
   const flags = [
     "Path=/",
-    `Max-Age=${COOKIE_MAX_AGE_SEC}`,
+    `Max-Age=${maxAgeSec}`,
     "HttpOnly",
     "SameSite=Lax",
   ];
-  if (!IS_DEV) flags.push("Secure");
-  return `${COOKIE_NAME}=${encodeURIComponent(value)}; ${flags.join("; ")}`;
+  const domain = rememberedAccountsCookieDomain({
+    dev,
+    site: options.site ?? siteOrigin(),
+    login: options.login ?? loginOrigin(),
+  });
+  if (domain) flags.push(`Domain=${domain}`);
+  if (!dev) flags.push("Secure");
+  return flags;
+}
+
+function rememberedAccountsCookieDomain(
+  options: { dev: boolean; site: string; login: string },
+): string | null {
+  if (options.dev) return null;
+  const siteHost = hostname(options.site);
+  const loginHost = hostname(options.login);
+  if (!siteHost || !loginHost || siteHost === loginHost) return null;
+  const domain = loginHost.endsWith(`.${siteHost}`)
+    ? siteHost
+    : siteHost.endsWith(`.${loginHost}`)
+    ? loginHost
+    : null;
+  if (!domain || !domain.includes(".") || domain.includes(":")) return null;
+  return /^[a-z0-9.-]+$/.test(domain) ? domain : null;
+}
+
+function hostname(origin: string): string | null {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function rememberedAccountsCookieDomainForTest(
+  site: string,
+  login: string,
+  dev: boolean,
+): string | null {
+  return rememberedAccountsCookieDomain({ site, login, dev });
+}
+
+export function rememberedAccountsCookieFlagsForTest(
+  maxAgeSec: number,
+  options: { dev: boolean; site: string; login: string },
+): string[] {
+  return rememberedAccountsCookieFlags(maxAgeSec, options);
 }
 
 /* Local base64url helpers — kept here (rather than importing from
