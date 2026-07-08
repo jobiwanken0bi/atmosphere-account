@@ -5,6 +5,7 @@ import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import HostMark from "../../../components/hosts/HostMark.tsx";
 import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
+import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import {
   type AccountHost,
   type AccountHostClaim,
@@ -86,6 +87,11 @@ interface HostManagePageProps {
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("host manage page", err),
+    );
+    if (proxied) return proxied;
+
     const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
     const host = await getAccountHost(hostId).catch(() => null);
     const account = buildAccountMenuProps(ctx.state);
@@ -125,6 +131,11 @@ export const handler = define.handlers({
   },
 
   async POST(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("host manage update", err),
+    );
+    if (proxied) return proxied;
+
     const large = rejectLargeRequest(ctx.req, MAX_HOST_MANAGE_FORM_BYTES);
     if (large) return large;
 
@@ -346,6 +357,17 @@ export const handler = define.handlers({
     );
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Host management is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 async function publishManagedHostProfile(
   user: { did: string; handle: string },

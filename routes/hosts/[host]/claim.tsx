@@ -4,6 +4,7 @@ import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import HostMark from "../../../components/hosts/HostMark.tsx";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
+import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import {
   type AccountHost,
   type AccountHostClaim,
@@ -35,6 +36,11 @@ interface ClaimPageProps {
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("host claim page", err),
+    );
+    if (proxied) return proxied;
+
     const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
     const host = await getAccountHost(hostId).catch(() => null);
     if (!host) {
@@ -63,6 +69,11 @@ export const handler = define.handlers({
   },
 
   async POST(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("host claim update", err),
+    );
+    if (proxied) return proxied;
+
     const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
     const host = await getAccountHost(hostId).catch(() => null);
     if (!host) {
@@ -93,6 +104,17 @@ export const handler = define.handlers({
     return ctx.render(<HostClaimPage {...page} />, { status: 403 });
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Host claiming is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 async function buildClaimPageProps(
   host: AccountHost,

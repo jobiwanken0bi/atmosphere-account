@@ -6,6 +6,7 @@ import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import HostRegisterForm from "../../islands/HostRegisterForm.tsx";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import {
   type AccountHostRegistrationResult,
   type HostSignupStatus,
@@ -64,6 +65,11 @@ const HOST_AVATAR_MIME_TYPES = new Set([
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("host registration page", err),
+    );
+    if (proxied) return proxied;
+
     if (!ctx.state.user) return redirectToSignin(ctx.url);
     const prefill = await buildRegisterPrefill(ctx.state.user, ctx.url);
     return ctx.render(
@@ -77,6 +83,11 @@ export const handler = define.handlers({
   },
 
   async POST(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("host registration update", err),
+    );
+    if (proxied) return proxied;
+
     if (!ctx.state.user) return redirectToSignin(ctx.url);
     const large = rejectLargeRequest(ctx.req, MAX_HOST_REGISTER_FORM_BYTES);
     if (large) return large;
@@ -139,6 +150,17 @@ export const handler = define.handlers({
     return await renderRegisterResultError(ctx, values, result);
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("Host registration is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 function redirectToSignin(url: URL): Response {
   const signin = new URL("/signin", url.origin);
