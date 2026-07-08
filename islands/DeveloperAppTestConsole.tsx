@@ -1,5 +1,9 @@
 import { useSignal } from "@preact/signals";
 import { buildAtmosphereLoginUrl } from "../lib/atmosphere-login-sdk.ts";
+import {
+  type AtmosphereLoginButtonMode,
+  loginButtonSnippet,
+} from "../lib/atmosphere-login-snippets.ts";
 
 export interface DeveloperAppTestApp {
   clientId: string;
@@ -10,9 +14,7 @@ export interface DeveloperAppTestApp {
   status: string;
 }
 
-export type DeveloperAppPickerMode = "redirect" | "popup";
-
-const PICKER_MODES: DeveloperAppPickerMode[] = ["redirect", "popup"];
+const PICKER_MODES: AtmosphereLoginButtonMode[] = ["redirect", "popup"];
 
 interface VerificationCheck {
   label: string;
@@ -43,7 +45,7 @@ export default function DeveloperAppTestConsole(
 ) {
   const returnUri = useSignal(app.allowedReturnUris[0] ?? "");
   const state = useSignal(randomState());
-  const mode = useSignal<DeveloperAppPickerMode>("redirect");
+  const mode = useSignal<AtmosphereLoginButtonMode>("redirect");
   const copied = useSignal<string | null>(null);
   const verificationInput = useSignal("");
   const verification = useSignal<VerificationResult | null>(null);
@@ -176,7 +178,11 @@ export default function DeveloperAppTestConsole(
 
   const url = pickerUrl();
   const payload = expectedPayload();
-  const buttonMarkup = loginButtonSnippet(app, returnUri.value, mode.value);
+  const buttonMarkup = loginButtonSnippet(app, {
+    returnUri: returnUri.value,
+    mode: mode.value,
+    scope: "atproto",
+  });
 
   return (
     <section class="glass account-developer-test-console">
@@ -377,36 +383,6 @@ function Snippet(
       <pre class="api-playground-pre"><code>{text}</code></pre>
     </div>
   );
-}
-
-export function loginButtonSnippet(
-  app: DeveloperAppTestApp,
-  returnUri: string,
-  mode: DeveloperAppPickerMode,
-): string {
-  const attributes = [
-    "data-atmosphere-login",
-    attr("data-client-id", app.clientId),
-    attr("data-return-uri", returnUri),
-    attr("data-scope", "atproto"),
-    attr("data-mode", mode),
-    attr("data-app-name", app.appName),
-  ];
-  if (app.logoUri) attributes.push(attr("data-app-logo", app.logoUri));
-  if (app.appUri) attributes.push(attr("data-app-homepage", app.appUri));
-  return `<button\n  ${attributes.join("\n  ")}\n></button>`;
-}
-
-function attr(name: string, value: string): string {
-  return `${name}="${htmlAttr(value)}"`;
-}
-
-function htmlAttr(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
 }
 
 function extractSelection(value: string): {

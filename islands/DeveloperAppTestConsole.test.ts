@@ -1,7 +1,8 @@
 import {
-  type DeveloperAppTestApp,
+  type AtmosphereLoginButtonSnippetApp,
+  atmosphereLoginScriptSnippet,
   loginButtonSnippet,
-} from "./DeveloperAppTestConsole.tsx";
+} from "../lib/atmosphere-login-snippets.ts";
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
@@ -21,20 +22,17 @@ function assertStringExcludes(actual: string, unexpected: string): void {
   }
 }
 
-const baseApp: DeveloperAppTestApp = {
+const baseApp: AtmosphereLoginButtonSnippetApp = {
   clientId: "https://app.example/client-metadata.json",
   appName: "Example App",
   appUri: null,
   logoUri: null,
-  allowedReturnUris: ["https://app.example/callback"],
-  status: "development",
 };
 
 Deno.test("developer app console emits explicit redirect button metadata", () => {
   const snippet = loginButtonSnippet(
     baseApp,
-    "https://app.example/callback",
-    "redirect",
+    { returnUri: "https://app.example/callback", mode: "redirect" },
   );
 
   assert(snippet.startsWith("<button\n"), "Expected button snippet");
@@ -57,8 +55,7 @@ Deno.test("developer app console emits popup button metadata", () => {
       appUri: "https://app.example/?a=1&b=2",
       logoUri: 'https://cdn.example/logo.svg?label="app"',
     },
-    "https://app.example/callback?mode=popup",
-    "popup",
+    { returnUri: "https://app.example/callback?mode=popup", mode: "popup" },
   );
 
   assertStringIncludes(snippet, 'data-mode="popup"');
@@ -73,5 +70,16 @@ Deno.test("developer app console emits popup button metadata", () => {
   assertStringIncludes(
     snippet,
     'data-app-homepage="https://app.example/?a=1&amp;b=2"',
+  );
+});
+
+Deno.test("developer app console emits escaped SDK script metadata", () => {
+  const snippet = atmosphereLoginScriptSnippet(
+    "https://login.example/path/?label=ignored",
+  );
+
+  assertStringIncludes(
+    snippet,
+    'src="https://login.example/atmosphere-login.js"',
   );
 });

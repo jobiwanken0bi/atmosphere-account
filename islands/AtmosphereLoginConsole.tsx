@@ -1,6 +1,11 @@
 import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import { buildAtmosphereLoginUrl } from "../lib/atmosphere-login-sdk.ts";
+import {
+  type AtmosphereLoginButtonMode,
+  atmosphereLoginScriptSnippet,
+  loginButtonSnippet,
+} from "../lib/atmosphere-login-snippets.ts";
 
 interface RegisteredLoginApp {
   clientId: string;
@@ -23,6 +28,8 @@ interface VerificationCheck {
   ok: boolean;
   detail: string;
 }
+
+const BUTTON_MODES: AtmosphereLoginButtonMode[] = ["redirect", "popup"];
 
 function randomState(): string {
   const bytes = new Uint8Array(18);
@@ -48,6 +55,7 @@ export default function AtmosphereLoginConsole(
     new URL("/examples/atmosphere-login/callback", initialOrigin).toString(),
   );
   const scope = useSignal("atproto");
+  const mode = useSignal<AtmosphereLoginButtonMode>("redirect");
   const state = useSignal(randomState());
   const copied = useSignal<string | null>(null);
   const registeredApps = useSignal<RegisteredLoginApp[]>([]);
@@ -96,6 +104,17 @@ export default function AtmosphereLoginConsole(
     selectedClientId.value = value;
     const app = registeredApps.value.find((entry) => entry.clientId === value);
     if (app) applyRegisteredApp(app);
+  }
+
+  function selectButtonMode(nextMode: AtmosphereLoginButtonMode) {
+    mode.value = nextMode;
+    if (!selectedClientId.value && isReferenceCallbackUri(returnUri.value)) {
+      const nextReturnUri = referenceCallbackUri(
+        nextMode,
+        atmosphereOrigin.value,
+      );
+      if (nextReturnUri) returnUri.value = nextReturnUri;
+    }
   }
 
   function pickerUrl(): string {
@@ -210,17 +229,19 @@ export default function AtmosphereLoginConsole(
     null,
     2,
   );
-  const htmlSnippet = `<button
-  data-atmosphere-login
-  data-client-id="${clientId.value}"
-  data-return-uri="${returnUri.value}"
-  data-scope="${scope.value}"
-  data-app-name="${selectedApp?.appName || "Example App"}"
-  data-app-logo="${selectedApp?.logoUri || ""}"
-  data-app-homepage="${selectedApp?.appUri || ""}"
-  data-mode="redirect"
-></button>
-<script src="${atmosphereOrigin.value}/atmosphere-login.js" defer></script>`;
+  const htmlSnippet = `${
+    loginButtonSnippet({
+      clientId: clientId.value,
+      appName: selectedApp?.appName || "Example App",
+      appUri: selectedApp?.appUri || null,
+      logoUri: selectedApp?.logoUri || null,
+    }, {
+      returnUri: returnUri.value,
+      scope: scope.value,
+      mode: mode.value,
+    })
+  }
+${atmosphereLoginScriptSnippet(atmosphereOrigin.value)}`;
   const verifierSnippet =
     `import { verifyAtmosphereLoginCallback } from "@atmosphere/login/server";
 
@@ -362,6 +383,32 @@ const { sub: did, handle, pds_url } = result.claims;`;
               (event.currentTarget as HTMLInputElement).value)}
           />
         </label>
+        <div class="profile-form-field">
+          <span class="profile-form-label">Button mode</span>
+          <div
+            class="login-console-mode-control"
+            role="group"
+            aria-label="Button mode"
+          >
+            {BUTTON_MODES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                class={`login-console-mode-option ${
+                  mode.value === option ? "is-active" : ""
+                }`}
+                aria-pressed={mode.value === option}
+                onClick={() => selectButtonMode(option)}
+              >
+                {option === "redirect" ? "Redirect" : "Popup"}
+              </button>
+            ))}
+          </div>
+          <span class="profile-form-hint">
+            Redirect is the safest default. Popup mode uses the SDK completion
+            event to return to the app page.
+          </span>
+        </div>
       </div>
 
       <label class="profile-form-field">
@@ -510,6 +557,29 @@ function defaultAtmosphereOrigin(origin: string): string {
     return url.origin;
   } catch {
     return "https://login.atmosphereaccount.com";
+  }
+}
+
+function referenceCallbackUri(
+  mode: AtmosphereLoginButtonMode,
+  origin: string,
+): string | null {
+  try {
+    const url = new URL("/examples/atmosphere-login/callback", origin);
+    if (mode === "popup") url.searchParams.set("mode", "popup");
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isReferenceCallbackUri(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.pathname === "/examples/atmosphere-login/callback" &&
+      (url.search === "" || url.search === "?mode=popup");
+  } catch {
+    return false;
   }
 }
 
