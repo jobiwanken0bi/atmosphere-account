@@ -237,7 +237,9 @@ const BSKY_PROFILE =
   "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile";
 const HOST_PROFILE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const HOST_PROFILE_MISS_RETRY_MS = 6 * 60 * 60 * 1000;
-const HOST_PROFILE_REFRESH_BATCH_SIZE = 8;
+// Keep this above the seeded host count so first-run directory hydration can
+// pick up avatars for every known host without waiting for a later request.
+const HOST_PROFILE_REFRESH_BATCH_SIZE = 12;
 
 const SEEDED_HOSTS: SeedHost[] = [
   {
@@ -773,6 +775,10 @@ async function fetchHostProfileRefreshes(
   const ts = now();
   const candidates = hosts
     .filter((host) => hostNeedsProfileRefresh(host, ts))
+    .sort((a, b) =>
+      hostProfileRefreshRank(a) - hostProfileRefreshRank(b) ||
+      a.displayName.localeCompare(b.displayName)
+    )
     .slice(0, HOST_PROFILE_REFRESH_BATCH_SIZE);
   if (candidates.length === 0) return { ts, results: [] };
 
@@ -793,6 +799,13 @@ async function fetchHostProfileRefreshes(
     }));
 
   return { ts, results };
+}
+
+function hostProfileRefreshRank(host: AccountHost): number {
+  if (host.source === "seeded" && !host.avatarUrl) return 0;
+  if (!host.avatarUrl) return 1;
+  if (host.source === "seeded") return 2;
+  return 3;
 }
 
 async function persistHostProfileRefreshes(
