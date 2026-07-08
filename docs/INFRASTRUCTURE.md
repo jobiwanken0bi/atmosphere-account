@@ -160,7 +160,9 @@ smoke checks HTML, CSS, static scripts, and generated `/assets` imports on both
 GitHub Actions also runs the `Production Smoke` workflow on a schedule and on
 manual dispatch. Treat it as an early warning, not as a replacement for running
 `deno task smoke:production` immediately after an intentional deploy or DNS
-change.
+change. Manual dispatch accepts `expected_release_sha`; use that after release
+SHA env vars are configured on both Deno and Railway to run the same exact drift
+check from GitHub.
 
 ## Neon Migration Track
 

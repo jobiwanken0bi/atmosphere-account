@@ -2,6 +2,11 @@ name: Production Smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_release_sha:
+        description: "Optional git SHA that production shell and appview must report"
+        required: false
+        type: string
   schedule:
     - cron: "17 * * * *"
 
@@ -28,4 +33,6 @@ jobs:
           deno-version: 2.7.12
 
       - name: Smoke production
+        env:
+          SMOKE_EXPECT_RELEASE_SHA: ${{ inputs.expected_release_sha }}
         run: deno task smoke:production
