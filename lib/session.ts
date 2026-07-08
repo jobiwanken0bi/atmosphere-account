@@ -11,7 +11,7 @@ import { hmacSign, hmacVerify, randomB64u } from "./jose.ts";
 import { IS_DEV, sessionSecret } from "./env.ts";
 import { readRememberedAccounts } from "./remembered-accounts.ts";
 import { getEffectiveAccountType } from "./account-types.ts";
-import { lookupAccountHost } from "./account-hosts.ts";
+import { lookupAccountHost, lookupAccountHostHint } from "./account-hosts.ts";
 import { loadSession } from "./oauth.ts";
 
 export interface SessionUser {
@@ -121,6 +121,21 @@ export function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; ${flags.join("; ")}`;
 }
 
+export function shouldHydrateAccountDetails(
+  pathname: string,
+  appviewConfigured = isAppviewConfigured(),
+): boolean {
+  if (!appviewConfigured) return true;
+  return pathname.startsWith("/dev/");
+}
+
+function isAppviewConfigured(): boolean {
+  return Boolean(
+    Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
+      Deno.env.get("APPVIEW_BASE_URL")?.trim(),
+  );
+}
+
 /**
  * Hydrates `ctx.state.user` from the session cookie. Always returns a
  * value (possibly null) so downstream code can rely on the property
@@ -135,28 +150,40 @@ export const sessionMiddleware = define.middleware(async (ctx) => {
   );
   try {
     ctx.state.user = await readSessionCookie(ctx.req);
-    const accountTypePromise = ctx.state.user
-      ? getEffectiveAccountType(ctx.state.user.did).catch(() => null)
-      : Promise.resolve(null);
-    const accountHostPromise = ctx.state.user
-      ? loadSession(ctx.state.user.did)
+    const rememberedAccounts = await rememberedAccountsPromise;
+    ctx.state.rememberedAccounts = rememberedAccounts;
+
+    if (
+      ctx.state.user && shouldHydrateAccountDetails(ctx.url.pathname)
+    ) {
+      const accountTypePromise = getEffectiveAccountType(ctx.state.user.did)
+        .catch(() => null);
+      const accountHostPromise = loadSession(ctx.state.user.did)
         .then((oauthSession) =>
           oauthSession ? lookupAccountHost(oauthSession.pdsUrl) : null
         )
-        .catch(() => null)
-      : Promise.resolve(null);
-    const [accountType, accountHost] = await Promise.all([
-      accountTypePromise,
-      accountHostPromise,
-    ]);
-    ctx.state.accountType = accountType;
-    ctx.state.accountHost = accountHost;
+        .catch(() => null);
+      const [accountType, accountHost] = await Promise.all([
+        accountTypePromise,
+        accountHostPromise,
+      ]);
+      ctx.state.accountType = accountType;
+      ctx.state.accountHost = accountHost;
+    } else {
+      const remembered = ctx.state.user
+        ? rememberedAccounts.find((account) =>
+          account.did === ctx.state.user?.did
+        )
+        : null;
+      ctx.state.accountType = null;
+      ctx.state.accountHost = lookupAccountHostHint(remembered?.pdsUrl);
+    }
   } catch (err) {
     if (IS_DEV) console.warn("session read failed:", err);
     ctx.state.user = null;
     ctx.state.accountType = null;
     ctx.state.accountHost = null;
+    ctx.state.rememberedAccounts = await rememberedAccountsPromise;
   }
-  ctx.state.rememberedAccounts = await rememberedAccountsPromise;
   return await ctx.next();
 });

@@ -1500,6 +1500,28 @@ export function accountHostKeyForEndpoint(
   return seed?.host ?? endpointHost(pdsUrl);
 }
 
+export function lookupAccountHostHint(
+  pdsUrl: string | null | undefined,
+): AccountHostLookup | null {
+  const host = endpointHost(pdsUrl);
+  if (!host) return null;
+  const seed = seedForEndpoint(pdsUrl);
+  if (seed) {
+    return {
+      host: seed.host,
+      displayName: seed.displayName,
+      endpoint: pdsUrl ?? host,
+      verificationStatus: seed.verificationStatus,
+    };
+  }
+  return {
+    host,
+    displayName: host,
+    endpoint: pdsUrl ?? host,
+    verificationStatus: "observed",
+  };
+}
+
 export async function lookupAccountHost(
   pdsUrl: string | null | undefined,
 ): Promise<AccountHostLookup | null> {

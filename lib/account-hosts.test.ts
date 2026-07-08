@@ -1,4 +1,7 @@
-import { listSeededAccountHostFallback } from "./account-hosts.ts";
+import {
+  listSeededAccountHostFallback,
+  lookupAccountHostHint,
+} from "./account-hosts.ts";
 
 function assert(condition: unknown, message = "Assertion failed"): void {
   if (!condition) throw new Error(message);
@@ -39,4 +42,32 @@ Deno.test("seeded account host fallback searches friendly host fields", () => {
 
 Deno.test("seeded account host fallback preserves real empty search states", () => {
   assertEquals(listSeededAccountHostFallback({ query: "zzzz-no-host" }), []);
+});
+
+Deno.test("account host hints resolve known Bluesky endpoints without DB hydration", () => {
+  assertEquals(lookupAccountHostHint("https://bsky.social"), {
+    host: "bsky.network",
+    displayName: "Bluesky",
+    endpoint: "https://bsky.social",
+    verificationStatus: "observed",
+  });
+  assertEquals(
+    lookupAccountHostHint("https://shimeji.us-east.host.bsky.network"),
+    {
+      host: "bsky.network",
+      displayName: "Bluesky",
+      endpoint: "https://shimeji.us-east.host.bsky.network",
+      verificationStatus: "observed",
+    },
+  );
+});
+
+Deno.test("account host hints fall back to observed endpoint names", () => {
+  assertEquals(lookupAccountHostHint("https://pds.example.com"), {
+    host: "pds.example.com",
+    displayName: "pds.example.com",
+    endpoint: "https://pds.example.com",
+    verificationStatus: "observed",
+  });
+  assertEquals(lookupAccountHostHint(null), null);
 });
