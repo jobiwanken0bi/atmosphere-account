@@ -188,12 +188,15 @@ return createAppSession(account);`;
               <div class="login-example-app-grid">
                 <div class="login-example-demo-panel">
                   <div class="login-example-demo-app">
-                    <span
+                    <img
                       class="login-example-demo-app-avatar"
-                      aria-hidden="true"
-                    >
-                      <span>App</span>
-                    </span>
+                      src="/app-icon.svg"
+                      alt=""
+                      width="42"
+                      height="42"
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <div>
                       <strong>Reference app</strong>
                       <span>Local example using this deployment</span>

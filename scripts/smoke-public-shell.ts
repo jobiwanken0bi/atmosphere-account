@@ -504,6 +504,13 @@ await smokeHtml(
   "/docs/atmosphere-login",
   { expectedText: "Atmosphere Login" },
 );
+await smokeHtml(options.siteOrigin, "/examples/atmosphere-login/app", {
+  expectedText: [
+    "Reference app",
+    "Continue with Atmosphere",
+    "/app-icon.svg",
+  ],
+});
 
 for (const origin of [options.siteOrigin, options.loginOrigin]) {
   await smokeOauthMetadata(origin);

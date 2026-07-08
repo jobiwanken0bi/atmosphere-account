@@ -262,7 +262,7 @@ function PopupCompletionPage(
     >
       <div class="login-popup-callback-card">
         <img
-          src="/union.svg"
+          src="/app-icon.svg"
           alt=""
           width="34"
           height="34"

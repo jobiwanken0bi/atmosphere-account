@@ -14373,24 +14373,14 @@ body {
 }
 
 .login-example-demo-app-avatar {
-  display: inline-flex;
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
   border-radius: 13px;
-  background: linear-gradient(
-    135deg,
-    rgba(22, 119, 255, 0.16),
-    rgba(18, 26, 47, 0.08)
-  );
+  background: rgba(255, 255, 255, 0.62);
   border: 1px solid rgba(22, 119, 255, 0.18);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
-  color: #1677ff;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 1rem;
-  font-weight: 700;
+  object-fit: cover;
 }
 
 .login-example-demo-app strong,
@@ -14547,6 +14537,7 @@ body {
 .login-popup-callback-icon {
   width: 34px;
   height: 34px;
+  border-radius: 11px;
 }
 
 .login-popup-callback-card h1 {
