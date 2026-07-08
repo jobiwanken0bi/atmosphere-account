@@ -49,6 +49,7 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
 });
 
 export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
+  if (isEdgeOwnedOauthDocument(pathname)) return false;
   return pathname === "/apps" || pathname.startsWith("/apps/") ||
     pathname === "/hosts" || pathname.startsWith("/hosts/") ||
     pathname === "/account" || pathname.startsWith("/account/") ||
@@ -65,6 +66,11 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/atproto/blob" ||
     pathname === "/api/identity/preview" ||
     pathname === "/api/me/avatar";
+}
+
+function isEdgeOwnedOauthDocument(pathname: string): boolean {
+  return pathname === "/oauth/client-metadata.json" ||
+    pathname === "/oauth/jwks.json";
 }
 
 function appviewEarlyProxyUnavailable(pathname: string): Response {

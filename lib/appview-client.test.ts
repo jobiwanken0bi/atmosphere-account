@@ -21,6 +21,7 @@ Deno.test("early appview proxy covers DB-backed app surfaces before session hydr
       "/users/joebasser.com",
       "/login/select",
       "/oauth/callback",
+      "/oauth/login",
     ]
   ) {
     assertEquals(shouldProxyAppviewBeforeSession(path), true);
@@ -54,6 +55,8 @@ Deno.test("early appview proxy leaves static, docs, and health routes on the Den
       "/signin",
       "/api/health/ready",
       "/api/login/selection",
+      "/oauth/client-metadata.json",
+      "/oauth/jwks.json",
       "/assets/client-entry.js",
       "/atmosphere-login.js",
       "/.well-known/atproto-did",
