@@ -1834,10 +1834,10 @@ export async function listAccountHosts(
     const query = opts.query?.trim();
     if (query) {
       filters.push(
-        `(display_name LIKE ? OR host LIKE ? OR description LIKE ?)`,
+        `(lower(display_name) LIKE ? OR lower(host) LIKE ? OR lower(description) LIKE ? OR lower(COALESCE(profile_handle, '')) LIKE ? OR lower(COALESCE(data_location, '')) LIKE ?)`,
       );
-      const like = `%${query}%`;
-      args.push(like, like, like);
+      const like = `%${query.toLowerCase()}%`;
+      args.push(like, like, like, like, like);
     }
     if (opts.verificationStatus && opts.verificationStatus !== "all") {
       filters.push(`verification_status = ?`);
