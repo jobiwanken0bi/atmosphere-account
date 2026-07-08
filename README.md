@@ -126,11 +126,16 @@ as `expected_release_sha` when manually running the workflow.
 Use the release-stamping helper before an exact release:
 
 ```sh
+git push
 deno task release:stamp -- --write
 deno deploy --prod
 railway up --service web --environment production --detach -m "Deploy $(git rev-parse --short HEAD)"
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
+
+`release:stamp --write` requires a clean worktree and a release commit that
+matches its tracked upstream. Use `--allow-dirty`, `--allow-unpushed`, or an
+explicit `--sha` only for an intentional emergency override.
 
 ## Contributing
 

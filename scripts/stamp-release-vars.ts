@@ -3,6 +3,8 @@ interface Options {
   branch: string;
   write: boolean;
   allowDirty: boolean;
+  allowUnpushed: boolean;
+  explicitSha: boolean;
   deno: boolean;
   railway: boolean;
   denoOrg: string;
@@ -22,6 +24,9 @@ if (import.meta.main) {
   const options = await parseOptions();
   if (options.write && !options.allowDirty) {
     assertCleanWorktreeForRelease(await git(["status", "--porcelain"]));
+  }
+  if (options.write && !options.allowUnpushed && !options.explicitSha) {
+    await assertCurrentHeadPushedForRelease();
   }
   const releaseVars = [
     ["ATMOSPHERE_RELEASE_SHA", options.sha],
@@ -54,8 +59,9 @@ async function parseOptions(): Promise<Options> {
 
   const denoOnly = args.includes("--deno");
   const railwayOnly = args.includes("--railway");
+  const shaFlag = readFlag(args, "--sha");
   const sha = normalizeSha(
-    readFlag(args, "--sha") ?? env("ATMOSPHERE_RELEASE_SHA") ??
+    shaFlag ?? env("ATMOSPHERE_RELEASE_SHA") ??
       await git(["rev-parse", "HEAD"]),
   );
   const branch = normalizeBranch(
@@ -68,6 +74,8 @@ async function parseOptions(): Promise<Options> {
     branch,
     write: args.includes("--write"),
     allowDirty: args.includes("--allow-dirty"),
+    allowUnpushed: args.includes("--allow-unpushed"),
+    explicitSha: !!shaFlag,
     deno: denoOnly || !railwayOnly,
     railway: railwayOnly || !denoOnly,
     denoOrg: readFlag(args, "--deno-org") ?? env("DENO_DEPLOY_ORG") ??
@@ -95,6 +103,7 @@ function usage(exitCode: number): never {
     "Options:",
     "  --write                         Update provider variables",
     "  --allow-dirty                   Allow --write with uncommitted changes",
+    "  --allow-unpushed                Allow --write despite missing/mismatched upstream",
     "  --deno                          Stamp only Deno Deploy",
     "  --railway                       Stamp only Railway",
     "  --sha=<git-sha>                 Release SHA, defaults to git rev-parse HEAD",
@@ -117,6 +126,71 @@ export function assertCleanWorktreeForRelease(statusPorcelain: string): void {
       "or pass --allow-dirty if you intentionally want release metadata to point at HEAD while deploying local edits.",
     ].join(" "),
   );
+}
+
+export function assertPushedUpstreamForRelease(
+  upstream: string,
+  aheadBehind: string,
+): void {
+  const upstreamRef = upstream.trim();
+  if (!upstreamRef) {
+    throw new Error(
+      [
+        "release:stamp --write requires the current branch to have an upstream.",
+        "Push the release branch or pass --allow-unpushed if you intentionally want to stamp a local-only commit.",
+      ].join(" "),
+    );
+  }
+  const [aheadText, behindText] = aheadBehind.trim().split(/\s+/, 2);
+  const ahead = Number(aheadText);
+  const behind = Number(behindText);
+  if (
+    !Number.isInteger(ahead) || ahead < 0 ||
+    !Number.isInteger(behind) || behind < 0
+  ) {
+    throw new Error(
+      `could not read git upstream status for ${upstreamRef}: ${aheadBehind}`,
+    );
+  }
+  if (ahead === 0 && behind === 0) return;
+  if (behind > 0 && ahead === 0) {
+    throw new Error(
+      [
+        `release:stamp --write requires HEAD to match ${upstreamRef}.`,
+        `HEAD is ${behind} commit${behind === 1 ? "" : "s"} behind upstream.`,
+        "Pull or rebase the release branch before stamping production,",
+        "or pass --allow-unpushed/--sha for an intentional older deployed release.",
+      ].join(" "),
+    );
+  }
+  throw new Error(
+    [
+      `release:stamp --write requires HEAD to be pushed to ${upstreamRef}.`,
+      `HEAD is ${ahead} commit${ahead === 1 ? "" : "s"} ahead of upstream.`,
+      "Push the release commit before stamping production,",
+      "or pass --allow-unpushed if you intentionally want to stamp a local-only commit.",
+    ].join(" "),
+  );
+}
+
+async function assertCurrentHeadPushedForRelease(): Promise<void> {
+  const upstream = await run([
+    "git",
+    "rev-parse",
+    "--abbrev-ref",
+    "--symbolic-full-name",
+    "@{u}",
+  ], { allowFailure: true });
+  if (!upstream.success) {
+    assertPushedUpstreamForRelease("", "");
+  }
+  const aheadBehind = await git([
+    "rev-list",
+    "--left-right",
+    "--count",
+    "HEAD...@{u}",
+  ]);
+  assertPushedUpstreamForRelease(upstream.stdout, aheadBehind);
 }
 
 async function stampDenoDeploy(

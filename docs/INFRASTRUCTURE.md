@@ -155,11 +155,17 @@ Railway appview service without triggering a Railway deploy. Run it before
 deploying both layers from the same working tree:
 
 ```sh
+git push
 deno task release:stamp -- --write
 deno deploy --prod
 railway up --service web --environment production --detach -m "Deploy $(git rev-parse --short HEAD)"
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
+
+`release:stamp --write` intentionally fails when the worktree is dirty or HEAD
+does not match its tracked upstream. Push the release commit first so GitHub can
+verify the same SHA, and use `--allow-dirty`, `--allow-unpushed`, or an explicit
+`--sha` only for a deliberate emergency override.
 
 When both layers expose `release.gitSha`, the public-shell smoke also verifies
 that Deno and Railway are serving the same commit. It also runs

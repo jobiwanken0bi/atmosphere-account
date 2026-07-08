@@ -151,7 +151,9 @@ Health checks:
   deploying the Deno shell and Railway appview from the same working tree. The
   helper updates `ATMOSPHERE_RELEASE_SHA` and `ATMOSPHERE_RELEASE_BRANCH` on the
   Railway `web` service with `--skip-deploys`; deploy the appview afterwards
-  with `railway up --service web --environment production --detach`.
+  with `railway up --service web --environment production --detach`. The helper
+  requires a clean worktree and HEAD matching its tracked upstream unless you
+  pass an explicit emergency override such as `--allow-unpushed` or `--sha`.
 
 ## Worker Cutover
 
