@@ -117,7 +117,7 @@
     } catch {
       // Ignore storage failures.
     }
-    return {
+    const selection = {
       token,
       state,
       clientId,
@@ -125,6 +125,36 @@
       handle: params.get("handle"),
       issuer: params.get("iss"),
     };
+    if (!options || options.clearUrl !== false) {
+      clearSelectionFromUrl();
+    }
+    return selection;
+  }
+
+  function clearSelectionFromUrl() {
+    if (!globalThis.history || !globalThis.history.replaceState) return;
+    try {
+      const url = new URL(location.href);
+      for (
+        const key of [
+          "selection_token",
+          "client_id",
+          "state",
+          "did",
+          "handle",
+          "iss",
+        ]
+      ) {
+        url.searchParams.delete(key);
+      }
+      globalThis.history.replaceState(
+        globalThis.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    } catch {
+      // Keeping the callback URL is safer than breaking app routing.
+    }
   }
 
   function assetUrl(path, atmosphereOrigin) {

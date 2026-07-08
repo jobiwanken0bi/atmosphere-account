@@ -2497,7 +2497,11 @@ AtmosphereLogin.continueWithAtmosphere({
 
 const selection = AtmosphereLogin.consumeSelection({
   clientId: "https://app.example.com/oauth/client-metadata.json",
-});`,
+});
+
+// By default, consumeSelection removes Atmosphere Login callback parameters
+// from the address bar after reading them. Pass { clearUrl: false } only if
+// your router needs to control URL cleanup itself.`,
           },
         ],
       },
