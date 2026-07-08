@@ -97,6 +97,10 @@ core HTML pages, and standalone SDK assets. `smoke:picker-assets` verifies the
 hosted picker HTML, CSS, static scripts, generated Fresh assets, and imported
 chunks from both the login and main Atmosphere domains.
 
+GitHub Actions runs `deno task check` and `deno task build` on pushes and pull
+requests. The `Production Smoke` workflow also runs `deno task smoke:production`
+hourly and can be triggered manually after a Deno or Railway deploy.
+
 Health endpoints:
 
 - `/api/health` — liveness, no DB dependency

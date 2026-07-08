@@ -145,6 +145,11 @@ come from the appview bundle proxy. The picker smoke checks HTML, CSS, static
 scripts, and generated `/assets` imports on both `login.atmosphereaccount.com`
 and `atmosphereaccount.com`.
 
+GitHub Actions also runs the `Production Smoke` workflow on a schedule and on
+manual dispatch. Treat it as an early warning, not as a replacement for running
+`deno task smoke:production` immediately after an intentional deploy or DNS
+change.
+
 ## Neon Migration Track
 
 This section is retained for historical comparison and rollback experiments.
