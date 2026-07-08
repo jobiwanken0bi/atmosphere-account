@@ -7,6 +7,7 @@
  * recognizable even before an observation row exists.
  */
 import { type DbClient, withDb } from "./db.ts";
+import { isPrivateNetworkUrl } from "./security.ts";
 
 export type HostSignupStatus =
   | "open"
@@ -641,28 +642,31 @@ function normalizeHostInput(value: string): string | null {
   return host;
 }
 
-function normalizePublicHttpsUrl(
+export function normalizeAccountHostPublicHttpsUrl(
   value: string | null | undefined,
 ): string | null {
   const raw = value?.trim();
   if (!raw) return null;
+  if (isPrivateNetworkUrl(raw)) return null;
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:") return null;
+    if (url.username || url.password) return null;
     url.username = "";
     url.password = "";
     url.hash = "";
-    return url.toString();
+    return normalizedPublicUrlString(url);
   } catch {
     return null;
   }
 }
 
-function normalizePublicServiceEndpoint(
+export function normalizeAccountHostPublicServiceEndpoint(
   value: string | null | undefined,
 ): string | null {
   const raw = value?.trim();
   if (!raw) return null;
+  if (isPrivateNetworkUrl(raw)) return null;
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:") return null;
@@ -670,10 +674,15 @@ function normalizePublicServiceEndpoint(
     url.pathname = url.pathname.replace(/\/+$/, "");
     url.search = "";
     url.hash = "";
-    return url.toString();
+    return normalizedPublicUrlString(url);
   } catch {
     return null;
   }
+}
+
+function normalizedPublicUrlString(url: URL): string {
+  const path = url.pathname === "/" ? "" : url.pathname;
+  return `${url.origin}${path}${url.search}`;
 }
 
 function normalizeClaimProfileHandle(
@@ -1126,7 +1135,7 @@ export async function registerAccountHost(
   }
 
   const homepageUrl = input.homepageUrl?.trim()
-    ? normalizePublicHttpsUrl(input.homepageUrl)
+    ? normalizeAccountHostPublicHttpsUrl(input.homepageUrl)
     : null;
   if (input.homepageUrl?.trim() && !homepageUrl) {
     return {
@@ -1136,7 +1145,7 @@ export async function registerAccountHost(
     };
   }
   const serviceEndpoint = input.serviceEndpoint?.trim()
-    ? normalizePublicServiceEndpoint(input.serviceEndpoint)
+    ? normalizeAccountHostPublicServiceEndpoint(input.serviceEndpoint)
     : null;
   if (input.serviceEndpoint?.trim() && !serviceEndpoint) {
     return {
@@ -1146,7 +1155,7 @@ export async function registerAccountHost(
     };
   }
   const accountManagementUrl = input.accountManagementUrl?.trim()
-    ? normalizePublicHttpsUrl(input.accountManagementUrl)
+    ? normalizeAccountHostPublicHttpsUrl(input.accountManagementUrl)
     : null;
   if (input.accountManagementUrl?.trim() && !accountManagementUrl) {
     return {
@@ -1156,7 +1165,7 @@ export async function registerAccountHost(
     };
   }
   const supportUrl = input.supportUrl?.trim()
-    ? normalizePublicHttpsUrl(input.supportUrl)
+    ? normalizeAccountHostPublicHttpsUrl(input.supportUrl)
     : null;
   if (input.supportUrl?.trim() && !supportUrl) {
     return {
@@ -1345,7 +1354,7 @@ export async function updateAccountHostProfileSettings(
   }
 
   const homepageUrl = input.homepageUrl?.trim()
-    ? normalizePublicHttpsUrl(input.homepageUrl)
+    ? normalizeAccountHostPublicHttpsUrl(input.homepageUrl)
     : null;
   if (input.homepageUrl?.trim() && !homepageUrl) {
     return {
@@ -1573,8 +1582,9 @@ export async function observeAccountHost(
     await ensureSeededHosts(c);
     const ts = now();
     if (seed) {
-      const serviceEndpoint = normalizePublicServiceEndpoint(pdsUrl) ??
-        seed.serviceEndpoint ?? null;
+      const serviceEndpoint =
+        normalizeAccountHostPublicServiceEndpoint(pdsUrl) ??
+          seed.serviceEndpoint ?? null;
       const accountManagementUrl = seed.accountManagementUrl ?? null;
       if (accountManagementUrl) {
         await c.execute({
@@ -1614,7 +1624,7 @@ export async function observeAccountHost(
       return;
     }
     const origin = normalizeEndpoint(pdsUrl)?.origin ?? `https://${host}`;
-    const serviceEndpoint = normalizePublicServiceEndpoint(origin);
+    const serviceEndpoint = normalizeAccountHostPublicServiceEndpoint(origin);
     await c.execute({
       sql: `INSERT INTO account_host (
           host, display_name, description, homepage_url,

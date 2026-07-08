@@ -101,6 +101,42 @@ Deno.test("buildHostServiceRecord omits guessed account page when not provided",
   );
 });
 
+Deno.test("buildHostServiceRecord omits unsafe public links", () => {
+  const record = buildHostServiceRecord({
+    host: "Pckt.Cafe",
+    displayName: "Pckt",
+    homepageUrl: "http://pckt.cafe",
+    serviceEndpoint: "https://192.168.1.10",
+    accountManagementUrl: "https://127.0.0.1/account",
+    supportUrl: "https://user:pass@pckt.cafe/support",
+    signupStatus: "open",
+    createdAt: "2026-06-26T00:00:00.000Z",
+  });
+
+  assertEquals(record.serviceEndpoint, undefined);
+  assertEquals(record.accountManagementUrl, undefined);
+  assertEquals((record.signup as Record<string, unknown>).url, undefined);
+  assertEquals(record.links, undefined);
+  assert(
+    !(record.capabilities as Array<Record<string, string>>).some(
+      (capability) => capability.url,
+    ),
+  );
+});
+
+Deno.test("buildHostProfileRecord omits unsafe public links", () => {
+  const record = buildHostProfileRecord({
+    host: "pckt.cafe",
+    displayName: "Pckt",
+    homepageUrl: "http://pckt.cafe",
+    supportUrl: "https://localhost/support",
+    serviceEndpoint: "https://pds.pckt.cafe",
+    signupStatus: "open",
+  }, "at://did:plc:host/account.atmosphere.host.service/pckt.cafe");
+
+  assertEquals(record.links, undefined);
+});
+
 Deno.test("buildHostProfileRecord references service record and avatar blob", () => {
   const record = buildHostProfileRecord({
     host: "pckt.cafe",

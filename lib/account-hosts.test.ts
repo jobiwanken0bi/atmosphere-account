@@ -1,6 +1,8 @@
 import {
   listSeededAccountHostFallback,
   lookupAccountHostHint,
+  normalizeAccountHostPublicHttpsUrl,
+  normalizeAccountHostPublicServiceEndpoint,
 } from "./account-hosts.ts";
 
 function assert(condition: unknown, message = "Assertion failed"): void {
@@ -70,4 +72,42 @@ Deno.test("account host hints fall back to observed endpoint names", () => {
     verificationStatus: "observed",
   });
   assertEquals(lookupAccountHostHint(null), null);
+});
+
+Deno.test("account host public URL normalizer rejects unsafe account links", () => {
+  assertEquals(
+    normalizeAccountHostPublicHttpsUrl("https://example.host/account#settings"),
+    "https://example.host/account",
+  );
+  for (
+    const unsafe of [
+      "/account",
+      "http://example.host/account",
+      "https://user:pass@example.host/account",
+      "https://localhost/account",
+      "https://127.0.0.1/account",
+      "https://10.0.0.8/account",
+      "https://[::1]/account",
+    ]
+  ) {
+    assertEquals(normalizeAccountHostPublicHttpsUrl(unsafe), null);
+  }
+});
+
+Deno.test("account host service endpoint normalizer rejects unsafe origins", () => {
+  assertEquals(
+    normalizeAccountHostPublicServiceEndpoint("https://pds.example.host/"),
+    "https://pds.example.host",
+  );
+  for (
+    const unsafe of [
+      "http://pds.example.host",
+      "https://user:pass@pds.example.host",
+      "https://localhost",
+      "https://192.168.1.10",
+      "https://[fd00::1]",
+    ]
+  ) {
+    assertEquals(normalizeAccountHostPublicServiceEndpoint(unsafe), null);
+  }
 });

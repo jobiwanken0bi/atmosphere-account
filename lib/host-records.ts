@@ -1,4 +1,8 @@
-import { type HostSignupStatus } from "./account-hosts.ts";
+import {
+  type HostSignupStatus,
+  normalizeAccountHostPublicHttpsUrl,
+  normalizeAccountHostPublicServiceEndpoint,
+} from "./account-hosts.ts";
 import {
   type BlobRef,
   HOST_PROFILE_NSID,
@@ -72,25 +76,32 @@ export function buildHostServiceRecord(
   input: HostRecordInput,
 ): Record<string, unknown> {
   const host = hostServiceRkey(input.host);
-  const accountManagementUrl = input.accountManagementUrl ?? null;
+  const homepageUrl = normalizeAccountHostPublicHttpsUrl(input.homepageUrl);
+  const serviceEndpoint = normalizeAccountHostPublicServiceEndpoint(
+    input.serviceEndpoint,
+  );
+  const accountManagementUrl = normalizeAccountHostPublicHttpsUrl(
+    input.accountManagementUrl,
+  );
+  const supportUrl = normalizeAccountHostPublicHttpsUrl(input.supportUrl);
   return omitEmpty({
     host,
     displayName: input.displayName.trim(),
     description: textOrUndefined(input.description),
-    serviceEndpoint: input.serviceEndpoint,
+    serviceEndpoint: serviceEndpoint || undefined,
     accountManagementUrl: accountManagementUrl || undefined,
     hostPatterns: [host],
     regions: dataLocationRegions(input.dataLocation),
     status: "account.atmosphere.host.defs#statusActive",
     signup: {
       status: HOST_SIGNUP_VALUES[input.signupStatus],
-      url: textOrUndefined(input.homepageUrl),
+      url: homepageUrl || undefined,
     },
     capabilities: hostServiceCapabilities(
       accountManagementUrl,
-      input.supportUrl ?? "",
+      supportUrl ?? "",
     ),
-    links: hostLinks(input.homepageUrl ?? "", input.supportUrl ?? ""),
+    links: hostLinks(homepageUrl ?? "", supportUrl ?? ""),
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || undefined,
   });
@@ -100,6 +111,8 @@ export function buildHostProfileRecord(
   input: HostRecordInput,
   serviceRecordUri: string,
 ): Record<string, unknown> {
+  const homepageUrl = normalizeAccountHostPublicHttpsUrl(input.homepageUrl);
+  const supportUrl = normalizeAccountHostPublicHttpsUrl(input.supportUrl);
   return omitEmpty({
     name: input.displayName.trim(),
     description: textOrUndefined(input.description),
@@ -107,7 +120,6 @@ export function buildHostProfileRecord(
       uri: serviceRecordUri,
       host: hostServiceRkey(input.host),
     }],
-    links: hostLinks(input.homepageUrl ?? "", input.supportUrl ?? ""),
     images: input.avatar
       ? [{
         purpose: HOST_IMAGE_PURPOSE_AVATAR,
@@ -115,6 +127,7 @@ export function buildHostProfileRecord(
         alt: `${input.displayName.trim()} avatar`,
       }]
       : undefined,
+    links: hostLinks(homepageUrl ?? "", supportUrl ?? ""),
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || undefined,
   });
