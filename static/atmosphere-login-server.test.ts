@@ -8,10 +8,13 @@ type VerifyAtmosphereLoginCallback = (options: {
 }) => Promise<{ ok: boolean; error?: string }>;
 
 type StaticServerHelperModule = {
+  clearAtmosphereLoginJwksCache: () => void;
   fetchAtmosphereLoginPublicJwk: (
     atmosphereOrigin?: string,
     options?: {
       kid?: string | null;
+      cache?: boolean;
+      cacheTtlMs?: number;
       fetchImpl?: typeof fetch;
     },
   ) => Promise<JsonWebKey>;
@@ -119,6 +122,7 @@ Deno.test("static server helper reads kid from the token header", async () => {
 
 Deno.test("static server helper fetches the requested kid from JWKS", async () => {
   const helper = await serverHelper();
+  helper.clearAtmosphereLoginJwksCache();
 
   const selected = await helper.fetchAtmosphereLoginPublicJwk(
     "https://login.example",
@@ -141,6 +145,7 @@ Deno.test("static server helper fetches the requested kid from JWKS", async () =
 
 Deno.test("static server helper fetches the token kid from JWKS", async () => {
   const helper = await serverHelper();
+  helper.clearAtmosphereLoginJwksCache();
   const token = fakeToken({ alg: "ES256", kid: "current" });
 
   const selected = await helper.fetchAtmosphereLoginPublicJwkForToken(
@@ -164,6 +169,7 @@ Deno.test("static server helper fetches the token kid from JWKS", async () => {
 
 Deno.test("static server helper requires a token kid for token JWKS fetch", async () => {
   const helper = await serverHelper();
+  helper.clearAtmosphereLoginJwksCache();
   const token = fakeToken({ alg: "ES256" });
 
   try {
@@ -187,6 +193,59 @@ Deno.test("static server helper requires a token kid for token JWKS fetch", asyn
     return;
   }
   throw new Error("Expected missing token kid to throw");
+});
+
+Deno.test("static server helper caches JWKS within the cache TTL", async () => {
+  const helper = await serverHelper();
+  helper.clearAtmosphereLoginJwksCache();
+  let fetchCount = 0;
+  const fetchImpl = (): Promise<Response> => {
+    fetchCount++;
+    return Promise.resolve(
+      new Response(JSON.stringify({
+        keys: [{ kid: "current", kty: "EC" }],
+      })),
+    );
+  };
+
+  await helper.fetchAtmosphereLoginPublicJwk("https://login.example", {
+    kid: "current",
+    fetchImpl,
+  });
+  await helper.fetchAtmosphereLoginPublicJwk("https://login.example", {
+    kid: "current",
+    fetchImpl,
+  });
+
+  assertEquals(fetchCount, 1);
+});
+
+Deno.test("static server helper refreshes cached JWKS on kid miss", async () => {
+  const helper = await serverHelper();
+  helper.clearAtmosphereLoginJwksCache();
+  let fetchCount = 0;
+  const fetchImpl = (): Promise<Response> => {
+    fetchCount++;
+    const keys = fetchCount === 1
+      ? [{ kid: "old", kty: "EC" }]
+      : [{ kid: "current", kty: "EC" }];
+    return Promise.resolve(new Response(JSON.stringify({ keys })));
+  };
+
+  await helper.fetchAtmosphereLoginPublicJwk("https://login.example", {
+    kid: "old",
+    fetchImpl,
+  });
+  const selected = await helper.fetchAtmosphereLoginPublicJwk(
+    "https://login.example",
+    {
+      kid: "current",
+      fetchImpl,
+    },
+  );
+
+  assertEquals(jwkKid(selected), "current");
+  assertEquals(fetchCount, 2);
 });
 
 function fakeToken(header: Record<string, unknown>): string {

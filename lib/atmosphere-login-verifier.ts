@@ -7,10 +7,14 @@ import { verifyAtmosphereSelectionToken } from "./atmosphere-login-sdk.ts";
 import { b64uDecode } from "./jose.ts";
 
 const DEFAULT_JWKS_TIMEOUT_MS = 3000;
+const DEFAULT_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
+const jwksCache = new Map<string, { jwks: unknown; expiresAtMs: number }>();
 
 export interface FetchAtmosphereLoginPublicJwkOptions {
   kid?: string | null;
   timeoutMs?: number;
+  cache?: boolean;
+  cacheTtlMs?: number;
   fetchImpl?: typeof fetch;
 }
 
@@ -19,7 +23,16 @@ export async function fetchAtmosphereLoginPublicJwk(
   options: FetchAtmosphereLoginPublicJwkOptions = {},
 ): Promise<JsonWebKey> {
   const jwks = await fetchAtmosphereLoginJwks(atmosphereOrigin, options);
-  return selectAtmosphereLoginPublicJwk(jwks, options.kid);
+  try {
+    return selectAtmosphereLoginPublicJwk(jwks, options.kid);
+  } catch (error) {
+    if (!options.kid || options.cache === false) throw error;
+    const refreshed = await fetchAtmosphereLoginJwks(atmosphereOrigin, {
+      ...options,
+      cache: false,
+    });
+    return selectAtmosphereLoginPublicJwk(refreshed, options.kid);
+  }
 }
 
 export async function fetchAtmosphereLoginPublicJwkForToken(
@@ -42,6 +55,14 @@ export async function fetchAtmosphereLoginJwks(
   options: FetchAtmosphereLoginPublicJwkOptions = {},
 ): Promise<unknown> {
   const url = new URL("/oauth/jwks.json", atmosphereOrigin);
+  const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_JWKS_CACHE_TTL_MS;
+  const cacheEnabled = options.cache !== false && cacheTtlMs > 0;
+  const cacheKey = url.toString();
+  const nowMs = Date.now();
+  if (cacheEnabled) {
+    const cached = jwksCache.get(cacheKey);
+    if (cached && cached.expiresAtMs > nowMs) return cached.jwks;
+  }
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_JWKS_TIMEOUT_MS;
   const controller = typeof AbortController === "function"
@@ -75,10 +96,21 @@ export async function fetchAtmosphereLoginJwks(
     );
   }
   try {
-    return await response.json();
+    const jwks = await response.json();
+    if (cacheEnabled) {
+      jwksCache.set(cacheKey, {
+        jwks,
+        expiresAtMs: nowMs + cacheTtlMs,
+      });
+    }
+    return jwks;
   } catch {
     throw new Error("Atmosphere Login JWKS was not valid JSON");
   }
+}
+
+export function clearAtmosphereLoginJwksCache(): void {
+  jwksCache.clear();
 }
 
 export function selectAtmosphereLoginPublicJwk(

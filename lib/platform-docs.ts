@@ -2532,11 +2532,11 @@ const selection = AtmosphereLogin.consumeSelection({
             rows: [
               [
                 "fetchAtmosphereLoginPublicJwkForToken(token, origin)",
-                "Fetches the public key whose `kid` matches the returned selection token.",
+                "Fetches the public key whose `kid` matches the returned selection token. JWKS is cached briefly and refreshed on key miss.",
               ],
               [
                 "fetchAtmosphereLoginPublicJwk(origin)",
-                "Fetches a public key from `/oauth/jwks.json`; pass `{ kid }` when selecting explicitly.",
+                "Fetches a public key from `/oauth/jwks.json`; pass `{ kid }` when selecting explicitly. Supports `{ cache: false }` and `{ cacheTtlMs }`.",
               ],
               [
                 "verifyAtmosphereLoginCallback(options)",
