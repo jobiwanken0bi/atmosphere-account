@@ -61,11 +61,10 @@ async function parseOptions(): Promise<Options> {
   const railwayOnly = args.includes("--railway");
   const shaFlag = readFlag(args, "--sha");
   const sha = normalizeSha(
-    shaFlag ?? env("ATMOSPHERE_RELEASE_SHA") ??
-      await git(["rev-parse", "HEAD"]),
+    shaFlag ?? await git(["rev-parse", "HEAD"]),
   );
   const branch = normalizeBranch(
-    readFlag(args, "--branch") ?? env("ATMOSPHERE_RELEASE_BRANCH") ??
+    readFlag(args, "--branch") ??
       await git(["rev-parse", "--abbrev-ref", "HEAD"]),
   );
 
