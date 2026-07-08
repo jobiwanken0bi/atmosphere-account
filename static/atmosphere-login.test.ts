@@ -20,11 +20,15 @@ type AtmosphereLoginGlobal = {
     scope?: string;
     atmosphereOrigin?: string;
     popup?: boolean;
-  }): { state: string; url: string };
+    closePopupOnComplete?: boolean;
+  }): { state: string; url: string; cleanup?: (() => void) | null };
   consumeSelection(options?: {
     clientId?: string;
     clearUrl?: boolean;
+    closePopup?: boolean;
     expectedState?: string;
+    notifyOpener?: boolean;
+    openerOrigin?: string;
   }): {
     token: string;
     state: string;
@@ -35,7 +39,10 @@ type AtmosphereLoginGlobal = {
   } | null;
 };
 
-async function loadBrowserSdk(inputUrl: string): Promise<{
+async function loadBrowserSdk(
+  inputUrl: string,
+  overrides: Record<string, unknown> = {},
+): Promise<{
   login: AtmosphereLoginGlobal;
   storage: Map<string, string>;
   replacedUrl: () => string | null;
@@ -47,13 +54,15 @@ async function loadBrowserSdk(inputUrl: string): Promise<{
     "sessionStorage",
     "history",
     "AtmosphereLogin",
-  ] as const;
+  ];
+  const extraKeys = Object.keys(overrides);
+  const allGlobalKeys = Array.from(new Set([...globalKeys, ...extraKeys]));
   const previous = new Map<PropertyKey, PropertyDescriptor | undefined>(
-    globalKeys.map((
+    allGlobalKeys.map((
       key,
     ) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
   );
-  const setGlobal = (key: typeof globalKeys[number], value: unknown) => {
+  const setGlobal = (key: string, value: unknown) => {
     Object.defineProperty(globalThis, key, {
       value,
       configurable: true,
@@ -61,7 +70,7 @@ async function loadBrowserSdk(inputUrl: string): Promise<{
     });
   };
   const restore = () => {
-    for (const key of globalKeys) {
+    for (const key of allGlobalKeys) {
       const descriptor = previous.get(key);
       if (descriptor) {
         Object.defineProperty(globalThis, key, descriptor);
@@ -103,6 +112,9 @@ async function loadBrowserSdk(inputUrl: string): Promise<{
       replacement = url;
     },
   });
+  for (const [key, value] of Object.entries(overrides)) {
+    setGlobal(key, value);
+  }
 
   try {
     const source = await Deno.readTextFile(
@@ -337,6 +349,133 @@ Deno.test("browser SDK caps stored Atmosphere state entries", async () => {
       sdk.storage.has(`atmosphere_login_state:${clientId}:old-0`),
       false,
     );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK consumeSelection posts popup selections to opener", async () => {
+  const clientId = "https://app.example/client.json";
+  const posted: Array<{ data: Record<string, unknown>; targetOrigin: string }> =
+    [];
+  let closed = false;
+  const sdk = await loadBrowserSdk(
+    `https://app.example/callback?selection_token=token-123&client_id=${
+      encodeURIComponent(clientId)
+    }&state=state-123&did=did%3Aplc%3Aexample&handle=alice.example`,
+    {
+      opener: {
+        postMessage: (data: Record<string, unknown>, targetOrigin: string) => {
+          posted.push({ data, targetOrigin });
+        },
+      },
+      close: () => {
+        closed = true;
+      },
+    },
+  );
+  try {
+    const selection = sdk.login.consumeSelection({
+      clientId,
+      clearUrl: false,
+      closePopup: true,
+    });
+
+    assertEquals(selection?.token, "token-123");
+    assertEquals(posted[0]?.targetOrigin, "https://app.example");
+    assertEquals(posted[0]?.data.type, "atmosphere-login:selection");
+    assertEquals(
+      (posted[0]?.data.selection as { state?: string })?.state,
+      "state-123",
+    );
+    assertEquals(closed, true);
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK popup listener accepts only matching origin client and state", async () => {
+  const clientId = "https://app.example/client.json";
+  type MessageHandler = (event: { origin: string; data: unknown }) => void;
+  const messageHandlers: MessageHandler[] = [];
+  let removed = false;
+  let popupClosed = false;
+  const dispatched: Event[] = [];
+  let intervalCleared = false;
+  const sdk = await loadBrowserSdk("https://app.example/start", {
+    open: () => ({
+      closed: false,
+      close: () => {
+        popupClosed = true;
+      },
+    }),
+    addEventListener: (type: string, handler: MessageHandler) => {
+      if (type === "message") messageHandlers.push(handler);
+    },
+    removeEventListener: (type: string, handler: MessageHandler) => {
+      if (type === "message" && handler === messageHandlers[0]) {
+        removed = true;
+      }
+    },
+    dispatchEvent: (event: Event) => {
+      dispatched.push(event);
+      return true;
+    },
+    setInterval: () => 1,
+    clearInterval: () => {
+      intervalCleared = true;
+    },
+  });
+  try {
+    sdk.login.continueWithAtmosphere({
+      clientId,
+      returnUri: "https://app.example/callback",
+      state: "state-123",
+      popup: true,
+    });
+
+    const messageHandler = messageHandlers[0];
+    if (!messageHandler) throw new Error("Expected popup message listener");
+    messageHandler({
+      origin: "https://evil.example",
+      data: {
+        type: "atmosphere-login:selection",
+        version: 1,
+        selection: { clientId, state: "state-123", token: "bad" },
+      },
+    });
+    assertEquals(dispatched.length, 0);
+    assertEquals(popupClosed, false);
+
+    messageHandler({
+      origin: "https://app.example",
+      data: {
+        type: "atmosphere-login:selection",
+        version: 1,
+        selection: { clientId, state: "wrong-state", token: "bad" },
+      },
+    });
+    assertEquals(dispatched.length, 0);
+    assertEquals(popupClosed, false);
+
+    messageHandler({
+      origin: "https://app.example",
+      data: {
+        type: "atmosphere-login:selection",
+        version: 1,
+        selection: { clientId, state: "state-123", token: "token-123" },
+      },
+    });
+
+    assertEquals(dispatched[0]?.type, "atmosphere-login:complete");
+    assertEquals(
+      ((dispatched[0] as CustomEvent).detail.selection as { token?: string })
+        .token,
+      "token-123",
+    );
+    assertEquals(popupClosed, true);
+    assertEquals(removed, true);
+    assertEquals(intervalCleared, true);
   } finally {
     sdk.cleanup();
   }

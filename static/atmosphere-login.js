@@ -7,6 +7,7 @@
   const STATE_PREFIX = "atmosphere_login_state:";
   const STATE_MAX_AGE_MS = 15 * 60 * 1000;
   const MAX_STATE_STORAGE_ENTRIES = 40;
+  const POPUP_MESSAGE_TYPE = "atmosphere-login:selection";
   const BUTTON_ENHANCED_ATTR = "data-atmosphere-login-enhanced";
 
   function defaultAtmosphereOrigin(origin) {
@@ -107,6 +108,95 @@
     return { url: url.toString(), state };
   }
 
+  function safeOrigin(value) {
+    try {
+      return new URL(value).origin;
+    } catch {
+      return null;
+    }
+  }
+
+  function dispatchSdkEvent(target, type, detail) {
+    const event = new CustomEvent(type, {
+      bubbles: true,
+      detail,
+    });
+    if (target && typeof target.dispatchEvent === "function") {
+      target.dispatchEvent(event);
+    } else if (typeof globalThis.dispatchEvent === "function") {
+      globalThis.dispatchEvent(event);
+    }
+  }
+
+  function selectionMessage(selection) {
+    return {
+      type: POPUP_MESSAGE_TYPE,
+      version: 1,
+      selection,
+    };
+  }
+
+  function installPopupSelectionListener(options, state, popup) {
+    const expectedOrigin = safeOrigin(options.returnUri);
+    if (!expectedOrigin || typeof globalThis.addEventListener !== "function") {
+      return null;
+    }
+    const eventTarget = options.eventTarget || globalThis;
+    let closedTimer = null;
+    const cleanup = () => {
+      globalThis.removeEventListener?.("message", onMessage);
+      if (closedTimer !== null) globalThis.clearInterval?.(closedTimer);
+    };
+    const complete = (selection) => {
+      cleanup();
+      if (options.closePopupOnComplete !== false) {
+        try {
+          if (popup && !popup.closed && typeof popup.close === "function") {
+            popup.close();
+          }
+        } catch {
+          // Ignore cross-browser popup close failures.
+        }
+      }
+      dispatchSdkEvent(eventTarget, "atmosphere-login:complete", {
+        selection,
+        state,
+      });
+    };
+    function onMessage(event) {
+      if (!event || event.origin !== expectedOrigin) return;
+      const data = event.data;
+      if (!data || data.type !== POPUP_MESSAGE_TYPE || data.version !== 1) {
+        return;
+      }
+      const selection = data.selection;
+      if (
+        !selection ||
+        selection.clientId !== options.clientId ||
+        selection.state !== state
+      ) {
+        return;
+      }
+      complete(selection);
+    }
+    globalThis.addEventListener("message", onMessage);
+    if (typeof globalThis.setInterval === "function") {
+      closedTimer = globalThis.setInterval(() => {
+        try {
+          if (popup && popup.closed) {
+            cleanup();
+            dispatchSdkEvent(eventTarget, "atmosphere-login:cancel", {
+              state,
+            });
+          }
+        } catch {
+          cleanup();
+        }
+      }, 500);
+    }
+    return cleanup;
+  }
+
   function continueWithAtmosphere(options) {
     const built = buildUrl(options);
     try {
@@ -134,7 +224,14 @@
         "atmosphere-login",
         "popup,width=520,height=680",
       );
-      if (popup) return { popup, state: built.state, url: built.url };
+      if (popup) {
+        const cleanup = installPopupSelectionListener(
+          options,
+          built.state,
+          popup,
+        );
+        return { popup, state: built.state, url: built.url, cleanup };
+      }
     }
     globalThis.location.href = built.url;
     return { state: built.state, url: built.url };
@@ -206,7 +303,25 @@
     if (!options || options.clearUrl !== false) {
       clearSelectionFromUrl();
     }
+    notifyOpener(selection, options);
     return selection;
+  }
+
+  function notifyOpener(selection, options) {
+    try {
+      if (!globalThis.opener || options && options.notifyOpener === false) {
+        return;
+      }
+      const targetOrigin = options && options.openerOrigin ||
+        safeOrigin(globalThis.location.href);
+      if (!targetOrigin) return;
+      globalThis.opener.postMessage(selectionMessage(selection), targetOrigin);
+      if (options && options.closePopup === true) {
+        globalThis.close?.();
+      }
+    } catch {
+      // Popup notification is a convenience; the app still has the selection.
+    }
   }
 
   function clearSelectionFromUrl() {
@@ -278,6 +393,7 @@
         return;
       }
       const nextOptions = readButtonOptions(button);
+      nextOptions.eventTarget = button;
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
       button.setAttribute("data-loading", "true");

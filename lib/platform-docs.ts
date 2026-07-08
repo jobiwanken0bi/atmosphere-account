@@ -636,7 +636,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "add-button",
         title: "Add the button",
         intro:
-          "The default button uses the Atmosphere icon and can run as a full-page redirect or a popup. Full-page redirect is the most reliable default.",
+          "The default button uses the Atmosphere icon and can run as a full-page redirect or a popup. Full-page redirect is the most reliable default; popup mode has an origin-checked completion event for apps that need it.",
         blocks: [
           {
             type: "code",
@@ -665,13 +665,20 @@ return redirect("/oauth/start?" + new URLSearchParams({
               ],
               [
                 "data-mode",
-                "`redirect` by default, or `popup` when your app can handle the extra browser constraints.",
+                "`redirect` by default, or `popup` when your app can handle the extra browser constraints. Popup callbacks can call `consumeSelection()` to notify the opener.",
               ],
               [
                 "data-app-name",
                 "Local button label and accessibility context; registered metadata is still the picker authority.",
               ],
             ],
+          },
+          {
+            type: "callout",
+            tone: "blue",
+            title: "Popup mode completion",
+            body:
+              "In popup mode, the callback page should load the browser SDK and call `AtmosphereLogin.consumeSelection({ clientId })`. The SDK posts the selection back to the opener, and the opener only accepts it when the return URI origin, client ID, and state all match.",
           },
         ],
       },
@@ -1520,6 +1527,48 @@ return Response.redirect(oauthUrl);`,
 
 sessionStorage.setItem("atmosphere_state", state);
 location.href = url;`,
+          },
+        ],
+      },
+      {
+        id: "popup-mode",
+        title: "Popup mode",
+        blocks: [
+          {
+            type: "callout",
+            tone: "amber",
+            title: "Redirect is still the default",
+            body:
+              "Use popup mode only when it materially improves your app. Browsers can block popups unless they start from a direct user action.",
+          },
+          {
+            type: "code",
+            language: "js",
+            caption: "Listen for popup completion",
+            code:
+              `const button = document.querySelector("[data-atmosphere-login]");
+
+button.addEventListener("atmosphere-login:complete", (event) => {
+  const { selection } = event.detail;
+  // Verify selection.token on your server before starting your app sign-in.
+});
+
+button.addEventListener("atmosphere-login:cancel", () => {
+  // The user closed the picker before choosing an account.
+});`,
+          },
+          {
+            type: "code",
+            language: "js",
+            caption: "Popup callback page",
+            code: `const selection = AtmosphereLogin.consumeSelection({
+  clientId: "https://app.example.com/oauth/client-metadata.json",
+  closePopup: true,
+});
+
+if (!selection) {
+  // Show a small fallback message or return to your app.
+}`,
           },
         ],
       },
@@ -2471,7 +2520,7 @@ deno task host:dashboard:check host.example --json`,
               [
                 "data-mode",
                 "`redirect` | `popup`",
-                "Redirect is the default and most reliable flow.",
+                "Redirect is the default and most reliable flow. Popup mode dispatches `atmosphere-login:complete` after origin, client, and state checks pass.",
               ],
               [
                 "data-app-name",
@@ -2512,7 +2561,11 @@ const selection = AtmosphereLogin.consumeSelection({
 
 // By default, consumeSelection removes Atmosphere Login callback parameters
 // from the address bar after reading them. Pass { clearUrl: false } only if
-// your router needs to control URL cleanup itself.`,
+// your router needs to control URL cleanup itself.
+//
+// In popup mode, the callback page also posts the selection to window.opener.
+// The opener SDK dispatches "atmosphere-login:complete" after validating the
+// message origin, client ID, and state.`,
           },
         ],
       },
