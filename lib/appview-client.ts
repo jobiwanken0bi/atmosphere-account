@@ -19,7 +19,7 @@ const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
 
 const APPVIEW_FETCH_TIMEOUT_MS = Math.max(
   1000,
-  Number(Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS") ?? "5000") || 5000,
+  Number(Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS") ?? "30000") || 30000,
 );
 
 export interface PublicHostDetail {

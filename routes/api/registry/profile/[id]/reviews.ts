@@ -5,6 +5,7 @@
  *   POST /api/registry/profile/:id/reviews { rating, body? }
  */
 import { define } from "../../../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../../../lib/appview-client.ts";
 import { withRateLimit } from "../../../../../lib/rate-limit.ts";
 import { loadSession } from "../../../../../lib/oauth.ts";
 import { putReviewRecord } from "../../../../../lib/pds.ts";
@@ -37,6 +38,11 @@ const MAX_REVIEW_REQUEST_BYTES = 16_384;
 
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const target = await resolveTarget(ctx.params.id);
     if (!target) return jsonError(404, "not_found");
 
@@ -65,6 +71,11 @@ export const handler = define.handlers({
   }),
 
   POST: withRateLimit(async (ctx) => {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const large = rejectLargeRequest(ctx.req, MAX_REVIEW_REQUEST_BYTES);
     if (large) return large;
 
@@ -165,4 +176,9 @@ function jsonResponse(
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function appviewProxyError(err: unknown): Response {
+  console.warn("[api/registry/profile/reviews] appview proxy failed:", err);
+  return jsonResponse(503, { error: "appview_unavailable" });
 }

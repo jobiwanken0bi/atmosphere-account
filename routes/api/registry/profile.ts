@@ -10,6 +10,7 @@
  *   DELETE  /api/registry/profile   (delete profile)
  */
 import { define } from "../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import {
   deleteProfileRecord,
@@ -378,6 +379,11 @@ function isImageBlobRef(v: unknown): v is BlobRef {
 
 export const handler = define.handlers({
   async PUT(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
@@ -840,6 +846,11 @@ export const handler = define.handlers({
   },
 
   async DELETE(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
@@ -908,3 +919,11 @@ export const handler = define.handlers({
     });
   },
 });
+
+function appviewProxyError(err: unknown): Response {
+  console.warn("[api/registry/profile] appview proxy failed:", err);
+  return new Response(JSON.stringify({ error: "appview_unavailable" }), {
+    status: 503,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}

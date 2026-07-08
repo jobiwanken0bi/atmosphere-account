@@ -4,6 +4,7 @@
  *   DELETE /api/registry/profile/:id/reviews/me
  */
 import { define } from "../../../../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../../../../lib/appview-client.ts";
 import { withRateLimit } from "../../../../../../lib/rate-limit.ts";
 import { loadSession } from "../../../../../../lib/oauth.ts";
 import { deleteReviewRecord } from "../../../../../../lib/pds.ts";
@@ -19,6 +20,11 @@ import {
 
 export const handler = define.handlers({
   DELETE: withRateLimit(async (ctx) => {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
 
@@ -66,4 +72,9 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function appviewProxyError(err: unknown): Response {
+  console.warn("[api/registry/profile/reviews/me] appview proxy failed:", err);
+  return jsonResponse(503, { error: "appview_unavailable" });
 }

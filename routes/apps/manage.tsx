@@ -5,6 +5,7 @@ import CreateProfileForm from "../../islands/CreateProfileForm.tsx";
 import ProfileUpdateEditor from "../../islands/ProfileUpdateEditor.tsx";
 import AtstoreMigrationButton from "../../islands/AtstoreMigrationButton.tsx";
 import { getMessages } from "../../i18n/mod.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
@@ -27,6 +28,11 @@ import type { BlobRef, LinkEntry } from "../../lib/lexicons.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("app management", err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) {
       return new Response(null, {
@@ -264,6 +270,17 @@ export const handler = define.handlers({
     );
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("App management is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 interface AtstoreInitialState {
   initial: NonNullable<Parameters<typeof CreateProfileForm>[0]["initial"]>;

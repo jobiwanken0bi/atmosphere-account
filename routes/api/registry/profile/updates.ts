@@ -5,6 +5,7 @@
  *   DELETE /api/registry/profile/updates?rkey=... delete
  */
 import { define } from "../../../../utils.ts";
+import { proxyAppviewApiResponse } from "../../../../lib/appview-client.ts";
 import { getEffectiveAccountType } from "../../../../lib/account-types.ts";
 import { loadSession } from "../../../../lib/oauth.ts";
 import { deleteUpdateRecord, putUpdateRecord } from "../../../../lib/pds.ts";
@@ -31,6 +32,11 @@ const MAX_PROFILE_UPDATE_BODY_BYTES = 32_768;
 
 export const handler = define.handlers({
   async POST(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const large = rejectLargeRequest(ctx.req, MAX_PROFILE_UPDATE_BODY_BYTES);
     if (large) return large;
 
@@ -124,6 +130,11 @@ export const handler = define.handlers({
   },
 
   async DELETE(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
 
@@ -162,4 +173,9 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function appviewProxyError(err: unknown): Response {
+  console.warn("[api/registry/profile/updates] appview proxy failed:", err);
+  return jsonResponse(503, { error: "appview_unavailable" });
 }
