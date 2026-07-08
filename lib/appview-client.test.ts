@@ -1,4 +1,7 @@
-import { shouldProxyAppviewBeforeSession } from "./appview-client.ts";
+import {
+  appviewFetchTimeoutMs,
+  shouldProxyAppviewBeforeSession,
+} from "./appview-client.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -75,4 +78,12 @@ Deno.test("early appview proxy leaves static, docs, and health routes on the Den
   ) {
     assertEquals(shouldProxyAppviewBeforeSession(path), false);
   }
+});
+
+Deno.test("appview fetch timeout defaults to a short public-shell budget", () => {
+  assertEquals(appviewFetchTimeoutMs(null), 5000);
+  assertEquals(appviewFetchTimeoutMs(""), 5000);
+  assertEquals(appviewFetchTimeoutMs("not-a-number"), 5000);
+  assertEquals(appviewFetchTimeoutMs("250"), 1000);
+  assertEquals(appviewFetchTimeoutMs("15000"), 15000);
 });

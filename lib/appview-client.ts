@@ -18,10 +18,22 @@ const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
   "";
 
-const APPVIEW_FETCH_TIMEOUT_MS = Math.max(
-  1000,
-  Number(Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS") ?? "30000") || 30000,
+const DEFAULT_APPVIEW_FETCH_TIMEOUT_MS = 5000;
+const MIN_APPVIEW_FETCH_TIMEOUT_MS = 1000;
+
+const APPVIEW_FETCH_TIMEOUT_MS = appviewFetchTimeoutMs(
+  Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS"),
 );
+
+export function appviewFetchTimeoutMs(
+  value: string | null | undefined,
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_APPVIEW_FETCH_TIMEOUT_MS;
+  }
+  return Math.max(MIN_APPVIEW_FETCH_TIMEOUT_MS, parsed);
+}
 
 export interface PublicHostDetail {
   host: AccountHost | null;
