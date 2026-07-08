@@ -152,6 +152,18 @@ Deno.test("browser SDK consumeSelection clears token-bearing URL params by defau
   }
 });
 
+Deno.test("browser SDK default button label has no loading ellipsis", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./atmosphere-login.js", import.meta.url),
+  );
+  if (!source.includes('label.textContent = "Continue with Atmosphere";')) {
+    throw new Error("Expected exact default Continue with Atmosphere label");
+  }
+  if (source.includes("Continue with Atmosphere...")) {
+    throw new Error("Default button label must not include trailing dots");
+  }
+});
+
 Deno.test("browser SDK consumeSelection can preserve callback URL for custom routers", async () => {
   const clientId = "https://app.example/client.json";
   const sdk = await loadBrowserSdk(

@@ -154,6 +154,12 @@ function assertContains(text: string, value: string, label: string): void {
   if (!text.includes(value)) throw new Error(`${label} missing ${value}`);
 }
 
+function assertNotContains(text: string, value: string, label: string): void {
+  if (text.includes(value)) {
+    throw new Error(`${label} unexpectedly included ${value}`);
+  }
+}
+
 function extractPaths(text: string, pattern: RegExp): string[] {
   const values = new Set<string>();
   for (const match of text.matchAll(pattern)) values.add(match[1]);
@@ -235,6 +241,11 @@ const { response: pickerResponse, text: pickerHtml } = await fetchText(
 assertStatus(pickerResponse, loginUrl);
 assertContentType(pickerResponse, loginUrl, "html");
 assertContains(pickerHtml, "Continue with Atmosphere", "picker HTML");
+assertNotContains(
+  pickerHtml,
+  "Continue with Atmosphere...",
+  "picker HTML",
+);
 assertContains(pickerHtml, "SignInForm", "picker island boot script");
 assertContains(pickerHtml, "/app-icon.svg", "picker reference app logo");
 

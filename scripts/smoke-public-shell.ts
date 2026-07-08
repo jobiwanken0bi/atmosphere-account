@@ -406,6 +406,8 @@ async function smokeSdkAsset(origin: string): Promise<void> {
   assertStatus(response, url);
   assertContentType(response, url, "javascript");
   assertContains(text, "AtmosphereLogin", url.toString());
+  assertContains(text, "Continue with Atmosphere", url.toString());
+  assertNotContains(text, "Continue with Atmosphere...", url.toString());
   console.log(`[smoke:public-shell] ok sdk ${url}`);
 }
 
@@ -510,6 +512,7 @@ await smokeHtml(options.siteOrigin, "/examples/atmosphere-login/app", {
     "Continue with Atmosphere",
     "/app-icon.svg",
   ],
+  forbiddenText: ["Continue with Atmosphere..."],
 });
 
 for (const origin of [options.siteOrigin, options.loginOrigin]) {
