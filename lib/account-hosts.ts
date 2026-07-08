@@ -186,6 +186,41 @@ export type AccountHostRegistrationResult =
     claim?: AccountHostClaim | null;
   };
 
+export interface ValidAccountHostRegistrationInput {
+  host: string;
+  displayName: string;
+  description: string;
+  dataLocation: string | null;
+  inferredLocation: string | null;
+  inferredLocationSource: string | null;
+  inferredLocationCheckedAt: number | null;
+  inferredLocationEvidenceJson: string | null;
+  homepageUrl: string | null;
+  serviceEndpoint: string | null;
+  accountManagementUrl: string | null;
+  supportUrl: string | null;
+  avatarUrl: string | null;
+  signupStatus: HostSignupStatus;
+  profileHandle: string;
+  bskyProfileVisible: boolean;
+}
+
+export type AccountHostRegistrationFieldValidationResult =
+  | { ok: true; input: ValidAccountHostRegistrationInput }
+  | {
+    ok: false;
+    reason:
+      | "invalid_host"
+      | "invalid_display_name"
+      | "invalid_homepage_url"
+      | "invalid_service_endpoint"
+      | "invalid_account_management_url"
+      | "invalid_support_url"
+      | "invalid_profile_handle"
+      | "not_authorized";
+    message: string;
+  };
+
 export type AccountHostProfileSettingsResult =
   | { ok: true; host: AccountHost }
   | {
@@ -1110,6 +1145,121 @@ export async function claimAccountHost(
   });
   const updatedHost = await getAccountHost(row.host) ?? row;
   return { ok: true, host: updatedHost, claim };
+}
+
+export function validateAccountHostRegistrationInput(
+  input: AccountHostRegistrationInput,
+  user: { did: string; handle: string },
+): AccountHostRegistrationFieldValidationResult {
+  const host = normalizeHostInput(input.host);
+  if (!host) {
+    return {
+      ok: false,
+      reason: "invalid_host",
+      message: "Enter a public host address like pckt.cafe.",
+    };
+  }
+
+  const displayName = input.displayName.trim();
+  if (!displayName || displayName.length > 80) {
+    return {
+      ok: false,
+      reason: "invalid_display_name",
+      message: "Enter a host name under 80 characters.",
+    };
+  }
+
+  const homepageUrl = input.homepageUrl?.trim()
+    ? normalizeAccountHostPublicHttpsUrl(input.homepageUrl)
+    : null;
+  if (input.homepageUrl?.trim() && !homepageUrl) {
+    return {
+      ok: false,
+      reason: "invalid_homepage_url",
+      message: "Use an HTTPS URL for the host website or signup page.",
+    };
+  }
+
+  const serviceEndpoint = input.serviceEndpoint?.trim()
+    ? normalizeAccountHostPublicServiceEndpoint(input.serviceEndpoint)
+    : null;
+  if (input.serviceEndpoint?.trim() && !serviceEndpoint) {
+    return {
+      ok: false,
+      reason: "invalid_service_endpoint",
+      message: "Use an HTTPS origin for the host PDS service endpoint.",
+    };
+  }
+
+  const accountManagementUrl = input.accountManagementUrl?.trim()
+    ? normalizeAccountHostPublicHttpsUrl(input.accountManagementUrl)
+    : null;
+  if (input.accountManagementUrl?.trim() && !accountManagementUrl) {
+    return {
+      ok: false,
+      reason: "invalid_account_management_url",
+      message: "Use an HTTPS URL for the host account management page.",
+    };
+  }
+
+  const supportUrl = input.supportUrl?.trim()
+    ? normalizeAccountHostPublicHttpsUrl(input.supportUrl)
+    : null;
+  if (input.supportUrl?.trim() && !supportUrl) {
+    return {
+      ok: false,
+      reason: "invalid_support_url",
+      message: "Use an HTTPS URL for the host support page.",
+    };
+  }
+
+  const profileHandle = input.profileHandle?.trim()
+    ? normalizeClaimProfileHandle(input.profileHandle)
+    : normalizeClaimProfileHandle(user.handle);
+  if (!profileHandle) {
+    return {
+      ok: false,
+      reason: "invalid_profile_handle",
+      message: "Use a valid AT Protocol handle for the host account.",
+    };
+  }
+
+  if (normalizeHandle(profileHandle) !== normalizeHandle(user.handle)) {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      message: "Sign in as the host account you want attached to this listing.",
+    };
+  }
+
+  const inferredLocationCheckedAt = input.inferredLocationCheckedAt &&
+      Number.isFinite(input.inferredLocationCheckedAt)
+    ? Math.max(0, Math.floor(input.inferredLocationCheckedAt))
+    : null;
+
+  return {
+    ok: true,
+    input: {
+      host,
+      displayName,
+      description: (input.description ?? "").trim().slice(0, 600),
+      dataLocation: normalizeDataLocation(input.dataLocation),
+      inferredLocation: normalizeDataLocation(input.inferredLocation),
+      inferredLocationSource: textOrNull(input.inferredLocationSource)
+        ?.slice(0, 120) ?? null,
+      inferredLocationCheckedAt,
+      inferredLocationEvidenceJson:
+        textOrNull(input.inferredLocationEvidenceJson)?.slice(0, 4000) ?? null,
+      homepageUrl,
+      serviceEndpoint,
+      accountManagementUrl,
+      supportUrl,
+      avatarUrl: normalizePublicImageUrl(input.avatarUrl),
+      signupStatus: normalizeSignupStatus(input.signupStatus),
+      profileHandle,
+      bskyProfileVisible: input.bskyProfileVisible !== false,
+    },
+  };
 }
 
 export async function registerAccountHost(

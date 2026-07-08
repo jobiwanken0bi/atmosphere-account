@@ -8,9 +8,12 @@ import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import {
+  type AccountHostRegistrationInput,
   type AccountHostRegistrationResult,
   type HostSignupStatus,
   registerAccountHost,
+  type ValidAccountHostRegistrationInput,
+  validateAccountHostRegistrationInput,
 } from "../../lib/account-hosts.ts";
 import { inferHostNetworkLocation } from "../../lib/host-location-inference.ts";
 import type { BlobRef } from "../../lib/lexicons.ts";
@@ -108,9 +111,20 @@ export const handler = define.handlers({
       return await renderRegisterError(ctx, values, "", { status: 200 });
     }
     await refreshSubmittedInference(values);
+    const registrationInput = registrationInputFromValues(
+      values,
+      ctx.state.user.handle,
+    );
+    const validation = validateAccountHostRegistrationInput(
+      registrationInput,
+      ctx.state.user,
+    );
+    if (!validation.ok) {
+      return await renderRegisterError(ctx, values, validation.message);
+    }
     const profilePublication = await publishHostProfileFromForm(
       ctx.state.user,
-      values,
+      validation.input,
       form,
     );
     if (!profilePublication.ok) {
@@ -118,22 +132,8 @@ export const handler = define.handlers({
     }
     const result = await registerAccountHost(
       {
-        host: values.host,
-        displayName: values.displayName,
-        description: values.description,
-        dataLocation: values.dataLocation,
-        inferredLocation: values.inferredLocation,
-        inferredLocationSource: values.inferredLocationSource,
-        inferredLocationCheckedAt: values.inferredLocationCheckedAt,
-        inferredLocationEvidenceJson: values.inferredLocationEvidenceJson,
-        homepageUrl: values.homepageUrl,
-        serviceEndpoint: values.serviceEndpoint,
-        accountManagementUrl: values.accountManagementUrl,
-        supportUrl: values.supportUrl,
+        ...validation.input,
         avatarUrl: profilePublication.avatarUrl,
-        signupStatus: values.signupStatus,
-        profileHandle: ctx.state.user.handle,
-        bskyProfileVisible: values.bskyProfileVisible,
         serviceRecordUri: profilePublication.serviceRecordUri,
         serviceRecordCid: profilePublication.serviceRecordCid,
       },
@@ -251,6 +251,29 @@ function valuesFromForm(form: FormData | null): RegisterValues {
     signupStatus: readSignupStatus(form?.get("signupStatus")),
     avatarUrl: null,
     bskyProfileVisible: formHasValue(form, "bskyProfileVisible", "1"),
+  };
+}
+
+function registrationInputFromValues(
+  values: RegisterValues,
+  profileHandle: string,
+): AccountHostRegistrationInput {
+  return {
+    host: values.host,
+    displayName: values.displayName,
+    description: values.description,
+    dataLocation: values.dataLocation,
+    inferredLocation: values.inferredLocation,
+    inferredLocationSource: values.inferredLocationSource,
+    inferredLocationCheckedAt: values.inferredLocationCheckedAt,
+    inferredLocationEvidenceJson: values.inferredLocationEvidenceJson,
+    homepageUrl: values.homepageUrl,
+    serviceEndpoint: values.serviceEndpoint,
+    accountManagementUrl: values.accountManagementUrl,
+    supportUrl: values.supportUrl,
+    signupStatus: values.signupStatus,
+    profileHandle,
+    bskyProfileVisible: values.bskyProfileVisible,
   };
 }
 
@@ -406,7 +429,7 @@ async function renderRegisterError(
 
 async function publishHostProfileFromForm(
   user: { did: string; handle: string },
-  values: RegisterValues,
+  values: ValidAccountHostRegistrationInput,
   form: FormData | null,
 ): Promise<
   | {

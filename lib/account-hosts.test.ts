@@ -3,6 +3,7 @@ import {
   lookupAccountHostHint,
   normalizeAccountHostPublicHttpsUrl,
   normalizeAccountHostPublicServiceEndpoint,
+  validateAccountHostRegistrationInput,
 } from "./account-hosts.ts";
 
 function assert(condition: unknown, message = "Assertion failed"): void {
@@ -110,4 +111,35 @@ Deno.test("account host service endpoint normalizer rejects unsafe origins", () 
   ) {
     assertEquals(normalizeAccountHostPublicServiceEndpoint(unsafe), null);
   }
+});
+
+Deno.test("account host registration validation rejects unsafe fields before publish", () => {
+  const user = { did: "did:plc:host", handle: "pckt.cafe" };
+  assertEquals(
+    validateAccountHostRegistrationInput({
+      host: "pckt.cafe",
+      displayName: "Pckt",
+      serviceEndpoint: "https://127.0.0.1",
+      signupStatus: "open",
+    }, user),
+    {
+      ok: false,
+      reason: "invalid_service_endpoint",
+      message: "Use an HTTPS origin for the host PDS service endpoint.",
+    },
+  );
+  assertEquals(
+    validateAccountHostRegistrationInput({
+      host: "pckt.cafe",
+      displayName: "Pckt",
+      serviceEndpoint: "https://pds.pckt.cafe",
+      accountManagementUrl: "/account",
+      signupStatus: "open",
+    }, user),
+    {
+      ok: false,
+      reason: "invalid_account_management_url",
+      message: "Use an HTTPS URL for the host account management page.",
+    },
+  );
 });
