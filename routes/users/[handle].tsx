@@ -5,6 +5,7 @@ import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import WebsiteIcon from "../../components/icons/WebsiteIcon.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getAppUser, getAppUserByHandle } from "../../lib/account-types.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import { getProfileMicroblogViewer } from "../../lib/bsky-clients.ts";
@@ -13,6 +14,11 @@ import { safePublicProfileWebsiteUrl } from "../../lib/user-profile-links.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("user profile", err),
+    );
+    if (proxied) return proxied;
+
     const handle = decodeURIComponent(ctx.params.handle ?? "").trim()
       .toLowerCase();
     const [profile, profileOwner, viewer] = handle
@@ -38,6 +44,17 @@ export const handler = define.handlers({
     );
   },
 });
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("User profile is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 interface UserProfilePageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
