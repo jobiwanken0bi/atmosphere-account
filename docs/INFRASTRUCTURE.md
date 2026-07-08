@@ -142,11 +142,20 @@ Run `deno task smoke:production` after Deno or Railway appview deploys. It runs
 core HTML pages, and standalone SDK assets. The public shell health response and
 proxied appview readiness response must both expose `release.runtime`; this
 catches stale appview deployments where the Deno shell is current but Railway is
-still serving an older server bundle. It also runs `smoke:picker-assets` because
-the hosted picker is Deno-facing while Fresh-generated island chunks may come
-from the appview bundle proxy. The picker smoke checks HTML, CSS, static
-scripts, and generated `/assets` imports on both `login.atmosphereaccount.com`
-and `atmosphereaccount.com`.
+still serving an older server bundle. For exact release drift detection, set
+`ATMOSPHERE_RELEASE_SHA` and `ATMOSPHERE_RELEASE_BRANCH` on both Deno Deploy and
+Railway before deploying, then run:
+
+```sh
+SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
+```
+
+When both layers expose `release.gitSha`, the public-shell smoke also verifies
+that Deno and Railway are serving the same commit. It also runs
+`smoke:picker-assets` because the hosted picker is Deno-facing while
+Fresh-generated island chunks may come from the appview bundle proxy. The picker
+smoke checks HTML, CSS, static scripts, and generated `/assets` imports on both
+`login.atmosphereaccount.com` and `atmosphereaccount.com`.
 
 GitHub Actions also runs the `Production Smoke` workflow on a schedule and on
 manual dispatch. Treat it as an early warning, not as a replacement for running

@@ -108,6 +108,14 @@ Health endpoints:
 - `/api/health/ready` — DB readiness, indexer heartbeat, and proxied appview
   release metadata when Deno is serving as the public shell
 
+Set `ATMOSPHERE_RELEASE_SHA` and `ATMOSPHERE_RELEASE_BRANCH` on both the Deno
+shell and Railway appview to make release drift checks exact. With those vars in
+place, run this after deploying both layers:
+
+```sh
+SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
+```
+
 ## Contributing
 
 PRs and forks welcome on either forge:

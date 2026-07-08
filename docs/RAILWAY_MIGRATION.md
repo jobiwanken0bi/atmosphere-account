@@ -134,14 +134,19 @@ Health checks:
   `GET /api/health` and `GET /api/health/ready`. Both endpoints include a
   `release` object with runtime/deployment metadata when the host provides it.
   When Deno proxies Railway readiness, the shell release remains top-level and
-  the appview release appears at `appview.release`.
+  the appview release appears at `appview.release`. To make that exact instead
+  of deployment-ID-only, set `ATMOSPHERE_RELEASE_SHA` and
+  `ATMOSPHERE_RELEASE_BRANCH` on both Deno Deploy and Railway before deploying.
 - Indexer health: check `GET /api/health/ready` for a fresh worker lease and
   verify `worker_lease` in Railway Postgres.
 - Production smoke suite: run `deno task smoke:production` after Deno or Railway
   appview deploys. It checks liveness/readiness, OAuth metadata, JWKS, core
   HTML, standalone SDK assets, release metadata, and the hosted picker asset
   chain. The public picker remains on Deno Deploy, but its generated Fresh
-  chunks are proxied from the appview bundle on trusted Atmosphere domains.
+  chunks are proxied from the appview bundle on trusted Atmosphere domains. Use
+  `SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production`
+  after deploys when the release SHA variables are configured; this fails if the
+  Deno shell or Railway appview is stale.
 
 ## Worker Cutover
 

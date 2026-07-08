@@ -2,12 +2,19 @@ interface Options {
   siteOrigin: string;
   loginOrigin: string;
   requireAppview: boolean;
+  expectedReleaseSha: string | null;
 }
 
 interface HtmlSmokeOptions {
   expectedText: string | string[];
   forbiddenText?: string[];
   canonicalPath?: string;
+}
+
+interface SmokeRelease {
+  runtime: string;
+  deploymentId: string | null;
+  gitSha: string | null;
 }
 
 const DEFAULT_SITE_ORIGIN = "https://atmosphereaccount.com";
@@ -25,6 +32,7 @@ function usage(exitCode = 2): never {
       "Options:",
       "  --site-origin=https://atmosphereaccount.com",
       "  --login-origin=https://login.atmosphereaccount.com",
+      "  --expected-release-sha=<git-sha>",
       "  --no-require-appview  Do not require readiness to report appview.ok.",
     ].join("\n"),
   );
@@ -71,6 +79,11 @@ function parseOptions(): Options {
       "--login-origin",
     ),
     requireAppview: !args.includes("--no-require-appview"),
+    expectedReleaseSha: normalizeExpectedReleaseSha(
+      readFlag(args, "--expected-release-sha") ??
+        Deno.env.get("SMOKE_EXPECT_RELEASE_SHA") ??
+        null,
+    ),
   };
 }
 
@@ -156,15 +169,58 @@ function assertObject(
   return value as Record<string, unknown>;
 }
 
-function assertRelease(value: unknown, label: string): void {
+function readRelease(value: unknown, label: string): SmokeRelease {
   const release = assertObject(value, label);
-  assertString(release.runtime, `${label}.runtime`);
-  if (release.gitSha !== null && release.gitSha !== undefined) {
-    assertString(release.gitSha, `${label}.gitSha`);
+  const runtime = assertString(release.runtime, `${label}.runtime`);
+  const gitSha = release.gitSha !== null && release.gitSha !== undefined
+    ? assertString(release.gitSha, `${label}.gitSha`)
+    : null;
+  const deploymentId =
+    release.deploymentId !== null && release.deploymentId !== undefined
+      ? assertString(release.deploymentId, `${label}.deploymentId`)
+      : null;
+  return { runtime, deploymentId, gitSha };
+}
+
+function assertExpectedReleaseSha(
+  release: SmokeRelease,
+  expectedSha: string | null,
+  label: string,
+): void {
+  if (!expectedSha) return;
+  if (!release.gitSha) {
+    throw new Error(
+      `${label} missing gitSha for expected release ${expectedSha}`,
+    );
   }
-  if (release.deploymentId !== null && release.deploymentId !== undefined) {
-    assertString(release.deploymentId, `${label}.deploymentId`);
+  if (release.gitSha !== expectedSha) {
+    throw new Error(
+      `${label} gitSha expected ${expectedSha}, got ${release.gitSha}`,
+    );
   }
+}
+
+function assertMatchingReleaseShas(
+  a: SmokeRelease,
+  aLabel: string,
+  b: SmokeRelease,
+  bLabel: string,
+): void {
+  if (!a.gitSha || !b.gitSha) return;
+  if (a.gitSha !== b.gitSha) {
+    throw new Error(
+      `${aLabel} gitSha ${a.gitSha} does not match ${bLabel} gitSha ${b.gitSha}`,
+    );
+  }
+}
+
+function normalizeExpectedReleaseSha(value: string | null): string | null {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (!normalized) return null;
+  if (!/^[0-9a-f]{7,40}$/.test(normalized)) {
+    throw new Error("--expected-release-sha must be a 7-40 character git SHA");
+  }
+  return normalized.slice(0, 12);
 }
 
 function assertArray(value: unknown, label: string): unknown[] {
@@ -218,28 +274,39 @@ async function smokeHtml(
   console.log(`[smoke:public-shell] ok html ${url}`);
 }
 
-async function smokeHealth(origin: string): Promise<void> {
+async function smokeHealth(
+  origin: string,
+  expectedReleaseSha: string | null,
+): Promise<SmokeRelease> {
   const url = new URL("/api/health", origin);
   const { response, body } = await fetchJson(url);
   assertStatus(response, url);
   assertContentType(response, url, "json");
   assertEquals(body.ok, true, `${url} ok`);
   assertString(body.service, `${url} service`);
-  assertRelease(body.release, `${url} release`);
+  const release = readRelease(body.release, `${url} release`);
+  assertExpectedReleaseSha(release, expectedReleaseSha, `${url} release`);
   assertString(body.timestamp, `${url} timestamp`);
   console.log(`[smoke:public-shell] ok health ${url}`);
+  return release;
 }
 
 async function smokeReadiness(
   origin: string,
   requireAppview: boolean,
-): Promise<void> {
+  expectedReleaseSha: string | null,
+): Promise<
+  { shellRelease: SmokeRelease; appviewRelease: SmokeRelease | null }
+> {
   const url = new URL("/api/health/ready", origin);
   const { response, body } = await fetchJson(url);
   assertStatus(response, url);
   assertContentType(response, url, "json");
   assertEquals(body.ok, true, `${url} ok`);
   assertString(body.service, `${url} service`);
+  const shellRelease = readRelease(body.release, `${url} release`);
+  assertExpectedReleaseSha(shellRelease, expectedReleaseSha, `${url} release`);
+  let appviewRelease: SmokeRelease | null = null;
   if (requireAppview) {
     const appview = body.appview;
     if (!appview || typeof appview !== "object" || Array.isArray(appview)) {
@@ -250,13 +317,24 @@ async function smokeReadiness(
       true,
       `${url} appview.ok`,
     );
-    assertRelease(
+    appviewRelease = readRelease(
       (appview as Record<string, unknown>).release,
       `${url} appview.release`,
     );
+    assertExpectedReleaseSha(
+      appviewRelease,
+      expectedReleaseSha,
+      `${url} appview.release`,
+    );
+    assertMatchingReleaseShas(
+      shellRelease,
+      `${url} release`,
+      appviewRelease,
+      `${url} appview.release`,
+    );
   }
-  assertRelease(body.release, `${url} release`);
   console.log(`[smoke:public-shell] ok readiness ${url}`);
+  return { shellRelease, appviewRelease };
 }
 
 async function smokeOauthMetadata(origin: string): Promise<void> {
@@ -371,8 +449,21 @@ console.log(
   `[smoke:public-shell] site=${options.siteOrigin} login=${options.loginOrigin}`,
 );
 
-await smokeHealth(options.siteOrigin);
-await smokeReadiness(options.siteOrigin, options.requireAppview);
+const healthRelease = await smokeHealth(
+  options.siteOrigin,
+  options.expectedReleaseSha,
+);
+const { shellRelease } = await smokeReadiness(
+  options.siteOrigin,
+  options.requireAppview,
+  options.expectedReleaseSha,
+);
+assertMatchingReleaseShas(
+  healthRelease,
+  `${options.siteOrigin}/api/health release`,
+  shellRelease,
+  `${options.siteOrigin}/api/health/ready release`,
+);
 await smokeAppviewData(options.siteOrigin);
 await smokeHtml(options.siteOrigin, "/", {
   expectedText: "Atmosphere Account",
