@@ -79,9 +79,19 @@ async function computeReadiness(): Promise<ReadinessResult> {
   };
 }
 
-async function appviewReadiness(appview: string): Promise<ReadinessResult> {
+export async function appviewReadinessForTest(
+  appview: string,
+  fetchImpl: typeof fetch,
+): Promise<ReadinessResult> {
+  return await appviewReadiness(appview, fetchImpl);
+}
+
+async function appviewReadiness(
+  appview: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ReadinessResult> {
   const url = new URL("/api/health/ready", appview);
-  const res = await fetch(url, {
+  const res = await fetchImpl(url, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(5000),
   });
@@ -90,14 +100,15 @@ async function appviewReadiness(appview: string): Promise<ReadinessResult> {
     error: "invalid_appview_readiness_response",
   })) as Record<string, unknown>;
   const { release: appviewRelease, ...bodyWithoutRelease } = body;
+  const appviewOk = res.ok && body.ok === true;
   return {
-    status: res.ok ? 200 : 503,
+    status: appviewOk ? 200 : 503,
     body: {
       ...bodyWithoutRelease,
       service: "atmosphere-account-web-shell",
       release: runtimeRelease(),
       appview: {
-        ok: res.ok && body.ok === true,
+        ok: appviewOk,
         url: appview,
         release: isRecord(appviewRelease) ? appviewRelease : null,
       },
