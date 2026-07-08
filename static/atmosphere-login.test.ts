@@ -5,7 +5,9 @@ function assertEquals(actual: unknown, expected: unknown): void {
 }
 
 interface MockStorage {
+  readonly length: number;
   getItem(key: string): string | null;
+  key(index: number): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
 }
@@ -86,7 +88,11 @@ async function loadBrowserSdk(inputUrl: string): Promise<{
   setGlobal(
     "sessionStorage",
     {
+      get length() {
+        return storage.size;
+      },
       getItem: (key: string) => storage.get(key) ?? null,
+      key: (index: number) => [...storage.keys()][index] ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key),
     } satisfies MockStorage,
@@ -251,6 +257,84 @@ Deno.test("browser SDK consumeSelection prefers exact state over overwritten leg
     );
     assertEquals(
       sdk.storage.has(`atmosphere_login_state:${clientId}`),
+      false,
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK prunes stale Atmosphere state before storing a new attempt", async () => {
+  const clientId = "https://app.example/client.json";
+  const sdk = await loadBrowserSdk("https://app.example/start");
+  try {
+    sdk.storage.set(
+      `atmosphere_login_state:${clientId}:stale`,
+      JSON.stringify({
+        state: "stale",
+        createdAt: Date.now() - 16 * 60 * 1000,
+      }),
+    );
+    sdk.storage.set(
+      "unrelated_state",
+      JSON.stringify({
+        state: "leave-me-alone",
+        createdAt: Date.now() - 16 * 60 * 1000,
+      }),
+    );
+
+    sdk.login.continueWithAtmosphere({
+      clientId,
+      returnUri: "https://app.example/callback",
+      state: "fresh",
+    });
+
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}:stale`),
+      false,
+    );
+    assertEquals(sdk.storage.has("unrelated_state"), true);
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}:fresh`),
+      true,
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK caps stored Atmosphere state entries", async () => {
+  const clientId = "https://app.example/client.json";
+  const sdk = await loadBrowserSdk("https://app.example/start");
+  try {
+    const now = Date.now();
+    sdk.storage.delete(`atmosphere_login_state:${clientId}`);
+    for (let i = 0; i < 45; i++) {
+      sdk.storage.set(
+        `atmosphere_login_state:${clientId}:old-${i}`,
+        JSON.stringify({
+          state: `old-${i}`,
+          createdAt: now - 45 + i,
+        }),
+      );
+    }
+
+    sdk.login.continueWithAtmosphere({
+      clientId,
+      returnUri: "https://app.example/callback",
+      state: "fresh",
+    });
+
+    const atmosphereKeys = [...sdk.storage.keys()].filter((key) =>
+      key.startsWith("atmosphere_login_state:")
+    );
+    assertEquals(atmosphereKeys.length, 40);
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}:fresh`),
+      true,
+    );
+    assertEquals(
+      sdk.storage.has(`atmosphere_login_state:${clientId}:old-0`),
       false,
     );
   } finally {

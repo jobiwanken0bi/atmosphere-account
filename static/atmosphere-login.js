@@ -5,6 +5,8 @@
     : "https://login.atmosphereaccount.com";
   const defaultOrigin = defaultAtmosphereOrigin(scriptOrigin);
   const STATE_PREFIX = "atmosphere_login_state:";
+  const STATE_MAX_AGE_MS = 15 * 60 * 1000;
+  const MAX_STATE_STORAGE_ENTRIES = 40;
   const BUTTON_ENHANCED_ATTR = "data-atmosphere-login-enhanced";
 
   function defaultAtmosphereOrigin(origin) {
@@ -42,6 +44,52 @@
     return `${STATE_PREFIX}${clientId}:${state}`;
   }
 
+  function parseStoredState(raw) {
+    if (!raw) return null;
+    try {
+      const value = JSON.parse(raw);
+      if (
+        !value ||
+        typeof value !== "object" ||
+        typeof value.state !== "string" ||
+        typeof value.createdAt !== "number" ||
+        !Number.isFinite(value.createdAt)
+      ) {
+        return null;
+      }
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  function pruneStoredStates(nowMs) {
+    try {
+      const storage = globalThis.sessionStorage;
+      if (!storage || typeof storage.key !== "function") return;
+      const keys = [];
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key && key.startsWith(STATE_PREFIX)) keys.push(key);
+      }
+      const fresh = [];
+      for (const key of keys) {
+        const stored = parseStoredState(storage.getItem(key));
+        if (!stored || nowMs - stored.createdAt > STATE_MAX_AGE_MS) {
+          storage.removeItem(key);
+        } else {
+          fresh.push({ key, createdAt: stored.createdAt });
+        }
+      }
+      fresh.sort((a, b) => b.createdAt - a.createdAt);
+      for (const stale of fresh.slice(MAX_STATE_STORAGE_ENTRIES)) {
+        storage.removeItem(stale.key);
+      }
+    } catch {
+      // State pruning is best-effort; login should continue without storage.
+    }
+  }
+
   function buildUrl(options) {
     if (!options || !options.clientId) {
       throw new Error("Atmosphere Login requires clientId");
@@ -62,9 +110,11 @@
   function continueWithAtmosphere(options) {
     const built = buildUrl(options);
     try {
+      const now = Date.now();
+      pruneStoredStates(now);
       const storedState = JSON.stringify({
         state: built.state,
-        createdAt: Date.now(),
+        createdAt: now,
       });
       globalThis.sessionStorage.setItem(
         stateStorageKey(options.clientId, built.state),
@@ -74,6 +124,7 @@
         legacyStorageKey(options.clientId),
         storedState,
       );
+      pruneStoredStates(now);
     } catch {
       // State is still sent to the app; storage is just a convenience check.
     }
