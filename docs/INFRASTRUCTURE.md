@@ -259,10 +259,11 @@ Risks to address while operating on Postgres:
 - Hosted web logs slow requests by path only, with query strings omitted so
   OAuth and login parameters do not leak. Set `LOG_SLOW_REQUESTS=false` to
   disable it or `SLOW_REQUEST_LOG_MS=1500` to tune the threshold.
-- Hosted picker selection and selection-token verification use scoped in-memory
-  rate limits. These are soft per-isolate guardrails for abuse and cost control;
-  move the same scopes to Redis/Valkey if cross-region hard limits become
-  necessary.
+- Hosted picker selection and selection-token verification use DB-backed
+  fixed-window rate limits with salted bucket keys. If the DB is briefly
+  unavailable, they fall back to the older in-memory guard so login does not go
+  fully dark. Move the same scopes to Redis/Valkey if login volume makes hot DB
+  counters too expensive.
 - Browser-readable selection-token verification responses are CORS-bound to the
   registered app return origin. Preflight stays permissive enough for browsers
   to reach the endpoint, but actual JSON responses only expose themselves to

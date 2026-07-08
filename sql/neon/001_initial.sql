@@ -577,6 +577,15 @@ CREATE TABLE IF NOT EXISTS login_selection_replay (
 
 CREATE INDEX IF NOT EXISTS login_selection_replay_expires ON login_selection_replay(expires_at);
 
+CREATE TABLE IF NOT EXISTS rate_limit_bucket (
+  bucket_key text PRIMARY KEY,
+  count integer NOT NULL,
+  reset_at bigint NOT NULL,
+  updated_at bigint NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS rate_limit_bucket_reset ON rate_limit_bucket(reset_at);
+
 CREATE TABLE IF NOT EXISTS worker_lease (
   name text PRIMARY KEY,
   owner_id text NOT NULL,

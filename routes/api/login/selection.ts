@@ -6,7 +6,7 @@ import {
   type LoginApp,
   verifyLoginSelectionTokenDetailed,
 } from "../../../lib/atmosphere-login.ts";
-import { checkRateLimit } from "../../../lib/rate-limit.ts";
+import { checkDurableRateLimit } from "../../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../../lib/security.ts";
 
 export interface SelectionVerificationInput {
@@ -115,7 +115,10 @@ async function readInput(
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
-  const limited = checkRateLimit(ctx.req, SELECTION_VERIFICATION_RATE_LIMIT);
+  const limited = await checkDurableRateLimit(
+    ctx.req,
+    SELECTION_VERIFICATION_RATE_LIMIT,
+  );
   if (!limited.ok) {
     return json({ active: false, error: "rate_limited" }, {
       status: 429,

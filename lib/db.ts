@@ -678,6 +678,17 @@ const SCHEMA_STATEMENTS: string[] = [
     consumed_at INTEGER NOT NULL
   )`,
   /**
+   * Shared fixed-window rate-limit buckets for high-risk hosted login flows.
+   * Bucket keys are salted hashes, not raw IP addresses. Low-risk read routes
+   * can keep using the in-memory limiter.
+   */
+  `CREATE TABLE IF NOT EXISTS rate_limit_bucket (
+    bucket_key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL,
+    reset_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  /**
    * Coarse-grained operational leases. The Jetstream indexer is idempotent,
    * but running two long-lived consumers wastes relay/PDS/DB capacity and can
    * move the shared cursor in surprising ways during deploy overlap. A short
@@ -754,6 +765,7 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS login_app_contact_did ON login_app(contact_did, updated_at)`,
   `CREATE INDEX IF NOT EXISTS login_app_connection_did ON login_app_connection(did, last_selected_at)`,
   `CREATE INDEX IF NOT EXISTS login_selection_replay_expires ON login_selection_replay(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS rate_limit_bucket_reset ON rate_limit_bucket(reset_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_state_expires ON oauth_state(expires_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_session_expires ON oauth_session(expires_at)`,
   `CREATE INDEX IF NOT EXISTS app_session_expires ON app_session(expires_at)`,

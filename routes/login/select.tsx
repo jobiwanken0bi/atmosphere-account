@@ -19,7 +19,7 @@ import {
 } from "../../lib/appview-client.ts";
 import { loginPickerOriginForRequest } from "../../lib/atmosphere-origins.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
-import { checkRateLimit } from "../../lib/rate-limit.ts";
+import { checkDurableRateLimit } from "../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 
 interface PickerAccount {
@@ -66,7 +66,10 @@ export const handler = define.handlers({
 
     let request: LoginRequest;
     try {
-      const limited = checkRateLimit(ctx.req, PICKER_SELECTION_RATE_LIMIT);
+      const limited = await checkDurableRateLimit(
+        ctx.req,
+        PICKER_SELECTION_RATE_LIMIT,
+      );
       if (!limited.ok) {
         return new Response(
           "Too many account picker attempts. Try again soon.",

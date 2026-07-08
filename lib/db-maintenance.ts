@@ -5,6 +5,7 @@ export interface DatabaseMaintenanceResult {
   expiredOauthSessions: number;
   expiredAppSessions: number;
   expiredLoginSelectionReplays: number;
+  expiredRateLimitBuckets: number;
   expiredWorkerLeases: number;
   optimized: boolean;
 }
@@ -58,6 +59,12 @@ export async function runDatabaseMaintenanceForClient(
       args: [nowSec],
     }),
   );
+  const expiredRateLimitBuckets = rowsAffected(
+    await c.execute({
+      sql: `DELETE FROM rate_limit_bucket WHERE reset_at < ?`,
+      args: [now],
+    }),
+  );
   const expiredWorkerLeases = rowsAffected(
     await c.execute({
       sql: `DELETE FROM worker_lease WHERE expires_at < ?`,
@@ -81,6 +88,7 @@ export async function runDatabaseMaintenanceForClient(
     expiredOauthSessions,
     expiredAppSessions,
     expiredLoginSelectionReplays,
+    expiredRateLimitBuckets,
     expiredWorkerLeases,
     optimized,
   };

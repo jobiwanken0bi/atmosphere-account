@@ -1,17 +1,18 @@
 /**
- * Soft per-IP rate limit for the public read API.
+ * Scoped rate limits for public API surfaces.
  *
- * Implementation note: this is a tiny in-memory token bucket keyed by
- * the caller's IP. On Deno Deploy, isolates are per-region and
- * relatively short-lived, so this is a deterrent — not a hard fence.
- * It cleanly catches scripted abuse without standing up a Turso table
- * or a Redis dependency.
+ * `checkRateLimit` is a tiny in-memory token bucket. On Deno Deploy, isolates
+ * are per-region and relatively short-lived, so it is a soft deterrent. Use
+ * `checkDurableRateLimit` for high-risk flows that need shared enforcement
+ * across Deno/Railway instances.
  *
- * If we ever need cross-region enforcement (or hard limits), swap the
- * `Map` for a Turso-backed counter or per-key Edge Config row — the
- * `withRateLimit` wrapper signature stays the same.
+ * The durable limiter intentionally uses a fixed window instead of a SQL token
+ * bucket. It keeps the DB writes cheap and predictable while preserving the
+ * same `{ ok, retryAfter }` response contract as the in-memory limiter.
  */
 import { define } from "../utils.ts";
+import { type DbClient, withDb } from "./db.ts";
+import { reportIpSecret } from "./env.ts";
 
 /** Bucket capacity (max burst). */
 const CAPACITY = 60;
@@ -27,6 +28,12 @@ export interface RateLimitOptions {
   refillMs?: number;
   scope?: string;
   now?: number;
+}
+
+export interface DurableRateLimitOptions extends RateLimitOptions {
+  withDb?: <T>(fn: (c: DbClient) => Promise<T>) => Promise<T>;
+  fallbackToMemory?: boolean;
+  keySecret?: string;
 }
 
 export type RateLimitResult =
@@ -110,6 +117,130 @@ export function checkRateLimit(
   const now = options.now ?? Date.now();
   if (take(key, now, capacity, refillMs)) return { ok: true };
   return { ok: false, retryAfter: Math.ceil(refillMs / 1000) };
+}
+
+export async function checkDurableRateLimit(
+  req: Request,
+  options: DurableRateLimitOptions = {},
+): Promise<RateLimitResult> {
+  const capacity = positiveInteger(options.capacity, CAPACITY);
+  const refillMs = positiveInteger(options.refillMs, REFILL_MS);
+  const scope = options.scope ?? "default";
+  const now = options.now ?? Date.now();
+  const bucketKey = await durableBucketKey(
+    scope,
+    callerIp(req),
+    options.keySecret ?? reportIpSecret(),
+  );
+  const run = options.withDb ?? withDb;
+  try {
+    return await run((c) => takeDurable(c, bucketKey, now, capacity, refillMs));
+  } catch {
+    if (options.fallbackToMemory === false) {
+      throw new Error("rate limit failed");
+    }
+    return checkRateLimit(req, options);
+  }
+}
+
+async function durableBucketKey(
+  scope: string,
+  ip: string,
+  secret: string,
+): Promise<string> {
+  const bytes = new TextEncoder().encode(`${secret}\n${scope}\n${ip}`);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return `${scope}:${b64url(digest.slice(0, 18))}`;
+}
+
+function b64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(
+    /=+$/,
+    "",
+  );
+}
+
+function rowsAffected(result: { rowsAffected?: number | bigint }): number {
+  return Number(result.rowsAffected ?? 0);
+}
+
+async function takeDurable(
+  c: DbClient,
+  bucketKey: string,
+  now: number,
+  capacity: number,
+  windowMs: number,
+): Promise<RateLimitResult> {
+  const resetAt = now + windowMs;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const existing = await c.execute({
+      sql: `
+        SELECT count, reset_at
+        FROM rate_limit_bucket
+        WHERE bucket_key = ?
+        LIMIT 1
+      `,
+      args: [bucketKey],
+    });
+    const row = existing.rows[0] as Record<string, unknown> | undefined;
+
+    if (!row) {
+      try {
+        await c.execute({
+          sql: `
+            INSERT INTO rate_limit_bucket (
+              bucket_key, count, reset_at, updated_at
+            ) VALUES (?, 1, ?, ?)
+          `,
+          args: [bucketKey, resetAt, now],
+        });
+        return { ok: true };
+      } catch {
+        continue;
+      }
+    }
+
+    const currentCount = Number(row.count ?? 0);
+    const currentResetAt = Number(row.reset_at ?? 0);
+    if (currentResetAt <= now) {
+      const result = await c.execute({
+        sql: `
+          UPDATE rate_limit_bucket
+          SET count = 1, reset_at = ?, updated_at = ?
+          WHERE bucket_key = ? AND reset_at = ?
+        `,
+        args: [resetAt, now, bucketKey, currentResetAt],
+      });
+      if (rowsAffected(result) > 0) return { ok: true };
+      continue;
+    }
+
+    if (currentCount >= capacity) {
+      return {
+        ok: false,
+        retryAfter: Math.max(1, Math.ceil((currentResetAt - now) / 1000)),
+      };
+    }
+
+    const result = await c.execute({
+      sql: `
+        UPDATE rate_limit_bucket
+        SET count = count + 1, updated_at = ?
+        WHERE bucket_key = ?
+          AND reset_at = ?
+          AND count = ?
+      `,
+      args: [now, bucketKey, currentResetAt, currentCount],
+    });
+    if (rowsAffected(result) > 0) return { ok: true };
+  }
+
+  return {
+    ok: false,
+    retryAfter: Math.max(1, Math.ceil(windowMs / 1000)),
+  };
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
