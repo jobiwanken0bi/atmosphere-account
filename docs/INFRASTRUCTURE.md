@@ -1,12 +1,18 @@
 # Infrastructure
 
-Atmosphere Account is an AT Protocol appview plus a public web app. The runtime
-is intentionally split into two deployable units:
+Atmosphere Account is an AT Protocol appview plus a public web app. Production
+is intentionally split into a public shell, an appview/API runtime, an indexer,
+and a relational appview database:
 
-- **Web app:** Fresh/Deno server for public pages, OAuth, account management,
-  app reviews/favorites, and admin surfaces.
-- **Indexer worker:** one always-on process that consumes Jetstream, fetches
-  authoritative PDS records, and updates the local appview projection.
+- **Public web shell:** Fresh/Deno server on Deno Deploy for public pages, docs,
+  OAuth metadata, the hosted login picker, static SDK assets, and light edge
+  rendering.
+- **Appview/API runtime:** Fresh/Deno server on Railway for DB-backed app, host,
+  account, login, review/favorite, developer, admin, and generated-asset routes.
+  The Railway service may still be named `web` in the Railway UI, but
+  architecturally it is the appview/API service.
+- **Indexer worker:** one always-on Railway process that consumes Jetstream,
+  fetches authoritative PDS records, and updates the local appview projection.
 - **Database:** Railway Postgres as the current relational appview database. It
   stores source records, deduped listings, aggregates, account hosts, moderation
   state, OAuth state, sessions, and the worker lease.
@@ -281,7 +287,8 @@ Acceptance checks before any Postgres production cutover:
 
 Strengths:
 
-- The web app and appview worker are already separate deployable units.
+- The public shell, appview/API runtime, and indexer worker are already separate
+  deployable units.
 - The worker fetches authoritative records from PDSes instead of trusting only
   relay event payloads.
 - Worker leasing prevents duplicate long-lived consumers.
