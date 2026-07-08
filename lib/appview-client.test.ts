@@ -1,6 +1,7 @@
 import {
   appviewFetchTimeoutMs,
   appviewRequestHeadersForTest,
+  isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
@@ -80,6 +81,24 @@ Deno.test("early appview proxy leaves static, docs, and health routes on the Den
   ) {
     assertEquals(shouldProxyAppviewBeforeSession(path), false);
   }
+});
+
+Deno.test("login-domain generated assets can be proxied from the appview bundle", () => {
+  assertEquals(
+    isGeneratedAppviewAssetPathForTest("/assets/client-entry.js"),
+    true,
+  );
+  assertEquals(
+    isGeneratedAppviewAssetPathForTest(
+      "/assets/fresh-island__SignInForm-B3cwBuRQ.js",
+    ),
+    true,
+  );
+  assertEquals(isGeneratedAppviewAssetPathForTest("/styles.css"), false);
+  assertEquals(
+    isGeneratedAppviewAssetPathForTest("/atmosphere-login.js"),
+    false,
+  );
 });
 
 Deno.test("appview fetch timeout defaults to a short public-shell budget", () => {

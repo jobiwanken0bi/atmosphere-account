@@ -13,6 +13,7 @@ import {
   searchAppDirectory,
 } from "./app-directory.ts";
 import { define } from "../utils.ts";
+import { isLoginRequestOrigin } from "./atmosphere-origins.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -39,6 +40,26 @@ export interface PublicHostDetail {
   host: AccountHost | null;
   claim: AccountHostClaim | null;
 }
+
+export const appviewLoginAssetProxyMiddleware = define.middleware(
+  async (ctx) => {
+    if (!shouldProxyAppviewLoginAsset(ctx.url, ctx.req.headers)) {
+      return await ctx.next();
+    }
+
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => {
+        console.error("[appview] login asset proxy failed:", err);
+        return appviewEarlyProxyUnavailable(ctx.url.pathname);
+      },
+    );
+    if (proxied) {
+      proxied.headers.set("x-atmosphere-appview-login-asset-proxy", "1");
+      return proxied;
+    }
+    return await ctx.next();
+  },
+);
 
 export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
   if (!shouldProxyAppviewBeforeSession(ctx.url.pathname)) {
@@ -79,6 +100,19 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/atproto/blob" ||
     pathname === "/api/identity/preview" ||
     pathname === "/api/me/avatar";
+}
+
+function shouldProxyAppviewLoginAsset(url: URL, headers?: Headers): boolean {
+  return isGeneratedAppviewAssetPath(url.pathname) &&
+    isLoginRequestOrigin(url, headers);
+}
+
+function isGeneratedAppviewAssetPath(pathname: string): boolean {
+  return pathname.startsWith("/assets/");
+}
+
+export function isGeneratedAppviewAssetPathForTest(pathname: string): boolean {
+  return isGeneratedAppviewAssetPath(pathname);
 }
 
 function isEdgeOwnedOauthDocument(pathname: string): boolean {

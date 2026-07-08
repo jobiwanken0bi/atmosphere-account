@@ -9,7 +9,10 @@ import { csrfMiddleware, securityHeadersMiddleware } from "./lib/security.ts";
 import { slowRequestLoggingMiddleware } from "./lib/request-observability.ts";
 import { loginDomainMiddleware } from "./lib/login-domain.ts";
 import { sdkAssetMiddleware } from "./lib/sdk-assets.ts";
-import { appviewEarlyProxyMiddleware } from "./lib/appview-client.ts";
+import {
+  appviewEarlyProxyMiddleware,
+  appviewLoginAssetProxyMiddleware,
+} from "./lib/appview-client.ts";
 
 export const app = new App<State>();
 
@@ -18,6 +21,7 @@ app.use(csrfMiddleware);
 app.use(slowRequestLoggingMiddleware);
 app.use(loginDomainMiddleware);
 app.use(sdkAssetMiddleware);
+app.use(appviewLoginAssetProxyMiddleware);
 app.use(staticFiles());
 app.use(trailingSlashRedirectMiddleware);
 app.use(wellKnownMiddleware);
