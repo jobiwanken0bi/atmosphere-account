@@ -12,28 +12,72 @@ interface AppCategoriesData {
   account: ReturnType<typeof buildAccountMenuProps>;
 }
 
+const APP_CATEGORIES_CACHE_TTL_MS = 2 * 60 * 1000;
+const APP_CATEGORIES_STALE_MS = 15 * 60 * 1000;
+
+let appCategoriesCache:
+  | {
+    tags: AppTagSummary[];
+    refreshedAt: number;
+    refreshPromise?: Promise<AppTagSummary[]>;
+  }
+  | null = null;
+
 export const handler = define.handlers({
   async GET(ctx) {
-    const result = await loadAppsHomeFromAppview().catch(() => ({
-      apps: [],
-      featured: [],
-      trending: [],
-      fresh: [],
-      total: 0,
-      page: 1,
-      pageSize: 24,
-      tags: [],
-      tagSummaries: [],
-    }));
+    const tags = await loadAppCategories().catch(() => []);
 
     const data: AppCategoriesData = {
-      tags: result.tagSummaries,
+      tags,
       account: buildAccountMenuProps(ctx.state),
     };
 
     return ctx.render(<AppCategoriesPage data={data} />);
   },
 });
+
+async function loadAppCategories(): Promise<AppTagSummary[]> {
+  const now = Date.now();
+  if (
+    appCategoriesCache &&
+    now - appCategoriesCache.refreshedAt < APP_CATEGORIES_CACHE_TTL_MS
+  ) {
+    return appCategoriesCache.tags;
+  }
+  if (
+    appCategoriesCache &&
+    now - appCategoriesCache.refreshedAt < APP_CATEGORIES_STALE_MS
+  ) {
+    refreshAppCategoriesCache();
+    return appCategoriesCache.tags;
+  }
+  return await refreshAppCategoriesCache();
+}
+
+function refreshAppCategoriesCache(): Promise<AppTagSummary[]> {
+  if (appCategoriesCache?.refreshPromise) {
+    return appCategoriesCache.refreshPromise;
+  }
+
+  const refreshPromise = loadAppsHomeFromAppview()
+    .then((result) => {
+      const tags = result.tagSummaries;
+      appCategoriesCache = { tags, refreshedAt: Date.now() };
+      return tags;
+    })
+    .catch((err) => {
+      if (appCategoriesCache) return appCategoriesCache.tags;
+      throw err;
+    })
+    .finally(() => {
+      if (appCategoriesCache) delete appCategoriesCache.refreshPromise;
+    });
+
+  appCategoriesCache = appCategoriesCache
+    ? { ...appCategoriesCache, refreshPromise }
+    : { tags: [], refreshedAt: 0, refreshPromise };
+  return refreshPromise;
+}
 
 export default function AppCategoriesPage(
   { data }: { data: AppCategoriesData },

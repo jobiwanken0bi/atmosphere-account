@@ -9,10 +9,8 @@ function assertEquals(actual: unknown, expected: unknown): void {
 Deno.test("early appview proxy covers DB-backed app surfaces before session hydration", () => {
   for (
     const path of [
-      "/apps",
       "/apps/grain",
       "/apps/create",
-      "/hosts",
       "/hosts/bsky.network",
       "/hosts/register",
       "/account",
@@ -25,6 +23,19 @@ Deno.test("early appview proxy covers DB-backed app surfaces before session hydr
     ]
   ) {
     assertEquals(shouldProxyAppviewBeforeSession(path), true);
+  }
+});
+
+Deno.test("public directory shell pages render on the Deno edge", () => {
+  for (
+    const path of [
+      "/apps",
+      "/apps/all",
+      "/apps/categories",
+      "/hosts",
+    ]
+  ) {
+    assertEquals(shouldProxyAppviewBeforeSession(path), false);
   }
 });
 
