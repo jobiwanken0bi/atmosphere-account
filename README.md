@@ -83,6 +83,7 @@ deno task db:diff:neon
 deno task db:migrate:postgres
 deno task db:copy:postgres
 deno task db:smoke
+deno task smoke:public-shell
 deno task smoke:picker-assets
 deno task db:maintain
 deno task backfill:atstore
@@ -91,10 +92,11 @@ deno task rescore:app-trending
 
 The Postgres migration/copy commands are used for Railway Postgres. The older
 Neon commands are retained for comparison and rollback/migration experiments.
-`smoke:picker-assets` is a production-facing check for the hosted picker on
-`login.atmosphereaccount.com`: it verifies the picker HTML, CSS, static scripts,
-generated Fresh assets, and imported chunks from both the login and main
-Atmosphere domains.
+`smoke:public-shell` checks production liveness/readiness, OAuth metadata, JWKS,
+core HTML pages, and standalone SDK assets. `smoke:picker-assets` is a
+production-facing check for the hosted picker on `login.atmosphereaccount.com`:
+it verifies the picker HTML, CSS, static scripts, generated Fresh assets, and
+imported chunks from both the login and main Atmosphere domains.
 
 Health endpoints:
 
