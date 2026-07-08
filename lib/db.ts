@@ -104,7 +104,7 @@ function resolveDbUrl(): string {
   if (url) return url;
   if (isHostedRuntime()) {
     throw new Error(
-      "TURSO_DATABASE_URL is required in hosted deployments. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN to the registry database credentials.",
+      "No hosted database URL is configured. Production should normally set ATMOSPHERE_DB_BACKEND=postgres with POSTGRES_DATABASE_URL/DATABASE_URL. Turso deployments must set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN.",
     );
   }
   return "file:./local.db";
