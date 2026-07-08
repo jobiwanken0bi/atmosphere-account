@@ -23,6 +23,19 @@ interface BrowseAppsData {
   account: ReturnType<typeof buildAccountMenuProps>;
 }
 
+const APP_BROWSE_CACHE_TTL_MS = 30 * 1000;
+const APP_BROWSE_STALE_MS = 5 * 60 * 1000;
+const APP_BROWSE_CACHE_MAX_ENTRIES = 48;
+
+const appBrowseCache = new Map<
+  string,
+  {
+    result: AppSearchResult;
+    refreshedAt: number;
+    refreshPromise?: Promise<AppSearchResult>;
+  }
+>();
+
 export const handler = define.handlers({
   async GET(ctx) {
     const url = ctx.url;
@@ -31,22 +44,8 @@ export const handler = define.handlers({
     const query = url.searchParams.get("q")?.trim() ?? "";
     const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
 
-    const result = await searchAppsFromAppview({
-      query: query || undefined,
-      tag: tags.length > 0 ? tags : undefined,
-      sort,
-      page,
-    }).catch(() => ({
-      apps: [],
-      featured: [],
-      trending: [],
-      fresh: [],
-      total: 0,
-      page,
-      pageSize: 24,
-      tags: [],
-      tagSummaries: [],
-    }));
+    const result = await loadAppBrowseResult({ query, tags, sort, page })
+      .catch(() => emptyBrowseResult(page));
 
     const data: BrowseAppsData = {
       query,
@@ -62,6 +61,115 @@ export const handler = define.handlers({
     return ctx.render(<BrowseAppsPage data={data} />);
   },
 });
+
+async function loadAppBrowseResult(input: {
+  query: string;
+  tags: string[];
+  sort: AppDirectorySort;
+  page: number;
+}): Promise<AppSearchResult> {
+  const key = appBrowseCacheKey(input);
+  const entry = appBrowseCache.get(key);
+  const now = Date.now();
+
+  if (entry && now - entry.refreshedAt < APP_BROWSE_CACHE_TTL_MS) {
+    return entry.result;
+  }
+  if (entry && now - entry.refreshedAt < APP_BROWSE_STALE_MS) {
+    refreshAppBrowseCache(input, key);
+    return entry.result;
+  }
+  return await refreshAppBrowseCache(input, key);
+}
+
+function refreshAppBrowseCache(
+  input: {
+    query: string;
+    tags: string[];
+    sort: AppDirectorySort;
+    page: number;
+  },
+  key = appBrowseCacheKey(input),
+): Promise<AppSearchResult> {
+  const entry = appBrowseCache.get(key);
+  if (entry?.refreshPromise) return entry.refreshPromise;
+
+  const refreshPromise = searchAppsFromAppview({
+    query: input.query || undefined,
+    tag: input.tags.length > 0 ? input.tags : undefined,
+    sort: input.sort,
+    page: input.page,
+  })
+    .then((result) => {
+      setAppBrowseCacheEntry(key, { result, refreshedAt: Date.now() });
+      return result;
+    })
+    .catch((err) => {
+      if (entry) return entry.result;
+      throw err;
+    })
+    .finally(() => {
+      const current = appBrowseCache.get(key);
+      if (current) delete current.refreshPromise;
+    });
+
+  setAppBrowseCacheEntry(
+    key,
+    entry ? { ...entry, refreshPromise } : {
+      result: emptyBrowseResult(input.page),
+      refreshedAt: 0,
+      refreshPromise,
+    },
+  );
+  return refreshPromise;
+}
+
+function setAppBrowseCacheEntry(
+  key: string,
+  entry: {
+    result: AppSearchResult;
+    refreshedAt: number;
+    refreshPromise?: Promise<AppSearchResult>;
+  },
+) {
+  if (
+    !appBrowseCache.has(key) &&
+    appBrowseCache.size >= APP_BROWSE_CACHE_MAX_ENTRIES
+  ) {
+    const oldestKey = appBrowseCache.keys().next().value;
+    if (oldestKey) appBrowseCache.delete(oldestKey);
+  }
+  appBrowseCache.set(key, entry);
+}
+
+function appBrowseCacheKey(input: {
+  query: string;
+  tags: string[];
+  sort: AppDirectorySort;
+  page: number;
+}): string {
+  const tags = [...input.tags].sort().join(",");
+  return JSON.stringify({
+    q: input.query.trim().toLocaleLowerCase(),
+    tags,
+    sort: input.sort,
+    page: input.page,
+  });
+}
+
+function emptyBrowseResult(page: number): AppSearchResult {
+  return {
+    apps: [],
+    featured: [],
+    trending: [],
+    fresh: [],
+    total: 0,
+    page,
+    pageSize: 24,
+    tags: [],
+    tagSummaries: [],
+  };
+}
 
 function BrowseAppsPage({ data }: { data: BrowseAppsData }) {
   return (
