@@ -124,16 +124,30 @@ export function clearSessionCookie(): string {
 export function shouldHydrateAccountDetails(
   pathname: string,
   appviewConfigured = isAppviewConfigured(),
+  appviewOrigin = false,
 ): boolean {
   if (!appviewConfigured) return true;
+  if (appviewOrigin) return true;
   return pathname.startsWith("/dev/");
 }
 
+function configuredAppviewUrl(): URL | null {
+  const raw = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
+    Deno.env.get("APPVIEW_BASE_URL")?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
 function isAppviewConfigured(): boolean {
-  return Boolean(
-    Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
-      Deno.env.get("APPVIEW_BASE_URL")?.trim(),
-  );
+  return configuredAppviewUrl() !== null;
+}
+
+function isAppviewOrigin(origin: string): boolean {
+  return configuredAppviewUrl()?.origin === origin;
 }
 
 /**
@@ -154,7 +168,12 @@ export const sessionMiddleware = define.middleware(async (ctx) => {
     ctx.state.rememberedAccounts = rememberedAccounts;
 
     if (
-      ctx.state.user && shouldHydrateAccountDetails(ctx.url.pathname)
+      ctx.state.user &&
+      shouldHydrateAccountDetails(
+        ctx.url.pathname,
+        isAppviewConfigured(),
+        isAppviewOrigin(ctx.url.origin),
+      )
     ) {
       const accountTypePromise = getEffectiveAccountType(ctx.state.user.did)
         .catch(() => null);

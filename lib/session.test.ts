@@ -23,6 +23,21 @@ Deno.test("session details stay lightweight for Deno shell pages when appview is
   );
 });
 
+Deno.test("session details fully hydrate inside the appview origin", () => {
+  assertEquals(
+    shouldHydrateAccountDetails("/account", true, true),
+    true,
+  );
+  assertEquals(
+    shouldHydrateAccountDetails("/apps/manage", true, true),
+    true,
+  );
+  assertEquals(
+    shouldHydrateAccountDetails("/hosts/example.com/manage", true, true),
+    true,
+  );
+});
+
 Deno.test("session details keep full hydration for dev-only local helpers", () => {
   assertEquals(shouldHydrateAccountDetails("/dev/account-demo", true), true);
 });
