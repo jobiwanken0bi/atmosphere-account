@@ -14,9 +14,18 @@ export async function fetchAtmosphereLoginPublicJwk(
 }
 
 export async function verifyAtmosphereLoginCallback(options) {
-  const url = typeof options.url === "string"
-    ? new URL(options.url)
-    : new URL(options.url);
+  let url;
+  try {
+    url = typeof options.url === "string"
+      ? new URL(options.url)
+      : new URL(options.url);
+  } catch {
+    return {
+      ok: false,
+      error: "invalid callback URL",
+      params: new URLSearchParams(),
+    };
+  }
   const params = url.searchParams;
   const token = params.get("selection_token");
   const clientId = params.get("client_id");
@@ -28,13 +37,17 @@ export async function verifyAtmosphereLoginCallback(options) {
   if (options.expectedState && state !== options.expectedState) {
     return { ok: false, error: "state parameter mismatch", params };
   }
+  const expectedState = options.expectedState || state;
+  if (!expectedState) {
+    return { ok: false, error: "missing state", params };
+  }
 
   const result = await verifyAtmosphereSelectionToken({
     token,
     publicJwk: options.publicJwk,
     expectedIssuer: options.expectedIssuer,
     expectedAudience: options.expectedClientId,
-    expectedState: options.expectedState || state || undefined,
+    expectedState,
     expectedReturnUri: options.expectedReturnUri,
     replayStore: options.replayStore,
     nowSec: options.nowSec,
