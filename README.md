@@ -9,7 +9,8 @@ repo on either [GitHub](https://github.com/jobiwanken0bi/atmosphere-account) or
 
 ## Prerequisites
 
-- [Deno](https://docs.deno.com/runtime/getting_started/installation) (v2+)
+- [Deno](https://docs.deno.com/runtime/getting_started/installation) v2.7.12 for
+  local checks and CI.
 
 After cloning, install dependencies (creates `node_modules/` from the lockfile):
 

@@ -25,7 +25,7 @@ jobs:
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version: 2.7.12
 
       - name: Smoke production
         run: deno task smoke:production
