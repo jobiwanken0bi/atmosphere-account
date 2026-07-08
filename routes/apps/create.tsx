@@ -1,13 +1,33 @@
-import { define } from "../../utils.ts";
+import type { PageProps } from "fresh";
+import { define, type State } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
 import { getMessages } from "../../i18n/mod.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 
+export const handler = define.handlers({
+  async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("app registration", err),
+    );
+    if (proxied) return proxied;
+    const body = await renderExploreCreate(ctx);
+    if (body instanceof Response) return body;
+    return ctx.render(body);
+  },
+});
+
 export default define.page(async function ExploreCreate(ctx) {
+  return await renderExploreCreate(ctx);
+});
+
+async function renderExploreCreate(
+  ctx: PageProps<unknown, State>,
+) {
   const t = getMessages(ctx.state.locale).explore;
   const user = ctx.state.user;
   const rawNext = ctx.url.searchParams.get("next");
@@ -88,4 +108,15 @@ export default define.page(async function ExploreCreate(ctx) {
       </div>
     </div>
   );
-});
+}
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("App registration is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

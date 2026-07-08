@@ -1,13 +1,33 @@
-import { define } from "../../utils.ts";
+import type { PageProps } from "fresh";
+import { define, type State } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 
+export const handler = define.handlers({
+  async GET(ctx) {
+    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+      (err) => appviewUnavailable("legacy app migration", err),
+    );
+    if (proxied) return proxied;
+    const body = await renderLegacyAppMigrationPage(ctx);
+    if (body instanceof Response) return body;
+    return ctx.render(body);
+  },
+});
+
 export default define.page(async function LegacyAppMigrationPage(ctx) {
+  return await renderLegacyAppMigrationPage(ctx);
+});
+
+async function renderLegacyAppMigrationPage(
+  ctx: PageProps<unknown, State>,
+) {
   const did = ctx.url.searchParams.get("did")?.trim() ?? "";
   const account = buildAccountMenuProps(ctx.state);
   const returnTo = `${ctx.url.pathname}${ctx.url.search}`;
@@ -92,4 +112,15 @@ export default define.page(async function LegacyAppMigrationPage(ctx) {
       </div>
     </div>
   );
-});
+}
+
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
+  return new Response("App migration is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
