@@ -274,6 +274,16 @@ async function smokeHtml(
   console.log(`[smoke:public-shell] ok html ${url}`);
 }
 
+async function smokeSiteStyles(origin: string): Promise<void> {
+  const url = new URL("/styles.css", origin);
+  const { response, text } = await fetchText(url);
+  assertStatus(response, url);
+  assertContentType(response, url, "css");
+  assertContains(text, "IBM Plex Sans", url.toString());
+  assertContains(text, ".sky-bg", url.toString());
+  console.log(`[smoke:public-shell] ok styles ${url}`);
+}
+
 async function smokeHealth(
   origin: string,
   expectedReleaseSha: string | null,
@@ -465,6 +475,7 @@ assertMatchingReleaseShas(
   `${options.siteOrigin}/api/health/ready release`,
 );
 await smokeAppviewData(options.siteOrigin);
+await smokeSiteStyles(options.siteOrigin);
 await smokeHtml(options.siteOrigin, "/", {
   expectedText: "Atmosphere Account",
 });
