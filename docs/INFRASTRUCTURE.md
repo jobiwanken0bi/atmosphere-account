@@ -169,11 +169,12 @@ smoke checks HTML, CSS, static scripts, and generated `/assets` imports on both
 `login.atmosphereaccount.com` and `atmosphereaccount.com`.
 
 GitHub Actions also runs the `Production Smoke` workflow on a schedule and on
-manual dispatch. Treat it as an early warning, not as a replacement for running
+manual dispatch. It defaults to the checked-out SHA, so scheduled runs fail if
+`main` has moved but the Deno shell or Railway appview is still serving an older
+release. Treat it as an early warning, not as a replacement for running
 `deno task smoke:production` immediately after an intentional deploy or DNS
-change. Manual dispatch accepts `expected_release_sha`; use that after release
-SHA env vars are configured on both Deno and Railway to run the same exact drift
-check from GitHub.
+change. Manual dispatch accepts `expected_release_sha` only as an override when
+you intentionally need to smoke an older deployed release from GitHub.
 
 ## Neon Migration Track
 

@@ -101,8 +101,9 @@ chunks from both the login and main Atmosphere domains.
 GitHub Actions runs `deno task check` and `deno task build` on pushes and pull
 requests. The `Production Smoke` workflow also runs `deno task smoke:production`
 hourly and can be triggered manually after a Deno or Railway deploy. Manual runs
-accept an optional `expected_release_sha` input for exact shell/appview drift
-checks.
+default to the checked-out SHA for exact shell/appview drift checks. Pass an
+explicit `expected_release_sha` only when intentionally validating an older
+deployed release.
 
 Health endpoints:
 
@@ -118,8 +119,9 @@ place, run this after deploying both layers:
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
 
-The same SHA can be supplied as `expected_release_sha` when manually running the
-GitHub `Production Smoke` workflow.
+The GitHub `Production Smoke` workflow uses the checked-out SHA by default. If
+production is intentionally serving a different commit, pass that deployed SHA
+as `expected_release_sha` when manually running the workflow.
 
 Use the release-stamping helper before an exact release:
 

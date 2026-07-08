@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_release_sha:
-        description: "Optional git SHA that production shell and appview must report"
+        description: "Optional override; defaults to the checked-out SHA that production shell and appview must report"
         required: false
         type: string
   schedule:
@@ -34,5 +34,5 @@ jobs:
 
       - name: Smoke production
         env:
-          SMOKE_EXPECT_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+          SMOKE_EXPECT_RELEASE_SHA: ${{ github.event.inputs.expected_release_sha || github.sha }}
         run: deno task smoke:production
