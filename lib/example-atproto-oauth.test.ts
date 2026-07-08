@@ -5,6 +5,10 @@ import {
 import {
   buildExampleAppSessionCookie,
   buildExampleOAuthStartPath,
+  exampleAtmosphereLoginCallbackUri,
+  exampleAtmosphereLoginClientId,
+  exampleAtmosphereLoginPopupCallbackUri,
+  exampleAtmosphereLoginVerifiedReturnUri,
   exampleAtprotoOAuthCallbackUri,
   exampleAtprotoOAuthClientId,
   isExampleLocalDevSelection,
@@ -68,6 +72,32 @@ Deno.test("example handoff verifies selection and builds app OAuth start URL", a
       did: verified.claims.sub,
     }),
     "/examples/atmosphere-login/oauth/start?handle=user.example&did=did%3Aplc%3Auser",
+  );
+});
+
+Deno.test("example Atmosphere Login helpers expose redirect and popup callbacks", () => {
+  const origin = "https://app.example";
+  assertEquals(
+    exampleAtmosphereLoginClientId(origin),
+    "https://app.example/examples/atmosphere-login/client-metadata.json",
+  );
+  assertEquals(
+    exampleAtmosphereLoginCallbackUri(origin),
+    "https://app.example/examples/atmosphere-login/callback",
+  );
+  assertEquals(
+    exampleAtmosphereLoginPopupCallbackUri(origin),
+    "https://app.example/examples/atmosphere-login/callback?mode=popup",
+  );
+});
+
+Deno.test("example callback return URI preserves fixed params and removes callback params", () => {
+  const url = new URL(
+    "https://app.example/examples/atmosphere-login/callback?mode=popup&selection_token=token&client_id=client&state=abc&handle=user.example&handoff=1&inspect=1#ignored",
+  );
+  assertEquals(
+    exampleAtmosphereLoginVerifiedReturnUri(url),
+    "https://app.example/examples/atmosphere-login/callback?mode=popup",
   );
 });
 

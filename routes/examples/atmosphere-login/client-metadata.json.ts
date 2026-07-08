@@ -1,17 +1,20 @@
 import { define } from "../../../utils.ts";
+import {
+  exampleAtmosphereLoginCallbackUri,
+  exampleAtmosphereLoginClientId,
+  exampleAtmosphereLoginPopupCallbackUri,
+} from "../../../lib/example-atproto-oauth.ts";
 
 export const handler = define.handlers({
   GET(ctx): Response {
     const origin = ctx.url.origin;
     const body = {
-      client_id: new URL(
-        "/examples/atmosphere-login/client-metadata.json",
-        origin,
-      ).toString(),
+      client_id: exampleAtmosphereLoginClientId(origin),
       client_name: "Atmosphere Login reference app",
       client_uri: new URL("/examples/atmosphere-login/app", origin).toString(),
       allowed_return_uris: [
-        new URL("/examples/atmosphere-login/callback", origin).toString(),
+        exampleAtmosphereLoginCallbackUri(origin),
+        exampleAtmosphereLoginPopupCallbackUri(origin),
       ],
       note:
         "Reference metadata for the Atmosphere Login docs console. Production apps should register trusted return URIs with Atmosphere Account.",

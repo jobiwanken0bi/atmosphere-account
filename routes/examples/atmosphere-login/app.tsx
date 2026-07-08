@@ -5,6 +5,9 @@ import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import { loginPickerOriginForRequest } from "../../../lib/atmosphere-origins.ts";
 import {
   type ExampleAppSession,
+  exampleAtmosphereLoginCallbackUri,
+  exampleAtmosphereLoginClientId,
+  exampleAtmosphereLoginPopupCallbackUri,
   exampleAtprotoOAuthCallbackUri,
   exampleAtprotoOAuthClientId,
   readExampleAppSession,
@@ -15,6 +18,7 @@ interface ExampleAppProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   clientId: string;
   returnUri: string;
+  popupReturnUri: string;
   sdkSrc: string;
   pickerOrigin: string;
   appHomepage: string;
@@ -25,14 +29,11 @@ interface ExampleAppProps {
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const clientId = new URL(
-      "/examples/atmosphere-login/client-metadata.json",
+    const clientId = exampleAtmosphereLoginClientId(ctx.url.origin);
+    const returnUri = exampleAtmosphereLoginCallbackUri(ctx.url.origin);
+    const popupReturnUri = exampleAtmosphereLoginPopupCallbackUri(
       ctx.url.origin,
-    ).toString();
-    const returnUri = new URL(
-      "/examples/atmosphere-login/callback",
-      ctx.url.origin,
-    ).toString();
+    );
     const appHomepage = new URL(
       "/examples/atmosphere-login/app",
       ctx.url.origin,
@@ -50,6 +51,7 @@ export const handler = define.handlers({
         account={buildAccountMenuProps(ctx.state)}
         clientId={clientId}
         returnUri={returnUri}
+        popupReturnUri={popupReturnUri}
         sdkSrc={new URL("/atmosphere-login.js", pickerOrigin).toString()}
         pickerOrigin={pickerOrigin}
         appHomepage={appHomepage}
@@ -66,6 +68,7 @@ function ExampleApp(
     account,
     clientId,
     returnUri,
+    popupReturnUri,
     sdkSrc,
     pickerOrigin,
     appHomepage,
@@ -81,6 +84,16 @@ function ExampleApp(
   data-scope="atproto"
   data-app-name="Atmosphere Login reference app"
   data-app-homepage="${appHomepage}"
+></button>
+<script src="${sdkSrc}" defer></script>`;
+  const popupSnippet = `<button
+  data-atmosphere-login
+  data-client-id="${clientId}"
+  data-return-uri="${popupReturnUri}"
+  data-scope="atproto"
+  data-app-name="Atmosphere Login reference app"
+  data-app-homepage="${appHomepage}"
+  data-mode="popup"
 ></button>
 <script src="${sdkSrc}" defer></script>`;
   const callbackSnippet = `const selection = AtmosphereLogin.consumeSelection({
@@ -186,15 +199,36 @@ return createAppSession(account);`;
                       <span>Local example using this deployment</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    data-atmosphere-login
-                    data-client-id={clientId}
-                    data-return-uri={returnUri}
-                    data-scope="atproto"
-                    data-app-name="Atmosphere Login reference app"
-                    data-app-homepage={appHomepage}
-                  />
+                  <div class="login-example-button-stack">
+                    <button
+                      type="button"
+                      data-atmosphere-login
+                      data-client-id={clientId}
+                      data-return-uri={returnUri}
+                      data-scope="atproto"
+                      data-app-name="Atmosphere Login reference app"
+                      data-app-homepage={appHomepage}
+                    />
+                    <button
+                      type="button"
+                      data-atmosphere-login
+                      data-client-id={clientId}
+                      data-return-uri={popupReturnUri}
+                      data-scope="atproto"
+                      data-app-name="Atmosphere Login reference app"
+                      data-app-homepage={appHomepage}
+                      data-mode="popup"
+                      data-example-popup-button
+                    />
+                  </div>
+                  <p
+                    class="login-example-popup-status"
+                    data-example-popup-status
+                    aria-live="polite"
+                  >
+                    Popup mode keeps this page open and finishes through the
+                    same server-verified callback.
+                  </p>
                   <p>
                     The picker returns to the reference callback. When the token
                     checks pass, the callback redirects into the app's ATProto
@@ -228,7 +262,8 @@ return createAppSession(account);`;
               </div>
 
               <div class="login-console-snippets">
-                <Snippet label="Button" text={buttonSnippet} />
+                <Snippet label="Redirect button" text={buttonSnippet} />
+                <Snippet label="Popup button" text={popupSnippet} />
                 <Snippet label="Selection callback" text={callbackSnippet} />
                 <Snippet label="ATProto OAuth handoff" text={oauthSnippet} />
               </div>
@@ -237,6 +272,7 @@ return createAppSession(account);`;
         </section>
         <Footer variant="compact" />
         <script src={sdkSrc} defer></script>
+        <script src="/example-atmosphere-login-app.js" defer></script>
       </div>
     </div>
   );

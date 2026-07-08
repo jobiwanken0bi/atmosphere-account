@@ -113,3 +113,24 @@ Deno.test("ordinary pages keep the default referrer policy", () => {
   );
   assertEquals(headers.has("cache-control"), false);
 });
+
+Deno.test("login popup routes keep opener-compatible COOP", () => {
+  for (
+    const pathname of [
+      "/login/select",
+      "/examples/atmosphere-login/app",
+      "/examples/atmosphere-login/callback",
+    ]
+  ) {
+    const headers = applySecurityHeadersForTest(pathname);
+    assertEquals(
+      headers.get("cross-origin-opener-policy"),
+      "same-origin-allow-popups",
+    );
+  }
+});
+
+Deno.test("ordinary pages keep strict COOP isolation", () => {
+  const headers = applySecurityHeadersForTest("/apps");
+  assertEquals(headers.get("cross-origin-opener-policy"), "same-origin");
+});

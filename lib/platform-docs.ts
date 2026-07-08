@@ -505,14 +505,14 @@ return startAtprotoOAuth({
         id: "example-app",
         title: "Start with the working example",
         intro:
-          "The reference app is a complete relying-app loop: button, picker handoff, callback verifier, app-owned AT Protocol OAuth start, app OAuth callback, and final signed-in app state.",
+          "The reference app is a complete relying-app loop: redirect and popup buttons, picker handoff, callback verifier, app-owned AT Protocol OAuth start, app OAuth callback, and final signed-in app state.",
         blocks: [
           {
             type: "endpoint",
             method: "GET",
             path: "/examples/atmosphere-login/app",
             body:
-              "A copy-paste example app that uses the static SDK, returns to a verifier callback, starts app-owned AT Protocol OAuth, then shows the final signed-in app state.",
+              "A copy-paste example app that uses the static SDK, returns to a verifier callback, starts app-owned AT Protocol OAuth, then shows the final signed-in app state. It includes redirect mode and popup mode so you can compare the browser behavior.",
           },
           {
             type: "steps",
@@ -520,7 +520,7 @@ return startAtprotoOAuth({
               {
                 title: "Click Continue with Atmosphere",
                 body:
-                  "The SDK stores a one-time state value, builds the picker URL, and sends the user to `/login/select`.",
+                  "The SDK stores a one-time state value, builds the picker URL, and sends the user to `/login/select`. Redirect mode navigates the page; popup mode keeps the app page open.",
               },
               {
                 title: "Choose an account",
@@ -530,7 +530,7 @@ return startAtprotoOAuth({
               {
                 title: "Verify before doing anything else",
                 body:
-                  "The callback verifies signature, expiry, issuer, audience, state, return URI, and replay key before redirecting to the app OAuth start route.",
+                  "The callback verifies signature, expiry, issuer, audience, state, return URI, and replay key before redirecting to the app OAuth start route. In popup mode, the popup completion page notifies the opener, and the opener still continues through that server-verified callback.",
               },
               {
                 title: "Finish as the app",
@@ -1539,7 +1539,7 @@ location.href = url;`,
             tone: "amber",
             title: "Redirect is still the default",
             body:
-              "Use popup mode only when it materially improves your app. Browsers can block popups unless they start from a direct user action.",
+              "Use popup mode only when it materially improves your app. Browsers can block popups unless they start from a direct user action, and strict opener isolation headers can prevent popup completion events.",
           },
           {
             type: "code",
@@ -1569,6 +1569,13 @@ button.addEventListener("atmosphere-login:cancel", () => {
 if (!selection) {
   // Show a small fallback message or return to your app.
 }`,
+          },
+          {
+            type: "callout",
+            tone: "blue",
+            title: "See it in the reference app",
+            body:
+              "The example app includes a popup-mode button. Its popup callback posts the selection back to the opener, then the opener navigates through the same server-verified callback used by redirect mode.",
           },
         ],
       },
@@ -1944,7 +1951,7 @@ return Response.redirect(oauthUrl);`,
               [
                 "Popup blocked",
                 "The browser blocked a non-user-initiated popup or third-party flow.",
-                "Use redirect mode unless you have a strong popup reason.",
+                "Use redirect mode unless you have a strong popup reason. If you use popup mode, open it directly from a user click, keep the callback origin identical to the registered return URI origin, and avoid strict `Cross-Origin-Opener-Policy: same-origin` on pages that need the popup handoff.",
               ],
               [
                 "No saved accounts shown",

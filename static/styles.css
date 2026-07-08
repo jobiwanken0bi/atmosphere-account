@@ -14372,6 +14372,18 @@ body {
   font-size: 0.9rem;
 }
 
+.login-example-button-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.login-example-popup-status {
+  min-height: 1.35rem;
+  font-size: 0.9rem;
+}
+
 .login-example-next-panel h2 {
   margin: 0;
   font-size: 1.1rem;
@@ -14464,6 +14476,50 @@ body {
 .login-example-details,
 .login-example-json {
   margin-top: 1rem;
+}
+
+.login-popup-callback-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(22, 119, 255, 0.12),
+      transparent 32rem
+    ),
+    #f7f9ff;
+  color: #0e1428;
+}
+
+.login-popup-callback-card {
+  width: min(100%, 360px);
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  padding: 1.35rem;
+  border-radius: 22px;
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 18px 44px rgba(18, 26, 47, 0.08);
+  text-align: center;
+}
+
+.login-popup-callback-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.login-popup-callback-card h1 {
+  margin: 0;
+  font-size: clamp(1.45rem, 5vw, 2rem);
+  line-height: 1;
+}
+
+.login-popup-callback-card p {
+  margin: 0;
+  color: rgba(18, 26, 47, 0.68);
 }
 
 @media (max-width: 760px) {

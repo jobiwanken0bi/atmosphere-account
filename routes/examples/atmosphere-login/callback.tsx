@@ -7,7 +7,13 @@ import {
   decodeSelectionTokenUnsafe,
   verifyLoginSelectionToken,
 } from "../../../lib/atmosphere-login.ts";
-import { buildExampleOAuthStartPath } from "../../../lib/example-atproto-oauth.ts";
+import { loginPickerOriginForRequest } from "../../../lib/atmosphere-origins.ts";
+import {
+  buildExampleOAuthStartPath,
+  exampleAtmosphereLoginVerifiedReturnUri,
+  isExampleAtmosphereLoginPopupCallback,
+  isExampleAtmosphereLoginPopupHandoff,
+} from "../../../lib/example-atproto-oauth.ts";
 
 interface Check {
   label: string;
@@ -26,12 +32,18 @@ interface CallbackProps {
   state: string | null;
 }
 
+interface PopupCompletionProps {
+  clientId: string;
+  sdkSrc: string;
+  handle: string | null;
+}
+
 export const handler = define.handlers({
   async GET(ctx) {
     const token = ctx.url.searchParams.get("selection_token")?.trim() || null;
     const clientId = ctx.url.searchParams.get("client_id")?.trim() || null;
     const state = ctx.url.searchParams.get("state")?.trim() || null;
-    const expectedReturnUri = callbackReturnUri(ctx.url);
+    const expectedReturnUri = exampleAtmosphereLoginVerifiedReturnUri(ctx.url);
     const verified = token ? await verifyLoginSelectionToken(token) : null;
     const decoded = token ? decodeSelectionTokenUnsafe(token) : null;
     const checks = buildChecks({
@@ -42,7 +54,19 @@ export const handler = define.handlers({
     });
     const allPassed = checks.length > 0 && checks.every((check) => check.ok);
     const inspect = ctx.url.searchParams.get("inspect") === "1";
+    const isPopup = isExampleAtmosphereLoginPopupCallback(ctx.url);
+    const isPopupHandoff = isExampleAtmosphereLoginPopupHandoff(ctx.url);
+    const pickerOrigin = loginPickerOriginForRequest(ctx.url);
     if (token && allPassed && verified && !inspect) {
+      if (isPopup && !isPopupHandoff) {
+        return ctx.render(
+          <PopupCompletionPage
+            clientId={clientId ?? verified.aud}
+            sdkSrc={new URL("/atmosphere-login.js", pickerOrigin).toString()}
+            handle={verified.handle}
+          />,
+        );
+      }
       return new Response(null, {
         status: 303,
         headers: {
@@ -191,6 +215,38 @@ function CallbackPage(props: CallbackProps) {
   );
 }
 
+function PopupCompletionPage(
+  { clientId, sdkSrc, handle }: PopupCompletionProps,
+) {
+  return (
+    <div
+      class="login-popup-callback-shell"
+      data-example-popup-callback
+      data-client-id={clientId}
+    >
+      <div class="login-popup-callback-card">
+        <img
+          src="/union.svg"
+          alt=""
+          width="34"
+          height="34"
+          class="login-popup-callback-icon"
+        />
+        <p class="text-eyebrow">Continue with Atmosphere</p>
+        <h1>Account selected</h1>
+        <p data-example-popup-callback-status>
+          Sending{" "}
+          {handle ? <AtmosphereHandle handle={handle} /> : "the account"}{" "}
+          back to the example app.
+        </p>
+      </div>
+      <script src={sdkSrc} defer></script>
+      <script src="/example-atmosphere-login-popup-callback.js" defer>
+      </script>
+    </div>
+  );
+}
+
 function buildChecks(input: {
   verified: Awaited<ReturnType<typeof verifyLoginSelectionToken>>;
   clientId: string | null;
@@ -240,13 +296,6 @@ function buildChecks(input: {
       } and reject repeat use.`,
     },
   ];
-}
-
-function callbackReturnUri(url: URL): string {
-  const out = new URL(url);
-  out.search = "";
-  out.hash = "";
-  return out.toString();
 }
 
 function readString(value: unknown, key: string): string | null {

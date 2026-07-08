@@ -201,6 +201,12 @@ function isTokenBearingLoginRoute(pathname: string): boolean {
     pathname === "/examples/atmosphere-login/callback";
 }
 
+function isPopupCompatibleLoginRoute(pathname: string): boolean {
+  return pathname === "/login/select" ||
+    pathname === "/examples/atmosphere-login/app" ||
+    pathname === "/examples/atmosphere-login/callback";
+}
+
 function applySecurityHeaders(headers: Headers, pathname: string): void {
   setDefault(headers, "x-content-type-options", "nosniff");
   setDefault(headers, "x-frame-options", "DENY");
@@ -223,6 +229,9 @@ function applySecurityHeaders(headers: Headers, pathname: string): void {
     headers.set("referrer-policy", "no-referrer");
     headers.set("cache-control", "no-store");
     headers.set("x-robots-tag", "noindex, nofollow");
+  }
+  if (isPopupCompatibleLoginRoute(pathname)) {
+    headers.set("cross-origin-opener-policy", "same-origin-allow-popups");
   }
   if (
     pathname === "/atmosphere-login.js" ||

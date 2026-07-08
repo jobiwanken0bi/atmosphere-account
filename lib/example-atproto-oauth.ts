@@ -19,6 +19,53 @@ export interface ExampleAppSession {
   oauthMode?: "real" | "dev_simulated";
 }
 
+const ATMOSPHERE_LOGIN_DYNAMIC_CALLBACK_PARAMS = [
+  "selection_token",
+  "client_id",
+  "state",
+  "did",
+  "handle",
+  "iss",
+  "inspect",
+  "handoff",
+];
+
+export function exampleAtmosphereLoginClientId(origin: string): string {
+  return new URL(
+    "/examples/atmosphere-login/client-metadata.json",
+    origin,
+  ).toString();
+}
+
+export function exampleAtmosphereLoginCallbackUri(origin: string): string {
+  return new URL("/examples/atmosphere-login/callback", origin).toString();
+}
+
+export function exampleAtmosphereLoginPopupCallbackUri(
+  origin: string,
+): string {
+  const url = new URL("/examples/atmosphere-login/callback", origin);
+  url.searchParams.set("mode", "popup");
+  return url.toString();
+}
+
+export function exampleAtmosphereLoginVerifiedReturnUri(url: URL): string {
+  const out = new URL(url);
+  out.hash = "";
+  for (const param of ATMOSPHERE_LOGIN_DYNAMIC_CALLBACK_PARAMS) {
+    out.searchParams.delete(param);
+  }
+  return out.toString();
+}
+
+export function isExampleAtmosphereLoginPopupCallback(url: URL): boolean {
+  return url.searchParams.get("mode") === "popup";
+}
+
+export function isExampleAtmosphereLoginPopupHandoff(url: URL): boolean {
+  return url.searchParams.get("handoff") === "1";
+}
+
 export function exampleAtprotoOAuthClientId(origin: string): string {
   return new URL(
     "/examples/atmosphere-login/oauth/client-metadata.json",
