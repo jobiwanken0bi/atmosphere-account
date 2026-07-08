@@ -1,16 +1,111 @@
 const DEFAULT_MAX_TOKEN_AGE_SEC = 5 * 60;
+const DEFAULT_JWKS_TIMEOUT_MS = 3000;
 
 export async function fetchAtmosphereLoginPublicJwk(
   atmosphereOrigin = "https://login.atmosphereaccount.com",
+  options = {},
 ) {
-  const response = await fetch(new URL("/oauth/jwks.json", atmosphereOrigin));
-  if (!response.ok) {
-    throw new Error(`JWKS request failed with ${response.status}`);
+  const jwks = await fetchAtmosphereLoginJwks(atmosphereOrigin, options);
+  return selectAtmosphereLoginPublicJwk(jwks, options.kid);
+}
+
+export async function fetchAtmosphereLoginPublicJwkForToken(
+  token,
+  atmosphereOrigin = "https://login.atmosphereaccount.com",
+  options = {},
+) {
+  const kid = readAtmosphereLoginTokenKid(token);
+  if (!kid) {
+    throw new Error("Atmosphere Login selection token did not include a kid");
   }
-  const body = await response.json();
-  const key = Array.isArray(body.keys) ? body.keys[0] : null;
-  if (!key) throw new Error("Atmosphere Login JWKS did not include a key");
+  return await fetchAtmosphereLoginPublicJwk(atmosphereOrigin, {
+    ...options,
+    kid,
+  });
+}
+
+export async function fetchAtmosphereLoginJwks(
+  atmosphereOrigin = "https://login.atmosphereaccount.com",
+  options = {},
+) {
+  const url = new URL("/oauth/jwks.json", atmosphereOrigin);
+  const fetchImpl = options.fetchImpl || fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_JWKS_TIMEOUT_MS;
+  const controller = typeof AbortController === "function"
+    ? new AbortController()
+    : null;
+  const timeoutId = controller && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      signal: controller?.signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("Atmosphere Login JWKS request timed out");
+    }
+    throw new Error(
+      `Atmosphere Login JWKS request failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Atmosphere Login JWKS request failed with ${response.status}`,
+    );
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new Error("Atmosphere Login JWKS was not valid JSON");
+  }
+}
+
+export function selectAtmosphereLoginPublicJwk(jwks, kid = null) {
+  const keys = Array.isArray(jwks?.keys)
+    ? jwks.keys.filter((key) =>
+      key && typeof key === "object" && !Array.isArray(key)
+    )
+    : [];
+  const key = kid ? keys.find((candidate) => candidate.kid === kid) : keys[0];
+  if (!key) {
+    throw new Error(
+      kid
+        ? `Atmosphere Login JWKS did not include key ${kid}`
+        : "Atmosphere Login JWKS did not include a key",
+    );
+  }
   return key;
+}
+
+export function readAtmosphereLoginTokenKid(token) {
+  const header = readAtmosphereLoginTokenHeader(token);
+  return typeof header.kid === "string" && header.kid.trim()
+    ? header.kid
+    : null;
+}
+
+export function readAtmosphereLoginTokenHeader(token) {
+  const parts = typeof token === "string" ? token.split(".") : [];
+  if (parts.length !== 3 || !parts[0]) {
+    throw new Error("Atmosphere Login selection token is malformed");
+  }
+  try {
+    const header = JSON.parse(textDecode(b64uDecode(parts[0])));
+    if (!header || typeof header !== "object" || Array.isArray(header)) {
+      throw new Error("invalid header");
+    }
+    return header;
+  } catch {
+    throw new Error("Atmosphere Login selection token header is invalid");
+  }
 }
 
 export async function verifyAtmosphereLoginCallback(options) {

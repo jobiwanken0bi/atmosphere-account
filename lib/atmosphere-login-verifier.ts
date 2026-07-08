@@ -4,6 +4,129 @@ import type {
   AtmosphereSelectionVerificationResult,
 } from "./atmosphere-login-sdk.ts";
 import { verifyAtmosphereSelectionToken } from "./atmosphere-login-sdk.ts";
+import { b64uDecode } from "./jose.ts";
+
+const DEFAULT_JWKS_TIMEOUT_MS = 3000;
+
+export interface FetchAtmosphereLoginPublicJwkOptions {
+  kid?: string | null;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+export async function fetchAtmosphereLoginPublicJwk(
+  atmosphereOrigin = "https://login.atmosphereaccount.com",
+  options: FetchAtmosphereLoginPublicJwkOptions = {},
+): Promise<JsonWebKey> {
+  const jwks = await fetchAtmosphereLoginJwks(atmosphereOrigin, options);
+  return selectAtmosphereLoginPublicJwk(jwks, options.kid);
+}
+
+export async function fetchAtmosphereLoginPublicJwkForToken(
+  token: string,
+  atmosphereOrigin = "https://login.atmosphereaccount.com",
+  options: FetchAtmosphereLoginPublicJwkOptions = {},
+): Promise<JsonWebKey> {
+  const kid = readAtmosphereLoginTokenKid(token);
+  if (!kid) {
+    throw new Error("Atmosphere Login selection token did not include a kid");
+  }
+  return await fetchAtmosphereLoginPublicJwk(atmosphereOrigin, {
+    ...options,
+    kid,
+  });
+}
+
+export async function fetchAtmosphereLoginJwks(
+  atmosphereOrigin = "https://login.atmosphereaccount.com",
+  options: FetchAtmosphereLoginPublicJwkOptions = {},
+): Promise<unknown> {
+  const url = new URL("/oauth/jwks.json", atmosphereOrigin);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_JWKS_TIMEOUT_MS;
+  const controller = typeof AbortController === "function"
+    ? new AbortController()
+    : null;
+  const timeoutId = controller && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      signal: controller?.signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Atmosphere Login JWKS request timed out");
+    }
+    throw new Error(
+      `Atmosphere Login JWKS request failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Atmosphere Login JWKS request failed with ${response.status}`,
+    );
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new Error("Atmosphere Login JWKS was not valid JSON");
+  }
+}
+
+export function selectAtmosphereLoginPublicJwk(
+  jwks: unknown,
+  kid?: string | null,
+): JsonWebKey {
+  const keys = isJwksObject(jwks)
+    ? jwks.keys.filter((key): key is JsonWebKey => isJsonWebKey(key))
+    : [];
+  const key = kid
+    ? keys.find((candidate) => getJwkKid(candidate) === kid)
+    : keys[0];
+  if (!key) {
+    throw new Error(
+      kid
+        ? `Atmosphere Login JWKS did not include key ${kid}`
+        : "Atmosphere Login JWKS did not include a key",
+    );
+  }
+  return key;
+}
+
+export function readAtmosphereLoginTokenKid(token: string): string | null {
+  const header = readAtmosphereLoginTokenHeader(token);
+  return typeof header.kid === "string" && header.kid.trim()
+    ? header.kid
+    : null;
+}
+
+export function readAtmosphereLoginTokenHeader(
+  token: string,
+): Record<string, unknown> {
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[0]) {
+    throw new Error("Atmosphere Login selection token is malformed");
+  }
+  try {
+    const header = JSON.parse(
+      new TextDecoder().decode(b64uDecode(parts[0])),
+    ) as unknown;
+    if (!header || typeof header !== "object" || Array.isArray(header)) {
+      throw new Error("invalid header");
+    }
+    return header as Record<string, unknown>;
+  } catch {
+    throw new Error("Atmosphere Login selection token header is invalid");
+  }
+}
 
 export interface VerifyAtmosphereLoginCallbackOptions {
   url: string | URL;
@@ -13,6 +136,20 @@ export interface VerifyAtmosphereLoginCallbackOptions {
   expectedReturnUri: string;
   expectedState?: string | null;
   replayStore?: AtmosphereSelectionReplayStore;
+}
+
+function isJwksObject(value: unknown): value is { keys: unknown[] } {
+  return !!value && typeof value === "object" &&
+    Array.isArray((value as { keys?: unknown }).keys);
+}
+
+function isJsonWebKey(value: unknown): value is JsonWebKey {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function getJwkKid(value: JsonWebKey): string | undefined {
+  const kid = (value as { kid?: unknown }).kid;
+  return typeof kid === "string" ? kid : undefined;
 }
 
 export type AtmosphereLoginCallbackVerification =

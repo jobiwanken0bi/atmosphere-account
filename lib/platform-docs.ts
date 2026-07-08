@@ -974,16 +974,21 @@ return_uri=https://app.example.com/auth/atmosphere/selected`,
             type: "code",
             language: "ts",
             code: `import {
-  fetchAtmosphereLoginPublicJwk,
+  fetchAtmosphereLoginPublicJwkForToken,
   verifyAtmosphereLoginCallback,
 } from "https://login.atmosphereaccount.com/atmosphere-login-server.js";
 
-const publicJwk = await fetchAtmosphereLoginPublicJwk(
+const callbackUrl = new URL(request.url);
+const selectionToken = callbackUrl.searchParams.get("selection_token");
+if (!selectionToken) throw new Error("Missing selection token");
+
+const publicJwk = await fetchAtmosphereLoginPublicJwkForToken(
+  selectionToken,
   "https://login.atmosphereaccount.com",
 );
 
 const result = await verifyAtmosphereLoginCallback({
-  url: request.url,
+  url: callbackUrl,
   publicJwk,
   expectedIssuer: "https://login.atmosphereaccount.com",
   expectedClientId: "https://app.example.com/oauth/client-metadata.json",
@@ -1564,16 +1569,21 @@ location.href = url;`,
             language: "ts",
             caption: "Callback verification",
             code: `import {
-  fetchAtmosphereLoginPublicJwk,
+  fetchAtmosphereLoginPublicJwkForToken,
   verifyAtmosphereLoginCallback,
 } from "https://login.atmosphereaccount.com/atmosphere-login-server.js";
 
-const publicJwk = await fetchAtmosphereLoginPublicJwk(
+const callbackUrl = new URL(request.url);
+const selectionToken = callbackUrl.searchParams.get("selection_token");
+if (!selectionToken) throw new Error("Missing selection token");
+
+const publicJwk = await fetchAtmosphereLoginPublicJwkForToken(
+  selectionToken,
   "https://login.atmosphereaccount.com",
 );
 
 const result = await verifyAtmosphereLoginCallback({
-  url: request.url,
+  url: callbackUrl,
   publicJwk,
   expectedIssuer: "https://login.atmosphereaccount.com",
   expectedClientId: "https://app.example.com/oauth/client-metadata.json",
@@ -2521,8 +2531,12 @@ const selection = AtmosphereLogin.consumeSelection({
             columns: ["Export", "Purpose"],
             rows: [
               [
+                "fetchAtmosphereLoginPublicJwkForToken(token, origin)",
+                "Fetches the public key whose `kid` matches the returned selection token.",
+              ],
+              [
                 "fetchAtmosphereLoginPublicJwk(origin)",
-                "Fetches the first public key from `/oauth/jwks.json`.",
+                "Fetches a public key from `/oauth/jwks.json`; pass `{ kid }` when selecting explicitly.",
               ],
               [
                 "verifyAtmosphereLoginCallback(options)",
