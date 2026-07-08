@@ -200,9 +200,7 @@ export async function proxyAppviewResponse(
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
-  const headers = new Headers(res.headers);
-  headers.set("x-atmosphere-appview-proxy", remote);
-  headers.delete("content-length");
+  const headers = proxiedHeaders(res.headers, remote);
   return new Response(res.body, {
     status: res.status,
     statusText: res.statusText,
@@ -244,6 +242,8 @@ export async function proxyAppviewPageResponse(
   }
 
   const body = rewriteAppviewHtml(await res.text(), remote, currentUrl);
+  headers.delete("content-encoding");
+  headers.delete("etag");
   return new Response(body, {
     status: res.status,
     statusText: res.statusText,
@@ -357,8 +357,32 @@ function proxiedHeaders(source: Headers, remote: string): Headers {
   const headers = new Headers(source);
   headers.set("x-atmosphere-appview-proxy", remote);
   headers.set("x-atmosphere-appview-page-proxy", remote);
+  for (const header of HOP_BY_HOP_RESPONSE_HEADERS) {
+    headers.delete(header);
+  }
+  headers.delete("alt-svc");
+  headers.delete("content-encoding");
   headers.delete("content-length");
+  headers.delete("etag");
   return headers;
+}
+
+const HOP_BY_HOP_RESPONSE_HEADERS = [
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+];
+
+export function proxiedHeadersForTest(
+  source: Headers,
+  remote: string,
+): Headers {
+  return proxiedHeaders(source, remote);
 }
 
 function rewriteAppviewHtml(

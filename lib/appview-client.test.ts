@@ -1,5 +1,6 @@
 import {
   appviewFetchTimeoutMs,
+  proxiedHeadersForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
 
@@ -86,4 +87,38 @@ Deno.test("appview fetch timeout defaults to a short public-shell budget", () =>
   assertEquals(appviewFetchTimeoutMs("not-a-number"), 5000);
   assertEquals(appviewFetchTimeoutMs("250"), 1000);
   assertEquals(appviewFetchTimeoutMs("15000"), 15000);
+});
+
+Deno.test("proxied appview response headers strip transport metadata but keep cookies", () => {
+  const source = new Headers({
+    "alt-svc": 'h3=":443"',
+    "cache-control": "no-store",
+    "connection": "keep-alive",
+    "content-encoding": "gzip",
+    "content-length": "123",
+    "content-type": "text/html; charset=utf-8",
+    "etag": '"abc"',
+    "transfer-encoding": "chunked",
+  });
+  source.append("set-cookie", "atmo_sid=one; Path=/; HttpOnly");
+  source.append("set-cookie", "atmo_remembered_accounts=two; Path=/; HttpOnly");
+
+  const headers = proxiedHeadersForTest(
+    source,
+    "https://web-production-001c9.up.railway.app",
+  );
+
+  assertEquals(headers.get("cache-control"), "no-store");
+  assertEquals(headers.get("content-type"), "text/html; charset=utf-8");
+  assertEquals(
+    headers.get("x-atmosphere-appview-proxy"),
+    "https://web-production-001c9.up.railway.app",
+  );
+  assertEquals(headers.has("alt-svc"), false);
+  assertEquals(headers.has("connection"), false);
+  assertEquals(headers.has("content-encoding"), false);
+  assertEquals(headers.has("content-length"), false);
+  assertEquals(headers.has("etag"), false);
+  assertEquals(headers.has("transfer-encoding"), false);
+  assertEquals(headers.getSetCookie().length, 2);
 });

@@ -2,7 +2,15 @@ import { define } from "../../../../utils.ts";
 import {
   getPublicHostDetail,
   proxyAppviewResponse,
+  type PublicHostDetail,
 } from "../../../../lib/appview-client.ts";
+import { EdgeStaleCache } from "../../../../lib/edge-cache.ts";
+
+const hostDetailCache = new EdgeStaleCache<PublicHostDetail>({
+  freshMs: 60_000,
+  staleMs: 5 * 60_000,
+  maxEntries: 256,
+});
 
 export const handler = define.handlers({
   async GET(ctx): Promise<Response> {
@@ -13,7 +21,10 @@ export const handler = define.handlers({
     if (proxied) return proxied;
 
     const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
-    const detail = await getPublicHostDetail(hostId);
+    const detail = await hostDetailCache.get(
+      hostId,
+      () => getPublicHostDetail(hostId),
+    );
     return json(detail, {
       status: detail.host ? 200 : 404,
       headers: {

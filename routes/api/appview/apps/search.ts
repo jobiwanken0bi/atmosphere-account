@@ -1,9 +1,17 @@
 import { define } from "../../../../utils.ts";
 import {
   type AppDirectorySort,
+  type AppSearchResult,
   searchAppDirectory,
 } from "../../../../lib/app-directory.ts";
 import { proxyAppviewResponse } from "../../../../lib/appview-client.ts";
+import { EdgeStaleCache } from "../../../../lib/edge-cache.ts";
+
+const appSearchCache = new EdgeStaleCache<AppSearchResult>({
+  freshMs: 30_000,
+  staleMs: 2 * 60_000,
+  maxEntries: 512,
+});
 
 export const handler = define.handlers({
   async GET(ctx): Promise<Response> {
@@ -17,14 +25,18 @@ export const handler = define.handlers({
     const tag = readTags(url.searchParams);
     const sort = readSort(url.searchParams.get("sort"));
     const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
-    const result = await searchAppDirectory({
-      query,
-      tag: tag.length > 0 ? tag : undefined,
-      sort,
-      page,
-      includeSections: false,
-      syncLegacy: false,
-    });
+    const result = await appSearchCache.get(
+      cacheKey({ query, tag, sort, page }),
+      () =>
+        searchAppDirectory({
+          query,
+          tag: tag.length > 0 ? tag : undefined,
+          sort,
+          page,
+          includeSections: false,
+          syncLegacy: false,
+        }),
+    );
     return json(result, {
       headers: {
         "cache-control": "public, max-age=30, stale-while-revalidate=120",
@@ -42,6 +54,21 @@ function readTags(searchParams: URLSearchParams): string[] {
     tag.split(",").map((part) => part.trim()).filter(Boolean)
   );
   return [...new Set(tags)];
+}
+
+function cacheKey(input: {
+  query?: string;
+  tag: string[];
+  sort: AppDirectorySort;
+  page: number;
+}): string {
+  const tags = [...input.tag].sort();
+  return JSON.stringify({
+    q: input.query?.toLowerCase() ?? "",
+    tag: tags,
+    sort: input.sort,
+    page: input.page,
+  });
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {
