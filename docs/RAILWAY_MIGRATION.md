@@ -134,6 +134,10 @@ Health checks:
   `GET /api/health` and `GET /api/health/ready`.
 - Indexer health: check `GET /api/health/ready` for a fresh worker lease and
   verify `worker_lease` in Railway Postgres.
+- Hosted picker asset chain: run `deno task smoke:picker-assets` after appview
+  deploys that change Fresh output or proxy behavior. The public picker remains
+  on Deno Deploy, but its generated Fresh chunks are proxied from the appview
+  bundle on trusted Atmosphere domains.
 
 ## Worker Cutover
 
