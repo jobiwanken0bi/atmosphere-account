@@ -1,8 +1,9 @@
 import { define } from "../../../utils.ts";
+import type { AtmosphereSelectionClaims } from "../../../lib/atmosphere-login-sdk.ts";
 import { verifyLoginSelectionTokenDetailed } from "../../../lib/atmosphere-login.ts";
 import { rejectLargeRequest } from "../../../lib/security.ts";
 
-interface SelectionVerificationInput {
+export interface SelectionVerificationInput {
   token: string | null;
   expectedClientId: string | null;
   expectedReturnUri: string | null;
@@ -130,17 +131,12 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       error: result.error,
     }, { status: 401 });
   }
-  const boundResult = await verifyLoginSelectionTokenDetailed(token, {
-    expectedIssuer: input.expectedIssuer ?? undefined,
-    expectedAudience: input.expectedClientId ?? undefined,
-    expectedReturnUri: input.expectedReturnUri ?? undefined,
-    expectedState: input.expectedState ?? undefined,
-  });
-  if (!boundResult.ok) {
+  const bindingError = verifySelectionBinding(result.claims, input);
+  if (bindingError) {
     return json({
       active: true,
       bound: false,
-      error: boundResult.error,
+      error: bindingError,
     }, { status: 200 });
   }
   return json({
@@ -148,6 +144,32 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     bound: true,
     payload: result.claims,
   });
+}
+
+export function verifySelectionBinding(
+  claims: AtmosphereSelectionClaims,
+  input: SelectionVerificationInput,
+): string | null {
+  if (input.expectedClientId && claims.aud !== input.expectedClientId) {
+    return "audience mismatch";
+  }
+  if (input.expectedState && claims.state !== input.expectedState) {
+    return "state mismatch";
+  }
+  if (
+    input.expectedReturnUri &&
+    normalizeReturnUri(claims.return_uri) !==
+      normalizeReturnUri(input.expectedReturnUri)
+  ) {
+    return "return URI mismatch";
+  }
+  return null;
+}
+
+function normalizeReturnUri(value: string): string {
+  const url = new URL(value);
+  url.hash = "";
+  return url.toString();
 }
 
 export const handler = define.handlers({
