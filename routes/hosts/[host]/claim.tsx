@@ -19,6 +19,7 @@ import {
   hostClaimProofMessage,
   verifyHostClaimDomainProof,
 } from "../../../lib/host-claim-proof.ts";
+import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 
 type ClaimState =
   | "ready"
@@ -44,6 +45,13 @@ export const handler = define.handlers({
       (err) => appviewUnavailable("host claim page", err),
     );
     if (proxied) return proxied;
+
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "host-claim",
+      capacity: 10,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
 
     const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
     const host = await getAccountHost(hostId).catch(() => null);

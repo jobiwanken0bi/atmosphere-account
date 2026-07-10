@@ -29,7 +29,7 @@ import { checkDurableRateLimit } from "../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 import {
   createLoginSelectionIntent,
-  verifyLoginSelectionIntent,
+  readLoginSelectionIntent,
 } from "../../lib/login-selection-intent.ts";
 
 interface PickerAccount {
@@ -62,7 +62,7 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
-    const intent = ctx.url.searchParams.get("selection_intent");
+    const intent = ctx.url.searchParams.get("choice");
     if (intent) return await handleIntentSelection(ctx, intent);
 
     const props = await buildPickerPageProps(ctx);
@@ -206,22 +206,23 @@ async function handleIntentSelection(
     if (ctx.url.search.length > MAX_PICKER_FORM_BYTES) {
       return browserHandoffError("request URL too large", 414, false);
     }
-    const request = readLoginRequest(ctx.url);
-    const did = ctx.url.searchParams.get("did")?.trim() ?? "";
-    if (
-      !did ||
-      !await verifyLoginSelectionIntent(intent, request, did)
-    ) {
+    const selection = await readLoginSelectionIntent(intent);
+    if (!selection) {
       return browserHandoffError(
         "This account choice has expired. Return to the app and try again.",
         403,
         false,
       );
     }
-    return await completePickerSelection(ctx, request, did, {
-      json: false,
-      browserDocument: false,
-    });
+    return await completePickerSelection(
+      ctx,
+      selection.request,
+      selection.did,
+      {
+        json: false,
+        browserDocument: false,
+      },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const status = err instanceof LoginRequestError ? err.status : 400;
@@ -309,10 +310,9 @@ async function buildPickerPageProps(
     const { app } = await resolveLoginAppForRequest(request);
     const pickerAccounts = await Promise.all(
       getPickerAccounts(ctx.state).map(async (account) => {
-        const selectionUrl = new URL(loginRequestToPath(request), ctx.url);
-        selectionUrl.searchParams.set("did", account.did);
+        const selectionUrl = new URL("/login/select", ctx.url);
         selectionUrl.searchParams.set(
-          "selection_intent",
+          "choice",
           await createLoginSelectionIntent(request, account.did),
         );
         return {

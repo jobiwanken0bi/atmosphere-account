@@ -5,7 +5,7 @@
  */
 import { define } from "../../../../../utils.ts";
 import { withRateLimit } from "../../../../../lib/rate-limit.ts";
-import { callerIp, hashIp } from "../../../../../lib/reports.ts";
+import { callerReportIdentity, hashIp } from "../../../../../lib/reports.ts";
 import {
   createReviewReport,
   getReviewById,
@@ -52,8 +52,8 @@ export const handler = define.handlers({
       ? body.details.trim().slice(0, MAX_DETAILS_LEN) || null
       : null;
 
-    const ip = callerIp(ctx.req);
-    const ipHash = ip === "anonymous" ? null : await hashIp(ip);
+    const caller = await callerReportIdentity(ctx.req);
+    const ipHash = caller.endsWith(":anonymous") ? null : await hashIp(caller);
     const result = await createReviewReport({
       reviewId,
       reporterDid: user.did,

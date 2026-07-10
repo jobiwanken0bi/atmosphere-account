@@ -10,6 +10,10 @@
  */
 import { isPostgresBackend, withDb } from "./db.ts";
 import { reportIpSecret } from "./env.ts";
+import {
+  bestEffortCallerAddress,
+  callerRequestIdentity,
+} from "./proxy-client-key.ts";
 
 export const REPORT_REASONS = [
   "not_a_project",
@@ -73,14 +77,11 @@ const DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Best-effort caller IP — same approach as `lib/rate-limit.ts`. */
 export function callerIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const real = req.headers.get("x-real-ip");
-  if (real) return real.trim();
-  return "anonymous";
+  return bestEffortCallerAddress(req.headers);
+}
+
+export async function callerReportIdentity(req: Request): Promise<string> {
+  return await callerRequestIdentity(req);
 }
 
 export async function hashIp(ip: string): Promise<string> {

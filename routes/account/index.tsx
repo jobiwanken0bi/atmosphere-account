@@ -371,7 +371,7 @@ function ProfileSourcePanel(
             class="account-dashboard-button account-dashboard-button--secondary"
           >
             <AccountIcon name="host" />
-            <span>Manage at host</span>
+            <span>Manage account at host</span>
           </a>
         )}
       </div>
@@ -434,8 +434,9 @@ function HostAccountRouterPanel(
           {hasKnownHost
             ? (
               <p>
-                Your account host keeps your account online. Use host management
-                for sign-in settings, help, and account changes.
+                Your account host keeps your account online. Manage signed-in
+                devices, connected apps, your password, and account details
+                there.
               </p>
             )
             : (
@@ -455,7 +456,7 @@ function HostAccountRouterPanel(
                   class="account-dashboard-button account-dashboard-button--primary"
                 >
                   <AccountIcon name="external" />
-                  <span>Host management</span>
+                  <span>Manage account at host</span>
                 </a>
               )
               : (
@@ -464,7 +465,7 @@ function HostAccountRouterPanel(
                   aria-disabled="true"
                 >
                   <AccountIcon name="host" />
-                  <span>Host management unavailable</span>
+                  <span>Account management unavailable</span>
                 </span>
               )}
             <a

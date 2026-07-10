@@ -13,14 +13,14 @@ const INTENT_TTL_SEC = 5 * 60;
 
 interface SelectionIntentPayload {
   v: number;
-  did: string;
-  client_id: string;
-  return_uri: string;
-  state: string;
-  scope?: string;
-  iat: number;
-  exp: number;
-  nonce: string;
+  d: string;
+  c: string;
+  r: string;
+  s: string;
+  o?: string;
+  i: number;
+  e: number;
+  n: string;
 }
 
 export async function createLoginSelectionIntent(
@@ -31,28 +31,26 @@ export async function createLoginSelectionIntent(
   const now = Math.floor((options.now ?? Date.now()) / 1000);
   const payload: SelectionIntentPayload = {
     v: INTENT_VERSION,
-    did,
-    client_id: request.clientId,
-    return_uri: request.returnUri,
-    state: request.state,
-    ...(request.scope ? { scope: request.scope } : {}),
-    iat: now,
-    exp: now + INTENT_TTL_SEC,
-    nonce: randomB64u(12),
+    d: did,
+    c: request.clientId,
+    r: request.returnUri,
+    s: request.state,
+    ...(request.scope ? { o: request.scope } : {}),
+    i: now,
+    e: now + INTENT_TTL_SEC,
+    n: randomB64u(9),
   };
   const encoded = b64uEncode(JSON.stringify(payload));
   const signature = await hmacSign(options.secret ?? sessionSecret(), encoded);
   return `${encoded}.${signature}`;
 }
 
-export async function verifyLoginSelectionIntent(
+export async function readLoginSelectionIntent(
   token: string,
-  request: LoginRequest,
-  did: string,
   options: { now?: number; secret?: string } = {},
-): Promise<boolean> {
+): Promise<{ request: LoginRequest; did: string } | null> {
   const dot = token.lastIndexOf(".");
-  if (dot <= 0 || dot === token.length - 1) return false;
+  if (dot <= 0 || dot === token.length - 1) return null;
   const encoded = token.slice(0, dot);
   const signature = token.slice(dot + 1);
   const validSignature = await hmacVerify(
@@ -60,7 +58,7 @@ export async function verifyLoginSelectionIntent(
     encoded,
     signature,
   ).catch(() => false);
-  if (!validSignature) return false;
+  if (!validSignature) return null;
 
   let payload: SelectionIntentPayload;
   try {
@@ -68,18 +66,28 @@ export async function verifyLoginSelectionIntent(
       new TextDecoder().decode(b64uDecode(encoded)),
     ) as SelectionIntentPayload;
   } catch {
-    return false;
+    return null;
   }
 
   const now = Math.floor((options.now ?? Date.now()) / 1000);
-  return payload.v === INTENT_VERSION &&
-    payload.did === did && did.startsWith("did:") &&
-    payload.client_id === request.clientId &&
-    payload.return_uri === request.returnUri &&
-    payload.state === request.state &&
-    (payload.scope ?? null) === (request.scope ?? null) &&
-    Number.isInteger(payload.iat) && payload.iat <= now + 30 &&
-    Number.isInteger(payload.exp) && payload.exp >= now &&
-    payload.exp - payload.iat <= INTENT_TTL_SEC &&
-    typeof payload.nonce === "string" && payload.nonce.length >= 12;
+  const valid = payload.v === INTENT_VERSION &&
+    typeof payload.d === "string" && payload.d.startsWith("did:") &&
+    typeof payload.c === "string" && payload.c.length > 0 &&
+    typeof payload.r === "string" && payload.r.length > 0 &&
+    typeof payload.s === "string" && payload.s.length > 0 &&
+    (payload.o === undefined || typeof payload.o === "string") &&
+    Number.isInteger(payload.i) && payload.i <= now + 30 &&
+    Number.isInteger(payload.e) && payload.e >= now &&
+    payload.e - payload.i <= INTENT_TTL_SEC &&
+    typeof payload.n === "string" && payload.n.length >= 12;
+  if (!valid) return null;
+  return {
+    did: payload.d,
+    request: {
+      clientId: payload.c,
+      returnUri: payload.r,
+      state: payload.s,
+      scope: payload.o ?? null,
+    },
+  };
 }

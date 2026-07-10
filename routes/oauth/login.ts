@@ -15,6 +15,7 @@ import {
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
+import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
 
 const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
 
@@ -80,6 +81,13 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     (err) => appviewUnavailable("oauth login", err),
   );
   if (proxied) return proxied;
+
+  const limited = await enforceDurableRateLimit(ctx.req, {
+    scope: "oauth-login-start",
+    capacity: 20,
+    refillMs: 60_000,
+  });
+  if (limited) return limited;
 
   if (ctx.req.method !== "GET") {
     const large = rejectLargeRequest(ctx.req, MAX_OAUTH_LOGIN_BODY_BYTES);

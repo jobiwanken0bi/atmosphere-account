@@ -14,6 +14,10 @@ import {
 } from "./app-directory.ts";
 import { define } from "../utils.ts";
 import { trustedAtmosphereOrigins } from "./atmosphere-origins.ts";
+import {
+  createProxyClientKey,
+  PROXY_CLIENT_KEY_HEADER,
+} from "./proxy-client-key.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -280,7 +284,11 @@ export async function proxyAppviewPageResponse(
 
   const res = await fetch(url, {
     method: request.method,
-    headers: appviewPageHeaders(request.headers, currentUrl, bodyless),
+    headers: await appviewPageHeaders(
+      request.headers,
+      currentUrl,
+      bodyless,
+    ),
     body: requestBody,
     redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
@@ -328,7 +336,7 @@ export async function proxyAppviewApiResponse(
 
   const res = await fetch(url, {
     method: request.method,
-    headers: appviewRequestHeaders(request.headers, currentUrl),
+    headers: await appviewRequestHeaders(request.headers, currentUrl),
     body: requestBody,
     redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
@@ -448,20 +456,20 @@ export async function getPublicHostDetail(
   return { host, claim };
 }
 
-function appviewPageHeaders(
+async function appviewPageHeaders(
   requestHeaders: Headers,
   currentUrl: URL,
   bodyless: boolean,
-): Headers {
-  const headers = appviewRequestHeaders(requestHeaders, currentUrl);
+): Promise<Headers> {
+  const headers = await appviewRequestHeaders(requestHeaders, currentUrl);
   if (bodyless) headers.delete("content-type");
   return headers;
 }
 
-function appviewRequestHeaders(
+async function appviewRequestHeaders(
   requestHeaders: Headers,
   currentUrl: URL,
-): Headers {
+): Promise<Headers> {
   const headers = new Headers();
   for (
     const name of [
@@ -483,6 +491,10 @@ function appviewRequestHeaders(
   headers.set("x-forwarded-host", currentUrl.host);
   headers.set("x-forwarded-proto", currentUrl.protocol.replace(":", ""));
   headers.set("x-atmosphere-public-origin", currentUrl.origin);
+  headers.set(
+    PROXY_CLIENT_KEY_HEADER,
+    await createProxyClientKey(requestHeaders),
+  );
   return headers;
 }
 
@@ -550,7 +562,7 @@ export function proxiedHeadersForTest(
 export function appviewRequestHeadersForTest(
   requestHeaders: Headers,
   currentUrl: URL,
-): Headers {
+): Promise<Headers> {
   return appviewRequestHeaders(requestHeaders, currentUrl);
 }
 

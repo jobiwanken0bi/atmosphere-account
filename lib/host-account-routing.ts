@@ -12,6 +12,7 @@ export interface HostAccountRouteState {
   source:
     | "explicit_account_management_url"
     | "legacy_dashboard_url"
+    | "derived_service_endpoint"
     | "unknown";
 }
 
@@ -29,12 +30,17 @@ export function buildHostAccountRoute(input: {
     input.host?.accountManagementUrl,
   );
   const legacyDashboardUrl = safePublicHostUrl(input.host?.dashboardUrl);
+  const derivedAccountManagementUrl = derivePdsAccountManagementUrl(
+    serviceEndpoint,
+  );
   const accountManagementUrl = explicitAccountManagementUrl ??
-    legacyDashboardUrl;
+    legacyDashboardUrl ?? derivedAccountManagementUrl;
   const source = explicitAccountManagementUrl
     ? "explicit_account_management_url"
     : legacyDashboardUrl
     ? "legacy_dashboard_url"
+    : derivedAccountManagementUrl
+    ? "derived_service_endpoint"
     : "unknown";
 
   return {
@@ -47,6 +53,22 @@ export function buildHostAccountRoute(input: {
     manifestUrl: safePublicHostUrl(input.host?.capabilityManifestUrl),
     source,
   };
+}
+
+/**
+ * The reference PDS serves its account-management UI from `/account` on the
+ * PDS origin. Hosts can still publish an explicit override for custom setups.
+ */
+export function derivePdsAccountManagementUrl(
+  serviceEndpoint: string | null | undefined,
+): string | null {
+  const endpoint = safePublicHostUrl(serviceEndpoint);
+  if (!endpoint) return null;
+  const url = new URL(endpoint);
+  url.pathname = "/account";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
 }
 
 export function safePublicHostUrl(

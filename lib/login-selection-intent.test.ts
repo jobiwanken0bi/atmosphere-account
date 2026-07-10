@@ -1,6 +1,6 @@
 import {
   createLoginSelectionIntent,
-  verifyLoginSelectionIntent,
+  readLoginSelectionIntent,
 } from "./login-selection-intent.ts";
 
 const request = {
@@ -24,27 +24,13 @@ Deno.test("selection intent is bound to the complete login request", async () =>
     secret,
   });
   assertEquals(
-    await verifyLoginSelectionIntent(token, request, "did:plc:one", {
-      now: now + 60_000,
-      secret,
-    }),
-    true,
-  );
-  assertEquals(
-    await verifyLoginSelectionIntent(token, request, "did:plc:two", {
-      now,
-      secret,
-    }),
-    false,
-  );
-  assertEquals(
-    await verifyLoginSelectionIntent(
-      token,
-      { ...request, returnUri: "https://evil.example/callback" },
-      "did:plc:one",
-      { now, secret },
+    JSON.stringify(
+      await readLoginSelectionIntent(token, {
+        now: now + 60_000,
+        secret,
+      }),
     ),
-    false,
+    JSON.stringify({ did: "did:plc:one", request }),
   );
 });
 
@@ -55,17 +41,17 @@ Deno.test("selection intent rejects tampering and expiry", async () => {
   });
   const tampered = `${token.slice(0, -1)}${token.endsWith("a") ? "b" : "a"}`;
   assertEquals(
-    await verifyLoginSelectionIntent(tampered, request, "did:plc:one", {
+    await readLoginSelectionIntent(tampered, {
       now,
       secret,
     }),
-    false,
+    null,
   );
   assertEquals(
-    await verifyLoginSelectionIntent(token, request, "did:plc:one", {
+    await readLoginSelectionIntent(token, {
       now: now + 6 * 60_000,
       secret,
     }),
-    false,
+    null,
   );
 });

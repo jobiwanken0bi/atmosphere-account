@@ -1,4 +1,5 @@
 import { type AccountHost, type AccountHostLookup } from "./account-hosts.ts";
+import { buildHostAccountRoute } from "./host-account-routing.ts";
 import { safePublicHostUrl } from "./host-account-routing.ts";
 import {
   isPrivateNetworkHostname,
@@ -181,9 +182,8 @@ export function buildHostDashboardState(input: {
   if (!hostName) return null;
   const displayName = input.host?.displayName ?? input.lookup?.displayName ??
     hostName;
-  const accountManagementUrl = safePublicHostUrl(
-    input.host?.accountManagementUrl,
-  ) ?? safePublicHostUrl(input.host?.dashboardUrl);
+  const accountManagementUrl = buildHostAccountRoute(input)
+    ?.accountManagementUrl ?? null;
   const dashboardUrl = accountManagementUrl;
   const supportUrl = safePublicHostUrl(input.host?.supportUrl) ??
     safePublicHostUrl(input.host?.homepageUrl);

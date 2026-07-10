@@ -1,6 +1,7 @@
 import { define } from "../../../../utils.ts";
 import { inferHostNetworkLocation } from "../../../../lib/host-location-inference.ts";
 import { rejectLargeRequest } from "../../../../lib/security.ts";
+import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
 interface InferRequestBody {
   host?: string;
@@ -10,7 +11,7 @@ interface InferRequestBody {
 const MAX_LOCATION_INFER_BODY_BYTES = 8_192;
 
 export const handler = define.handlers({
-  async POST(ctx) {
+  POST: withRateLimit(async (ctx) => {
     if (!ctx.state.user) {
       return json({ ok: false, message: "Sign in to infer host location." }, {
         status: 401,
@@ -24,7 +25,11 @@ export const handler = define.handlers({
       serviceEndpoint: body?.serviceEndpoint,
     });
     return json(result, { status: result.ok ? 200 : 422 });
-  },
+  }, {
+    scope: "host-location-infer",
+    capacity: 20,
+    refillMs: 60_000,
+  }),
 });
 
 async function readBody(req: Request): Promise<InferRequestBody | null> {

@@ -214,18 +214,21 @@ export function publicJwkOnly(jwk: JsonWebKey): JsonWebKey {
 
 /* ---------------- HMAC (HS256) for cookies ---------------- */
 
-let _hmacKey: CryptoKey | null = null;
+const _hmacKeys = new Map<string, Promise<CryptoKey>>();
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
-  if (_hmacKey) return _hmacKey;
-  _hmacKey = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"],
-  );
-  return _hmacKey;
+  let key = _hmacKeys.get(secret);
+  if (!key) {
+    key = crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign", "verify"],
+    );
+    _hmacKeys.set(secret, key);
+  }
+  return await key;
 }
 
 export async function hmacSign(secret: string, data: string): Promise<string> {

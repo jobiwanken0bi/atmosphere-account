@@ -11,16 +11,17 @@ conformance tests, and a route from the user's Atmosphere account page to
 host-owned controls. Atmosphere does not implement the PDS account-management
 tools itself.
 
-For a PDS service endpoint like `https://pds.example`, `/account` is the
-recommended convention when the host supports the reference account-management
-surface:
+The reference PDS now serves account management at `/account`. For a PDS service
+endpoint like `https://pds.example`, Atmosphere derives:
 
 ```txt
 https://pds.example/account
 ```
 
-A host should publish an explicit account-management URL in
-`account.atmosphere.host.service` once the destination is known to work.
+Hosts with a custom route can publish an explicit account-management URL in
+`account.atmosphere.host.service`, which takes precedence over the derived URL.
+See the official
+[AT Protocol account-management guide](https://atproto.com/guides/account-management).
 
 ## Host Service Record
 
@@ -40,9 +41,9 @@ The routing source of truth is the host service record:
 }
 ```
 
-If `accountManagementUrl` is omitted, Atmosphere does not show a direct
-host-management button. The host homepage remains a marketing or support link;
-it is not used as an account-management fallback.
+If `accountManagementUrl` is omitted, Atmosphere links to `/account` on the
+declared `serviceEndpoint`. The host homepage remains a marketing or support
+link; it is never used as an account-management fallback.
 
 ## Optional Compatibility Manifest
 
@@ -123,8 +124,8 @@ states honestly and should not imply it can perform host-owned actions.
 Atmosphere `/account` should:
 
 - show the current account, avatar, handle, and friendly host name,
-- provide one primary "Manage account at host" route when the host publishes a
-  working account page URL,
+- provide one primary "Manage account at host" route derived from the PDS
+  endpoint or supplied as an explicit override,
 - show Atmosphere Login picker connections,
 - show remembered accounts for this browser,
 - hide technical identifiers behind disclosure UI,

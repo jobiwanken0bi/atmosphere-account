@@ -20,6 +20,7 @@ import {
   splitAllowedReturnUris,
 } from "../../../../lib/atmosphere-login.ts";
 import { rejectLargeRequest } from "../../../../lib/security.ts";
+import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
 
 interface DeveloperAppFormValues {
   appName: string;
@@ -101,6 +102,13 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return redirectToSignin(ctx.url);
+
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "developer-app-update",
+      capacity: 20,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
 
     const large = rejectLargeRequest(
       ctx.req,

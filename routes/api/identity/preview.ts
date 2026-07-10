@@ -13,6 +13,7 @@ import { define } from "../../../utils.ts";
 import { isDid, isHandle, resolveIdentity } from "../../../lib/identity.ts";
 import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
 import { getBskyProfile } from "../../../lib/pds.ts";
+import { withRateLimit } from "../../../lib/rate-limit.ts";
 
 const BSKY_SEARCH =
   "https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors";
@@ -107,7 +108,7 @@ async function searchActors(query: string): Promise<PreviewMatch[]> {
 }
 
 export const handler = define.handlers({
-  async GET(ctx) {
+  GET: withRateLimit(async (ctx) => {
     const raw = (ctx.url.searchParams.get("handle") ??
       ctx.url.searchParams.get("q") ?? "").trim()
       .replace(/^@/, "");
@@ -173,5 +174,9 @@ export const handler = define.handlers({
     } catch {
       return json({ found: false, reason: "not_found" });
     }
-  },
+  }, {
+    scope: "identity-preview",
+    capacity: 120,
+    refillMs: 60_000,
+  }),
 });

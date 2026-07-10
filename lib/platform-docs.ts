@@ -2021,7 +2021,7 @@ return Response.redirect(oauthUrl);`,
       "Publish a host service record so Atmosphere can send users to the account page where their PDS host manages account controls.",
     summary: [
       "Hosts declare their PDS service endpoint in `account.atmosphere.host.service`.",
-      "Hosts can declare a working `accountManagementUrl`; `/account` on the PDS remains the recommended convention when supported.",
+      "Atmosphere derives `/account` from the PDS service endpoint; hosts can declare `accountManagementUrl` as a custom-route override.",
       "The PDS account page owns devices, OAuth grants, passwords, recovery, backups, and migration.",
       "Atmosphere does not implement those account-management tools; it links to the host that does.",
       "Optional manifests are compatibility metadata, not the primary account surface and not a delegation of account authority.",
@@ -2070,7 +2070,7 @@ return Response.redirect(oauthUrl);`,
               {
                 title: "Host service record",
                 body:
-                  "The host declares its PDS endpoint and optional account management URL.",
+                  "The host declares its PDS endpoint and an optional custom account-page override.",
               },
               {
                 title: "PDS account page",
@@ -2094,7 +2094,7 @@ return Response.redirect(oauthUrl);`,
           {
             type: "paragraph",
             body:
-              "Hosts publish `account.atmosphere.host.service` from the Atmosphere account that represents the host. The `serviceEndpoint` is the canonical PDS origin; `accountManagementUrl` should be set when the host has a working account page. `/account` on the PDS is the recommended convention when supported. Do not point this field at a marketing homepage unless that page actually manages accounts.",
+              "Hosts publish `account.atmosphere.host.service` from the Atmosphere account that represents the host. The `serviceEndpoint` is the canonical PDS origin, and Atmosphere derives its `/account` page. Set `accountManagementUrl` only as an override for a custom account-management route. Never point it at a marketing homepage.",
           },
           {
             type: "code",
@@ -2161,7 +2161,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Directory policy",
             body:
-              "Claiming proves the host account can manage the listing. A host should publish a working account page URL before Atmosphere shows a direct Manage account at host link; richer compatibility badges still require validated metadata.",
+              "Claiming proves the host account can manage the listing. Atmosphere links to `/account` on the declared PDS endpoint unless the host publishes a custom override; richer compatibility badges still require validated metadata.",
           },
           {
             type: "endpoint",

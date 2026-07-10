@@ -212,7 +212,7 @@ Deno.test("proxied appview response headers strip transport metadata but keep co
   assertEquals(headers.getSetCookie().length, 2);
 });
 
-Deno.test("appview request headers preserve browser CSRF context and overwrite proxy-owned headers", () => {
+Deno.test("appview request headers preserve browser CSRF context and overwrite proxy-owned headers", async () => {
   const input = new Headers({
     accept: "text/html",
     "accept-language": "en-US",
@@ -225,12 +225,13 @@ Deno.test("appview request headers preserve browser CSRF context and overwrite p
     "user-agent": "test-agent",
     "x-atmosphere-login": "1",
     "x-atmosphere-login-bodyless": "1",
+    "x-atmosphere-client-key": "attacker-controlled",
     "x-atmosphere-public-origin": "https://evil.example",
     "x-forwarded-host": "evil.example",
     "x-forwarded-proto": "http",
   });
 
-  const headers = appviewRequestHeadersForTest(
+  const headers = await appviewRequestHeadersForTest(
     input,
     new URL("https://atmosphereaccount.com/account"),
   );
@@ -246,6 +247,10 @@ Deno.test("appview request headers preserve browser CSRF context and overwrite p
   assertEquals(headers.get("user-agent"), "test-agent");
   assertEquals(headers.get("x-atmosphere-login"), "1");
   assertEquals(headers.get("x-atmosphere-login-bodyless"), "1");
+  assertEquals(
+    headers.get("x-atmosphere-client-key") === "attacker-controlled",
+    false,
+  );
   assertEquals(headers.get("x-forwarded-host"), "atmosphereaccount.com");
   assertEquals(headers.get("x-forwarded-proto"), "https");
   assertEquals(

@@ -13,6 +13,10 @@
 import { define } from "../utils.ts";
 import { type DbClient, withDb } from "./db.ts";
 import { reportIpSecret } from "./env.ts";
+import {
+  bestEffortCallerAddress,
+  callerRequestIdentity,
+} from "./proxy-client-key.ts";
 
 /** Bucket capacity (max burst). */
 const CAPACITY = 60;
@@ -34,6 +38,7 @@ export interface DurableRateLimitOptions extends RateLimitOptions {
   withDb?: <T>(fn: (c: DbClient) => Promise<T>) => Promise<T>;
   fallbackToMemory?: boolean;
   keySecret?: string;
+  proxySigningSecret?: string;
 }
 
 export type RateLimitResult =
@@ -96,14 +101,7 @@ function take(
  * is fine for "soft" limiting.
  */
 function callerIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const real = req.headers.get("x-real-ip");
-  if (real) return real.trim();
-  return "anonymous";
+  return bestEffortCallerAddress(req.headers);
 }
 
 export function checkRateLimit(
@@ -127,9 +125,13 @@ export async function checkDurableRateLimit(
   const refillMs = positiveInteger(options.refillMs, REFILL_MS);
   const scope = options.scope ?? "default";
   const now = options.now ?? Date.now();
+  const identity = await callerRequestIdentity(req, {
+    now,
+    signingSecret: options.proxySigningSecret,
+  });
   const bucketKey = await durableBucketKey(
     scope,
-    callerIp(req),
+    identity,
     options.keySecret ?? reportIpSecret(),
   );
   const run = options.withDb ?? withDb;
@@ -139,8 +141,43 @@ export async function checkDurableRateLimit(
     if (options.fallbackToMemory === false) {
       throw new Error("rate limit failed");
     }
-    return checkRateLimit(req, options);
+    return take(`${scope}:${identity}`, now, capacity, refillMs)
+      ? { ok: true }
+      : { ok: false, retryAfter: Math.ceil(refillMs / 1000) };
   }
+}
+
+export async function checkProxyAwareRateLimit(
+  req: Request,
+  options: RateLimitOptions & { proxySigningSecret?: string } = {},
+): Promise<RateLimitResult> {
+  const identity = await callerRequestIdentity(req, {
+    now: options.now,
+    signingSecret: options.proxySigningSecret,
+  });
+  const capacity = positiveInteger(options.capacity, CAPACITY);
+  const refillMs = positiveInteger(options.refillMs, REFILL_MS);
+  const scope = options.scope ?? "default";
+  const now = options.now ?? Date.now();
+  return take(`${scope}:${identity}`, now, capacity, refillMs)
+    ? { ok: true }
+    : { ok: false, retryAfter: Math.ceil(refillMs / 1000) };
+}
+
+export async function enforceDurableRateLimit(
+  req: Request,
+  options: DurableRateLimitOptions = {},
+): Promise<Response | null> {
+  const result = await checkDurableRateLimit(req, options);
+  if (result.ok) return null;
+  return new Response(JSON.stringify({ error: "rate_limited" }), {
+    status: 429,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "retry-after": String(result.retryAfter),
+      "cache-control": "no-store",
+    },
+  });
 }
 
 async function durableBucketKey(
@@ -263,8 +300,8 @@ export function withRateLimit<H extends FreshHandler>(
   handler: H,
   options: RateLimitOptions = {},
 ): H {
-  return ((ctx) => {
-    const result = checkRateLimit(ctx.req, options);
+  return (async (ctx) => {
+    const result = await checkProxyAwareRateLimit(ctx.req, options);
     if (!result.ok) {
       return new Response(
         JSON.stringify({ error: "rate_limited" }),

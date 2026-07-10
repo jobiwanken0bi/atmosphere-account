@@ -22,6 +22,7 @@ import { loadSession } from "../../lib/oauth.ts";
 import { getBskyProfile, uploadBlob } from "../../lib/pds.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
+import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
 
 interface RegisterValues {
   host: string;
@@ -92,6 +93,12 @@ export const handler = define.handlers({
     if (proxied) return proxied;
 
     if (!ctx.state.user) return redirectToSignin(ctx.url);
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "host-registration",
+      capacity: 12,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
     const large = rejectLargeRequest(ctx.req, MAX_HOST_REGISTER_FORM_BYTES);
     if (large) return large;
     const form = await ctx.req.formData().catch(() => null);

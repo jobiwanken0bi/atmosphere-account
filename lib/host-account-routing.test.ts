@@ -56,12 +56,15 @@ function host(overrides: Partial<AccountHost> = {}): AccountHost {
   };
 }
 
-Deno.test("buildHostAccountRoute does not derive account page from service endpoint", () => {
+Deno.test("buildHostAccountRoute derives the reference account page from the PDS endpoint", () => {
   const route = buildHostAccountRoute({ host: host() });
 
   assert(route);
-  assertEquals(route.accountManagementUrl, null);
-  assertEquals(route.source, "unknown");
+  assertEquals(
+    route.accountManagementUrl,
+    "https://pds.example.host/account",
+  );
+  assertEquals(route.source, "derived_service_endpoint");
   assertEquals(route.directoryUrl, "/hosts/example.host");
 });
 
@@ -95,8 +98,11 @@ Deno.test("buildHostAccountRoute rejects unsafe persisted account management URL
     });
 
     assert(route);
-    assertEquals(route.accountManagementUrl, null);
-    assertEquals(route.source, "unknown");
+    assertEquals(
+      route.accountManagementUrl,
+      "https://pds.example.host/account",
+    );
+    assertEquals(route.source, "derived_service_endpoint");
   }
 });
 
@@ -109,8 +115,36 @@ Deno.test("buildHostAccountRoute rejects unsafe legacy dashboard URLs", () => {
   });
 
   assert(route);
-  assertEquals(route.accountManagementUrl, null);
-  assertEquals(route.source, "unknown");
+  assertEquals(route.accountManagementUrl, "https://pds.example.host/account");
+  assertEquals(route.source, "derived_service_endpoint");
+});
+
+Deno.test("buildHostAccountRoute keeps a known legacy URL ahead of the derived route", () => {
+  const route = buildHostAccountRoute({
+    host: host({
+      dashboardUrl: "https://accounts.example.host/settings",
+    }),
+  });
+
+  assert(route);
+  assertEquals(
+    route.accountManagementUrl,
+    "https://accounts.example.host/settings",
+  );
+  assertEquals(route.source, "legacy_dashboard_url");
+});
+
+Deno.test("buildHostAccountRoute normalizes a PDS endpoint to its origin", () => {
+  const route = buildHostAccountRoute({
+    host: host({
+      serviceEndpoint: "https://pds.example.host/xrpc?ignored=1#ignored",
+      dashboardUrl: null,
+    }),
+  });
+
+  assert(route);
+  assertEquals(route.accountManagementUrl, "https://pds.example.host/account");
+  assertEquals(route.source, "derived_service_endpoint");
 });
 
 Deno.test("buildHostAccountRoute does not fall back to homepage as an account page", () => {
@@ -141,6 +175,9 @@ Deno.test("buildHostAccountRoute can use OAuth-observed lookup before a full hos
 
   assert(route);
   assertEquals(route.displayName, "Observed Host");
-  assertEquals(route.accountManagementUrl, null);
-  assertEquals(route.source, "unknown");
+  assertEquals(
+    route.accountManagementUrl,
+    "https://pds.observed.host/account",
+  );
+  assertEquals(route.source, "derived_service_endpoint");
 });

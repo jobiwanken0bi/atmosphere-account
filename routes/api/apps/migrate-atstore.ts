@@ -16,6 +16,7 @@ import { getEffectiveAccountType } from "../../../lib/account-types.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import { getProfileRecord } from "../../../lib/pds.ts";
 import { getProfileByDid } from "../../../lib/registry.ts";
+import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -32,6 +33,12 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "app-record-migration",
+      capacity: 8,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );

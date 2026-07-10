@@ -88,7 +88,9 @@ Users manage the resulting PDS OAuth grants, devices, passwords, account
 security, backups, recovery, deletion, and migration at their host-owned PDS
 account page, usually `/account` on their PDS service endpoint. Atmosphere Login
 can show picker history and apps that used the Atmosphere picker; it must not
-imply it can revoke every PDS-issued grant or operate PDS account controls.
+imply it can revoke every PDS-issued grant or operate PDS account controls. The
+reference interface is documented in the official
+[AT Protocol account-management guide](https://atproto.com/guides/account-management).
 
 ## Server Helper
 

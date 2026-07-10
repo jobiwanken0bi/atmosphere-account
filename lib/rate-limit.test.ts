@@ -4,6 +4,10 @@ import {
   checkRateLimit,
   withRateLimit,
 } from "./rate-limit.ts";
+import {
+  createProxyClientKey,
+  PROXY_CLIENT_KEY_HEADER,
+} from "./proxy-client-key.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   const a = JSON.stringify(actual);
@@ -210,6 +214,51 @@ Deno.test("durable rate limit bucket keys do not store raw IP addresses", async 
   const key = [...fake.rows.keys()][0] ?? "";
   assertEquals(key.startsWith("privacy-key-test:"), true);
   assertEquals(key.includes("203.0.113.21"), false);
+});
+
+Deno.test("durable limits share a verified edge identity across proxy hops", async () => {
+  const now = Date.now();
+  const signingSecret = "proxy-signing-secret";
+  const token = await createProxyClientKey(
+    new Headers({ "x-forwarded-for": "203.0.113.30" }),
+    {
+      now,
+      identitySecret: "proxy-identity-secret",
+      signingSecret,
+    },
+  );
+  const proxiedRequest = (railwayAddress: string) =>
+    new Request("https://appview.example/oauth/login", {
+      headers: {
+        "x-forwarded-for": railwayAddress,
+        [PROXY_CLIENT_KEY_HEADER]: token,
+      },
+    });
+  const fake = fakeRateLimitDb();
+  const options = {
+    scope: "proxy-identity-test",
+    capacity: 1,
+    refillMs: 60_000,
+    keySecret: "bucket-secret",
+    proxySigningSecret: signingSecret,
+    withDb: fake.withDb,
+    now,
+  };
+
+  assertEquals(
+    await checkDurableRateLimit(
+      proxiedRequest("198.51.100.1"),
+      options,
+    ),
+    { ok: true },
+  );
+  assertEquals(
+    await checkDurableRateLimit(
+      proxiedRequest("198.51.100.2"),
+      options,
+    ),
+    { ok: false, retryAfter: 60 },
+  );
 });
 
 Deno.test("durable rate limits fall back to memory if DB is unavailable", async () => {

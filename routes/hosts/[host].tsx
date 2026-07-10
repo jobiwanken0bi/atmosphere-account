@@ -179,7 +179,7 @@ function HostDetailPage(
                     rel="noopener noreferrer"
                     class="profile-form-button-secondary profile-form-button-secondary--lg"
                   >
-                    Manage account
+                    Manage account at host
                   </a>
                 )}
               </div>

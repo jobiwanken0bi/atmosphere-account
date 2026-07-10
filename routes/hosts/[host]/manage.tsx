@@ -34,6 +34,7 @@ import {
   isPrivateNetworkUrl,
   rejectLargeRequest,
 } from "../../../lib/security.ts";
+import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 
 type ManageState = "ready" | "not-claimed" | "not-owner" | "error";
 
@@ -135,6 +136,13 @@ export const handler = define.handlers({
       (err) => appviewUnavailable("host manage update", err),
     );
     if (proxied) return proxied;
+
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "host-management-update",
+      capacity: 20,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
 
     const large = rejectLargeRequest(ctx.req, MAX_HOST_MANAGE_FORM_BYTES);
     if (large) return large;
@@ -832,7 +840,9 @@ function ManageBody(
             </span>
           </label>
           <label class="profile-form-field">
-            <span class="profile-form-label">Account management URL</span>
+            <span class="profile-form-label">
+              Account management URL override
+            </span>
             <input
               class="profile-form-input"
               type="url"
@@ -841,8 +851,8 @@ function ManageBody(
               placeholder="https://pds.example/account"
             />
             <span class="profile-form-hint">
-              Optional. Add this when the host has a working account page for
-              passwords, sessions, connected apps, and recovery.
+              Optional. Atmosphere uses `/account` on the PDS endpoint by
+              default. Add an override only when this host uses another URL.
             </span>
           </label>
           <label class="profile-form-field">
