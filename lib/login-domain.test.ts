@@ -8,6 +8,7 @@ function assertEquals(actual: unknown, expected: unknown): void {
 
 Deno.test("login domain serves generated picker assets in place", () => {
   assertEquals(isAllowedLoginHostPathForTest("/assets/client-entry.js"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/login-handoff.js"), true);
   assertEquals(
     isAllowedLoginHostPathForTest(
       "/assets/fresh-island__SignInForm-B3cwBuRQ.js",

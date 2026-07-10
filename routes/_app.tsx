@@ -126,6 +126,7 @@ export default define.page(function App(ctx) {
           <Component />
         </I18nProvider>
         <script type="module" src="/page-skeleton.js" />
+        <script type="module" src="/login-handoff.js" />
         {!isStandaloneLoginPicker && (
           <script type="module" src="/nav-scroll.js" />
         )}

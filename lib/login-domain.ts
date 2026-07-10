@@ -22,6 +22,7 @@ const LOGIN_HOST_PATHS = [
   "/union.svg",
   "/styles.css",
   "/signin-preview.js",
+  "/login-handoff.js",
   "/page-skeleton.js",
   "/atmosphere-login.js",
   "/atmosphere-login-server.js",

@@ -19,6 +19,11 @@ import {
 } from "../../lib/appview-client.ts";
 import { loginPickerOriginForRequest } from "../../lib/atmosphere-origins.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
+import {
+  browserHandoffError,
+  browserHandoffResponse,
+  wantsBrowserHandoffJson,
+} from "../../lib/browser-handoff.ts";
 import { checkDurableRateLimit } from "../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 
@@ -64,6 +69,7 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
+    const wantsJson = wantsBrowserHandoffJson(ctx.req);
     let request: LoginRequest;
     try {
       const limited = await checkDurableRateLimit(
@@ -71,16 +77,11 @@ export const handler = define.handlers({
         PICKER_SELECTION_RATE_LIMIT,
       );
       if (!limited.ok) {
-        return new Response(
+        return browserHandoffError(
           "Too many account picker attempts. Try again soon.",
-          {
-            status: 429,
-            headers: {
-              "cache-control": "no-store",
-              "content-type": "text/plain; charset=utf-8",
-              "retry-after": String(limited.retryAfter),
-            },
-          },
+          429,
+          wantsJson,
+          { "retry-after": String(limited.retryAfter) },
         );
       }
       const large = rejectLargeRequest(ctx.req, MAX_PICKER_FORM_BYTES);
@@ -93,9 +94,11 @@ export const handler = define.handlers({
       const did = String(form.get("did") ?? "").trim();
       const selected = pickerAccounts.find((account) => account.did === did);
       if (!selected) {
-        return new Response("account not available in this browser", {
-          status: 403,
-        });
+        return browserHandoffError(
+          "account not available in this browser",
+          403,
+          wantsJson,
+        );
       }
       const { token } = await signLoginSelection({
         app,
@@ -112,28 +115,22 @@ export const handler = define.handlers({
         did: selected.did,
         handle: selected.handle,
       }).catch(() => {});
-      return new Response(null, {
-        status: 303,
-        headers: {
-          "cache-control": "no-store",
-          location: appendSelectionToReturnUri({
-            returnUri,
-            clientId: app.clientId,
-            did: selected.did,
-            handle: selected.handle,
-            issuer,
-            state: request.state,
-            token,
-          }),
-        },
-      });
+      return browserHandoffResponse(
+        appendSelectionToReturnUri({
+          returnUri,
+          clientId: app.clientId,
+          did: selected.did,
+          handle: selected.handle,
+          issuer,
+          state: request.state,
+          token,
+        }),
+        { json: wantsJson },
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const status = err instanceof LoginRequestError ? err.status : 400;
-      return new Response(message, {
-        status,
-        headers: { "cache-control": "no-store" },
-      });
+      return browserHandoffError(message, status, wantsJson);
     }
   },
 });

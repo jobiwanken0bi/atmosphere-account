@@ -29,6 +29,11 @@ import {
 import { readRememberedAccountsFromHeader } from "../../lib/remembered-accounts.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
+import {
+  browserHandoffError,
+  browserHandoffResponse,
+  wantsBrowserHandoffJson,
+} from "../../lib/browser-handoff.ts";
 
 const SWITCH_SESSION_TIMEOUT_MS = 5_000;
 const MAX_SWITCH_BODY_BYTES = 8_192;
@@ -69,12 +74,13 @@ export function buildSwitchReauthLocation(
   return `/oauth/login?${location.toString()}`;
 }
 
-function redirectToReauth(handle: string, next: string | null): Response {
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: buildSwitchReauthLocation(handle, next),
-    },
+function redirectToReauth(
+  req: Request,
+  handle: string,
+  next: string | null,
+): Response {
+  return browserHandoffResponse(buildSwitchReauthLocation(handle, next), {
+    json: wantsBrowserHandoffJson(req),
   });
 }
 
@@ -104,17 +110,20 @@ async function handle(ctx: { req: Request }): Promise<Response> {
 
   const large = rejectLargeRequest(ctx.req, MAX_SWITCH_BODY_BYTES);
   if (large) return large;
+  const wantsJson = wantsBrowserHandoffJson(ctx.req);
   const { did, next } = await readInput(ctx.req);
-  if (!did) return new Response("missing did", { status: 400 });
+  if (!did) return browserHandoffError("missing did", 400, wantsJson);
 
   const remembered = await readRememberedAccountsFromHeader(
     ctx.req.headers.get("cookie"),
   );
   const target = remembered.find((a) => a.did === did);
   if (!target) {
-    return new Response("account not remembered on this device", {
-      status: 403,
-    });
+    return browserHandoffError(
+      "account not remembered on this device",
+      403,
+      wantsJson,
+    );
   }
 
   /** Try refreshing the OAuth tokens for this DID. If anything goes
@@ -126,7 +135,7 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     SWITCH_SESSION_TIMEOUT_MS,
   );
   if (!oauthSession) {
-    return redirectToReauth(target.handle, next);
+    return redirectToReauth(ctx.req, target.handle, next);
   }
 
   /** Drop the previous app session row (if any) so we don't leak
@@ -141,18 +150,18 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     () => null,
   );
 
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: next ??
-        (accountType === "project"
-          ? "/apps/manage"
-          : accountType === "user"
-          ? "/account"
-          : "/account/type"),
-      "set-cookie": buildSessionCookie(cookieValue),
+  return browserHandoffResponse(
+    next ??
+      (accountType === "project"
+        ? "/apps/manage"
+        : accountType === "user"
+        ? "/account"
+        : "/account/type"),
+    {
+      json: wantsJson,
+      headers: { "set-cookie": buildSessionCookie(cookieValue) },
     },
-  });
+  );
 }
 
 export const handler = define.handlers({ POST: handle });
