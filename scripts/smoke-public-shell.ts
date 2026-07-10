@@ -111,7 +111,13 @@ async function fetchUnknownJson(
   try {
     body = JSON.parse(text);
   } catch {
-    throw new Error(`${url} did not return valid JSON`);
+    const preview = text.slice(0, 200).replaceAll(/\s+/g, " ");
+    throw new Error(
+      `${url} did not return valid JSON (HTTP ${response.status}, ` +
+        `content-type ${
+          response.headers.get("content-type") ?? "(missing)"
+        }, body ${JSON.stringify(preview)})`,
+    );
   }
   return { response, body };
 }

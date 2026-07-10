@@ -8,4 +8,15 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
   if (!source.includes("globalThis.location.replace(target.href)")) {
     throw new Error("Expected history-replacing browser navigation");
   }
+  for (const path of ["/login/select", "/oauth/switch"]) {
+    if (!source.includes(`"${path}"`)) {
+      throw new Error(`Expected enhanced handoff support for ${path}`);
+    }
+  }
+  if (!source.includes("body: urlEncodedForm(form)")) {
+    throw new Error("Expected a fixed URL-encoded proxy body");
+  }
+  if (!source.includes("HANDOFF_TIMEOUT_MS")) {
+    throw new Error("Expected a bounded browser handoff");
+  }
 });
