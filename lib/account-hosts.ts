@@ -613,6 +613,8 @@ function normalizeSource(value: unknown): HostSource {
 interface HostProfile {
   did: string;
   handle: string;
+  displayName: string | null;
+  description: string | null;
   avatarUrl: string | null;
 }
 
@@ -633,13 +635,21 @@ async function fetchHostProfile(handle: string): Promise<HostProfile | null> {
   const json = await res.json() as Record<string, unknown>;
   const did = typeof json.did === "string" ? json.did : "";
   const resolvedHandle = typeof json.handle === "string" ? json.handle : "";
+  const displayName = typeof json.displayName === "string" &&
+      json.displayName.trim()
+    ? json.displayName.trim().slice(0, 80)
+    : null;
+  const description = typeof json.description === "string" &&
+      json.description.trim()
+    ? json.description.trim().slice(0, 600)
+    : null;
   const avatarUrl = typeof json.avatar === "string" ? json.avatar : null;
   if (!did || !resolvedHandle) return null;
-  return { did, handle: resolvedHandle, avatarUrl };
+  return { did, handle: resolvedHandle, displayName, description, avatarUrl };
 }
 
 function hostNeedsProfileRefresh(host: AccountHost, ts: number): boolean {
-  if (!profileHandleForHost(host)) return false;
+  if (profileHandleCandidatesForHost(host).length === 0) return false;
   const checkedAt = host.profileCheckedAt ?? 0;
   const ttl = host.avatarUrl
     ? HOST_PROFILE_REFRESH_MS
@@ -647,10 +657,22 @@ function hostNeedsProfileRefresh(host: AccountHost, ts: number): boolean {
   return checkedAt <= 0 || ts - checkedAt > ttl;
 }
 
-function profileHandleForHost(host: AccountHost): string | null {
-  const handle = (host.profileHandle ?? host.host).trim().toLowerCase();
+function normalizeHostProfileCandidate(
+  value: string | null | undefined,
+): string | null {
+  const handle = (value ?? "").trim().replace(/^@/, "").toLowerCase();
   if (!handle || handle.includes(":") || !handle.includes(".")) return null;
   return handle;
+}
+
+export function profileHandleCandidatesForHost(
+  host: Pick<AccountHost, "host" | "profileHandle">,
+): string[] {
+  const candidates = [
+    normalizeHostProfileCandidate(host.host),
+    normalizeHostProfileCandidate(host.profileHandle),
+  ].filter((handle): handle is string => !!handle);
+  return [...new Set(candidates)];
 }
 
 function normalizeHandle(value: string | null | undefined): string {
@@ -789,13 +811,25 @@ async function fetchHostProfileRefreshes(
 
   const results: Array<{ host: AccountHost; result: HostProfileResult }> =
     await Promise.all(candidates.map(async (host) => {
+      let hadError = false;
       try {
-        const handle = profileHandleForHost(host);
-        const profile = handle ? await fetchHostProfile(handle) : null;
+        for (const handle of profileHandleCandidatesForHost(host)) {
+          try {
+            const profile = await fetchHostProfile(handle);
+            if (profile) {
+              return {
+                host,
+                result: { status: "found", profile } as const,
+              };
+            }
+          } catch {
+            hadError = true;
+          }
+        }
         return {
           host,
-          result: profile
-            ? ({ status: "found", profile } as const)
+          result: hadError
+            ? ({ status: "error" } as const)
             : ({ status: "miss" } as const),
         };
       } catch {
@@ -822,12 +856,18 @@ async function persistHostProfileRefreshes(
   for (const { host, result } of results) {
     if (result.status === "found") {
       const { profile } = result;
+      const nextDisplayName = hostProfileDisplayName(host, profile);
+      const nextDescription = hostProfileDescription(host, profile);
       await c.execute({
         sql: `UPDATE account_host
-          SET profile_handle = ?, profile_did = ?, avatar_url = ?,
+          SET display_name = ?,
+              description = ?,
+              profile_handle = ?, profile_did = ?, avatar_url = ?,
               profile_checked_at = ?, updated_at = ?
           WHERE host = ?`,
         args: [
+          nextDisplayName,
+          nextDescription,
           profile.handle,
           profile.did,
           profile.avatarUrl,
@@ -837,6 +877,8 @@ async function persistHostProfileRefreshes(
         ],
       });
       refreshed.set(host.host, {
+        displayName: nextDisplayName,
+        description: nextDescription,
         profileHandle: profile.handle,
         profileDid: profile.did,
         avatarUrl: profile.avatarUrl,
@@ -860,6 +902,37 @@ async function persistHostProfileRefreshes(
     }
   }
   return refreshed;
+}
+
+function hostProfileDisplayName(
+  host: AccountHost,
+  profile: HostProfile,
+): string {
+  if (
+    host.source !== "seeded" &&
+    profile.displayName &&
+    (!host.displayName.trim() || host.displayName === host.host)
+  ) {
+    return profile.displayName;
+  }
+  return host.displayName;
+}
+
+function hostProfileDescription(
+  host: AccountHost,
+  profile: HostProfile,
+): string {
+  const genericObservedDescription =
+    "An account host observed from public account activity.";
+  if (
+    host.source !== "seeded" &&
+    profile.description &&
+    (!host.description.trim() ||
+      host.description === genericObservedDescription)
+  ) {
+    return profile.description;
+  }
+  return host.description;
 }
 
 async function ensureSeededHosts(c: DbClient): Promise<void> {

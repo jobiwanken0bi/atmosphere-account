@@ -3,6 +3,7 @@ import {
   lookupAccountHostHint,
   normalizeAccountHostPublicHttpsUrl,
   normalizeAccountHostPublicServiceEndpoint,
+  profileHandleCandidatesForHost,
   validateAccountHostRegistrationInput,
 } from "./account-hosts.ts";
 
@@ -73,6 +74,23 @@ Deno.test("account host hints fall back to observed endpoint names", () => {
     verificationStatus: "observed",
   });
   assertEquals(lookupAccountHostHint(null), null);
+});
+
+Deno.test("host profile refresh checks the host-domain handle before the configured social handle", () => {
+  assertEquals(
+    profileHandleCandidatesForHost({
+      host: "pckt.cafe",
+      profileHandle: "pckt.blog",
+    }),
+    ["pckt.cafe", "pckt.blog"],
+  );
+  assertEquals(
+    profileHandleCandidatesForHost({
+      host: "sprk.so",
+      profileHandle: "sprk.so",
+    }),
+    ["sprk.so"],
+  );
 });
 
 Deno.test("account host public URL normalizer rejects unsafe account links", () => {
