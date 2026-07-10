@@ -87,13 +87,17 @@ export const handler = define.handlers({
       }
       const large = rejectLargeRequest(ctx.req, MAX_PICKER_FORM_BYTES);
       if (large) return large;
-      const form = await ctx.req.formData();
-      const browserDocument = form.get("handoff") === "browser" && !wantsJson;
-      request = readLoginRequestFromForm(form);
+      if (ctx.url.search.length > MAX_PICKER_FORM_BYTES) {
+        return browserHandoffError("request URL too large", 414, wantsJson);
+      }
+      const form = await optionalFormData(ctx.req);
+      const browserDocument = inputValue(ctx.url, form, "handoff") ===
+          "browser" && !wantsJson;
+      request = readLoginRequestFromInput(ctx.url, form);
       const { app, returnUri } = await resolveLoginAppForRequest(request);
       const pickerAccounts = getPickerAccounts(ctx.state);
       const issuer = loginPickerOriginForRequest(ctx.url, ctx.req.headers);
-      const did = String(form.get("did") ?? "").trim();
+      const did = inputValue(ctx.url, form, "did").trim();
       const selected = pickerAccounts.find((account) => account.did === did);
       if (!selected) {
         return browserHandoffError(
@@ -148,13 +152,37 @@ function appviewUnavailable(scope: string, err: unknown): Response {
   });
 }
 
-function readLoginRequestFromForm(form: FormData): LoginRequest {
-  const url = new URL("https://local.invalid/login/select");
+async function optionalFormData(req: Request): Promise<FormData> {
+  const contentType = req.headers.get("content-type") ?? "";
+  return contentType
+    ? await req.formData().catch(() => new FormData())
+    : new FormData();
+}
+
+function inputValue(sourceUrl: URL, form: FormData, key: string): string {
+  const formValue = form.get(key);
+  return typeof formValue === "string"
+    ? formValue
+    : sourceUrl.searchParams.get(key) ?? "";
+}
+
+function readLoginRequestFromInput(
+  sourceUrl: URL,
+  form: FormData,
+): LoginRequest {
+  const requestUrl = new URL("https://local.invalid/login/select");
   for (const key of ["client_id", "return_uri", "state", "scope"]) {
-    const value = form.get(key);
-    if (typeof value === "string" && value) url.searchParams.set(key, value);
+    const value = inputValue(sourceUrl, form, key);
+    if (value) requestUrl.searchParams.set(key, value);
   }
-  return readLoginRequest(url);
+  return readLoginRequest(requestUrl);
+}
+
+export function readLoginRequestFromInputForTest(
+  sourceUrl: URL,
+  form = new FormData(),
+): LoginRequest {
+  return readLoginRequestFromInput(sourceUrl, form);
 }
 
 async function buildPickerPageProps(

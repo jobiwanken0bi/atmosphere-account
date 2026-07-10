@@ -44,6 +44,7 @@ function safeNext(raw: string | null | undefined): string | null {
 
 async function readInput(
   req: Request,
+  url: URL,
 ): Promise<{ did: string | null; next: string | null }> {
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
@@ -56,12 +57,21 @@ async function readInput(
     };
   }
   const form = await req.formData().catch(() => null);
-  if (!form) return { did: null, next: null };
+  if (!form) {
+    return {
+      did: url.searchParams.get("did")?.trim() || null,
+      next: safeNext(url.searchParams.get("next")),
+    };
+  }
   const v = form.get("did");
   const next = form.get("next");
   return {
-    did: typeof v === "string" ? v.trim() : null,
-    next: safeNext(typeof next === "string" ? next : null),
+    did: typeof v === "string"
+      ? v.trim()
+      : url.searchParams.get("did")?.trim() || null,
+    next: safeNext(
+      typeof next === "string" ? next : url.searchParams.get("next"),
+    ),
   };
 }
 
@@ -72,6 +82,12 @@ export function buildSwitchReauthLocation(
   const location = new URLSearchParams({ handle });
   if (next) location.set("next", next);
   return `/oauth/login?${location.toString()}`;
+}
+
+export async function readSwitchInputForTest(
+  req: Request,
+): Promise<{ did: string | null; next: string | null }> {
+  return await readInput(req, new URL(req.url));
 }
 
 function redirectToReauth(
@@ -110,8 +126,15 @@ async function handle(ctx: { req: Request }): Promise<Response> {
 
   const large = rejectLargeRequest(ctx.req, MAX_SWITCH_BODY_BYTES);
   if (large) return large;
+  if (url.search.length > MAX_SWITCH_BODY_BYTES) {
+    return browserHandoffError(
+      "request URL too large",
+      414,
+      wantsBrowserHandoffJson(ctx.req),
+    );
+  }
   const wantsJson = wantsBrowserHandoffJson(ctx.req);
-  const { did, next } = await readInput(ctx.req);
+  const { did, next } = await readInput(ctx.req, url);
   if (!did) return browserHandoffError("missing did", 400, wantsJson);
 
   const remembered = await readRememberedAccountsFromHeader(

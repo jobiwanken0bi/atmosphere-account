@@ -55,13 +55,13 @@ document.addEventListener("submit", async (event) => {
     HANDOFF_TIMEOUT_MS,
   );
   try {
+    const params = urlEncodedForm(form);
+    for (const [name, value] of params) action.searchParams.append(name, value);
     const response = await fetch(action, {
       method: "POST",
-      body: urlEncodedForm(form),
       credentials: "same-origin",
       headers: {
         accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
         "x-atmosphere-login": "1",
       },
       signal: controller.signal,

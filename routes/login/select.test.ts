@@ -1,5 +1,8 @@
 import type { State } from "../../utils.ts";
-import { pickerAccountsForStateForTest } from "./select.tsx";
+import {
+  pickerAccountsForStateForTest,
+  readLoginRequestFromInputForTest,
+} from "./select.tsx";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -112,4 +115,18 @@ Deno.test("login picker prefers hydrated account host endpoint for active sessio
       pdsUrl: "https://pds.hydrated.example",
     },
   ]);
+});
+
+Deno.test("login picker accepts a bodyless POST query handoff", () => {
+  const url = new URL("https://login.atmosphereaccount.com/login/select");
+  url.searchParams.set("client_id", "https://app.example/client.json");
+  url.searchParams.set("return_uri", "https://app.example/callback");
+  url.searchParams.set("state", "state-value");
+
+  assertEquals(readLoginRequestFromInputForTest(url), {
+    clientId: "https://app.example/client.json",
+    returnUri: "https://app.example/callback",
+    state: "state-value",
+    scope: null,
+  });
 });
