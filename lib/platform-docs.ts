@@ -2084,6 +2084,25 @@ return Response.redirect(oauthUrl);`,
               },
             ],
           },
+          {
+            type: "cards",
+            items: [
+              {
+                title: "Build the PDS account page",
+                body:
+                  "Follow the official AT Protocol account-management guide for the host-owned controls and endpoints behind `/account`.",
+                href: "https://atproto.com/guides/account-management",
+                label: "Open ATProto guide",
+              },
+              {
+                title: "Check the public route",
+                body:
+                  "Review how Atmosphere presents hosts and sends people to their host-owned account page.",
+                href: "/hosts",
+                label: "Open host directory",
+              },
+            ],
+          },
         ],
       },
       {
