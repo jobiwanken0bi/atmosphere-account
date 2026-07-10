@@ -20,6 +20,7 @@ import {
 import { loginPickerOriginForRequest } from "../../lib/atmosphere-origins.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import {
+  browserHandoffDocument,
   browserHandoffError,
   browserHandoffResponse,
   wantsBrowserHandoffJson,
@@ -87,6 +88,7 @@ export const handler = define.handlers({
       const large = rejectLargeRequest(ctx.req, MAX_PICKER_FORM_BYTES);
       if (large) return large;
       const form = await ctx.req.formData();
+      const browserDocument = form.get("handoff") === "browser" && !wantsJson;
       request = readLoginRequestFromForm(form);
       const { app, returnUri } = await resolveLoginAppForRequest(request);
       const pickerAccounts = getPickerAccounts(ctx.state);
@@ -115,18 +117,18 @@ export const handler = define.handlers({
         did: selected.did,
         handle: selected.handle,
       }).catch(() => {});
-      return browserHandoffResponse(
-        appendSelectionToReturnUri({
-          returnUri,
-          clientId: app.clientId,
-          did: selected.did,
-          handle: selected.handle,
-          issuer,
-          state: request.state,
-          token,
-        }),
-        { json: wantsJson },
-      );
+      const redirectUrl = appendSelectionToReturnUri({
+        returnUri,
+        clientId: app.clientId,
+        did: selected.did,
+        handle: selected.handle,
+        issuer,
+        state: request.state,
+        token,
+      });
+      return browserDocument
+        ? browserHandoffDocument(redirectUrl)
+        : browserHandoffResponse(redirectUrl, { json: wantsJson });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const status = err instanceof LoginRequestError ? err.status : 400;
@@ -265,6 +267,7 @@ function LoginPickerBody(
                 <form method="POST" action="/login/select" key={account.did}>
                   <LoginRequestInputs request={request} />
                   <input type="hidden" name="did" value={account.did} />
+                  <input type="hidden" name="handoff" value="browser" />
                   <button type="submit" class="login-picker-account-row">
                     <span class="login-picker-avatar" aria-hidden="true">
                       <span>{account.handle.slice(0, 1).toUpperCase()}</span>

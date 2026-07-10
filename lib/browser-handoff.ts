@@ -20,6 +20,40 @@ export function browserHandoffResponse(
   return new Response(null, { status: 303, headers });
 }
 
+export function browserHandoffDocument(redirectUrl: string): Response {
+  const href = escapeHtmlAttribute(redirectUrl);
+  return new Response(
+    `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>Continue with Atmosphere</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/login-handoff.js"></script>
+  </head>
+  <body>
+    <main class="login-handoff-page">
+      <img src="/union.svg" alt="" width="36" height="36">
+      <p>Returning you to the app</p>
+      <a data-login-handoff-target href="${href}">Continue</a>
+    </main>
+  </body>
+</html>`,
+    {
+      status: 200,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "text/html; charset=utf-8",
+        "referrer-policy": "no-referrer",
+        "x-robots-tag": "noindex, nofollow",
+      },
+    },
+  );
+}
+
 export function browserHandoffError(
   message: string,
   status: number,
@@ -36,4 +70,12 @@ export function browserHandoffError(
     status,
     headers: responseHeaders,
   });
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }

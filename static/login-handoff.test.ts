@@ -1,16 +1,11 @@
-Deno.test("login handoff enhances only account-switch and picker forms", async () => {
+Deno.test("login handoff replaces the bridge document with its target", async () => {
   const source = await Deno.readTextFile(
     new URL("./login-handoff.js", import.meta.url),
   );
-  for (const path of ["/login/select", "/oauth/switch"]) {
-    if (!source.includes(`"${path}"`)) {
-      throw new Error(`Expected login handoff to cover ${path}`);
-    }
+  if (!source.includes("[data-login-handoff-target]")) {
+    throw new Error("Expected a scoped bridge target");
   }
-  if (!source.includes('"x-atmosphere-login": "1"')) {
-    throw new Error("Expected JSON handoff request marker");
-  }
-  if (!source.includes("globalThis.location.assign(body.redirectUrl)")) {
-    throw new Error("Expected explicit browser navigation after handoff");
+  if (!source.includes("globalThis.location.replace(target.href)")) {
+    throw new Error("Expected history-replacing browser navigation");
   }
 });
