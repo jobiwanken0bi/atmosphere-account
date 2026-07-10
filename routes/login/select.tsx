@@ -25,7 +25,10 @@ import {
   browserHandoffResponse,
   wantsBrowserHandoffJson,
 } from "../../lib/browser-handoff.ts";
-import { checkDurableRateLimit } from "../../lib/rate-limit.ts";
+import {
+  checkDurableRateLimit,
+  checkProxyAwareRateLimit,
+} from "../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 import {
   createLoginSelectionIntent,
@@ -62,6 +65,20 @@ export const handler = define.handlers({
       (err) => appviewUnavailable("login picker page", err),
     );
     if (proxied) return proxied;
+
+    const opened = await checkProxyAwareRateLimit(ctx.req, {
+      scope: "login-picker-open",
+      capacity: 60,
+      refillMs: 60_000,
+    });
+    if (!opened.ok) {
+      return browserHandoffError(
+        "Too many account picker attempts. Try again soon.",
+        429,
+        false,
+        { "retry-after": String(opened.retryAfter) },
+      );
+    }
 
     const intent = ctx.url.searchParams.get(PICKER_SELECTION_PARAM);
     if (intent) return await handleIntentSelection(ctx, intent);

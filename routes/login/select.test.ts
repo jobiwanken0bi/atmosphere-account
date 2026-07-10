@@ -145,4 +145,6 @@ Deno.test("login picker uses a browser-safe compact selection link", async () =>
   assertEquals(url.searchParams.has("selection"), true);
   assertEquals(url.searchParams.has("choice"), false);
   assertEquals([...url.searchParams.keys()], ["selection"]);
+  assertEquals(url.searchParams.get("selection")?.length, 24);
+  assertEquals(path.length < 80, true);
 });

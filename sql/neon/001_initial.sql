@@ -577,6 +577,20 @@ CREATE TABLE IF NOT EXISTS login_selection_replay (
 
 CREATE INDEX IF NOT EXISTS login_selection_replay_expires ON login_selection_replay(expires_at);
 
+CREATE TABLE IF NOT EXISTS login_picker_intent (
+  code_hash text PRIMARY KEY,
+  did text NOT NULL,
+  client_id text NOT NULL,
+  return_uri text NOT NULL,
+  state text NOT NULL,
+  scope text,
+  created_at bigint NOT NULL,
+  expires_at bigint NOT NULL,
+  consumed_at bigint
+);
+
+CREATE INDEX IF NOT EXISTS login_picker_intent_expires ON login_picker_intent(expires_at);
+
 CREATE TABLE IF NOT EXISTS rate_limit_bucket (
   bucket_key text PRIMARY KEY,
   count integer NOT NULL,

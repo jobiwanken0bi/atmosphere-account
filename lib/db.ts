@@ -683,6 +683,17 @@ const SCHEMA_STATEMENTS: string[] = [
     expires_at INTEGER NOT NULL,
     consumed_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS login_picker_intent (
+    code_hash TEXT PRIMARY KEY,
+    did TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    return_uri TEXT NOT NULL,
+    state TEXT NOT NULL,
+    scope TEXT,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    consumed_at INTEGER
+  )`,
   /**
    * Shared fixed-window rate-limit buckets for high-risk hosted login flows.
    * Bucket keys are salted hashes, not raw IP addresses. Low-risk read routes
@@ -771,6 +782,7 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS login_app_contact_did ON login_app(contact_did, updated_at)`,
   `CREATE INDEX IF NOT EXISTS login_app_connection_did ON login_app_connection(did, last_selected_at)`,
   `CREATE INDEX IF NOT EXISTS login_selection_replay_expires ON login_selection_replay(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS login_picker_intent_expires ON login_picker_intent(expires_at)`,
   `CREATE INDEX IF NOT EXISTS rate_limit_bucket_reset ON rate_limit_bucket(reset_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_state_expires ON oauth_state(expires_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_session_expires ON oauth_session(expires_at)`,

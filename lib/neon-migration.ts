@@ -29,6 +29,7 @@ export const NEON_APP_TABLES = [
   "app_moderation",
   "login_app",
   "login_app_connection",
+  "login_picker_intent",
   "login_selection_replay",
   "rate_limit_bucket",
   "worker_lease",
