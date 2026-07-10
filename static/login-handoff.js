@@ -63,6 +63,7 @@ document.addEventListener("submit", async (event) => {
       headers: {
         accept: "application/json",
         "x-atmosphere-login": "1",
+        "x-atmosphere-login-bodyless": "1",
       },
       signal: controller.signal,
     });

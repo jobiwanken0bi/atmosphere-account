@@ -224,6 +224,7 @@ Deno.test("appview request headers preserve browser CSRF context and overwrite p
     "sec-fetch-site": "same-origin",
     "user-agent": "test-agent",
     "x-atmosphere-login": "1",
+    "x-atmosphere-login-bodyless": "1",
     "x-atmosphere-public-origin": "https://evil.example",
     "x-forwarded-host": "evil.example",
     "x-forwarded-proto": "http",
@@ -244,6 +245,7 @@ Deno.test("appview request headers preserve browser CSRF context and overwrite p
   assertEquals(headers.get("sec-fetch-site"), "same-origin");
   assertEquals(headers.get("user-agent"), "test-agent");
   assertEquals(headers.get("x-atmosphere-login"), "1");
+  assertEquals(headers.get("x-atmosphere-login-bodyless"), "1");
   assertEquals(headers.get("x-forwarded-host"), "atmosphereaccount.com");
   assertEquals(headers.get("x-forwarded-proto"), "https");
   assertEquals(
@@ -274,6 +276,26 @@ Deno.test("account handoff forms are buffered before crossing the appview proxy"
     new TextDecoder().decode(body as Uint8Array),
     "did=did%3Aplc%3Atest&handoff=browser",
   );
+});
+
+Deno.test("marked bodyless handoffs never read an incoming request stream", async () => {
+  const neverFinishes = new ReadableStream<Uint8Array>({
+    start() {},
+  });
+  const request = new Request(
+    "https://login.atmosphereaccount.com/login/select?did=did%3Aplc%3Atest",
+    {
+      method: "POST",
+      body: neverFinishes,
+      headers: { "x-atmosphere-login-bodyless": "1" },
+    },
+  );
+  const body = await appviewProxyRequestBodyForTest(
+    new URL(request.url),
+    request,
+  );
+  assertEquals(body, undefined);
+  await neverFinishes.cancel();
 });
 
 Deno.test("account handoff proxy rejects oversized streamed bodies", async () => {

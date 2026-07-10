@@ -360,6 +360,9 @@ async function appviewProxyRequestBody(
   if (!shouldBufferAppviewRequestBody(currentUrl.pathname)) {
     return request.body ?? undefined;
   }
+  if (request.headers.get("x-atmosphere-login-bodyless") === "1") {
+    return undefined;
+  }
 
   const declaredLength = Number(request.headers.get("content-length"));
   if (
@@ -471,6 +474,7 @@ function appviewRequestHeaders(
       "sec-fetch-site",
       "user-agent",
       "x-atmosphere-login",
+      "x-atmosphere-login-bodyless",
     ]
   ) {
     const value = requestHeaders.get(name);
