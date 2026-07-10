@@ -9712,10 +9712,11 @@ body {
   color: inherit;
   font: inherit;
   text-align: left;
+  text-decoration: none;
   transition: background 0.16s ease;
 }
 
-.login-picker-account-list form:first-child .login-picker-account-row {
+.login-picker-account-list > .login-picker-account-row:first-child {
   border-top: 0;
 }
 

@@ -27,11 +27,16 @@ import {
 } from "../../lib/browser-handoff.ts";
 import { checkDurableRateLimit } from "../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
+import {
+  createLoginSelectionIntent,
+  verifyLoginSelectionIntent,
+} from "../../lib/login-selection-intent.ts";
 
 interface PickerAccount {
   did: string;
   handle: string;
   pdsUrl?: string | null;
+  selectionPath?: string;
 }
 
 interface PickerPageProps {
@@ -56,6 +61,9 @@ export const handler = define.handlers({
       (err) => appviewUnavailable("login picker page", err),
     );
     if (proxied) return proxied;
+
+    const intent = ctx.url.searchParams.get("selection_intent");
+    if (intent) return await handleIntentSelection(ctx, intent);
 
     const props = await buildPickerPageProps(ctx);
     return ctx.render(<LoginPickerPage {...props} />, {
@@ -116,11 +124,11 @@ export const handler = define.handlers({
         state: request.state,
         scope: request.scope,
       });
-      await recordLoginSelection({
+      await recordLoginSelectionBestEffort({
         clientId: app.clientId,
         did: selected.did,
         handle: selected.handle,
-      }).catch(() => {});
+      });
       const redirectUrl = appendSelectionToReturnUri({
         returnUri,
         clientId: app.clientId,
@@ -178,6 +186,114 @@ function readLoginRequestFromInput(
   return readLoginRequest(requestUrl);
 }
 
+async function handleIntentSelection(
+  ctx: { req: Request; state: State; url: URL },
+  intent: string,
+): Promise<Response> {
+  try {
+    const limited = await checkDurableRateLimit(
+      ctx.req,
+      PICKER_SELECTION_RATE_LIMIT,
+    );
+    if (!limited.ok) {
+      return browserHandoffError(
+        "Too many account picker attempts. Try again soon.",
+        429,
+        false,
+        { "retry-after": String(limited.retryAfter) },
+      );
+    }
+    if (ctx.url.search.length > MAX_PICKER_FORM_BYTES) {
+      return browserHandoffError("request URL too large", 414, false);
+    }
+    const request = readLoginRequest(ctx.url);
+    const did = ctx.url.searchParams.get("did")?.trim() ?? "";
+    if (
+      !did ||
+      !await verifyLoginSelectionIntent(intent, request, did)
+    ) {
+      return browserHandoffError(
+        "This account choice has expired. Return to the app and try again.",
+        403,
+        false,
+      );
+    }
+    return await completePickerSelection(ctx, request, did, {
+      json: false,
+      browserDocument: false,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = err instanceof LoginRequestError ? err.status : 400;
+    return browserHandoffError(message, status, false);
+  }
+}
+
+async function completePickerSelection(
+  ctx: { req: Request; state: State; url: URL },
+  request: LoginRequest,
+  did: string,
+  options: { json: boolean; browserDocument: boolean },
+): Promise<Response> {
+  const { app, returnUri } = await resolveLoginAppForRequest(request);
+  const selected = getPickerAccounts(ctx.state).find((account) =>
+    account.did === did
+  );
+  if (!selected) {
+    return browserHandoffError(
+      "account not available in this browser",
+      403,
+      options.json,
+    );
+  }
+  const issuer = loginPickerOriginForRequest(ctx.url, ctx.req.headers);
+  const { token } = await signLoginSelection({
+    app,
+    did: selected.did,
+    handle: selected.handle,
+    issuer,
+    pdsUrl: selected.pdsUrl,
+    returnUri: returnUri.toString(),
+    state: request.state,
+    scope: request.scope,
+  });
+  await recordLoginSelectionBestEffort({
+    clientId: app.clientId,
+    did: selected.did,
+    handle: selected.handle,
+  });
+  const redirectUrl = appendSelectionToReturnUri({
+    returnUri,
+    clientId: app.clientId,
+    did: selected.did,
+    handle: selected.handle,
+    issuer,
+    state: request.state,
+    token,
+  });
+  return options.browserDocument
+    ? browserHandoffDocument(redirectUrl)
+    : browserHandoffResponse(redirectUrl, { json: options.json });
+}
+
+async function recordLoginSelectionBestEffort(input: {
+  clientId: string;
+  did: string;
+  handle: string;
+}): Promise<void> {
+  let timer = 0;
+  try {
+    await Promise.race([
+      recordLoginSelection(input).catch(() => {}),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 750);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function readLoginRequestFromInputForTest(
   sourceUrl: URL,
   form = new FormData(),
@@ -186,16 +302,30 @@ export function readLoginRequestFromInputForTest(
 }
 
 async function buildPickerPageProps(
-  ctx: { state: State; url: URL },
+  ctx: { req: Request; state: State; url: URL },
 ): Promise<PickerPageProps> {
   try {
     const request = readLoginRequest(ctx.url);
     const { app } = await resolveLoginAppForRequest(request);
+    const pickerAccounts = await Promise.all(
+      getPickerAccounts(ctx.state).map(async (account) => {
+        const selectionUrl = new URL(loginRequestToPath(request), ctx.url);
+        selectionUrl.searchParams.set("did", account.did);
+        selectionUrl.searchParams.set(
+          "selection_intent",
+          await createLoginSelectionIntent(request, account.did),
+        );
+        return {
+          ...account,
+          selectionPath: `${selectionUrl.pathname}${selectionUrl.search}`,
+        };
+      }),
+    );
     return {
       app,
       request,
       selectPath: loginRequestToPath(request),
-      pickerAccounts: getPickerAccounts(ctx.state),
+      pickerAccounts,
       error: null,
       status: 200,
     };
@@ -255,7 +385,6 @@ function LoginPickerPage(props: PickerPageProps) {
               : (
                 <LoginPickerBody
                   app={app}
-                  request={request}
                   selectPath={selectPath}
                   pickerAccounts={pickerAccounts}
                 />
@@ -268,9 +397,8 @@ function LoginPickerPage(props: PickerPageProps) {
 }
 
 function LoginPickerBody(
-  { app, request, selectPath, pickerAccounts }: {
+  { app, selectPath, pickerAccounts }: {
     app: LoginApp;
-    request: LoginRequest;
     selectPath: string;
     pickerAccounts: PickerAccount[];
   },
@@ -292,33 +420,33 @@ function LoginPickerBody(
           <>
             <div class="login-picker-account-list" aria-label="Saved accounts">
               {pickerAccounts.map((account) => (
-                <form method="POST" action="/login/select" key={account.did}>
-                  <LoginRequestInputs request={request} />
-                  <input type="hidden" name="did" value={account.did} />
-                  <input type="hidden" name="handoff" value="browser" />
-                  <button type="submit" class="login-picker-account-row">
-                    <span class="login-picker-avatar" aria-hidden="true">
-                      <span>{account.handle.slice(0, 1).toUpperCase()}</span>
-                      <img
-                        src={`/api/registry/avatar/${
-                          encodeURIComponent(account.did)
-                        }`}
-                        alt=""
-                        width="48"
-                        height="48"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    </span>
-                    <span class="login-picker-account-copy">
-                      <strong>
-                        <AtmosphereHandle handle={account.handle} />
-                      </strong>
-                      <span>Use this account with {app.appName}</span>
-                    </span>
-                    <span class="login-picker-account-action">Continue</span>
-                  </button>
-                </form>
+                <a
+                  href={account.selectionPath}
+                  class="login-picker-account-row"
+                  rel="nofollow"
+                  key={account.did}
+                >
+                  <span class="login-picker-avatar" aria-hidden="true">
+                    <span>{account.handle.slice(0, 1).toUpperCase()}</span>
+                    <img
+                      src={`/api/registry/avatar/${
+                        encodeURIComponent(account.did)
+                      }`}
+                      alt=""
+                      width="48"
+                      height="48"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </span>
+                  <span class="login-picker-account-copy">
+                    <strong>
+                      <AtmosphereHandle handle={account.handle} />
+                    </strong>
+                    <span>Use this account with {app.appName}</span>
+                  </span>
+                  <span class="login-picker-account-action">Continue</span>
+                </a>
               ))}
             </div>
             <form method="POST" action="/oauth/add-account">
@@ -354,19 +482,6 @@ function LoginPickerBody(
         Atmosphere shares only the account you choose. {app.appName}{" "}
         will ask your account host to finish signing you in.
       </p>
-    </>
-  );
-}
-
-function LoginRequestInputs({ request }: { request: LoginRequest }) {
-  return (
-    <>
-      <input type="hidden" name="client_id" value={request.clientId} />
-      <input type="hidden" name="return_uri" value={request.returnUri} />
-      <input type="hidden" name="state" value={request.state} />
-      {request.scope && (
-        <input type="hidden" name="scope" value={request.scope} />
-      )}
     </>
   );
 }
