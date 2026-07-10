@@ -1,6 +1,7 @@
 import type { State } from "../../utils.ts";
 import {
   pickerAccountsForStateForTest,
+  pickerSelectionPathForTest,
   readLoginRequestFromInputForTest,
 } from "./select.tsx";
 
@@ -129,4 +130,19 @@ Deno.test("login picker accepts a bodyless POST query handoff", () => {
     state: "state-value",
     scope: null,
   });
+});
+
+Deno.test("login picker uses a browser-safe compact selection link", async () => {
+  const path = await pickerSelectionPathForTest({
+    clientId: "https://app.example/client.json",
+    returnUri: "https://app.example/callback",
+    state: "state-value",
+    scope: null,
+  }, "did:plc:one");
+  const url = new URL(path, "https://login.atmosphereaccount.com");
+
+  assertEquals(url.pathname, "/login/select");
+  assertEquals(url.searchParams.has("selection"), true);
+  assertEquals(url.searchParams.has("choice"), false);
+  assertEquals([...url.searchParams.keys()], ["selection"]);
 });

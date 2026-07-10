@@ -49,6 +49,7 @@ interface PickerPageProps {
 }
 
 const MAX_PICKER_FORM_BYTES = 16_384;
+const PICKER_SELECTION_PARAM = "selection";
 const PICKER_SELECTION_RATE_LIMIT = {
   scope: "login-picker-selection",
   capacity: 30,
@@ -62,7 +63,7 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
-    const intent = ctx.url.searchParams.get("choice");
+    const intent = ctx.url.searchParams.get(PICKER_SELECTION_PARAM);
     if (intent) return await handleIntentSelection(ctx, intent);
 
     const props = await buildPickerPageProps(ctx);
@@ -310,14 +311,13 @@ async function buildPickerPageProps(
     const { app } = await resolveLoginAppForRequest(request);
     const pickerAccounts = await Promise.all(
       getPickerAccounts(ctx.state).map(async (account) => {
-        const selectionUrl = new URL("/login/select", ctx.url);
-        selectionUrl.searchParams.set(
-          "choice",
-          await createLoginSelectionIntent(request, account.did),
-        );
         return {
           ...account,
-          selectionPath: `${selectionUrl.pathname}${selectionUrl.search}`,
+          selectionPath: await createPickerSelectionPath(
+            request,
+            account.did,
+            ctx.url,
+          ),
         };
       }),
     );
@@ -339,6 +339,27 @@ async function buildPickerPageProps(
       status: err instanceof LoginRequestError ? err.status : 400,
     };
   }
+}
+
+async function createPickerSelectionPath(
+  request: LoginRequest,
+  did: string,
+  baseUrl: URL,
+): Promise<string> {
+  const selectionUrl = new URL("/login/select", baseUrl);
+  selectionUrl.searchParams.set(
+    PICKER_SELECTION_PARAM,
+    await createLoginSelectionIntent(request, did),
+  );
+  return `${selectionUrl.pathname}${selectionUrl.search}`;
+}
+
+export async function pickerSelectionPathForTest(
+  request: LoginRequest,
+  did: string,
+  baseUrl = new URL("https://login.atmosphereaccount.com/login/select"),
+): Promise<string> {
+  return await createPickerSelectionPath(request, did, baseUrl);
 }
 
 function getPickerAccounts(
