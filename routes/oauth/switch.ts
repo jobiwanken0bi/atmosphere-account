@@ -60,13 +60,20 @@ async function readInput(
   };
 }
 
-function redirectToReauth(handle: string, next: string | null): Response {
+export function buildSwitchReauthLocation(
+  handle: string,
+  next: string | null,
+): string {
   const location = new URLSearchParams({ handle });
   if (next) location.set("next", next);
+  return `/oauth/login?${location.toString()}`;
+}
+
+function redirectToReauth(handle: string, next: string | null): Response {
   return new Response(null, {
     status: 303,
     headers: {
-      location: `/account?${location.toString()}`,
+      location: buildSwitchReauthLocation(handle, next),
     },
   });
 }
