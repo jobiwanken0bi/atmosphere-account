@@ -21,6 +21,7 @@ const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
 
 const DEFAULT_APPVIEW_FETCH_TIMEOUT_MS = 5000;
 const MIN_APPVIEW_FETCH_TIMEOUT_MS = 1000;
+const MAX_APPVIEW_HANDOFF_BODY_BYTES = 64 * 1024;
 
 const APPVIEW_FETCH_TIMEOUT_MS = appviewFetchTimeoutMs(
   Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS"),
@@ -71,6 +72,15 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
       ? proxyAppviewApiResponse(ctx.url, ctx.req)
       : proxyAppviewPageResponse(ctx.url, ctx.req)
   ).catch((err) => {
+    if (err instanceof AppviewProxyBodyTooLargeError) {
+      return new Response("request body too large", {
+        status: 413,
+        headers: {
+          "cache-control": "no-store",
+          "content-type": "text/plain; charset=utf-8",
+        },
+      });
+    }
     console.error("[appview] early proxy failed:", err);
     return appviewEarlyProxyUnavailable(ctx.url.pathname);
   });
@@ -262,11 +272,16 @@ export async function proxyAppviewPageResponse(
   const url = new URL(`${currentUrl.pathname}${currentUrl.search}`, remote);
   if (url.origin === currentUrl.origin) return null;
   const bodyless = request.method === "GET" || request.method === "HEAD";
+  const requestBody = await appviewProxyRequestBody(
+    currentUrl,
+    request,
+    bodyless,
+  );
 
   const res = await fetch(url, {
     method: request.method,
     headers: appviewPageHeaders(request.headers, currentUrl, bodyless),
-    body: bodyless ? undefined : request.body,
+    body: requestBody,
     redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
@@ -304,13 +319,17 @@ export async function proxyAppviewApiResponse(
   if (!remote) return null;
   const url = new URL(`${currentUrl.pathname}${currentUrl.search}`, remote);
   if (url.origin === currentUrl.origin) return null;
+  const bodyless = request.method === "GET" || request.method === "HEAD";
+  const requestBody = await appviewProxyRequestBody(
+    currentUrl,
+    request,
+    bodyless,
+  );
 
   const res = await fetch(url, {
     method: request.method,
     headers: appviewRequestHeaders(request.headers, currentUrl),
-    body: request.method === "GET" || request.method === "HEAD"
-      ? undefined
-      : request.body,
+    body: requestBody,
     redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
@@ -324,6 +343,68 @@ export async function proxyAppviewApiResponse(
     statusText: res.statusText,
     headers,
   });
+}
+
+class AppviewProxyBodyTooLargeError extends Error {}
+
+function shouldBufferAppviewRequestBody(pathname: string): boolean {
+  return pathname === "/login/select" || pathname === "/oauth/switch";
+}
+
+async function appviewProxyRequestBody(
+  currentUrl: URL,
+  request: Request,
+  bodyless: boolean,
+): Promise<BodyInit | undefined> {
+  if (bodyless) return undefined;
+  if (!shouldBufferAppviewRequestBody(currentUrl.pathname)) {
+    return request.body ?? undefined;
+  }
+
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (
+    Number.isFinite(declaredLength) &&
+    declaredLength > MAX_APPVIEW_HANDOFF_BODY_BYTES
+  ) {
+    throw new AppviewProxyBodyTooLargeError();
+  }
+  if (!request.body) return undefined;
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_APPVIEW_HANDOFF_BODY_BYTES) {
+      await reader.cancel();
+      throw new AppviewProxyBodyTooLargeError();
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+export function shouldBufferAppviewRequestBodyForTest(
+  pathname: string,
+): boolean {
+  return shouldBufferAppviewRequestBody(pathname);
+}
+
+export async function appviewProxyRequestBodyForTest(
+  currentUrl: URL,
+  request: Request,
+): Promise<BodyInit | undefined> {
+  const bodyless = request.method === "GET" || request.method === "HEAD";
+  return await appviewProxyRequestBody(currentUrl, request, bodyless);
 }
 
 export async function listPublicAccountHosts(input: {

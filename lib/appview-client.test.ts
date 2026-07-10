@@ -1,8 +1,10 @@
 import {
   appviewFetchTimeoutMs,
+  appviewProxyRequestBodyForTest,
   appviewRequestHeadersForTest,
   isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
+  shouldBufferAppviewRequestBodyForTest,
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
@@ -248,4 +250,42 @@ Deno.test("appview request headers preserve browser CSRF context and overwrite p
     headers.get("x-atmosphere-public-origin"),
     "https://atmosphereaccount.com",
   );
+});
+
+Deno.test("account handoff forms are buffered before crossing the appview proxy", async () => {
+  assertEquals(shouldBufferAppviewRequestBodyForTest("/login/select"), true);
+  assertEquals(shouldBufferAppviewRequestBodyForTest("/oauth/switch"), true);
+  assertEquals(shouldBufferAppviewRequestBodyForTest("/apps/create"), false);
+
+  const request = new Request(
+    "https://login.atmosphereaccount.com/login/select",
+    {
+      method: "POST",
+      body: "did=did%3Aplc%3Atest&handoff=browser",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+    },
+  );
+  const body = await appviewProxyRequestBodyForTest(
+    new URL(request.url),
+    request,
+  );
+  assertEquals(body instanceof Uint8Array, true);
+  assertEquals(
+    new TextDecoder().decode(body as Uint8Array),
+    "did=did%3Aplc%3Atest&handoff=browser",
+  );
+});
+
+Deno.test("account handoff proxy rejects oversized streamed bodies", async () => {
+  const request = new Request("https://atmosphereaccount.com/oauth/switch", {
+    method: "POST",
+    body: "x".repeat(64 * 1024 + 1),
+  });
+  let rejected = false;
+  try {
+    await appviewProxyRequestBodyForTest(new URL(request.url), request);
+  } catch {
+    rejected = true;
+  }
+  assertEquals(rejected, true);
 });
