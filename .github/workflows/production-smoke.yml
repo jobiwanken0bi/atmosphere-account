@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: production-smoke
@@ -36,3 +37,49 @@ jobs:
         env:
           SMOKE_EXPECT_RELEASE_SHA: ${{ github.event.inputs.expected_release_sha || github.sha }}
         run: deno task smoke:production
+
+      - name: Open or update production alert
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_TITLE: "Production smoke is failing"
+        run: |
+          issue_number="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "\"$ALERT_TITLE\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
+            | head -n 1)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "The production smoke failed again: ${run_url}"
+          else
+            gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$ALERT_TITLE" \
+              --body "The hourly production smoke failed. Investigate the Deno shell, Railway appview, indexer lease, and Postgres readiness.\n\nRun: ${run_url}"
+          fi
+
+      - name: Close recovered production alert
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_TITLE: "Production smoke is failing"
+        run: |
+          issue_number="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "\"$ALERT_TITLE\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
+            | head -n 1)"
+          if [ -n "$issue_number" ]; then
+            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            gh issue comment "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "Production recovered and the smoke suite is passing again: ${run_url}"
+            gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY"
+          fi
