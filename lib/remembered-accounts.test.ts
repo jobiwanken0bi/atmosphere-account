@@ -2,6 +2,7 @@ import {
   addRememberedAccountCookie,
   legacyHostOnlyRememberedAccountsClearCookieForTest,
   readRememberedAccountsFromHeader,
+  refreshRememberedAccountCookies,
   rememberedAccountsCookieDomainForTest,
   rememberedAccountsCookieFlagsForTest,
 } from "./remembered-accounts.ts";
@@ -115,6 +116,28 @@ Deno.test("remembered account reader merges duplicate scoped cookies", async () 
       pdsUrl: "https://pds.two.example.com",
     },
   ]);
+});
+
+Deno.test("remembered account refresh preserves accounts while upgrading cookie scope", async () => {
+  const accounts = [
+    {
+      did: "did:plc:one",
+      handle: "one.example.com",
+      pdsUrl: "https://pds.one.example.com",
+    },
+    {
+      did: "did:plc:two",
+      handle: "two.example.com",
+      pdsUrl: null,
+    },
+  ];
+  const cookies = await refreshRememberedAccountCookies(accounts);
+
+  assertEquals(cookies.length >= 1, true);
+  assertEquals(
+    await readRememberedAccountsFromHeader(cookiePair(cookies.at(-1)!)),
+    accounts,
+  );
 });
 
 function cookiePair(setCookie: string): string {

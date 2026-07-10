@@ -4,10 +4,11 @@ import Footer from "../components/Footer.tsx";
 import SignInForm from "../islands/SignInForm.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import { isOAuthConfigured } from "../lib/oauth.ts";
+import { refreshRememberedAccountCookies } from "../lib/remembered-accounts.ts";
 import { isSafeRelativePath } from "../lib/security.ts";
 
 export const handler = define.handlers({
-  GET(ctx) {
+  async GET(ctx) {
     const next = safeNext(ctx.url.searchParams.get("next"));
     const initialHandle = safeHandle(ctx.url.searchParams.get("handle"));
     const rawIntent = ctx.url.searchParams.get("intent");
@@ -21,7 +22,7 @@ export const handler = define.handlers({
       });
     }
     const account = buildAccountMenuProps(ctx.state);
-    return ctx.render(
+    const response = await ctx.render(
       (
         <SignInPageContent
           account={account}
@@ -32,6 +33,15 @@ export const handler = define.handlers({
       ),
       { headers: { "cache-control": "no-store" } },
     );
+    if (account.rememberedAccounts.length > 0) {
+      const cookies = await refreshRememberedAccountCookies(
+        account.rememberedAccounts,
+      );
+      for (const cookie of cookies) {
+        response.headers.append("set-cookie", cookie);
+      }
+    }
+    return response;
   },
 });
 

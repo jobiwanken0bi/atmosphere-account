@@ -68,6 +68,19 @@ export async function addRememberedAccountCookies(
   return withLegacyHostOnlyClear(await buildCookie(next));
 }
 
+/**
+ * Reissue an already-verified remembered-account list using the current cookie
+ * scope. This upgrades older host-only cookies to the shared production domain
+ * so the standalone login subdomain can offer the same accounts.
+ */
+export async function refreshRememberedAccountCookies(
+  current: RememberedAccount[],
+): Promise<string[]> {
+  const next = current.slice(0, MAX_ACCOUNTS);
+  if (next.length === 0) return [];
+  return withLegacyHostOnlyClear(await buildCookie(next));
+}
+
 /** Build a Set-Cookie header that removes `did` from the remembered
  *  list. If the resulting list is empty, the cookie is cleared
  *  outright instead of being signed-empty. */
