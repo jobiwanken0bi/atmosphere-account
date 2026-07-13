@@ -1,3 +1,5 @@
+import type { Locale } from "./locales.ts";
+
 /** Only rendered documents consume the message catalog today. */
 export function isLocalizedDocumentResponse(response: Response): boolean {
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]
@@ -13,7 +15,7 @@ export function isLocalizedDocumentResponse(response: Response): boolean {
  */
 export function withLocaleResponseHeaders(
   response: Response,
-  locale: string,
+  locale: Locale,
   varyByPreference: boolean,
 ): Response {
   const headers = new Headers(response.headers);
@@ -23,12 +25,16 @@ export function withLocaleResponseHeaders(
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
-    for (const field of ["Accept-Language", "Cookie"]) {
-      if (!vary.some((value) => value.toLowerCase() === field.toLowerCase())) {
-        vary.push(field);
+    if (!vary.includes("*")) {
+      for (const field of ["Accept-Language", "Cookie"]) {
+        if (
+          !vary.some((value) => value.toLowerCase() === field.toLowerCase())
+        ) {
+          vary.push(field);
+        }
       }
     }
-    headers.set("vary", vary.join(", "));
+    headers.set("vary", vary.includes("*") ? "*" : vary.join(", "));
   }
   return new Response(response.body, {
     status: response.status,

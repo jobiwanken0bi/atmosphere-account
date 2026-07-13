@@ -1,8 +1,8 @@
 /**
  * Locale registry. To add a new language:
  *   1. Add its tag here.
- *   2. Add a matching `i18n/messages/<tag>.ts` that satisfies the `Messages` type
- *      from `i18n/messages/en.ts`.
+ *   2. Add a matching `i18n/messages/<tag>.tsx` that satisfies the `Messages`
+ *      type from `i18n/messages/en.tsx`.
  *   3. Register it in `i18n/messages/index.ts`.
  *
  * Tags follow BCP 47 (e.g. "en", "es", "pt-BR").
