@@ -13,6 +13,17 @@ itself, a backup.
 - Treat the Railway Backups tab as the authoritative schedule and restore-range
   view. Repository configuration cannot currently declare these controls.
 
+## Current production policy
+
+Verified 2026-07-13 in the Railway production environment:
+
+- daily and weekly volume backup schedules are active;
+- PITR is enabled for the source `Postgres` service and writes to the dedicated
+  `Postgres-PITR` bucket;
+- PITR restores create a standalone sibling service and leave the source
+  running;
+- the initial restorable range began at 2026-07-13 12:23:17 America/New_York.
+
 ## Restore drill
 
 Run at least quarterly and after changing Postgres images or backup policy:
@@ -37,3 +48,24 @@ recovery point, pause writers if necessary, then change the `Postgres` variable
 reference on `web`, `indexer`, and `pds-inventory` together. Run
 `deno task smoke:production` and verify the indexer lease before retiring the
 old database.
+
+## Restore drill evidence
+
+The 2026-07-13 drill restored the source database to 12:25:10 America/New_York
+as the isolated service `Postgres-restored-20260713-1625`
+(`4775f459-300e-4ec4-8632-021c27adda14`). The source `Postgres` service remained
+online throughout.
+
+A read-only transaction against the recovered service verified:
+
+- `profile`: 111 rows;
+- `account_host`: 29 rows;
+- `app_listing`: 422 rows;
+- `worker_lease`: 1 row;
+- `jetstream_cursor.cursor`: `1783959904471361`.
+
+The recovered database reported `pg_is_in_recovery() = false`, which is expected
+for a writable standalone copy; validation was nevertheless performed inside
+`BEGIN READ ONLY` and rolled back. The disposable restored service and its
+volume were deleted after verification. The next drill is due by 2026-10-13 or
+earlier after any Postgres image or backup-policy change.
