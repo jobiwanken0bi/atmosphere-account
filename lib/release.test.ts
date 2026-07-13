@@ -25,6 +25,19 @@ Deno.test("runtimeRelease identifies Deno Deploy releases", () => {
   assertEquals(release.gitBranch, "main");
 });
 
+Deno.test("runtimeRelease prefers Deno release stamps over stale legacy Git metadata", () => {
+  const release = runtimeReleaseFromEnvForTest(env({
+    DENO_DEPLOYMENT_ID: "deno-deploy-123",
+    DENO_GIT_COMMIT_SHA: "0000000000000000",
+    DENO_GIT_BRANCH: "old-branch",
+    ATMOSPHERE_RELEASE_SHA: "320d300bb7cf5c15f00000000000000000000000",
+    ATMOSPHERE_RELEASE_BRANCH: "main",
+  }));
+
+  assertEquals(release.gitSha, "320d300bb7cf");
+  assertEquals(release.gitBranch, "main");
+});
+
 Deno.test("runtimeRelease identifies Railway appview releases", () => {
   const release = runtimeReleaseFromEnvForTest(env({
     RAILWAY_PROJECT_ID: "project",
