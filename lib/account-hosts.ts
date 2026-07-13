@@ -64,7 +64,14 @@ export interface AccountHost {
   conformanceExpiresAt?: number | null;
 }
 
-export type AccountHostSort = "accounts" | "active" | "name" | "recent";
+export const DEFAULT_ACCOUNT_HOST_SORT = "recommended" as const;
+
+export type AccountHostSort =
+  | typeof DEFAULT_ACCOUNT_HOST_SORT
+  | "accounts"
+  | "active"
+  | "name"
+  | "recent";
 
 export interface AccountHostDirectoryOptions {
   query?: string;
@@ -2040,7 +2047,7 @@ export async function listAccountHostDirectory(
       pageCount,
       positiveInteger(opts.page, 1),
     );
-    const sort = opts.sort ?? "accounts";
+    const sort = opts.sort ?? DEFAULT_ACCOUNT_HOST_SORT;
     const r = await c.execute({
       sql: `SELECT account_host.*,
           host_conformance.status AS conformance_status,
@@ -2089,6 +2096,19 @@ function accountHostOrder(sort: AccountHostSort): string {
     return `COALESCE(account_host.last_observed_at, account_host.last_checked_at, account_host.updated_at) DESC,
       ${stable}`;
   }
+  if (sort === DEFAULT_ACCOUNT_HOST_SORT) {
+    return `CASE
+        WHEN account_host.verification_status IN ('verified', 'claimed') THEN 0
+        ELSE 1
+      END,
+      CASE
+        WHEN account_host.observed_active_account_count > 0 THEN 0
+        ELSE 1
+      END,
+      account_host.observed_account_count DESC,
+      account_host.observed_active_account_count DESC,
+      ${stable}`;
+  }
   return `account_host.observed_account_count DESC,
     account_host.observed_active_account_count DESC,
     ${stable}`;
@@ -2108,7 +2128,13 @@ export function sortAccountHostsForDirectory(
   sort: AccountHostSort,
 ): AccountHost[] {
   return [...hosts].sort((a, b) => {
-    if (sort === "accounts") {
+    if (sort === DEFAULT_ACCOUNT_HOST_SORT) {
+      const recommended = claimedHostRank(a) - claimedHostRank(b) ||
+        activeHostRank(a) - activeHostRank(b) ||
+        b.observedAccountCount - a.observedAccountCount ||
+        b.observedActiveAccountCount - a.observedActiveAccountCount;
+      if (recommended) return recommended;
+    } else if (sort === "accounts") {
       const count = b.observedAccountCount - a.observedAccountCount ||
         b.observedActiveAccountCount - a.observedActiveAccountCount;
       if (count) return count;
@@ -2130,6 +2156,14 @@ export function sortAccountHostsForDirectory(
       a.displayName.localeCompare(b.displayName) ||
       a.host.localeCompare(b.host);
   });
+}
+
+function claimedHostRank(host: AccountHost): number {
+  return host.verificationStatus === "observed" ? 1 : 0;
+}
+
+function activeHostRank(host: AccountHost): number {
+  return host.observedActiveAccountCount > 0 ? 0 : 1;
 }
 
 function accountHostRecentAt(host: AccountHost): number {

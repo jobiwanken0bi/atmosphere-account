@@ -3,19 +3,12 @@ import {
   listPublicAccountHosts,
   proxyAppviewResponse,
 } from "../../../lib/appview-client.ts";
-import { EdgeStaleCache } from "../../../lib/edge-cache.ts";
-import type {
-  AccountHostDirectoryResult,
-  AccountHostSort,
-  HostSignupStatus,
-  HostVerificationStatus,
+import {
+  type AccountHostSort,
+  DEFAULT_ACCOUNT_HOST_SORT,
+  type HostSignupStatus,
+  type HostVerificationStatus,
 } from "../../../lib/account-hosts.ts";
-
-const hostsCache = new EdgeStaleCache<AccountHostDirectoryResult>({
-  freshMs: 60_000,
-  staleMs: 5 * 60_000,
-  maxEntries: 128,
-});
 
 export const handler = define.handlers({
   async GET(ctx): Promise<Response> {
@@ -25,13 +18,12 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
     const input = readDirectoryInput(ctx.url.searchParams);
-    const hosts = await hostsCache.get(
-      JSON.stringify({ ...input, query: input.query.toLowerCase() }),
-      () => listPublicAccountHosts(input),
-    );
+    const hosts = await listPublicAccountHosts(input);
     return json(hosts, {
       headers: {
-        "cache-control": "public, max-age=60, stale-while-revalidate=300",
+        // Page links must not combine totals from independently cached
+        // inventory snapshots.
+        "cache-control": "no-store",
       },
     });
   },
@@ -60,9 +52,10 @@ function readPositiveInteger(
 }
 
 function readSort(value: string | null): AccountHostSort {
-  return value === "active" || value === "name" || value === "recent"
+  return value === "accounts" || value === "active" || value === "name" ||
+      value === "recent"
     ? value
-    : "accounts";
+    : DEFAULT_ACCOUNT_HOST_SORT;
 }
 
 function readSignupStatus(

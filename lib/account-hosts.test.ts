@@ -1,4 +1,5 @@
 import {
+  DEFAULT_ACCOUNT_HOST_SORT,
   listSeededAccountHostFallback,
   lookupAccountHostHint,
   normalizeAccountHostPublicHttpsUrl,
@@ -64,6 +65,53 @@ Deno.test("host directory sorts provider totals without splitting PDS nodes", ()
   assertEquals(
     sortAccountHostsForDirectory(hosts, "active").map((host) => host.host),
     [second.host, first.host, third.host],
+  );
+});
+
+Deno.test("recommended host sort prioritizes claimed, active, then account count", () => {
+  const [first, second, third, fourth] = listSeededAccountHostFallback().slice(
+    0,
+    4,
+  );
+  assert(first && second && third && fourth, "expected seeded hosts");
+  const observedActive = {
+    ...first,
+    verificationStatus: "observed" as const,
+    observedAccountCount: 10_000,
+    observedActiveAccountCount: 10_000,
+  };
+  const claimedInactive = {
+    ...second,
+    verificationStatus: "claimed" as const,
+    observedAccountCount: 100,
+    observedActiveAccountCount: 0,
+  };
+  const claimedActiveSmall = {
+    ...third,
+    verificationStatus: "claimed" as const,
+    observedAccountCount: 5,
+    observedActiveAccountCount: 5,
+  };
+  const verifiedActiveLarge = {
+    ...fourth,
+    verificationStatus: "verified" as const,
+    observedAccountCount: 50,
+    observedActiveAccountCount: 10,
+  };
+
+  assertEquals(
+    sortAccountHostsForDirectory([
+      observedActive,
+      claimedInactive,
+      claimedActiveSmall,
+      verifiedActiveLarge,
+    ], DEFAULT_ACCOUNT_HOST_SORT).map((host) => host.host),
+    [
+      verifiedActiveLarge.host,
+      claimedActiveSmall.host,
+      claimedInactive.host,
+      observedActive.host,
+    ],
   );
 });
 
