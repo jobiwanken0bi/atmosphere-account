@@ -482,6 +482,8 @@ const SCHEMA_STATEMENTS: string[] = [
     last_observed_at INTEGER NOT NULL,
     last_scan_id TEXT NOT NULL
   )`,
+  `DROP TABLE IF EXISTS pds_discovery_cursor`,
+  `DROP TABLE IF EXISTS pds_host_account`,
   /**
    * Source records from app-directory lexicons. These rows preserve the
    * original AT Protocol record and a parsed projection so the public app

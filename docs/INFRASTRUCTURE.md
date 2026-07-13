@@ -446,6 +446,12 @@ public `bsky.network` account host; known provider endpoints such as
 Unknown PDS instances stay in the raw inventory and are not automatically
 published on the account-host chooser.
 
+Partial scans update only the raw inventory; public account-host totals and
+`not_seen` reconciliation change only after a complete scan. Complete scans also
+refuse an empty result or an unexpected drop of more than 5% in the PDS instance
+count. After verifying a legitimate large removal, an operator can rerun with
+`--allow-large-drop`.
+
 Run this as a short scheduled job, initially daily. It does not belong in the
 always-on Jetstream process. The Jetstream worker still consumes Atmosphere's
 app, profile, review, and host protocol records, but no longer performs extra

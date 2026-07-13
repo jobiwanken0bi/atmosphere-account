@@ -9,7 +9,7 @@ function usage(exitCode = 0): never {
   const write = exitCode === 0 ? console.log : console.error;
   write(
     [
-      "Usage: deno task pds:index [--dry-run] [--limit=1000] [--max-pages=N]",
+      "Usage: deno task pds:index [--dry-run] [--limit=1000] [--max-pages=N] [--allow-large-drop]",
       "",
       "Fetches the PDS inventory exposed by bsky.network's listHosts API.",
       "The default full scan normally needs only a handful of HTTP requests",
@@ -20,6 +20,8 @@ function usage(exitCode = 0): never {
       "  --dry-run       Fetch and summarize without writing to the database.",
       "  --limit=N       Relay page size, from 1 to 1000 (default: 1000).",
       "  --max-pages=N   Stop early after N pages (stored as a partial scan).",
+      "  --allow-large-drop",
+      "                  Reconcile a verified >5% drop in PDS instances.",
     ].join("\n"),
   );
   Deno.exit(exitCode);
@@ -39,15 +41,45 @@ function numberFlag(
 ): number | undefined {
   const raw = stringFlag(args, flag);
   if (!raw) return options.fallback;
-  const value = Number.parseInt(raw, 10);
+  const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     console.error(`${flag} must be a positive integer`);
     usage(2);
   }
-  return options.maximum == null ? value : Math.min(value, options.maximum);
+  if (options.maximum != null && value > options.maximum) {
+    console.error(`${flag} must not exceed ${options.maximum}`);
+    usage(2);
+  }
+  return value;
+}
+
+function validateArgs(args: string[]): void {
+  const booleanFlags = new Set([
+    "--dry-run",
+    "--allow-large-drop",
+    "--help",
+    "-h",
+  ]);
+  const valueFlags = new Set(["--limit", "--max-pages"]);
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (booleanFlags.has(arg)) continue;
+    if ([...valueFlags].some((flag) => arg.startsWith(`${flag}=`))) continue;
+    if (valueFlags.has(arg)) {
+      if (args[index + 1] == null) {
+        console.error(`${arg} requires a value`);
+        usage(2);
+      }
+      index++;
+      continue;
+    }
+    console.error(`Unknown option: ${arg}`);
+    usage(2);
+  }
 }
 
 const args = Deno.args.filter((arg) => arg !== "--");
+validateArgs(args);
 if (args.includes("--help") || args.includes("-h")) usage();
 
 const pageSize = numberFlag(args, "--limit", {
@@ -56,6 +88,7 @@ const pageSize = numberFlag(args, "--limit", {
 });
 const maxPages = numberFlag(args, "--max-pages");
 const dryRun = args.includes("--dry-run");
+const allowLargeDrop = args.includes("--allow-large-drop");
 const observedAt = Date.now();
 
 const fetched = await fetchRelayPdsInventory({ pageSize, maxPages });
@@ -67,6 +100,7 @@ if (!dryRun) {
   persisted = await persistRelayPdsInventory(fetched.instances, {
     complete: fetched.complete,
     observedAt,
+    allowLargeDrop,
   });
 }
 

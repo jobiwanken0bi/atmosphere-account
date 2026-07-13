@@ -335,6 +335,12 @@ CREATE INDEX IF NOT EXISTS pds_instance_account_host ON pds_instance(account_hos
 CREATE INDEX IF NOT EXISTS pds_instance_status ON pds_instance(relay_status, last_observed_at);
 CREATE INDEX IF NOT EXISTS pds_instance_bluesky ON pds_instance(is_bluesky_host, relay_status);
 
+-- Relay inventory supersedes the expensive per-DID discovery path. These
+-- drops make the removal effective when applying this idempotent baseline to
+-- an existing environment, not only for fresh databases.
+DROP TABLE IF EXISTS pds_discovery_cursor;
+DROP TABLE IF EXISTS pds_host_account;
+
 CREATE TABLE IF NOT EXISTS app_record (
   uri text PRIMARY KEY,
   cid text NOT NULL,
