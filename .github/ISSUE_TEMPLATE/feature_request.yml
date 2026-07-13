@@ -1,0 +1,46 @@
+name: Feature proposal
+description: Propose a focused product, protocol, documentation, or tooling improvement
+title: "[Proposal]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who has this problem, and what can they not do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe the behavior or contract, not only the implementation.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Account picker and OAuth handoff
+        - App directory and shared records
+        - Host directory and conformance
+        - Internationalization and accessibility
+        - SDKs, examples, and documentation
+        - Infrastructure and operations
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Compatibility, security, and migration considerations
+      description: Note protocol changes, trust boundaries, data handling, and rollout concerns.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This keeps OAuth tokens and host-owned account controls outside Atmosphere.
+          required: true
+        - label: I searched existing issues and roadmap documentation for related work.
+          required: true

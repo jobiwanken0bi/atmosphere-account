@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible problem in Atmosphere Account
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Remove tokens, cookies, database URLs, and personal information from everything you attach. Security vulnerabilities belong in a private advisory, not this form.
+  - type: input
+    id: surface
+    attributes:
+      label: Affected surface or URL
+      placeholder: https://atmosphereaccount.com/...
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include the expected behavior and the actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser/OS, Deno version, deployment, or commit SHA when relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Drag files here only after removing secrets and private data.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, cookies, private keys, database URLs, and unrelated personal data.
+          required: true
+        - label: This is not a security vulnerability or sensitive abuse report.
+          required: true

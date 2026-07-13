@@ -1,5 +1,5 @@
 import { define } from "../utils.ts";
-import { getMessages, I18nProvider } from "../i18n/mod.ts";
+import { getMessages, I18nProvider, localeDirection } from "../i18n/mod.ts";
 
 /** Open Graph / social crawlers prefer absolute image URLs. Set FRESH_PUBLIC_SITE_URL on Deno Deploy (e.g. https://atmosphereaccount.com). */
 function socialImageUrl(path: string): string {
@@ -60,7 +60,7 @@ export default define.page(function App(ctx) {
   const pageOgImageWidth = pageMeta.imageWidth ?? 1200;
   const pageOgImageHeight = pageMeta.imageHeight ?? 630;
   return (
-    <html lang={locale} class={htmlClass}>
+    <html lang={locale} dir={localeDirection(locale)} class={htmlClass}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />

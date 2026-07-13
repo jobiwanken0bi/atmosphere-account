@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/jobiwanken0bi/atmosphere-account/security/advisories/new
+    about: Report suspected vulnerabilities privately.
+  - name: Tangled issue tracker
+    url: https://tangled.org/@joebasser.com/atmosphere-account/issues
+    about: Open an issue on the first-class Tangled mirror.
+  - name: Support guidance
+    url: https://github.com/jobiwanken0bi/atmosphere-account/blob/main/SUPPORT.md
+    about: Read what to include and where to ask for help.

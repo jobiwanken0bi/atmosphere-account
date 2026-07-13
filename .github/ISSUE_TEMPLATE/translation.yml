@@ -1,0 +1,46 @@
+name: Translation or locale
+description: Add a locale or improve translated/public copy
+title: "[i18n]: "
+body:
+  - type: input
+    id: locale
+    attributes:
+      label: Locale
+      description: Use a canonical BCP 47 tag, such as es or pt-BR.
+      placeholder: pt-BR
+    validations:
+      required: true
+  - type: dropdown
+    id: direction
+    attributes:
+      label: Text direction
+      options:
+        - Left to right (ltr)
+        - Right to left (rtl)
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Is this a complete new catalog, copy review, or a focused correction?
+    validations:
+      required: true
+  - type: textarea
+    id: review
+    attributes:
+      label: Language review
+      description: Describe the translator/reviewer context and any terminology decisions.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I read docs/INTERNATIONALIZATION.md.
+          required: true
+        - label: I preserved placeholders, protocol names, and security meaning.
+          required: true
+        - label: I can help review representative page layouts for this locale.
+          required: true

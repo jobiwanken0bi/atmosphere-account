@@ -1,4 +1,5 @@
 import type { ComponentChildren, VNode } from "preact";
+import type { Locale } from "../locales.ts";
 
 /**
  * Canonical English catalog. The shape exported here defines the `Messages`
@@ -1158,6 +1159,38 @@ const en = {
   },
 } as const;
 
-export type Messages = typeof en;
+/** Widen translated values while preserving every catalog key and tuple. */
+type MessageShape<T> = T extends (...args: infer Args) => infer Result
+  ? (...args: Args) => Result
+  : T extends string ? string
+  : T extends number ? number
+  : T extends boolean ? boolean
+  : T extends readonly unknown[] ? {
+      readonly [Key in keyof T]: MessageShape<T[Key]>;
+    }
+  : T extends object ? { readonly [Key in keyof T]: MessageShape<T[Key]> }
+  : T;
 
-export default en;
+type BaseMessages = MessageShape<typeof en>;
+
+/**
+ * Contract implemented by every locale catalog.
+ *
+ * String literals are deliberately widened to `string`: a translated catalog
+ * must preserve the English catalog's structure, not its English values.
+ * Every catalog must also name every registered locale for the switcher.
+ */
+export type Messages = Omit<BaseMessages, "localeSwitcher"> & {
+  readonly localeSwitcher:
+    & Omit<
+      BaseMessages["localeSwitcher"],
+      "languageNames"
+    >
+    & {
+      readonly languageNames: Readonly<Record<Locale, string>>;
+    };
+};
+
+const messages: Messages = en;
+
+export default messages;

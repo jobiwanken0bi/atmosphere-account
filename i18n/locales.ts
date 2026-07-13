@@ -13,6 +13,13 @@ export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = "en";
 
+export type TextDirection = "ltr" | "rtl";
+
+/** Adding a locale must also declare its document direction. */
+export const LOCALE_DIRECTIONS: Readonly<Record<Locale, TextDirection>> = {
+  en: "ltr",
+};
+
 /** Cookie name used to persist a user's locale choice. */
 export const LOCALE_COOKIE = "locale";
 
@@ -22,6 +29,25 @@ export const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 export function isLocale(value: unknown): value is Locale {
   return typeof value === "string" &&
     (SUPPORTED_LOCALES as readonly string[]).includes(value);
+}
+
+/**
+ * Return the registry's canonical spelling for a locale tag.
+ *
+ * HTTP language tags are case-insensitive, while the locale registry keeps
+ * conventional BCP 47 casing (`pt-BR`, not `pt-br`). Keeping normalization in
+ * one place prevents browser headers from silently missing a supported locale.
+ */
+export function canonicalLocale(value: unknown): Locale | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return SUPPORTED_LOCALES.find((locale) =>
+    locale.toLowerCase() === normalized
+  ) ?? null;
+}
+
+export function localeDirection(locale: Locale): TextDirection {
+  return LOCALE_DIRECTIONS[locale];
 }
 
 /**
@@ -35,14 +61,17 @@ export function negotiateLocale(
   cookieValue: string | undefined,
   acceptLanguage: string | null,
 ): Locale {
-  if (cookieValue && isLocale(cookieValue)) return cookieValue;
+  const cookieLocale = canonicalLocale(cookieValue);
+  if (cookieLocale) return cookieLocale;
 
   if (acceptLanguage) {
     const ranked = parseAcceptLanguage(acceptLanguage);
     for (const tag of ranked) {
-      if (isLocale(tag)) return tag;
+      const exact = canonicalLocale(tag);
+      if (exact) return exact;
       const base = tag.split("-")[0];
-      if (isLocale(base)) return base;
+      const baseLocale = canonicalLocale(base);
+      if (baseLocale) return baseLocale;
     }
   }
 

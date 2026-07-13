@@ -46,6 +46,9 @@ jobs:
       - name: Check
         run: deno task check
 
+      - name: Focused i18n contract
+        run: deno task i18n:check
+
       - name: Test
         run: deno task test
 

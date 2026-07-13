@@ -1,167 +1,145 @@
 # Atmosphere Account
 
-Marketing site for **Atmosphere Account** — built with
-[Fresh](https://fresh.deno.dev/) and Deno.
+[![CI](https://github.com/jobiwanken0bi/atmosphere-account/actions/workflows/ci.yml/badge.svg)](https://github.com/jobiwanken0bi/atmosphere-account/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/jobiwanken0bi/atmosphere-account/actions/workflows/codeql.yml/badge.svg)](https://github.com/jobiwanken0bi/atmosphere-account/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-Open source under the [MIT License](./LICENSE). Contributions welcome — fork the
-repo on either [GitHub](https://github.com/jobiwanken0bi/atmosphere-account) or
-[tangled](https://tangled.org/@joebasser.com/atmosphere-account) and open a PR.
+Atmosphere Account is an open-source account, app-directory, host-registry, and
+login interoperability service for the AT Protocol ecosystem. It provides the
+shared "Continue with Atmosphere" account picker without becoming an OAuth token
+broker or taking control away from a user's account host.
 
-## Prerequisites
+- **Live site:** [atmosphereaccount.com](https://atmosphereaccount.com)
+- **Login picker:**
+  [login.atmosphereaccount.com](https://login.atmosphereaccount.com)
+- **GitHub:**
+  [jobiwanken0bi/atmosphere-account](https://github.com/jobiwanken0bi/atmosphere-account)
+- **Tangled:**
+  [joebasser.com/atmosphere-account](https://tangled.org/@joebasser.com/atmosphere-account)
 
-- [Deno](https://docs.deno.com/runtime/getting_started/installation) v2.7.12 for
-  local checks and CI.
+The project is actively developed and runs in production. Atmosphere Login v0.1
+is the current compatibility contract; host lexicons that are explicitly marked
+draft may still change before publication.
 
-After cloning, install dependencies (creates `node_modules/` from the lockfile):
+## What is in this repository?
+
+- A Fresh/Deno public website and hosted account picker.
+- A signed account-selection handoff with server-side verification helpers.
+- An Atmosphere app directory, reviews, profiles, and shared-record tooling.
+- A host directory with relay-based PDS inventory and conformance badges.
+- A Railway appview, Jetstream indexer, and scheduled PDS inventory importer.
+- Mock-host, conformance, OAuth, plain HTML, Fresh, and Next.js examples.
+- A typed internationalization framework with locale negotiation and RTL-ready
+  document metadata.
+
+See [Architecture](./docs/ARCHITECTURE.md) for system boundaries and the
+repository map. The security boundary is especially important: Atmosphere does
+not store app OAuth tokens, recovery material, private keys, or PDS backups.
+
+## Quick start
+
+### Prerequisites
+
+- [Deno](https://docs.deno.com/runtime/getting_started/installation) 2.7.12.
+- Node/npm only for the Chromium browser installation used by the login E2E.
 
 ```sh
+git clone https://github.com/jobiwanken0bi/atmosphere-account.git
+cd atmosphere-account
 deno install
+cp .env.example .env
+deno task dev:local
 ```
 
-Copy [`.env.example`](./.env.example) to `.env` and fill in the variables for
-the surface you are running. Local development can use `file:./local.db`; the
-production appview/indexer runtime uses Railway Postgres.
-
-## Development
+The local task uses `file:./local.db`. Seed representative local records with:
 
 ```sh
-deno task dev
+deno task dev:seed
 ```
 
-Opens the Vite dev server with hot reload.
+Do not commit `.env`, `local.db`, `_fresh/`, or `node_modules/`; they are all
+ignored.
 
-## Production build
+## Checks
 
-```sh
-deno task build
-deno task start
-```
-
-`build` runs `deno install` then `vite build` so a clean clone (and Deno Deploy)
-gets `node_modules` before Vite runs. `start` serves from `_fresh/server.js`.
-
-## Deploy (Deno Deploy)
-
-1. Push this repository to GitHub (or GitLab).
-2. In [Deno Deploy](https://console.deno.com/), create an app from the repo.
-3. Set **Root directory** to the repository root (this folder).
-4. **Build step:** `deno task build` (installs npm deps, then runs Vite —
-   required on Deploy)
-5. **Run command:** `deno task start` (or `deno serve -A _fresh/server.js` per
-   `deno.json`).
-
-The public Deno Deploy app should remain the main website and login picker. Set
-`ATMOSPHERE_APPVIEW_URL` on Deno Deploy when it should read public appview data
-from Railway's appview API. Do not set a Railway Postgres database URL on Deno
-Deploy as the permanent architecture.
-
-If production is still on Deploy Classic (`dash.deno.com` / `alias.deno.net`),
-migrate it to the new Deno Deploy platform before the Classic shutdown. See
-[docs/DENO_DEPLOY_MIGRATION.md](./docs/DENO_DEPLOY_MIGRATION.md).
-
-Adjust if your host uses different entrypoints.
-
-## Infrastructure
-
-See [docs/INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md) for the current
-production shape:
-
-- Fresh/Deno web app
-- Railway appview/indexer services
-- Railway Postgres appview database
-
-The Railway cutover runbook is in
-[docs/RAILWAY_MIGRATION.md](./docs/RAILWAY_MIGRATION.md). The old Fly indexer
-has been scaled to zero; Railway now owns the worker lease.
-
-Useful operational commands:
+Run the same core checks used by CI:
 
 ```sh
-deno task db:migrate
-deno task db:migrate:neon
-deno task db:backfill:neon
-deno task db:diff:neon
-deno task db:migrate:postgres
-deno task db:copy:postgres
-deno task db:smoke
-deno task smoke:production
-deno task db:maintain
-deno task pds:index -- --dry-run
-deno task pds:index
+deno task check
+deno task test
 deno task host:conformance:smoke
+deno task build
+```
+
+The genuine browser flow additionally needs Chromium once:
+
+```sh
+npx playwright@1.61.1 install chromium
 deno task e2e:login
-deno task backfill:atstore
-deno task rescore:app-trending
 ```
 
-The Postgres migration/copy commands are used for Railway Postgres. The older
-Neon commands are retained for comparison and rollback/migration experiments.
-`smoke:production` runs the public-shell and picker asset smoke checks.
-`pds:index` performs a cheap full PDS inventory from the relay's paginated
-`com.atproto.sync.listHosts` endpoint. It stores one row per PDS instance and
-aggregates all Bluesky mushroom PDSes into the single `bsky.network` account
-host. `smoke:public-shell` checks production liveness/readiness, OAuth metadata,
-JWKS, core HTML pages, and standalone SDK assets. `smoke:picker-assets` verifies
-the hosted picker HTML, CSS, static scripts, generated Fresh assets, and
-imported chunks from both the login and main Atmosphere domains.
-`host:conformance:smoke` starts the repository's mock PDS and proves its
-manifest, account page, and health endpoint pass the same checks used for host
-directory badges. `e2e:login` runs the real picker and OAuth handoff in
-Chromium; install its browser once with
-`npx playwright@1.61.1 install chromium`.
+`deno task check` includes repository community-file, local Markdown-link, and
+i18n registry validation. `deno task i18n:check` runs the focused locale tests.
 
-Database backup policy and restore drills are documented in
-[docs/DATABASE_RECOVERY.md](./docs/DATABASE_RECOVERY.md).
+## Common tasks
 
-GitHub Actions runs `deno task check` and `deno task build` on pushes and pull
-requests. The `Production Smoke` workflow also runs `deno task smoke:production`
-hourly and can be triggered manually after a Deno or Railway deploy. Manual runs
-default to the checked-out SHA for exact shell/appview drift checks. Pass an
-explicit `expected_release_sha` only when intentionally validating an older
-deployed release.
+| Task                               | Purpose                                             |
+| ---------------------------------- | --------------------------------------------------- |
+| `deno task dev:local`              | Start local development with a file-backed DB       |
+| `deno task dev:seed`               | Add representative local records                    |
+| `deno task build`                  | Build the Fresh production bundle                   |
+| `deno task test`                   | Run the complete unit/integration test suite        |
+| `deno task e2e:login`              | Exercise picker → signed verification → OAuth start |
+| `deno task host:conformance:smoke` | Validate the bundled mock PDS                       |
+| `deno task pds:index -- --dry-run` | Preview the relay PDS inventory                     |
+| `deno task smoke:production`       | Smoke the public shell and picker assets            |
+| `deno task db:migrate:postgres`    | Apply the Railway Postgres schema                   |
 
-Health endpoints:
+Operational and migration commands are documented in
+[Infrastructure](./docs/INFRASTRUCTURE.md); they are not required for ordinary
+UI, documentation, SDK, or i18n contributions.
 
-- `/api/health` — liveness and release metadata, no DB dependency
-- `/api/health/ready` — DB readiness, indexer heartbeat, complete relay-PDS
-  inventory freshness, and proxied appview release metadata when Deno is serving
-  as the public shell
+## Internationalization
 
-Railway services deploy from the GitHub `main` source and report
-`RAILWAY_GIT_COMMIT_SHA` directly. If Deno Deploy does not expose
-`DENO_GIT_COMMIT_SHA`, stamp only the Deno shell before its GitHub deployment.
-Provider-native provenance wins over a manual stamp. Run this after both layers
-finish deploying:
+English is currently the only shipped locale, but the catalog contract is
+designed for independent translation contributions:
 
-```sh
-SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
-```
+- BCP 47 locale tags and text direction are registered in
+  [`i18n/locales.ts`](./i18n/locales.ts).
+- [`i18n/messages/en.tsx`](./i18n/messages/en.tsx) defines the complete typed
+  catalog shape while allowing translated string values.
+- Locale negotiation honors an explicit cookie and `Accept-Language`.
+- Rendered documents emit `Content-Language`; multi-locale builds also emit the
+  cache variance required to prevent cross-language responses.
 
-The GitHub `Production Smoke` workflow uses the checked-out SHA by default. If
-production is intentionally serving a different commit, pass that deployed SHA
-as `expected_release_sha` when manually running the workflow.
+Read [Internationalization](./docs/INTERNATIONALIZATION.md) before adding a
+locale or new user-facing copy.
 
-Use the release-stamping helper only for the Deno side when needed:
+## Documentation
 
-```sh
-git push origin main
-deno task release:stamp -- --write --deno
-SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
-```
-
-`release:stamp --write` requires a clean worktree and a release commit that
-matches its tracked upstream. A Railway local upload is an emergency procedure,
-not the normal deployment path.
+- [Architecture](./docs/ARCHITECTURE.md)
+- [Atmosphere Login v0.1](./docs/ATMOSPHERE_LOGIN.md)
+- [Integration examples](./docs/ATMOSPHERE_LOGIN_INTEGRATIONS.md)
+- [Host dashboard](./docs/HOST_DASHBOARD.md)
+- [Host lexicon draft](./docs/HOST_LEXICON.md)
+- [Internationalization](./docs/INTERNATIONALIZATION.md)
+- [Infrastructure](./docs/INFRASTRUCTURE.md)
+- [Database recovery](./docs/DATABASE_RECOVERY.md)
+- [Platform roadmap](./docs/ACCOUNT_PLATFORM_ROADMAP.md)
 
 ## Contributing
 
-PRs and forks welcome on either forge:
+Contributions are welcome through either forge. GitHub is the canonical issue,
+security, and CI surface; Tangled is a first-class source mirror and accepts
+issues, forks, and pull requests. Maintainers mirror accepted changes so both
+`main` branches stay identical.
 
-- **GitHub:** https://github.com/jobiwanken0bi/atmosphere-account
-- **tangled:** https://tangled.org/@joebasser.com/atmosphere-account
-
-Both forges mirror the same `main` branch.
+Start with [CONTRIBUTING.md](./CONTRIBUTING.md), and follow the
+[Code of Conduct](./CODE_OF_CONDUCT.md). General help belongs in the public
+support channels described in [SUPPORT.md](./SUPPORT.md); suspected
+vulnerabilities must follow [SECURITY.md](./SECURITY.md).
 
 ## License
 
-[MIT](./LICENSE) © Joseph Basser
+[MIT](./LICENSE) © Joseph Basser. Contributions are accepted under the same
+license.
