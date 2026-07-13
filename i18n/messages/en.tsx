@@ -215,6 +215,54 @@ const en = {
     },
   },
 
+  hostsDirectory: {
+    eyebrow: "Account hosts",
+    headline: "Choose where your account lives.",
+    intro:
+      "Account hosts keep your Atmosphere account online so you can use it across apps. Compare who each host is for, where account data is hosted, and whether signup is open.",
+    searchLabel: "Search account hosts",
+    searchPlaceholder: "Search account hosts...",
+    sortLabel: "Sort",
+    sortAccounts: "Most accounts",
+    sortActive: "Most accounts on active PDSes",
+    sortName: "Name",
+    sortRecent: "Recently observed",
+    signupLabel: "Signup",
+    signupAll: "Any signup status",
+    signupOpen: "Open signup",
+    signupInvite: "Invite required",
+    signupClosed: "Closed",
+    signupUnknown: "Unknown",
+    verificationLabel: "Directory status",
+    verificationAll: "All hosts",
+    verificationVerified: "Verified",
+    verificationClaimed: "Claimed",
+    verificationObserved: "Observed",
+    apply: "Apply",
+    count: (count: number): string =>
+      `${count.toLocaleString()} account host${count === 1 ? "" : "s"}`,
+    aggregationNote:
+      "Relay PDS nodes operated by the same provider are grouped together—for example, Bluesky's mushroom hosts appear as one Bluesky host. Account totals are DIDs observed on that provider.",
+    noQueryMatch: (query: string): string =>
+      `No account hosts match \"${query}\".`,
+    noFilterMatch: "No account hosts match these filters.",
+    loadError: "We couldn't load account hosts. Try refreshing in a moment.",
+    paginationLabel: "Host directory pages",
+    previous: "Previous",
+    next: "Next",
+    page: (page: number, pageCount: number): string =>
+      `Page ${page} of ${pageCount}`,
+    cardEyebrow: "Account host",
+    factsLabel: "Host facts",
+    accounts: (count: number): string =>
+      `${count.toLocaleString()} account${count === 1 ? "" : "s"}`,
+    accountCountUnavailable: "Account count unavailable",
+    activeAccounts: (count: number): string =>
+      `${count.toLocaleString()} on active PDSes`,
+    compatibilityChecked: "Compatibility checked",
+    register: "Register a host",
+  },
+
   crossPollination: {
     heading: "Post once, show everywhere.",
     intro: "Your content flows freely across every app in the Atmosphere.",
@@ -1113,6 +1161,30 @@ const en = {
       reviewerFallback: "Atmosphere user",
       edited: "edited",
       ownerResponse: "Developer response",
+    },
+    app: {
+      sharedRecordPending:
+        "Reviews will be available after this app moves to the shared app record.",
+      likeCount: (count: number): string =>
+        `${count.toLocaleString()} like${count === 1 ? "" : "s"}`,
+      like: {
+        like: "Like",
+        liked: "Liked",
+        unlike: "Unlike this app",
+        signIn: "Sign in to like this app",
+        error: "Couldn’t update your like. Please try again.",
+        countOne: "{count} like",
+        countMany: "{count} likes",
+      },
+      sort: {
+        label: "Review sorting",
+        newest: "Newest",
+        highest: "Highest",
+        lowest: "Lowest",
+        sorting: "Sorting reviews…",
+        error: "Could not sort reviews.",
+      },
+      stars: "stars",
     },
     report: {
       button: "Report review",

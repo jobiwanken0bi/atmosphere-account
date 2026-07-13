@@ -1,11 +1,14 @@
 import {
   type AccountHost,
   type AccountHostClaim,
+  type AccountHostDirectoryOptions,
+  type AccountHostDirectoryResult,
   getAccountHost,
   getAccountHostClaim,
   hydrateAccountHostProfiles,
-  listAccountHosts,
+  listAccountHostDirectory,
   listSeededAccountHostFallback,
+  sortAccountHostsForDirectory,
 } from "./account-hosts.ts";
 import {
   type AppDirectorySort,
@@ -218,18 +221,36 @@ export async function searchAppsFromAppview(input: {
   });
 }
 
-export async function listHostsFromAppview(input: {
-  query?: string;
-} = {}): Promise<AccountHost[]> {
+export async function listHostsFromAppview(
+  input: AccountHostDirectoryOptions = {},
+): Promise<AccountHostDirectoryResult> {
   const remote = appviewBaseUrl();
   if (remote) {
     const params = new URLSearchParams();
     if (input.query) params.set("q", input.query);
+    if (input.sort) params.set("sort", input.sort);
+    if (input.signupStatus && input.signupStatus !== "all") {
+      params.set("signup", input.signupStatus);
+    }
+    if (input.verificationStatus && input.verificationStatus !== "all") {
+      params.set("verification", input.verificationStatus);
+    }
+    if (input.page) params.set("page", String(input.page));
+    if (input.pageSize) params.set("pageSize", String(input.pageSize));
     const qs = params.toString();
-    return await fetchAppviewJson<AccountHost[]>(
+    const payload = await fetchAppviewJson<unknown>(
       remote,
       `/api/appview/hosts${qs ? `?${qs}` : ""}`,
     );
+    if (Array.isArray(payload)) {
+      // Keep rolling deployments compatible with the pre-pagination appview,
+      // which returned the host array directly.
+      return hostDirectoryResultForHosts(
+        input,
+        payload as AccountHost[],
+      );
+    }
+    return payload as AccountHostDirectoryResult;
   }
   return await listPublicAccountHosts(input);
 }
@@ -418,17 +439,14 @@ export async function appviewProxyRequestBodyForTest(
   return await appviewProxyRequestBody(currentUrl, request, bodyless);
 }
 
-export async function listPublicAccountHosts(input: {
-  query?: string;
-} = {}): Promise<AccountHost[]> {
-  const query = input.query?.trim() ?? "";
-  const hosts = await listAccountHosts({ query }).catch((err) => {
+export async function listPublicAccountHosts(
+  input: AccountHostDirectoryOptions = {},
+): Promise<AccountHostDirectoryResult> {
+  const result = await listAccountHostDirectory(input).catch((err) => {
     console.warn("[appview] list account hosts failed:", err);
-    return listSeededAccountHostFallback({ query });
+    return seededHostDirectoryResult(input);
   });
-  let visibleHosts = hosts.length === 0 && !query
-    ? listSeededAccountHostFallback()
-    : hosts;
+  let visibleHosts = result.hosts;
   if (visibleHosts.length > 0) {
     visibleHosts = await hydrateAccountHostProfiles(visibleHosts).catch(
       (err) => {
@@ -437,7 +455,66 @@ export async function listPublicAccountHosts(input: {
       },
     );
   }
-  return visibleHosts;
+  return { ...result, hosts: visibleHosts };
+}
+
+function seededHostDirectoryResult(
+  input: AccountHostDirectoryOptions,
+): AccountHostDirectoryResult {
+  return hostDirectoryResultForHosts(
+    input,
+    listSeededAccountHostFallback({ query: input.query }),
+  );
+}
+
+export function hostDirectoryResultForHosts(
+  input: AccountHostDirectoryOptions,
+  sourceHosts: AccountHost[],
+): AccountHostDirectoryResult {
+  const sort = input.sort ?? "accounts";
+  const pageSize = positiveDirectoryInteger(input.pageSize, 24, 200);
+  const query = input.query?.trim().toLowerCase() ?? "";
+  const filteredHosts = sourceHosts.filter((host) => {
+    if (
+      input.signupStatus && input.signupStatus !== "all" &&
+      host.signupStatus !== input.signupStatus
+    ) return false;
+    if (
+      input.verificationStatus && input.verificationStatus !== "all" &&
+      host.verificationStatus !== input.verificationStatus
+    ) return false;
+    if (!query) return true;
+    return [
+      host.host,
+      host.displayName,
+      host.description,
+      host.profileHandle ?? "",
+      host.dataLocation ?? "",
+    ].some((value) => value.toLowerCase().includes(query));
+  });
+  const hosts = sortAccountHostsForDirectory(filteredHosts, sort);
+  const total = hosts.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(
+    pageCount,
+    positiveDirectoryInteger(input.page, 1),
+  );
+  return {
+    hosts: hosts.slice((page - 1) * pageSize, page * pageSize),
+    total,
+    page,
+    pageSize,
+    sort,
+  };
+}
+
+function positiveDirectoryInteger(
+  value: number | undefined,
+  fallback: number,
+  max = Number.MAX_SAFE_INTEGER,
+): number {
+  if (!Number.isFinite(value) || value == null) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(value)));
 }
 
 export async function getPublicHostDetail(

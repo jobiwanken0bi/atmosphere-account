@@ -46,6 +46,35 @@ export class PublicRecordFetchError extends Error {
   }
 }
 
+export class PdsRecordWriteError extends Error {
+  constructor(
+    readonly operation: "putRecord" | "deleteRecord",
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(
+      `${operation} failed: HTTP ${status}${
+        body.trim() ? `: ${body.trim().slice(0, 240)}` : ""
+      }`,
+    );
+    this.name = "PdsRecordWriteError";
+  }
+}
+
+export function isPdsScopeMissingError(value: unknown): boolean {
+  if (!(value instanceof PdsRecordWriteError) || value.status !== 403) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(value.body || "null") as
+      | { error?: unknown }
+      | null;
+    return parsed?.error === "ScopeMissingError";
+  } catch {
+    return false;
+  }
+}
+
 export async function putProfileRecord(
   did: string,
   pdsUrl: string,
@@ -66,7 +95,7 @@ export async function putProfileRecord(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`putRecord failed: HTTP ${res.status}: ${text}`);
+    throw new PdsRecordWriteError("putRecord", res.status, text);
   }
   return await res.json() as PutRecordResult;
 }
@@ -200,7 +229,7 @@ export async function deleteRecord(
   if (res.status === 404) return;
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`deleteRecord failed: HTTP ${res.status}: ${text}`);
+    throw new PdsRecordWriteError("deleteRecord", res.status, text);
   }
 }
 

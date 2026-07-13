@@ -9,8 +9,11 @@ import {
 } from "../../../../lib/app-directory.ts";
 import { ATSTORE_FAVORITE_NSID } from "../../../../lib/app-lexicons.ts";
 import { getValidSession } from "../../../../lib/oauth.ts";
-import { deleteRecord, putRecord } from "../../../../lib/pds.ts";
-import { createAtprotoTid } from "../../../../lib/tid.ts";
+import {
+  deleteRecord,
+  isPdsScopeMissingError,
+  putRecord,
+} from "../../../../lib/pds.ts";
 
 export const handler = define.handlers({
   POST: withRateLimit(async (ctx) => {
@@ -42,7 +45,10 @@ export const handler = define.handlers({
     if (!session) return jsonError(401, "oauth_session_expired");
 
     const now = Date.now();
-    const rkey = createAtprotoTid();
+    // Mirror ATStore's deterministic one-record-per-listing toggle. If an
+    // ATStore-created favorite is already indexed above, its original rkey is
+    // preserved instead.
+    const rkey = app.id;
     const record = {
       subject: app.atstoreListingUri,
       createdAt: new Date(now).toISOString(),
@@ -55,9 +61,11 @@ export const handler = define.handlers({
       record,
     ).catch((err) => err instanceof Error ? err : new Error(String(err)));
     if (result instanceof Error) {
+      if (isPdsScopeMissingError(result)) {
+        return reauthorizationRequired(user.handle, app.slug);
+      }
       return jsonResponse(502, {
         error: "put_record_failed",
-        detail: result.message,
       });
     }
     const uri = result.uri ||
@@ -104,9 +112,11 @@ export const handler = define.handlers({
       err instanceof Error ? err : new Error(String(err))
     );
     if (deleted) {
+      if (isPdsScopeMissingError(deleted)) {
+        return reauthorizationRequired(user.handle, app.slug);
+      }
       return jsonResponse(502, {
         error: "delete_record_failed",
-        detail: deleted.message,
       });
     }
     await deleteAppFavorite(existing.uri);
@@ -123,6 +133,15 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function reauthorizationRequired(handle: string, identifier: string): Response {
+  const next = `/apps/${encodeURIComponent(identifier)}`;
+  const params = new URLSearchParams({ handle, next });
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: `/oauth/login?${params.toString()}`,
+  });
 }
 
 function appviewProxyError(err: unknown): Response {

@@ -2,12 +2,14 @@ import {
   appviewFetchTimeoutMs,
   appviewProxyRequestBodyForTest,
   appviewRequestHeadersForTest,
+  hostDirectoryResultForHosts,
   isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
   shouldBufferAppviewRequestBodyForTest,
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
+import { listSeededAccountHostFallback } from "./account-hosts.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -74,6 +76,23 @@ Deno.test("public directory shell pages render on the Deno edge", () => {
   ) {
     assertEquals(shouldProxyAppviewBeforeSession(path), false);
   }
+});
+
+Deno.test("legacy host arrays are normalized for paginated rolling deploys", () => {
+  const hosts = listSeededAccountHostFallback().slice(0, 3).map(
+    (host, index) => ({
+      ...host,
+      observedAccountCount: index + 1,
+    }),
+  );
+  const result = hostDirectoryResultForHosts(
+    { sort: "accounts", page: 2, pageSize: 2 },
+    hosts,
+  );
+  assertEquals(result.total, 3);
+  assertEquals(result.page, 2);
+  assertEquals(result.hosts.length, 1);
+  assertEquals(result.hosts[0]?.observedAccountCount, 1);
 });
 
 Deno.test("early appview proxy covers DB-backed APIs before session hydration", () => {
