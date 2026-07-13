@@ -64,6 +64,25 @@ export interface AccountHost {
   conformanceExpiresAt?: number | null;
 }
 
+export type AccountHostSort = "accounts" | "active" | "name" | "recent";
+
+export interface AccountHostDirectoryOptions {
+  query?: string;
+  verificationStatus?: HostVerificationStatus | "all";
+  signupStatus?: HostSignupStatus | "all";
+  sort?: AccountHostSort;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AccountHostDirectoryResult {
+  hosts: AccountHost[];
+  total: number;
+  page: number;
+  pageSize: number;
+  sort: AccountHostSort;
+}
+
 export interface AccountHostLookup {
   host: string;
   displayName: string;
@@ -1970,12 +1989,23 @@ export async function observeAccountHost(
 }
 
 export async function listAccountHosts(
-  opts: {
-    query?: string;
-    verificationStatus?: HostVerificationStatus | "all";
-    signupStatus?: HostSignupStatus | "all";
-  } = {},
+  opts: AccountHostDirectoryOptions = {},
 ): Promise<AccountHost[]> {
+  const result = await listAccountHostDirectory({
+    ...opts,
+    page: 1,
+    pageSize: positiveInteger(
+      opts.pageSize,
+      MAX_PUBLIC_HOSTS,
+      MAX_PUBLIC_HOSTS,
+    ),
+  });
+  return result.hosts;
+}
+
+export async function listAccountHostDirectory(
+  opts: AccountHostDirectoryOptions = {},
+): Promise<AccountHostDirectoryResult> {
   return await withDb(async (c) => {
     await ensureSeededHosts(c);
     const filters: string[] = [];
@@ -1983,20 +2013,34 @@ export async function listAccountHosts(
     const query = opts.query?.trim();
     if (query) {
       filters.push(
-        `(lower(display_name) LIKE ? OR lower(host) LIKE ? OR lower(description) LIKE ? OR lower(COALESCE(profile_handle, '')) LIKE ? OR lower(COALESCE(data_location, '')) LIKE ?)`,
+        `(lower(account_host.display_name) LIKE ? OR lower(account_host.host) LIKE ? OR lower(account_host.description) LIKE ? OR lower(COALESCE(account_host.profile_handle, '')) LIKE ? OR lower(COALESCE(account_host.data_location, '')) LIKE ?)`,
       );
       const like = `%${query.toLowerCase()}%`;
       args.push(like, like, like, like, like);
     }
     if (opts.verificationStatus && opts.verificationStatus !== "all") {
-      filters.push(`verification_status = ?`);
+      filters.push(`account_host.verification_status = ?`);
       args.push(opts.verificationStatus);
     }
     if (opts.signupStatus && opts.signupStatus !== "all") {
-      filters.push(`signup_status = ?`);
+      filters.push(`account_host.signup_status = ?`);
       args.push(opts.signupStatus);
     }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const countResult = await c.execute({
+      sql: `SELECT COUNT(*) AS total FROM account_host ${where}`,
+      args,
+    });
+    const total = Number(
+      (countResult.rows[0] as Record<string, unknown> | undefined)?.total ?? 0,
+    );
+    const pageSize = positiveInteger(opts.pageSize, 24, MAX_PUBLIC_HOSTS);
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(
+      pageCount,
+      positiveInteger(opts.page, 1),
+    );
+    const sort = opts.sort ?? "accounts";
     const r = await c.execute({
       sql: `SELECT account_host.*,
           host_conformance.status AS conformance_status,
@@ -2005,24 +2049,91 @@ export async function listAccountHosts(
         FROM account_host
         LEFT JOIN host_conformance ON host_conformance.host = account_host.host
         ${where}
-        ORDER BY
-          CASE verification_status
-            WHEN 'verified' THEN 0
-            WHEN 'claimed' THEN 1
-            ELSE 2
-          END,
-          CASE signup_status
-            WHEN 'open' THEN 0
-            WHEN 'invite_required' THEN 1
-            WHEN 'closed' THEN 2
-            ELSE 3
-          END,
-          lower(display_name) ASC
-        LIMIT ?`,
-      args: [...args, MAX_PUBLIC_HOSTS],
+        ORDER BY ${accountHostOrder(sort)}
+        LIMIT ? OFFSET ?`,
+      args: [...args, pageSize, (page - 1) * pageSize],
     });
-    return r.rows.map((row) => parseHostRow(row as Record<string, unknown>));
+    return {
+      hosts: r.rows.map((row) => parseHostRow(row as Record<string, unknown>)),
+      total,
+      page,
+      pageSize,
+      sort,
+    };
   });
+}
+
+function accountHostOrder(sort: AccountHostSort): string {
+  const stable = `CASE account_host.verification_status
+      WHEN 'verified' THEN 0
+      WHEN 'claimed' THEN 1
+      ELSE 2
+    END,
+    CASE account_host.signup_status
+      WHEN 'open' THEN 0
+      WHEN 'invite_required' THEN 1
+      WHEN 'closed' THEN 2
+      ELSE 3
+    END,
+    lower(account_host.display_name) ASC,
+    account_host.host ASC`;
+  if (sort === "active") {
+    return `account_host.observed_active_account_count DESC,
+      account_host.observed_account_count DESC,
+      ${stable}`;
+  }
+  if (sort === "name") {
+    return `lower(account_host.display_name) ASC, account_host.host ASC`;
+  }
+  if (sort === "recent") {
+    return `COALESCE(account_host.last_observed_at, account_host.last_checked_at, account_host.updated_at) DESC,
+      ${stable}`;
+  }
+  return `account_host.observed_account_count DESC,
+    account_host.observed_active_account_count DESC,
+    ${stable}`;
+}
+
+function positiveInteger(
+  value: number | undefined,
+  fallback: number,
+  max = Number.MAX_SAFE_INTEGER,
+): number {
+  if (!Number.isFinite(value) || value == null) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(value)));
+}
+
+export function sortAccountHostsForDirectory(
+  hosts: AccountHost[],
+  sort: AccountHostSort,
+): AccountHost[] {
+  return [...hosts].sort((a, b) => {
+    if (sort === "accounts") {
+      const count = b.observedAccountCount - a.observedAccountCount ||
+        b.observedActiveAccountCount - a.observedActiveAccountCount;
+      if (count) return count;
+    } else if (sort === "active") {
+      const count = b.observedActiveAccountCount -
+          a.observedActiveAccountCount ||
+        b.observedAccountCount - a.observedAccountCount;
+      if (count) return count;
+    } else if (sort === "recent") {
+      const recent = accountHostRecentAt(b) - accountHostRecentAt(a);
+      if (recent) return recent;
+    } else {
+      return a.displayName.localeCompare(b.displayName) ||
+        a.host.localeCompare(b.host);
+    }
+    return verificationRank(a.verificationStatus) -
+        verificationRank(b.verificationStatus) ||
+      signupRank(a.signupStatus) - signupRank(b.signupStatus) ||
+      a.displayName.localeCompare(b.displayName) ||
+      a.host.localeCompare(b.host);
+  });
+}
+
+function accountHostRecentAt(host: AccountHost): number {
+  return host.lastObservedAt ?? host.lastCheckedAt ?? host.updatedAt;
 }
 
 export async function getAccountHost(

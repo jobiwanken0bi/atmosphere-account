@@ -1,7 +1,6 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
-import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import ProfileHero from "../../components/explore/ProfileHero.tsx";
 import ProfileScreenshots from "../../components/explore/ProfileScreenshots.tsx";
 import ProfileWhatsNew from "../../components/explore/ProfileWhatsNew.tsx";
@@ -12,7 +11,10 @@ import ProfileReviewList, {
 import AppCard, {
   AppCollectionBadge,
 } from "../../components/explore/AppCard.tsx";
-import AppFavoriteButton from "../../islands/AppFavoriteButton.tsx";
+import AppLikeButton, {
+  appLikeReauthHref,
+} from "../../islands/AppLikeButton.tsx";
+import AppReviewList from "../../islands/AppReviewList.tsx";
 import ProfileReviewComposer from "../../islands/ProfileReviewComposer.tsx";
 import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import ShareButton from "../../islands/ShareButton.tsx";
@@ -62,6 +64,10 @@ import {
   searchAppDirectory,
 } from "../../lib/app-directory.ts";
 import {
+  type DisplayAppReview,
+  enrichAppMirroredReviews,
+} from "../../lib/app-review-display.ts";
+import {
   type AppActionLink,
   type AppActionLinkKind,
   appActionLinks,
@@ -72,15 +78,8 @@ import {
 } from "../../lib/app-display.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
-import { isHandle, resolveIdentity } from "../../lib/identity.ts";
+import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
-
-const DID_HANDLE_CACHE_TTL_MS = 30 * 60 * 1000;
-const DID_HANDLE_CACHE_MAX = 500;
-const didHandleCache = new Map<
-  string,
-  { value: string | null; expiresAt: number }
->();
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -705,13 +704,6 @@ function AppListingDetailPage(
   );
 }
 
-interface DisplayAppReview extends AppMirroredReview {
-  authorHandle: string | null;
-  authorName: string | null;
-  authorAvatarUrl: string | null;
-  authorHref: string | null;
-}
-
 function AppListingHero(
   { app, microblogViewerClientId }: {
     app: AppListing;
@@ -903,35 +895,42 @@ function AppReviewsSection(
   const detailPath = `/apps/${app.slug}`;
   const encodedIdentifier = encodeURIComponent(app.slug);
   const loginHref = `/signin?next=${encodeURIComponent(detailPath)}`;
+  const reauthHref = signedInUser
+    ? appLikeReauthHref(signedInUser.handle, detailPath)
+    : loginHref;
   const reviewSummary = app.reviewCount > 0 && app.averageRating != null
-    ? `${app.averageRating.toFixed(1)} average from ${app.reviewCount} review${
-      app.reviewCount === 1 ? "" : "s"
-    }`
+    ? messages.reviews.summary.average(
+      app.averageRating.toFixed(1),
+      app.reviewCount,
+    )
     : app.atstoreListingUri
-    ? "No reviews yet."
-    : "Reviews will be available after this app moves to the shared app record.";
+    ? messages.reviews.list.empty
+    : messages.reviews.app.sharedRecordPending;
   return (
     <section class="profile-reviews-panel glass app-detail-reviews">
       <div class="profile-reviews-panel-header app-detail-reviews-header">
         <div>
-          <h2 class="profile-card-section-title">Reviews</h2>
+          <h2 class="profile-card-section-title">
+            {messages.reviews.list.heading}
+          </h2>
           <p class="app-detail-review-summary">{reviewSummary}</p>
-          {app.favoriteCount > 0 && (
+          {isOwner && app.favoriteCount > 0 && (
             <p class="app-detail-review-meta">
-              {app.favoriteCount} {app.favoriteCount === 1 ? "save" : "saves"}
+              {messages.reviews.app.likeCount(app.favoriteCount)}
             </p>
           )}
         </div>
         {app.atstoreListingUri && (
           <div class="app-detail-review-actions">
-            <ReviewSortLinks app={app} current={reviewSort} />
-            <AppFavoriteButton
+            <AppLikeButton
               identifier={app.slug}
               signedIn={!!signedInUser}
               isOwner={isOwner}
               loginHref={loginHref}
-              initiallyFavorited={!!ownFavorite}
+              reauthHref={reauthHref}
+              initiallyLiked={!!ownFavorite}
               count={app.favoriteCount}
+              copy={messages.reviews.app.like}
             />
             <ProfileReviewComposer
               targetId={app.slug}
@@ -972,115 +971,26 @@ function AppReviewsSection(
           </div>
         )}
       </div>
-      {!app.atstoreListingUri
-        ? null
-        : reviews.length === 0
-        ? (
-          <p class="text-body profile-reviews-empty">
-            No reviews yet.
-          </p>
-        )
-        : (
-          <div class="profile-review-cards">
-            {reviews.map((review) => (
-              <article class="profile-review-card glass" key={review.uri}>
-                <header class="profile-review-header">
-                  <a
-                    class="profile-review-author-row"
-                    href={review.authorHref ?? undefined}
-                    target={review.authorHref?.startsWith("https://")
-                      ? "_blank"
-                      : undefined}
-                    rel={review.authorHref?.startsWith("https://")
-                      ? "noopener noreferrer"
-                      : undefined}
-                  >
-                    <span class="profile-review-avatar" aria-hidden="true">
-                      {review.authorAvatarUrl
-                        ? (
-                          <img
-                            src={review.authorAvatarUrl}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            width={40}
-                            height={40}
-                          />
-                        )
-                        : (
-                          <span>
-                            {(review.authorName ?? review.authorHandle ??
-                              "Reviewer").slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                    </span>
-                    <div>
-                      <p class="profile-review-author">
-                        {review.authorName ?? review.authorHandle ??
-                          "Reviewer"}
-                      </p>
-                      {review.authorHandle && (
-                        <p class="profile-review-handle">
-                          <AtmosphereHandle handle={review.authorHandle} />
-                        </p>
-                      )}
-                      <p class="profile-review-date">
-                        {new Date(review.createdAt).toISOString().slice(0, 10)}
-                      </p>
-                    </div>
-                  </a>
-                  <p
-                    class="profile-review-stars"
-                    aria-label={`${review.rating} stars`}
-                  >
-                    {"★".repeat(Math.max(0, Math.min(5, review.rating)))}
-                    <span aria-hidden="true">
-                      {"☆".repeat(Math.max(0, 5 - review.rating))}
-                    </span>
-                  </p>
-                </header>
-                {review.body && <p class="profile-review-body">{review.body}
-                </p>}
-              </article>
-            ))}
-          </div>
-        )}
+      {app.atstoreListingUri && (
+        <AppReviewList
+          identifier={app.slug}
+          initialReviews={reviews}
+          initialSort={reviewSort}
+          copy={{
+            sortLabel: messages.reviews.app.sort.label,
+            newest: messages.reviews.app.sort.newest,
+            highest: messages.reviews.app.sort.highest,
+            lowest: messages.reviews.app.sort.lowest,
+            sorting: messages.reviews.app.sort.sorting,
+            error: messages.reviews.app.sort.error,
+            empty: messages.reviews.list.empty,
+            reviewerFallback: messages.reviews.list.reviewerFallback,
+            stars: messages.reviews.app.stars,
+          }}
+        />
+      )}
     </section>
   );
-}
-
-function ReviewSortLinks(
-  { app, current }: { app: AppListing; current: AppReviewSort },
-) {
-  const sorts: Array<{ value: AppReviewSort; label: string }> = [
-    { value: "newest", label: "Newest" },
-    { value: "highest", label: "Highest" },
-    { value: "lowest", label: "Lowest" },
-  ];
-  return (
-    <nav class="app-review-sort" aria-label="Review sorting">
-      {sorts.map((sort) => (
-        <a
-          key={sort.value}
-          href={reviewSortHref(app.slug, sort.value)}
-          class={`app-review-sort-link${
-            current === sort.value ? " is-active" : ""
-          }`}
-          aria-current={current === sort.value ? "true" : undefined}
-        >
-          {sort.label}
-        </a>
-      ))}
-    </nav>
-  );
-}
-
-function reviewSortHref(slug: string, sort: AppReviewSort): string {
-  const path = `/apps/${encodeURIComponent(slug)}`;
-  if (sort === "newest") return path;
-  const params = new URLSearchParams();
-  params.set("reviews", sort);
-  return `${path}?${params.toString()}`;
 }
 
 function RelatedAppsSection({ apps }: { apps: AppListing[] }) {
@@ -1228,48 +1138,6 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
   });
 }
 
-async function enrichAppMirroredReviews(
-  reviews: AppMirroredReview[],
-): Promise<DisplayAppReview[]> {
-  const authorDids = uniqueDids(reviews.map((review) => review.authorDid));
-  const [appUsers, profiles] = await Promise.all([
-    listAppUsersByDids(authorDids).catch(() => new Map()),
-    listProfilesByDids(authorDids).catch(() => new Map()),
-  ]);
-  const unresolvedDids = authorDids.filter((did) =>
-    !appUsers.has(did) && !profiles.has(did)
-  );
-  const resolvedHandles = new Map(
-    await Promise.all(
-      unresolvedDids.map(
-        async (did): Promise<[string, string | null]> => [
-          did,
-          await resolveHandleForDid(did),
-        ],
-      ),
-    ),
-  );
-  return reviews.map((review) => {
-    const appUser = appUsers.get(review.authorDid) ?? null;
-    const profile = profiles.get(review.authorDid) ?? null;
-    const authorHandle = appUser?.handle ?? profile?.handle ??
-      resolvedHandles.get(review.authorDid) ?? null;
-    const authorName = appUser?.displayName ?? profile?.name ?? null;
-    const authorAvatarUrl = appUser?.avatarCid && appUser.avatarMime
-      ? bskyCdnAvatarUrl(review.authorDid, appUser.avatarCid)
-      : profile?.avatarCid
-      ? bskyCdnAvatarUrl(review.authorDid, profile.avatarCid)
-      : null;
-    return {
-      ...review,
-      authorHandle,
-      authorName,
-      authorAvatarUrl,
-      authorHref: microblogProfileHref(authorHandle),
-    };
-  });
-}
-
 function uniqueDids(dids: string[]): string[] {
   return [...new Set(dids.map((did) => did.trim()).filter(Boolean))];
 }
@@ -1277,32 +1145,6 @@ function uniqueDids(dids: string[]): string[] {
 function microblogProfileHref(handle: string | null): string | null {
   const clean = handle?.replace(/^@/, "").trim();
   return clean ? `https://bsky.app/profile/${encodeURIComponent(clean)}` : null;
-}
-
-async function resolveHandleForDid(did: string): Promise<string | null> {
-  const cached = didHandleCache.get(did);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
-  if (cached) didHandleCache.delete(did);
-  try {
-    const identity = await resolveIdentity(did);
-    const value = identity.handle.startsWith("did:") ? null : identity.handle;
-    rememberDidHandle(did, value);
-    return value;
-  } catch {
-    rememberDidHandle(did, null);
-    return null;
-  }
-}
-
-function rememberDidHandle(did: string, value: string | null): void {
-  if (didHandleCache.size >= DID_HANDLE_CACHE_MAX) {
-    const oldest = didHandleCache.keys().next().value;
-    if (oldest) didHandleCache.delete(oldest);
-  }
-  didHandleCache.set(did, {
-    value,
-    expiresAt: Date.now() + DID_HANDLE_CACHE_TTL_MS,
-  });
 }
 
 function NotFound(

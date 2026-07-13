@@ -46,10 +46,18 @@ async function createInventoryTestDb() {
   const db = createClient({ url: "file::memory:" });
   await db.execute(`CREATE TABLE account_host (
     host TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    homepage_url TEXT,
+    service_endpoint TEXT,
+    signup_status TEXT NOT NULL DEFAULT 'unknown',
+    verification_status TEXT NOT NULL DEFAULT 'observed',
+    source TEXT NOT NULL DEFAULT 'observed',
     observed_account_count INTEGER NOT NULL DEFAULT 0,
     observed_active_account_count INTEGER NOT NULL DEFAULT 0,
     last_indexed_account_at INTEGER,
     last_observed_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL
   )`);
   await db.execute(`CREATE TABLE pds_instance (
@@ -271,13 +279,23 @@ Deno.test("relay inventory persistence aggregates mushrooms and marks stale rows
           status: "active",
           accountCount: 4,
         },
+        {
+          hostname: "independent.example",
+          status: "active",
+          accountCount: 3,
+        },
       ],
     }).instances;
-    await persistRelayPdsInventoryForClient(db as unknown as DbClient, first, {
-      observedAt: 100,
-      scanId: "first",
-      complete: true,
-    });
+    const firstPersisted = await persistRelayPdsInventoryForClient(
+      db as unknown as DbClient,
+      first,
+      {
+        observedAt: 100,
+        scanId: "first",
+        complete: true,
+      },
+    );
+    assertEquals(firstPersisted.publishedHosts, 1);
 
     const firstCounts = await db.execute(
       `SELECT host, observed_account_count, observed_active_account_count
@@ -287,12 +305,17 @@ Deno.test("relay inventory persistence aggregates mushrooms and marks stale rows
       {
         host: "blacksky.community",
         observed_account_count: 4,
-        observed_active_account_count: 0,
+        observed_active_account_count: 4,
       },
       {
         host: "bsky.network",
         observed_account_count: 30,
-        observed_active_account_count: 0,
+        observed_active_account_count: 30,
+      },
+      {
+        host: "independent.example",
+        observed_account_count: 3,
+        observed_active_account_count: 3,
       },
       {
         host: "legacy.example",
@@ -320,7 +343,7 @@ Deno.test("relay inventory persistence aggregates mushrooms and marks stale rows
         allowLargeDrop: true,
       },
     );
-    assertEquals(persisted.staleInstances, 2);
+    assertEquals(persisted.staleInstances, 3);
 
     const secondCounts = await db.execute(
       "SELECT host, observed_account_count FROM account_host ORDER BY host",
@@ -328,6 +351,7 @@ Deno.test("relay inventory persistence aggregates mushrooms and marks stale rows
     assertEquals(secondCounts.rows, [
       { host: "blacksky.community", observed_account_count: 0 },
       { host: "bsky.network", observed_account_count: 12 },
+      { host: "independent.example", observed_account_count: 0 },
       { host: "legacy.example", observed_account_count: 0 },
     ]);
   } finally {
@@ -346,7 +370,7 @@ Deno.test("partial relay scans never publish incomplete account totals", async (
     });
     const partial = parseRelayListHostsPage({
       hosts: [{
-        hostname: "amanita.us-east.host.bsky.network",
+        hostname: "partial-independent.example",
         accountCount: 10,
       }],
     }).instances;
@@ -367,6 +391,10 @@ Deno.test("partial relay scans never publish incomplete account totals", async (
       observed_active_account_count: 6,
       last_indexed_account_at: null,
     }]);
+    const publicHostCount = await db.execute(
+      "SELECT COUNT(*) AS count FROM account_host",
+    );
+    assertEquals(publicHostCount.rows, [{ count: 1 }]);
     const rawCount = await db.execute(
       "SELECT COUNT(*) AS count FROM pds_instance",
     );

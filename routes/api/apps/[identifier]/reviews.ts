@@ -2,10 +2,13 @@ import { define } from "../../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../../lib/appview-client.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 import {
+  type AppReviewSort,
   getAppListingByIdentifier,
   getOwnAppReview,
+  listAppReviewsForListing,
   upsertAppReview,
 } from "../../../../lib/app-directory.ts";
+import { enrichAppMirroredReviews } from "../../../../lib/app-review-display.ts";
 import { ATSTORE_REVIEW_NSID } from "../../../../lib/app-lexicons.ts";
 import { ensureAtstoreReviewerProfile } from "../../../../lib/atstore-profile.ts";
 import { getValidSession } from "../../../../lib/oauth.ts";
@@ -21,6 +24,30 @@ interface ReviewPayload {
 const MAX_REVIEW_REQUEST_BYTES = 16_384;
 
 export const handler = define.handlers({
+  async GET(ctx) {
+    const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
+      (err) => appviewProxyError(err),
+    );
+    if (proxied) return proxied;
+
+    const app = await getAppListingByIdentifier(ctx.params.identifier, {
+      syncLegacy: false,
+    }).catch(() => null);
+    if (!app || !app.atstoreListingUri) {
+      return jsonError(404, "shared_app_record_not_found");
+    }
+    const sort = readReviewSort(ctx.url.searchParams.get("sort"));
+    const reviews = await listAppReviewsForListing(app.id, {
+      limit: 12,
+      sort,
+    });
+    return jsonResponse(200, {
+      reviews: await enrichAppMirroredReviews(reviews),
+      sort,
+    }, {
+      "cache-control": "public, max-age=30, stale-while-revalidate=120",
+    });
+  },
   POST: withRateLimit(async (ctx) => {
     const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
       (err) => appviewProxyError(err),
@@ -124,10 +151,21 @@ function normalizeReviewText(value: unknown): string | null {
   return text.length <= 8000 ? text : null;
 }
 
-function jsonResponse(status: number, body: unknown): Response {
+function readReviewSort(value: string | null): AppReviewSort {
+  return value === "highest" || value === "lowest" ? value : "newest";
+}
+
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: HeadersInit = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      ...Object.fromEntries(new Headers(headers)),
+    },
   });
 }
 

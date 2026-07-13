@@ -47,6 +47,7 @@ export interface RelayPdsInventorySummary {
 
 export interface RelayPdsInventoryPersistResult {
   storedInstances: number;
+  publishedHosts: number;
   staleInstances: number;
   complete: boolean;
   scanId: string;
@@ -391,6 +392,7 @@ export async function persistRelayPdsInventoryForClient(
   }
 
   let staleInstances = 0;
+  let publishedHosts = 0;
   if (complete) {
     const stale = await c.execute({
       sql: `UPDATE pds_instance
@@ -399,6 +401,29 @@ export async function persistRelayPdsInventoryForClient(
       args: [PDS_RELAY_BASE_URL, scanId],
     });
     staleInstances = Number(stale.rowsAffected ?? 0);
+    const published = await c.execute({
+      sql: `INSERT INTO account_host (
+          host, display_name, description, homepage_url, service_endpoint,
+          signup_status, verification_status, source,
+          last_observed_at, created_at, updated_at
+        )
+        SELECT p.account_host,
+          p.account_host,
+          'An account host observed in the public relay inventory.',
+          'https://' || p.account_host,
+          MIN(p.service_endpoint),
+          'unknown', 'observed', 'observed',
+          MAX(p.last_observed_at), ?, ?
+        FROM pds_instance p
+        WHERE p.relay_status <> 'not_seen'
+          AND NOT EXISTS (
+            SELECT 1 FROM account_host h WHERE h.host = p.account_host
+          )
+        GROUP BY p.account_host
+        ON CONFLICT(host) DO NOTHING`,
+      args: [observedAt, observedAt],
+    });
+    publishedHosts = Number(published.rowsAffected ?? 0);
     await c.execute({
       sql: `UPDATE account_host
         SET observed_account_count = COALESCE((
@@ -407,7 +432,13 @@ export async function persistRelayPdsInventoryForClient(
               WHERE p.account_host = account_host.host
                 AND p.relay_status <> 'not_seen'
             ), 0),
-            observed_active_account_count = 0,
+            observed_active_account_count = COALESCE((
+              SELECT SUM(CASE WHEN p.relay_status = 'active'
+                THEN p.relay_account_count ELSE 0 END)
+              FROM pds_instance p
+              WHERE p.account_host = account_host.host
+                AND p.relay_status <> 'not_seen'
+            ), 0),
             last_indexed_account_at = ?,
             last_observed_at = COALESCE((
               SELECT MAX(p.last_observed_at)
@@ -427,6 +458,7 @@ export async function persistRelayPdsInventoryForClient(
 
   return {
     storedInstances: instances.length,
+    publishedHosts,
     staleInstances,
     complete,
     scanId,

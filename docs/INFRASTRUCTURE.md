@@ -448,8 +448,9 @@ PDS, so routine host inventory does not enumerate or permanently store every
 account DID. All `*.host.bsky.network` mushroom instances map to the single
 public `bsky.network` account host; known provider endpoints such as
 `blacksky.app` and `tngl.sh` similarly map to their friendly provider records.
-Unknown PDS instances stay in the raw inventory and are not automatically
-published on the account-host chooser.
+Independent PDS instances are published as unverified, observed entries in the
+paginated account-host directory after a complete scan. Their relay-supplied DID
+counts make the directory sortable without storing the individual account DIDs.
 
 Partial scans update only the raw inventory; public account-host totals and
 `not_seen` reconciliation change only after a complete scan. Complete scans also

@@ -463,8 +463,13 @@ async function smokeAppviewData(origin: string): Promise<void> {
   );
   assertStatus(hostsResponse, hostsUrl);
   assertContentType(hostsResponse, hostsUrl, "json");
-  const hosts = assertArray(hostsBody, `${hostsUrl} hosts`);
+  const hostDirectory = assertObject(hostsBody, `${hostsUrl} directory`);
+  const hosts = assertArray(hostDirectory.hosts, `${hostsUrl} hosts`);
   if (hosts.length === 0) throw new Error(`${hostsUrl} returned no hosts`);
+  const hostTotal = Number(hostDirectory.total);
+  if (!Number.isInteger(hostTotal) || hostTotal < hosts.length) {
+    throw new Error(`${hostsUrl} returned an invalid host total`);
+  }
   const hostRecords = hosts.map((host, index) =>
     assertObject(host, `${hostsUrl} host[${index}]`)
   );
@@ -476,7 +481,7 @@ async function smokeAppviewData(origin: string): Promise<void> {
   assertString(firstHost.displayName, `${hostsUrl} host[0].displayName`);
 
   console.log(
-    `[smoke:public-shell] ok appview data apps featured=${featuredCount} trending=${trendingCount} fresh=${freshCount} hosts=${hosts.length}`,
+    `[smoke:public-shell] ok appview data apps featured=${featuredCount} trending=${trendingCount} fresh=${freshCount} hosts=${hosts.length}/${hostTotal}`,
   );
 }
 

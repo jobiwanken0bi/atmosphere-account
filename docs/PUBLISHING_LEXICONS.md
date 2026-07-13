@@ -137,11 +137,14 @@ The login flow currently requests a named permission set plus explicit granular
 fallback scopes (see `lib/oauth-scopes.ts`):
 
 ```
-atproto include:com.atmosphereaccount.registry.fullPermissions repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update repo:fyi.atstore.profile repo:fyi.atstore.listing.detail repo:fyi.atstore.listing.review repo:fyi.atstore.listing.favorite repo:community.lexicon.app.profile repo:account.atmosphere.host.profile repo:account.atmosphere.host.service blob:image/*
+atproto include:com.atmosphereaccount.registry.fullPermissions include:fyi.atstore.authBasic repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update repo:fyi.atstore.profile repo:fyi.atstore.listing.detail repo:fyi.atstore.listing.review repo:fyi.atstore.listing.favorite repo:community.lexicon.app.profile repo:account.atmosphere.host.profile repo:account.atmosphere.host.service blob:image/*
 ```
 
 - **`include:com.atmosphereaccount.registry.fullPermissions`** — lets compatible
   authorization servers show the branded Atmosphere permission set.
+- **`include:fyi.atstore.authBasic`** — uses ATStore's own permission bundle for
+  interoperable listing, review, and favorite writes, including explicit create,
+  update, and delete actions.
 - **`repo:com.atmosphereaccount.registry.*`** — legacy Atmosphere app listing,
   review, and update collections. New app listings should migrate to shared app
   records, but these scopes keep older records editable while the migration

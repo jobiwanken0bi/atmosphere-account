@@ -53,7 +53,9 @@ function signalText(app: AppListing): string | null {
   if (app.reviewCount > 0 && app.averageRating != null) {
     return `${app.averageRating.toFixed(1)} from ${app.reviewCount} reviews`;
   }
-  if (app.favoriteCount > 0) return `${app.favoriteCount} saves`;
+  if (app.favoriteCount > 0) {
+    return `${app.favoriteCount} ${app.favoriteCount === 1 ? "like" : "likes"}`;
+  }
   return null;
 }
 
@@ -369,7 +371,8 @@ export function AppDiscoverySplit(
                       {app.favoriteCount > 0 &&
                         app.reviewCount > 0 && (
                         <span class="app-ranked-saves">
-                          {app.favoriteCount} saves
+                          {app.favoriteCount}{" "}
+                          {app.favoriteCount === 1 ? "like" : "likes"}
                         </span>
                       )}
                     </span>

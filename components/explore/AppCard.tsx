@@ -121,7 +121,11 @@ export default function AppCard({ app, compact = false }: Props) {
           )}
           <div class="app-card-signals">
             {rating && <span>{rating}</span>}
-            {app.favoriteCount > 0 && <span>{app.favoriteCount} saved</span>}
+            {app.favoriteCount > 0 && (
+              <span>
+                {app.favoriteCount} {app.favoriteCount === 1 ? "like" : "likes"}
+              </span>
+            )}
           </div>
         </div>
         {compact && <span class="app-card-compact-cta">View</span>}

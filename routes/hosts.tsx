@@ -4,28 +4,41 @@ import Footer from "../components/Footer.tsx";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import HostMark from "../components/hosts/HostMark.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
-import type { AccountHost } from "../lib/account-hosts.ts";
+import type {
+  AccountHost,
+  AccountHostDirectoryOptions,
+  AccountHostDirectoryResult,
+  AccountHostSort,
+  HostSignupStatus,
+  HostVerificationStatus,
+} from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
 import { EdgeStaleCache } from "../lib/edge-cache.ts";
 import { hostFriendlyProfile } from "../lib/host-friendly.ts";
 import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
+import { getMessages } from "../i18n/mod.ts";
 
 const HOSTS_CACHE_TTL_MS = 2 * 60 * 1000;
 const HOSTS_STALE_MS = 15 * 60 * 1000;
 const HOSTS_CACHE_MAX_ENTRIES = 24;
 
-const hostsCache = new EdgeStaleCache<AccountHost[]>({
+const hostsCache = new EdgeStaleCache<AccountHostDirectoryResult>({
   freshMs: HOSTS_CACHE_TTL_MS,
   staleMs: HOSTS_STALE_MS,
   maxEntries: HOSTS_CACHE_MAX_ENTRIES,
 });
 
 export default define.page(async function HostsPage(ctx) {
-  const query = ctx.url.searchParams.get("q")?.trim() ?? "";
-  const visibleHosts = await loadHostsResult(query).catch((err) => {
+  const copy = getMessages(ctx.state.locale).hostsDirectory;
+  const input = readDirectoryInput(ctx.url.searchParams);
+  let loadFailed = false;
+  const result = await loadHostsResult(input).catch((err) => {
     console.warn("[hosts] appview host list failed:", err);
-    return [];
+    loadFailed = true;
+    return emptyHostResult(input);
   });
+  const { hosts: visibleHosts } = result;
+  const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -34,12 +47,10 @@ export default define.page(async function HostsPage(ctx) {
           <div class="container hosts-container">
             <header class="hosts-header">
               <div>
-                <p class="text-eyebrow">Account hosts</p>
-                <h1 class="text-section">Choose where your account lives.</h1>
+                <p class="text-eyebrow">{copy.eyebrow}</p>
+                <h1 class="text-section">{copy.headline}</h1>
                 <p class="text-body mt-2">
-                  Account hosts keep your Atmosphere account online so you can
-                  use it across apps. Compare who each host is for, where
-                  account data is hosted, and whether signup is open.
+                  {copy.intro}
                 </p>
               </div>
             </header>
@@ -52,44 +63,93 @@ export default define.page(async function HostsPage(ctx) {
                 role="search"
               >
                 <label class="visually-hidden" for="hosts-search-input">
-                  Search account hosts
+                  {copy.searchLabel}
                 </label>
                 <input
                   id="hosts-search-input"
                   class="explore-search-input"
                   name="q"
                   type="search"
-                  value={query}
+                  value={input.query}
                   autoComplete="off"
                   spellcheck={false}
-                  placeholder="Search account hosts..."
+                  placeholder={copy.searchPlaceholder}
                 />
+                <label class="hosts-filter-field">
+                  <span>{copy.sortLabel}</span>
+                  <select name="sort" value={input.sort}>
+                    <option value="accounts">{copy.sortAccounts}</option>
+                    <option value="active">{copy.sortActive}</option>
+                    <option value="name">{copy.sortName}</option>
+                    <option value="recent">{copy.sortRecent}</option>
+                  </select>
+                </label>
+                <label class="hosts-filter-field">
+                  <span>{copy.signupLabel}</span>
+                  <select name="signup" value={input.signupStatus}>
+                    <option value="all">{copy.signupAll}</option>
+                    <option value="open">{copy.signupOpen}</option>
+                    <option value="invite_required">{copy.signupInvite}</option>
+                    <option value="closed">{copy.signupClosed}</option>
+                    <option value="unknown">{copy.signupUnknown}</option>
+                  </select>
+                </label>
+                <label class="hosts-filter-field">
+                  <span>{copy.verificationLabel}</span>
+                  <select name="verification" value={input.verificationStatus}>
+                    <option value="all">{copy.verificationAll}</option>
+                    <option value="verified">
+                      {copy.verificationVerified}
+                    </option>
+                    <option value="claimed">{copy.verificationClaimed}</option>
+                    <option value="observed">
+                      {copy.verificationObserved}
+                    </option>
+                  </select>
+                </label>
                 <button type="submit" class="explore-search-submit">
-                  Search
+                  {copy.apply}
                 </button>
               </form>
+            </div>
+
+            <div class="hosts-directory-summary">
+              <p>
+                <strong>{copy.count(result.total)}</strong>
+              </p>
+              <p>{copy.aggregationNote}</p>
             </div>
 
             {visibleHosts.length === 0
               ? (
                 <div class="glass hosts-empty">
                   <p class="text-body">
-                    {query
-                      ? `No account hosts match "${query}".`
-                      : "We couldn't load account hosts. Try refreshing in a moment."}
+                    {loadFailed
+                      ? copy.loadError
+                      : input.query
+                      ? copy.noQueryMatch(input.query)
+                      : copy.noFilterMatch}
                   </p>
                 </div>
               )
               : (
                 <div class="hosts-grid">
                   {visibleHosts.map((host) => (
-                    <HostCard key={host.host} host={host} />
+                    <HostCard key={host.host} host={host} copy={copy} />
                   ))}
                 </div>
               )}
+            {pageCount > 1 && (
+              <HostPagination
+                input={input}
+                page={result.page}
+                pageCount={pageCount}
+                copy={copy}
+              />
+            )}
             <DirectoryRegisterCta
               href={registerHostHref()}
-              label="Register a host"
+              label={copy.register}
             />
           </div>
         </section>
@@ -99,13 +159,124 @@ export default define.page(async function HostsPage(ctx) {
   );
 });
 
-async function loadHostsResult(query: string): Promise<AccountHost[]> {
-  const key = hostCacheKey(query);
-  return await hostsCache.get(key, () => listHostsFromAppview({ query }));
+async function loadHostsResult(
+  input: AccountHostDirectoryOptions,
+): Promise<AccountHostDirectoryResult> {
+  const key = hostCacheKey(input);
+  return await hostsCache.get(key, () => listHostsFromAppview(input));
 }
 
-function hostCacheKey(query: string): string {
-  return query.trim().toLocaleLowerCase();
+function hostCacheKey(input: AccountHostDirectoryOptions): string {
+  return JSON.stringify({
+    ...input,
+    query: input.query?.trim().toLowerCase() ?? "",
+  });
+}
+
+interface HostDirectoryInput extends AccountHostDirectoryOptions {
+  query: string;
+  sort: AccountHostSort;
+  signupStatus: HostSignupStatus | "all";
+  verificationStatus: HostVerificationStatus | "all";
+  page: number;
+  pageSize: number;
+}
+
+function readDirectoryInput(search: URLSearchParams): HostDirectoryInput {
+  return {
+    query: search.get("q")?.trim() ?? "",
+    sort: readSort(search.get("sort")),
+    signupStatus: readSignupStatus(search.get("signup")),
+    verificationStatus: readVerificationStatus(search.get("verification")),
+    page: readPositiveInteger(search.get("page"), 1),
+    pageSize: 24,
+  };
+}
+
+function readPositiveInteger(value: string | null, fallback: number): number {
+  if (value == null || value.trim() === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : fallback;
+}
+
+function readSort(value: string | null): AccountHostSort {
+  return value === "active" || value === "name" || value === "recent"
+    ? value
+    : "accounts";
+}
+
+function readSignupStatus(
+  value: string | null,
+): HostSignupStatus | "all" {
+  return value === "open" || value === "invite_required" ||
+      value === "closed" ||
+      value === "unknown"
+    ? value
+    : "all";
+}
+
+function readVerificationStatus(
+  value: string | null,
+): HostVerificationStatus | "all" {
+  return value === "verified" || value === "claimed" || value === "observed"
+    ? value
+    : "all";
+}
+
+function emptyHostResult(
+  input: AccountHostDirectoryOptions,
+): AccountHostDirectoryResult {
+  return {
+    hosts: [],
+    total: 0,
+    page: Math.max(1, input.page ?? 1),
+    pageSize: Math.max(1, input.pageSize ?? 24),
+    sort: input.sort ?? "accounts",
+  };
+}
+
+function HostPagination(
+  { input, page, pageCount, copy }: {
+    input: HostDirectoryInput;
+    page: number;
+    pageCount: number;
+    copy: HostsDirectoryCopy;
+  },
+) {
+  return (
+    <nav class="hosts-pagination" aria-label={copy.paginationLabel}>
+      {page > 1
+        ? (
+          <a href={hostDirectoryHref(input, page - 1)} rel="prev">
+            ← {copy.previous}
+          </a>
+        )
+        : <span aria-disabled="true">← {copy.previous}</span>}
+      <span>{copy.page(page, pageCount)}</span>
+      {page < pageCount
+        ? (
+          <a href={hostDirectoryHref(input, page + 1)} rel="next">
+            {copy.next} →
+          </a>
+        )
+        : <span aria-disabled="true">{copy.next} →</span>}
+    </nav>
+  );
+}
+
+function hostDirectoryHref(input: HostDirectoryInput, page: number): string {
+  const params = new URLSearchParams();
+  if (input.query) params.set("q", input.query);
+  if (input.sort !== "accounts") params.set("sort", input.sort);
+  if (input.signupStatus !== "all") {
+    params.set("signup", input.signupStatus);
+  }
+  if (input.verificationStatus !== "all") {
+    params.set("verification", input.verificationStatus);
+  }
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+  return `/hosts${query ? `?${query}` : ""}`;
 }
 
 function DirectoryRegisterCta(
@@ -123,7 +294,11 @@ function DirectoryRegisterCta(
   );
 }
 
-function HostCard({ host }: { host: AccountHost }) {
+type HostsDirectoryCopy = ReturnType<typeof getMessages>["hostsDirectory"];
+
+function HostCard(
+  { host, copy }: { host: AccountHost; copy: HostsDirectoryCopy },
+) {
   const friendly = hostFriendlyProfile(host);
   return (
     <a
@@ -134,7 +309,7 @@ function HostCard({ host }: { host: AccountHost }) {
         <div class="host-card-identity">
           <HostMark host={host} />
           <div class="host-card-title-block">
-            <span class="host-card-eyebrow">Account host</span>
+            <span class="host-card-eyebrow">{copy.cardEyebrow}</span>
             <h2>{host.displayName}</h2>
             {host.profileHandle && (
               <p class="host-card-handle">
@@ -145,11 +320,21 @@ function HostCard({ host }: { host: AccountHost }) {
         </div>
       </div>
       <p class="host-card-description">{friendly.summary}</p>
-      <div class="host-card-tags" aria-label="Host facts">
+      <div class="host-card-tags" aria-label={copy.factsLabel}>
+        <span>
+          {host.observedAccountCount > 0
+            ? copy.accounts(host.observedAccountCount)
+            : copy.accountCountUnavailable}
+        </span>
+        {host.observedActiveAccountCount > 0 && (
+          <span>{copy.activeAccounts(host.observedActiveAccountCount)}</span>
+        )}
         <span>{friendly.location}</span>
         <span>{friendly.signupLabel}</span>
         {hostHasCurrentConformance(host) && (
-          <span class="host-card-conformance">Compatibility checked</span>
+          <span class="host-card-conformance">
+            {copy.compatibilityChecked}
+          </span>
         )}
       </div>
     </a>
