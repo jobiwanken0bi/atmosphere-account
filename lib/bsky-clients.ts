@@ -68,10 +68,15 @@ export const BSKY_CLIENTS: BskyClient[] = [
     profileUrl: profileUrlAt("mu.social"),
   },
   {
+    /**
+     * Locally-hosted user-supplied mark (the served favicon is a raster
+     * that muddies at picker sizes).
+     */
     id: "anisota",
     name: "Anisota",
     domain: "anisota.net",
-    iconUrl: faviconFor("anisota.net"),
+    description: "Calm card-based Bluesky reader",
+    iconUrl: "/clients/anisota.svg",
     profileUrl: profileUrlAt("anisota.net"),
   },
   {
@@ -89,6 +94,7 @@ export const BSKY_CLIENTS: BskyClient[] = [
     id: "witchsky",
     name: "Witchsky",
     domain: "witchsky.app",
+    description: "Witchy fork of the Bluesky app",
     iconUrl: "/clients/witchsky.png",
     profileUrl: profileUrlAt("witchsky.app"),
   },
@@ -102,6 +108,8 @@ export const PROFILE_MICROBLOG_VIEWER_IDS = [
   "bluesky",
   "blacksky",
   "mu",
+  "anisota",
+  "witchsky",
 ] as const;
 
 export const PROFILE_MICROBLOG_VIEWERS = PROFILE_MICROBLOG_VIEWER_IDS
