@@ -20,6 +20,7 @@ import {
   type PdsServerDescription,
 } from "../../lib/pds-server-description.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
+import { hostHasCurrentConformance } from "../../lib/host-conformance.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -239,6 +240,14 @@ function HostDetailPage(
                   label="Verification"
                   value={verificationLabel(host.verificationStatus)}
                 />
+                {hostHasCurrentConformance(host) && (
+                  <Fact
+                    label="Compatibility"
+                    value={`Passed required checks through ${
+                      formatDate(host.conformanceExpiresAt!)
+                    }`}
+                  />
+                )}
                 {host.lastObservedAt && (
                   <Fact
                     label="Last seen"

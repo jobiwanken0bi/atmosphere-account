@@ -8,6 +8,7 @@ import type { AccountHost } from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
 import { EdgeStaleCache } from "../lib/edge-cache.ts";
 import { hostFriendlyProfile } from "../lib/host-friendly.ts";
+import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
 
 const HOSTS_CACHE_TTL_MS = 2 * 60 * 1000;
 const HOSTS_STALE_MS = 15 * 60 * 1000;
@@ -147,6 +148,9 @@ function HostCard({ host }: { host: AccountHost }) {
       <div class="host-card-tags" aria-label="Host facts">
         <span>{friendly.location}</span>
         <span>{friendly.signupLabel}</span>
+        {hostHasCurrentConformance(host) && (
+          <span class="host-card-conformance">Compatibility checked</span>
+        )}
       </div>
     </a>
   );

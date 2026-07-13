@@ -188,23 +188,22 @@ Run `deno task smoke:production` after Deno or Railway appview deploys. It runs
 core HTML pages, and standalone SDK assets. The public shell health response and
 proxied appview readiness response must both expose `release.runtime`; this
 catches stale appview deployments where the Deno shell is current but Railway is
-still serving an older server bundle. For exact release drift detection, set
-`ATMOSPHERE_RELEASE_SHA` and `ATMOSPHERE_RELEASE_BRANCH` on both Deno Deploy and
-Railway before deploying, then run:
+still serving an older server bundle. For exact release drift detection, use
+provider-native Git metadata. Source-linked Railway services expose
+`RAILWAY_GIT_COMMIT_SHA`; Deno Deploy may expose `DENO_GIT_COMMIT_SHA`. If the
+Deno runtime does not, stamp only the Deno side before deploying, then run:
 
 ```sh
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
 
-The helper below stamps the current git SHA and branch onto Deno Deploy and the
-Railway appview service without triggering a Railway deploy. Run it before
-deploying both layers from the same working tree:
+The helper below stamps only Deno when its provider metadata is unavailable.
+Railway must deploy the same pushed `main` commit from its connected GitHub
+source:
 
 ```sh
-git push
-deno task release:stamp -- --write
-deno deploy --prod
-railway up --service web --environment production --detach -m "Deploy $(git rev-parse --short HEAD)"
+git push origin main
+deno task release:stamp -- --write --deno
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
 
@@ -227,6 +226,12 @@ release. Treat it as an early warning, not as a replacement for running
 `deno task smoke:production` immediately after an intentional deploy or DNS
 change. Manual dispatch accepts `expected_release_sha` only as an override when
 you intentionally need to smoke an older deployed release from GitHub.
+
+The appview readiness payload includes `pdsInventory`. Only a successful scan
+that reached the relay's final page satisfies freshness. The default 42-hour
+window is monitored by the hourly Production Smoke workflow, which opens or
+updates a GitHub issue on failure. A failed or partial scan remains visible as
+the latest attempt but cannot refresh the heartbeat.
 
 ## Neon Migration Track
 

@@ -14,6 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+
   check:
     name: Check and build
     runs-on: ubuntu-latest
@@ -37,5 +49,31 @@ jobs:
       - name: Test
         run: deno task test
 
+      - name: Smoke host conformance
+        run: deno task host:conformance:smoke
+
       - name: Build
         run: deno task build
+
+  browser-e2e:
+    name: Browser login E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.7.12
+
+      - name: Install dependencies
+        run: deno install
+
+      - name: Install Chromium
+        run: npx --yes playwright@1.61.1 install --with-deps chromium
+
+      - name: Exercise picker, verification, and OAuth handoff
+        run: deno task e2e:login

@@ -45,20 +45,20 @@ function runtimeReleaseFromEnv(env: EnvReader): RuntimeRelease {
       "VERCEL_PROJECT_PRODUCTION_URL",
     ]),
     gitSha: shortSha(firstEnv(env, [
-      "ATMOSPHERE_RELEASE_SHA",
       "RAILWAY_GIT_COMMIT_SHA",
       "DENO_GIT_COMMIT_SHA",
       "GITHUB_SHA",
       "VERCEL_GIT_COMMIT_SHA",
       "RENDER_GIT_COMMIT",
+      "ATMOSPHERE_RELEASE_SHA",
     ])),
     gitBranch: firstEnv(env, [
-      "ATMOSPHERE_RELEASE_BRANCH",
       "RAILWAY_GIT_BRANCH",
       "DENO_GIT_BRANCH",
       "GITHUB_REF_NAME",
       "VERCEL_GIT_COMMIT_REF",
       "RENDER_GIT_BRANCH",
+      "ATMOSPHERE_RELEASE_BRANCH",
     ]),
   };
 }

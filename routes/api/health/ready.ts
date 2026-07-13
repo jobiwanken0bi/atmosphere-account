@@ -4,6 +4,7 @@ import { checkDbHealth } from "../../../lib/db.ts";
 import { IS_DEV } from "../../../lib/env.ts";
 import { runtimeRelease } from "../../../lib/release.ts";
 import { getWorkerLeaseStatus } from "../../../lib/worker-lease.ts";
+import { getPdsInventoryFreshness } from "../../../lib/pds-inventory-health.ts";
 
 const INDEXER_LEASE = "jetstream-indexer";
 const READINESS_SUCCESS_CACHE_MS = 2_000;
@@ -55,9 +56,10 @@ async function computeReadiness(): Promise<ReadinessResult> {
   const appview = appviewBaseUrl();
   if (appview) return await appviewReadiness(appview);
 
-  const [database, indexer] = await Promise.all([
+  const [database, indexer, pdsInventory] = await Promise.all([
     checkDbHealth(),
     getWorkerLeaseStatus(INDEXER_LEASE).catch(() => null),
+    getPdsInventoryFreshness().catch(() => null),
   ]);
   return {
     status: 200,
@@ -74,6 +76,12 @@ async function computeReadiness(): Promise<ReadinessResult> {
           expiresAt: new Date(indexer.expiresAt).toISOString(),
         }
         : { present: false, fresh: false },
+      pdsInventory: pdsInventory ?? {
+        present: false,
+        fresh: false,
+        error: "inventory_freshness_unavailable",
+      },
+      degraded: !pdsInventory?.fresh,
       timestamp: new Date().toISOString(),
     },
   };

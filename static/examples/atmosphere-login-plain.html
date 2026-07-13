@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plain HTML Atmosphere Login example</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container" style="max-width: 44rem; padding-block: 4rem">
+      <p class="text-eyebrow">Plain HTML example</p>
+      <h1>Continue with Atmosphere</h1>
+      <p>
+        This dependency-free page configures the browser SDK from the current
+        origin. The relying app still verifies the returned selection token on
+        its server before starting AT Protocol OAuth.
+      </p>
+      <button type="button" data-atmosphere-login></button>
+      <p>
+        <a href="/docs/verify-token">Read the server verification guide</a>
+      </p>
+    </main>
+    <script src="/examples/atmosphere-login-plain.js" defer></script>
+    <script src="/atmosphere-login.js" defer></script>
+  </body>
+</html>

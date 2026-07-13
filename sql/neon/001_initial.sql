@@ -297,6 +297,20 @@ CREATE TABLE IF NOT EXISTS account_host_claim (
 
 CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did);
 
+CREATE TABLE IF NOT EXISTS host_conformance (
+  host text PRIMARY KEY REFERENCES account_host(host) ON DELETE CASCADE,
+  status text NOT NULL,
+  manifest_url text,
+  account_url text,
+  service_endpoint text,
+  report_json text NOT NULL,
+  checked_at bigint NOT NULL,
+  expires_at bigint NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS host_conformance_status
+  ON host_conformance(status, expires_at);
+
 CREATE TABLE IF NOT EXISTS host_record (
   uri text PRIMARY KEY,
   cid text,
@@ -334,6 +348,21 @@ CREATE TABLE IF NOT EXISTS pds_instance (
 CREATE INDEX IF NOT EXISTS pds_instance_account_host ON pds_instance(account_host, relay_status);
 CREATE INDEX IF NOT EXISTS pds_instance_status ON pds_instance(relay_status, last_observed_at);
 CREATE INDEX IF NOT EXISTS pds_instance_bluesky ON pds_instance(is_bluesky_host, relay_status);
+
+CREATE TABLE IF NOT EXISTS pds_inventory_scan (
+  scan_id text PRIMARY KEY,
+  relay_url text NOT NULL,
+  status text NOT NULL,
+  complete integer NOT NULL DEFAULT 0,
+  pages integer,
+  instance_count integer,
+  started_at bigint NOT NULL,
+  completed_at bigint,
+  error text
+);
+
+CREATE INDEX IF NOT EXISTS pds_inventory_scan_freshness
+  ON pds_inventory_scan(status, complete, completed_at);
 
 -- Relay inventory supersedes the expensive per-DID discovery path. These
 -- drops make the removal effective when applying this idempotent baseline to

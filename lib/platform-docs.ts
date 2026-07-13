@@ -1907,7 +1907,7 @@ return Response.redirect(oauthUrl);`,
   {
     slug: "troubleshooting",
     group: "Guides",
-    status: "Draft",
+    status: "Stable",
     navTitle: "Troubleshooting",
     title: "Troubleshoot Atmosphere Login",
     description:
@@ -2014,7 +2014,7 @@ return Response.redirect(oauthUrl);`,
   {
     slug: "host-dashboard",
     group: "Hosts",
-    status: "Experimental",
+    status: "Stable",
     navTitle: "Host Account Routing",
     title: "Route users to host-owned account pages",
     description:
@@ -2248,7 +2248,7 @@ return Response.redirect(oauthUrl);`,
   {
     slug: "conformance",
     group: "Hosts",
-    status: "Experimental",
+    status: "Stable",
     navTitle: "Conformance",
     title: "Validate host compatibility",
     description:
@@ -2273,15 +2273,15 @@ return Response.redirect(oauthUrl);`,
           {
             type: "code",
             language: "sh",
-            code: `deno task host:dashboard:check host.example
-deno task host:dashboard:check ./manifest.json --host=host.example
-deno task host:dashboard:check host.example --json`,
+            code: `deno task host:conformance host.example
+deno task host:conformance host.example --json
+deno task host:conformance host.example --write`,
           },
           {
             type: "callout",
             title: "Badge policy",
             body:
-              "Atmosphere should only show compatibility badges after a host passes conformance checks. Observed or claimed hosts can exist in the directory without publishing optional compatibility metadata, and the PDS host remains responsible for account controls either way.",
+              "Atmosphere only shows a compatibility badge after the manifest, account route, and PDS health checks pass. Stored results expire after seven days; observed or claimed hosts can remain listed without a badge.",
           },
         ],
       },
@@ -2410,6 +2410,33 @@ deno task host:dashboard:check host.example --json`,
             method: "GET",
             path: "/api/registry/icons.zip",
             body: "ZIP archive of current verified project SVG icons.",
+          },
+        ],
+      },
+      {
+        id: "integration-examples",
+        title: "Login integration examples",
+        blocks: [
+          {
+            type: "endpoint",
+            method: "GET",
+            path: "/examples/atmosphere-login/app",
+            body:
+              "Executable Fresh/Deno reference app covering signed selection verification, app-owned AT Protocol OAuth, and the final app session.",
+          },
+          {
+            type: "endpoint",
+            method: "GET",
+            path: "/examples/atmosphere-login-plain.html",
+            body:
+              "Dependency-free browser button example; the callback still uses the server verifier before OAuth starts.",
+          },
+          {
+            type: "endpoint",
+            method: "GET",
+            path:
+              "https://github.com/jobiwanken0bi/atmosphere-account/tree/main/examples/nextjs-atmosphere-login",
+            body: "Next.js App Router button and server Route Handler example.",
           },
         ],
       },

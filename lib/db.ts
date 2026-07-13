@@ -443,6 +443,17 @@ const SCHEMA_STATEMENTS: string[] = [
     verified_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS host_conformance (
+    host TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    manifest_url TEXT,
+    account_url TEXT,
+    service_endpoint TEXT,
+    report_json TEXT NOT NULL,
+    checked_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
+  )`,
   /**
    * Source records from account.atmosphere.host.* lexicons. The public
    * `account_host` table is the merged read model; these rows preserve the
@@ -481,6 +492,22 @@ const SCHEMA_STATEMENTS: string[] = [
     first_observed_at INTEGER NOT NULL,
     last_observed_at INTEGER NOT NULL,
     last_scan_id TEXT NOT NULL
+  )`,
+  /**
+   * One row per relay inventory attempt. `pds_instance.last_observed_at`
+   * cannot prove that a scan reached the final page, so production freshness
+   * monitoring keys off successful, complete attempts recorded here.
+   */
+  `CREATE TABLE IF NOT EXISTS pds_inventory_scan (
+    scan_id TEXT PRIMARY KEY,
+    relay_url TEXT NOT NULL,
+    status TEXT NOT NULL,
+    complete INTEGER NOT NULL DEFAULT 0,
+    pages INTEGER,
+    instance_count INTEGER,
+    started_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    error TEXT
   )`,
   `DROP TABLE IF EXISTS pds_discovery_cursor`,
   `DROP TABLE IF EXISTS pds_host_account`,
@@ -747,12 +774,14 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS account_host_signup ON account_host(signup_status)`,
   `CREATE INDEX IF NOT EXISTS account_host_source ON account_host(source)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did)`,
+  `CREATE INDEX IF NOT EXISTS host_conformance_status ON host_conformance(status, expires_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_repo_rkey ON host_record(repo_did, collection, rkey)`,
   `CREATE INDEX IF NOT EXISTS pds_instance_account_host ON pds_instance(account_host, relay_status)`,
   `CREATE INDEX IF NOT EXISTS pds_instance_status ON pds_instance(relay_status, last_observed_at)`,
   `CREATE INDEX IF NOT EXISTS pds_instance_bluesky ON pds_instance(is_bluesky_host, relay_status)`,
+  `CREATE INDEX IF NOT EXISTS pds_inventory_scan_freshness ON pds_inventory_scan(status, complete, completed_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_collection ON app_record(collection, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_listing ON app_record(listing_id, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_repo_rkey ON app_record(repo_did, collection, rkey)`,

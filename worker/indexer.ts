@@ -77,6 +77,10 @@ import {
   markHostProtocolRecordDeleted,
   upsertHostProtocolRecord,
 } from "../lib/host-record-indexing.ts";
+import {
+  nextReconnectFailureCount,
+  reconnectDelayMs,
+} from "../lib/reconnect-backoff.ts";
 
 interface JetstreamCommit {
   rev: string;
@@ -106,7 +110,6 @@ const COLLECTIONS: string[] = [
     !collection.startsWith("community.lexicon.app.")
   ),
 ];
-const RECONNECT_DELAY_MS = 5_000;
 const CURSOR_PERSIST_INTERVAL_MS = 5_000;
 const LEASE_NAME = "jetstream-indexer";
 const LEASE_TTL_MS = 45_000;
@@ -116,6 +119,16 @@ class LeaseUnavailableError extends Error {
   constructor() {
     super("another indexer owns the Jetstream lease");
     this.name = "LeaseUnavailableError";
+  }
+}
+
+class JetstreamDisconnectError extends Error {
+  connectedForMs: number;
+
+  constructor(message: string, connectedForMs: number) {
+    super(message);
+    this.name = "JetstreamDisconnectError";
+    this.connectedForMs = connectedForMs;
   }
 }
 
@@ -608,6 +621,7 @@ async function runOnce(): Promise<never> {
   let lastPersistedAt = 0;
   let processedCursor = cursor ?? 0;
   let renewTimer: number | undefined;
+  let connectedAt: number | null = null;
 
   try {
     return await new Promise<never>((_, reject) => {
@@ -632,6 +646,7 @@ async function runOnce(): Promise<never> {
       }, LEASE_RENEW_INTERVAL_MS);
 
       ws.addEventListener("open", () => {
+        connectedAt = Date.now();
         console.log("[indexer] connected");
       });
       ws.addEventListener("message", (msg) => {
@@ -652,14 +667,24 @@ async function runOnce(): Promise<never> {
         });
       });
       ws.addEventListener("close", (ev) => {
-        stopped = true;
-        reject(new Error(`websocket closed: ${ev.code} ${ev.reason}`));
-      });
-      ws.addEventListener("error", (ev) => {
+        if (stopped) return;
         stopped = true;
         reject(
-          new Error(
-            `websocket error: ${(ev as ErrorEvent).message ?? "unknown"}`,
+          new JetstreamDisconnectError(
+            `websocket closed (${ev.code}${ev.reason ? `: ${ev.reason}` : ""})`,
+            connectedAt == null ? 0 : Date.now() - connectedAt,
+          ),
+        );
+      });
+      ws.addEventListener("error", (ev) => {
+        if (stopped) return;
+        stopped = true;
+        reject(
+          new JetstreamDisconnectError(
+            `websocket transport error: ${
+              (ev as ErrorEvent).message || "unknown"
+            }`,
+            connectedAt == null ? 0 : Date.now() - connectedAt,
           ),
         );
       });
@@ -674,20 +699,33 @@ async function runOnce(): Promise<never> {
 }
 
 async function main(): Promise<void> {
+  let consecutiveFailures = 0;
   while (!shuttingDown) {
+    let retryDelayMs = reconnectDelayMs(Math.max(1, consecutiveFailures));
     try {
       await runOnce();
     } catch (err) {
       if (shuttingDown) break;
       if (err instanceof LeaseUnavailableError) {
         console.warn(`[indexer] ${err.message}; retrying soon`);
+        consecutiveFailures = 0;
+      } else if (err instanceof JetstreamDisconnectError) {
+        consecutiveFailures = nextReconnectFailureCount({
+          previous: consecutiveFailures,
+          connectedForMs: err.connectedForMs,
+        });
+        retryDelayMs = reconnectDelayMs(consecutiveFailures);
+        console.warn(
+          `[indexer] ${err.message}; reconnecting in ${retryDelayMs}ms`,
+        );
       } else {
+        consecutiveFailures = Math.min(11, consecutiveFailures + 1);
+        retryDelayMs = reconnectDelayMs(consecutiveFailures);
         console.error("[indexer]", err);
       }
     }
     if (shuttingDown) break;
-    console.log(`[indexer] reconnecting in ${RECONNECT_DELAY_MS}ms...`);
-    await new Promise((r) => setTimeout(r, RECONNECT_DELAY_MS));
+    await new Promise((r) => setTimeout(r, retryDelayMs));
   }
   await releaseWorkerLease(LEASE_NAME, workerId).catch(() => {});
   console.log("[indexer] stopped");

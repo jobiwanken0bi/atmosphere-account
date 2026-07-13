@@ -4,6 +4,11 @@ import {
   persistRelayPdsInventory,
   summarizeRelayPdsInventory,
 } from "../lib/pds-relay-inventory.ts";
+import {
+  failPdsInventoryScan,
+  finishPdsInventoryScan,
+  startPdsInventoryScan,
+} from "../lib/pds-inventory-health.ts";
 
 function usage(exitCode = 0): never {
   const write = exitCode === 0 ? console.log : console.error;
@@ -90,29 +95,51 @@ const maxPages = numberFlag(args, "--max-pages");
 const dryRun = args.includes("--dry-run");
 const allowLargeDrop = args.includes("--allow-large-drop");
 const observedAt = Date.now();
+const scanId = crypto.randomUUID();
 
-const fetched = await fetchRelayPdsInventory({ pageSize, maxPages });
-const summary = summarizeRelayPdsInventory(fetched.instances);
-
-let persisted = null;
 if (!dryRun) {
   await loadDotEnvIfPresent();
-  persisted = await persistRelayPdsInventory(fetched.instances, {
-    complete: fetched.complete,
-    observedAt,
-    allowLargeDrop,
-  });
+  await startPdsInventoryScan(scanId, observedAt);
 }
 
-console.log(JSON.stringify(
-  {
-    mode: dryRun ? "dry-run" : "write",
-    pages: fetched.pages,
-    complete: fetched.complete,
-    nextCursor: fetched.nextCursor,
-    summary,
-    persisted,
-  },
-  null,
-  2,
-));
+try {
+  const fetched = await fetchRelayPdsInventory({ pageSize, maxPages });
+  const summary = summarizeRelayPdsInventory(fetched.instances);
+
+  let persisted = null;
+  if (!dryRun) {
+    persisted = await persistRelayPdsInventory(fetched.instances, {
+      complete: fetched.complete,
+      observedAt,
+      scanId,
+      allowLargeDrop,
+    });
+    await finishPdsInventoryScan({
+      scanId,
+      complete: fetched.complete,
+      pages: fetched.pages,
+      instanceCount: fetched.instances.length,
+    });
+  }
+
+  console.log(JSON.stringify(
+    {
+      mode: dryRun ? "dry-run" : "write",
+      scanId: dryRun ? null : scanId,
+      pages: fetched.pages,
+      complete: fetched.complete,
+      nextCursor: fetched.nextCursor,
+      summary,
+      persisted,
+    },
+    null,
+    2,
+  ));
+} catch (err) {
+  if (!dryRun) {
+    await failPdsInventoryScan({ scanId, error: err }).catch((recordError) => {
+      console.error("[pds:index] failed to record scan failure:", recordError);
+    });
+  }
+  throw err;
+}
