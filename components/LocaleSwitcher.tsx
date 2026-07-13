@@ -11,7 +11,7 @@ export default function LocaleSwitcher({ returnTo }: { returnTo?: string }) {
   const t = useT();
   const current = useLocale();
   if (SUPPORTED_LOCALES.length < 2) return null;
-  const names = t.localeSwitcher.languageNames as Record<string, string>;
+  const names = t.localeSwitcher.languageNames;
 
   return (
     <form

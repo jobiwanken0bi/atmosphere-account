@@ -63,7 +63,25 @@ async function main() {
     const requests = [];
     page.on("request", (request) => requests.push(request.url()));
 
-    await page.goto(`${ORIGIN}/dev/login-picker?current=local-picker.test`);
+    const pickerResponse = await page.goto(
+      `${ORIGIN}/dev/login-picker?current=local-picker.test`,
+    );
+    if (pickerResponse?.headers()["content-language"] !== "en") {
+      throw new Error(
+        "picker response did not declare its negotiated language",
+      );
+    }
+    const documentLocale = await page.locator("html").evaluate((element) => ({
+      lang: element.lang,
+      dir: element.dir,
+    }));
+    if (documentLocale.lang !== "en" || documentLocale.dir !== "ltr") {
+      throw new Error(
+        `picker document locale metadata is invalid: ${
+          JSON.stringify(documentLocale)
+        }`,
+      );
+    }
     console.log("[e2e:login] picker loaded; selecting local account");
     const selectedAccount = page.locator("a.login-picker-account-row").filter({
       hasText: "local-picker.test",

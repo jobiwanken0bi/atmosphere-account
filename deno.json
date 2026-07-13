@@ -2,8 +2,10 @@
   "nodeModulesDir": "manual",
   "license": "MIT",
   "tasks": {
-    "check": "deno fmt --check . && deno lint . && deno check",
+    "check": "deno fmt --check . && deno lint . && deno check && deno task oss:check",
     "test": "deno test -A",
+    "i18n:check": "deno test i18n",
+    "oss:check": "deno run --allow-read scripts/check-open-source.ts",
     "dev": "vite",
     "dev:local": "ATMOSPHERE_DB_BACKEND=turso TURSO_DATABASE_URL=file:./local.db deno task dev --host 127.0.0.1",
     "dev:seed": "deno run -A scripts/seed-local-dev.ts",

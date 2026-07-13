@@ -1,0 +1,9 @@
+# Default review routing. Ownership indicates review responsibility, not an
+# exclusive right to contribute to an area.
+* @jobiwanken0bi
+
+/i18n/ @jobiwanken0bi
+/lexicons/ @jobiwanken0bi
+/.github/workflows/ @jobiwanken0bi
+/lib/security.ts @jobiwanken0bi
+/lib/atmosphere-login*.ts @jobiwanken0bi

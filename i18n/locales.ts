@@ -1,8 +1,8 @@
 /**
  * Locale registry. To add a new language:
  *   1. Add its tag here.
- *   2. Add a matching `i18n/messages/<tag>.ts` that satisfies the `Messages` type
- *      from `i18n/messages/en.ts`.
+ *   2. Add a matching `i18n/messages/<tag>.tsx` that satisfies the `Messages`
+ *      type from `i18n/messages/en.tsx`.
  *   3. Register it in `i18n/messages/index.ts`.
  *
  * Tags follow BCP 47 (e.g. "en", "es", "pt-BR").
@@ -12,6 +12,13 @@ export const SUPPORTED_LOCALES = ["en"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = "en";
+
+export type TextDirection = "ltr" | "rtl";
+
+/** Adding a locale must also declare its document direction. */
+export const LOCALE_DIRECTIONS: Readonly<Record<Locale, TextDirection>> = {
+  en: "ltr",
+};
 
 /** Cookie name used to persist a user's locale choice. */
 export const LOCALE_COOKIE = "locale";
@@ -25,6 +32,25 @@ export function isLocale(value: unknown): value is Locale {
 }
 
 /**
+ * Return the registry's canonical spelling for a locale tag.
+ *
+ * HTTP language tags are case-insensitive, while the locale registry keeps
+ * conventional BCP 47 casing (`pt-BR`, not `pt-br`). Keeping normalization in
+ * one place prevents browser headers from silently missing a supported locale.
+ */
+export function canonicalLocale(value: unknown): Locale | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return SUPPORTED_LOCALES.find((locale) =>
+    locale.toLowerCase() === normalized
+  ) ?? null;
+}
+
+export function localeDirection(locale: Locale): TextDirection {
+  return LOCALE_DIRECTIONS[locale];
+}
+
+/**
  * Negotiate the best supported locale given an explicit preference and the
  * request headers. Resolution order:
  *   1. Explicit cookie (already validated).
@@ -35,14 +61,17 @@ export function negotiateLocale(
   cookieValue: string | undefined,
   acceptLanguage: string | null,
 ): Locale {
-  if (cookieValue && isLocale(cookieValue)) return cookieValue;
+  const cookieLocale = canonicalLocale(cookieValue);
+  if (cookieLocale) return cookieLocale;
 
   if (acceptLanguage) {
     const ranked = parseAcceptLanguage(acceptLanguage);
     for (const tag of ranked) {
-      if (isLocale(tag)) return tag;
+      const exact = canonicalLocale(tag);
+      if (exact) return exact;
       const base = tag.split("-")[0];
-      if (isLocale(base)) return base;
+      const baseLocale = canonicalLocale(base);
+      if (baseLocale) return baseLocale;
     }
   }
 
