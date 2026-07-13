@@ -300,7 +300,12 @@ const SEEDED_HOSTS: SeedHost[] = [
     signupStatus: "unknown",
     verificationStatus: "observed",
     source: "seeded",
-    matchPatterns: ["blacksky.community", "*.blacksky.community"],
+    matchPatterns: [
+      "blacksky.community",
+      "*.blacksky.community",
+      "blacksky.app",
+      "*.blacksky.app",
+    ],
   },
   {
     host: "sprk.so",
@@ -326,7 +331,13 @@ const SEEDED_HOSTS: SeedHost[] = [
     signupStatus: "open",
     verificationStatus: "observed",
     source: "seeded",
-    matchPatterns: ["tangled.org", "*.tangled.org", "tangled.sh"],
+    matchPatterns: [
+      "tangled.org",
+      "*.tangled.org",
+      "tangled.sh",
+      "tngl.sh",
+      "*.tngl.sh",
+    ],
   },
   {
     host: "pckt.cafe",

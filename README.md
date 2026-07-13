@@ -86,6 +86,8 @@ deno task db:copy:postgres
 deno task db:smoke
 deno task smoke:production
 deno task db:maintain
+deno task pds:index -- --dry-run
+deno task pds:index
 deno task backfill:atstore
 deno task rescore:app-trending
 ```
@@ -93,10 +95,13 @@ deno task rescore:app-trending
 The Postgres migration/copy commands are used for Railway Postgres. The older
 Neon commands are retained for comparison and rollback/migration experiments.
 `smoke:production` runs the public-shell and picker asset smoke checks.
-`smoke:public-shell` checks production liveness/readiness, OAuth metadata, JWKS,
-core HTML pages, and standalone SDK assets. `smoke:picker-assets` verifies the
-hosted picker HTML, CSS, static scripts, generated Fresh assets, and imported
-chunks from both the login and main Atmosphere domains.
+`pds:index` performs a cheap full PDS inventory from the relay's paginated
+`com.atproto.sync.listHosts` endpoint. It stores one row per PDS instance and
+aggregates all Bluesky mushroom PDSes into the single `bsky.network` account
+host. `smoke:public-shell` checks production liveness/readiness, OAuth metadata,
+JWKS, core HTML pages, and standalone SDK assets. `smoke:picker-assets` verifies
+the hosted picker HTML, CSS, static scripts, generated Fresh assets, and
+imported chunks from both the login and main Atmosphere domains.
 
 GitHub Actions runs `deno task check` and `deno task build` on pushes and pull
 requests. The `Production Smoke` workflow also runs `deno task smoke:production`

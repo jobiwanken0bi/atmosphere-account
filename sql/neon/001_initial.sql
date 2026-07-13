@@ -317,27 +317,23 @@ CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at);
 CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at);
 CREATE INDEX IF NOT EXISTS host_record_repo_rkey ON host_record(repo_did, collection, rkey);
 
-CREATE TABLE IF NOT EXISTS pds_host_account (
-  did text PRIMARY KEY,
-  handle text,
+CREATE TABLE IF NOT EXISTS pds_instance (
+  service_host text PRIMARY KEY,
   service_endpoint text NOT NULL,
-  service_host text NOT NULL,
   account_host text NOT NULL,
-  source text NOT NULL,
+  relay_url text NOT NULL,
+  relay_status text NOT NULL,
+  relay_account_count integer NOT NULL DEFAULT 0,
+  relay_seq bigint,
+  is_bluesky_host integer NOT NULL DEFAULT 0,
   first_observed_at bigint NOT NULL,
   last_observed_at bigint NOT NULL,
-  last_active_at bigint
+  last_scan_id text NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS pds_host_account_host ON pds_host_account(account_host, last_observed_at);
-CREATE INDEX IF NOT EXISTS pds_host_account_service_host ON pds_host_account(service_host, last_observed_at);
-CREATE INDEX IF NOT EXISTS pds_host_account_active ON pds_host_account(account_host, last_active_at);
-
-CREATE TABLE IF NOT EXISTS pds_discovery_cursor (
-  source text PRIMARY KEY,
-  cursor text NOT NULL,
-  updated_at bigint NOT NULL
-);
+CREATE INDEX IF NOT EXISTS pds_instance_account_host ON pds_instance(account_host, relay_status);
+CREATE INDEX IF NOT EXISTS pds_instance_status ON pds_instance(relay_status, last_observed_at);
+CREATE INDEX IF NOT EXISTS pds_instance_bluesky ON pds_instance(is_bluesky_host, relay_status);
 
 CREATE TABLE IF NOT EXISTS app_record (
   uri text PRIMARY KEY,

@@ -427,6 +427,35 @@ deno task backfill:og-jpegs
 deno task backfill:og-jpegs -- --limit=50
 ```
 
+## PDS Inventory
+
+PDS discovery uses the relay-level `com.atproto.sync.listHosts` inventory by
+default:
+
+```sh
+deno task pds:index -- --dry-run
+deno task pds:index
+```
+
+A full scan uses pages of up to 1,000 PDS instances and writes them to
+`pds_instance` in batches. The relay already supplies an account count for each
+PDS, so routine host inventory does not enumerate or permanently store every
+account DID. All `*.host.bsky.network` mushroom instances map to the single
+public `bsky.network` account host; known provider endpoints such as
+`blacksky.app` and `tngl.sh` similarly map to their friendly provider records.
+Unknown PDS instances stay in the raw inventory and are not automatically
+published on the account-host chooser.
+
+Run this as a short scheduled job, initially daily. It does not belong in the
+always-on Jetstream process. The Jetstream worker still consumes Atmosphere's
+app, profile, review, and host protocol records, but no longer performs extra
+per-account DB writes merely to count PDS membership.
+
+The previous PLC export walker and per-DID discovery tables were removed after
+the relay inventory completed successfully in production. A complete PLC history
+walk scales with account operations rather than PDS instances and is materially
+more expensive in network, database, and execution time.
+
 ## Health Checks
 
 - `GET /api/health` is a cheap liveness check. It does not touch the DB.

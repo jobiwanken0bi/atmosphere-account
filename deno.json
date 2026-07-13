@@ -25,7 +25,7 @@
     "db:maintain": "deno run -A scripts/maintain-db.ts",
     "railway:seed-secrets": "deno run -A scripts/seed-railway-secrets.ts",
     "indexer": "deno run -A worker/indexer.ts",
-    "pds:index": "deno run -A scripts/index-pds-hosts.ts",
+    "pds:index": "deno run -A scripts/index-relay-pds-inventory.ts",
     "backfill:atstore": "deno run -A scripts/backfill-atstore.ts",
     "backfill:hosts": "deno run -A scripts/backfill-host-records.ts",
     "backfill:og-jpegs": "deno run -A scripts/backfill-og-jpegs.ts",
