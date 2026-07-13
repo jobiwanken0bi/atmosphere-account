@@ -222,7 +222,12 @@ const en = {
       "Account hosts keep your Atmosphere account online so you can use it across apps. Compare who each host is for, where account data is hosted, and whether signup is open.",
     searchLabel: "Search account hosts",
     searchPlaceholder: "Search account hosts...",
+    search: "Search",
+    filters: "Sort & filter",
+    activeFilters: (count: number): string =>
+      `${count} active ${count === 1 ? "setting" : "settings"}`,
     sortLabel: "Sort",
+    sortRecommended: "Recommended: claimed, active, accounts",
     sortAccounts: "Most accounts",
     sortActive: "Most accounts on active PDSes",
     sortName: "Name",

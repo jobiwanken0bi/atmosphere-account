@@ -12671,20 +12671,90 @@ body {
 .hosts-search-form {
   display: grid;
   flex: none;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  align-items: end;
-  gap: 0.7rem;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem;
   width: 100%;
   max-width: none;
-  padding: 0.85rem;
-  border-radius: 22px;
+  padding: 0.42rem 0.42rem 0.42rem 1rem;
+  border-radius: 999px;
 }
 
 .hosts-search-form .explore-search-input {
-  grid-column: 1 / -1;
   width: 100%;
   min-width: 0;
-  padding: 0 0.35rem;
+  padding: 0;
+}
+
+.hosts-filter-menu {
+  position: relative;
+}
+
+.hosts-filter-menu > summary {
+  list-style: none;
+}
+
+.hosts-filter-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hosts-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  border: 1px solid rgba(42, 90, 168, 0.16);
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  background: rgba(255, 255, 255, 0.66);
+  color: rgba(18, 26, 47, 0.76);
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hosts-filter-trigger:hover,
+.hosts-filter-menu[open] .hosts-filter-trigger {
+  border-color: rgba(42, 90, 168, 0.3);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.hosts-filter-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
+  border-radius: 999px;
+  padding: 0 0.3rem;
+  background: #285aa8;
+  color: #fff;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+.hosts-filter-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  width: min(24rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid rgba(42, 90, 168, 0.16);
+  border-radius: 18px;
+  background: rgba(250, 252, 255, 0.98);
+  box-shadow: 0 18px 50px rgba(32, 54, 102, 0.2);
+}
+
+.hosts-filter-popover .hosts-filter-field:first-child,
+.hosts-filter-popover .hosts-filter-apply {
+  grid-column: 1 / -1;
 }
 
 .hosts-filter-field {
@@ -12716,6 +12786,22 @@ body {
 
 .hosts-search-form .explore-search-submit {
   min-height: 2.5rem;
+}
+
+.hosts-filter-apply {
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.55rem 1rem;
+  background: #285aa8;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.hosts-filter-apply:hover {
+  background: #1f4b91;
 }
 
 .hosts-directory-summary {
@@ -12772,18 +12858,30 @@ body {
   opacity: 0.4;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 680px) {
   .hosts-search-form {
     grid-template-columns: 1fr 1fr;
+    border-radius: 22px;
+    padding: 0.7rem;
   }
 
-  .hosts-search-form .explore-search-input,
-  .hosts-filter-field:first-of-type {
+  .hosts-search-form .explore-search-input {
     grid-column: 1 / -1;
+    padding: 0 0.3rem;
   }
 
   .hosts-search-form .explore-search-submit {
     width: 100%;
+  }
+
+  .hosts-filter-trigger {
+    width: 100%;
+  }
+
+  .hosts-filter-popover {
+    right: auto;
+    left: 0;
+    width: min(24rem, calc(100vw - 3rem));
   }
 
   .hosts-directory-summary {
@@ -12796,15 +12894,6 @@ body {
 }
 
 @media (max-width: 520px) {
-  .hosts-search-form {
-    grid-template-columns: 1fr;
-  }
-
-  .hosts-search-form .explore-search-input,
-  .hosts-filter-field:first-of-type {
-    grid-column: auto;
-  }
-
   .hosts-pagination {
     grid-template-columns: 1fr 1fr;
   }
@@ -13860,6 +13949,19 @@ body {
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.1);
   color: #f0f4ff;
+}
+
+.dark-phase .hosts-filter-trigger,
+.dark-phase .hosts-filter-popover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(19, 27, 48, 0.96);
+  color: #f0f4ff;
+}
+
+.dark-phase .hosts-filter-trigger:hover,
+.dark-phase .hosts-filter-menu[open] .hosts-filter-trigger {
+  border-color: rgba(255, 255, 255, 0.26);
+  background: rgba(28, 39, 68, 0.98);
 }
 
 .dark-phase .hosts-pagination a,
@@ -18445,6 +18547,8 @@ body {
 .directory-register-button:focus-visible,
 .text-link-button:focus-visible,
 .explore-search-submit:focus-visible,
+.hosts-filter-trigger:focus-visible,
+.hosts-filter-apply:focus-visible,
 .signin-tab:focus-visible,
 .app-card:focus-visible,
 .app-fresh-card:focus-visible,

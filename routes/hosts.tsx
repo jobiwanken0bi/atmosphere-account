@@ -12,25 +12,16 @@ import type {
   HostSignupStatus,
   HostVerificationStatus,
 } from "../lib/account-hosts.ts";
+import { DEFAULT_ACCOUNT_HOST_SORT } from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
-import { EdgeStaleCache } from "../lib/edge-cache.ts";
 import { hostFriendlyProfile } from "../lib/host-friendly.ts";
 import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
 import { getMessages } from "../i18n/mod.ts";
 
-const HOSTS_CACHE_TTL_MS = 2 * 60 * 1000;
-const HOSTS_STALE_MS = 15 * 60 * 1000;
-const HOSTS_CACHE_MAX_ENTRIES = 24;
-
-const hostsCache = new EdgeStaleCache<AccountHostDirectoryResult>({
-  freshMs: HOSTS_CACHE_TTL_MS,
-  staleMs: HOSTS_STALE_MS,
-  maxEntries: HOSTS_CACHE_MAX_ENTRIES,
-});
-
 export default define.page(async function HostsPage(ctx) {
   const copy = getMessages(ctx.state.locale).hostsDirectory;
   const input = readDirectoryInput(ctx.url.searchParams);
+  const appliedFilterCount = activeFilterCount(input);
   let loadFailed = false;
   const result = await loadHostsResult(input).catch((err) => {
     console.warn("[hosts] appview host list failed:", err);
@@ -75,40 +66,139 @@ export default define.page(async function HostsPage(ctx) {
                   spellcheck={false}
                   placeholder={copy.searchPlaceholder}
                 />
-                <label class="hosts-filter-field">
-                  <span>{copy.sortLabel}</span>
-                  <select name="sort" value={input.sort}>
-                    <option value="accounts">{copy.sortAccounts}</option>
-                    <option value="active">{copy.sortActive}</option>
-                    <option value="name">{copy.sortName}</option>
-                    <option value="recent">{copy.sortRecent}</option>
-                  </select>
-                </label>
-                <label class="hosts-filter-field">
-                  <span>{copy.signupLabel}</span>
-                  <select name="signup" value={input.signupStatus}>
-                    <option value="all">{copy.signupAll}</option>
-                    <option value="open">{copy.signupOpen}</option>
-                    <option value="invite_required">{copy.signupInvite}</option>
-                    <option value="closed">{copy.signupClosed}</option>
-                    <option value="unknown">{copy.signupUnknown}</option>
-                  </select>
-                </label>
-                <label class="hosts-filter-field">
-                  <span>{copy.verificationLabel}</span>
-                  <select name="verification" value={input.verificationStatus}>
-                    <option value="all">{copy.verificationAll}</option>
-                    <option value="verified">
-                      {copy.verificationVerified}
-                    </option>
-                    <option value="claimed">{copy.verificationClaimed}</option>
-                    <option value="observed">
-                      {copy.verificationObserved}
-                    </option>
-                  </select>
-                </label>
+                <details class="hosts-filter-menu">
+                  <summary class="hosts-filter-trigger">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      width="18"
+                      height="18"
+                    >
+                      <path
+                        d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M10 14v6"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <span>{copy.filters}</span>
+                    {appliedFilterCount > 0 && (
+                      <span
+                        class="hosts-filter-count"
+                        aria-label={copy.activeFilters(appliedFilterCount)}
+                      >
+                        {appliedFilterCount}
+                      </span>
+                    )}
+                  </summary>
+                  <div class="hosts-filter-popover">
+                    <label class="hosts-filter-field">
+                      <span>{copy.sortLabel}</span>
+                      <select name="sort">
+                        <option
+                          value="recommended"
+                          selected={input.sort === "recommended"}
+                        >
+                          {copy.sortRecommended}
+                        </option>
+                        <option
+                          value="accounts"
+                          selected={input.sort === "accounts"}
+                        >
+                          {copy.sortAccounts}
+                        </option>
+                        <option
+                          value="active"
+                          selected={input.sort === "active"}
+                        >
+                          {copy.sortActive}
+                        </option>
+                        <option
+                          value="name"
+                          selected={input.sort === "name"}
+                        >
+                          {copy.sortName}
+                        </option>
+                        <option
+                          value="recent"
+                          selected={input.sort === "recent"}
+                        >
+                          {copy.sortRecent}
+                        </option>
+                      </select>
+                    </label>
+                    <label class="hosts-filter-field">
+                      <span>{copy.signupLabel}</span>
+                      <select name="signup">
+                        <option
+                          value="all"
+                          selected={input.signupStatus === "all"}
+                        >
+                          {copy.signupAll}
+                        </option>
+                        <option
+                          value="open"
+                          selected={input.signupStatus === "open"}
+                        >
+                          {copy.signupOpen}
+                        </option>
+                        <option
+                          value="invite_required"
+                          selected={input.signupStatus === "invite_required"}
+                        >
+                          {copy.signupInvite}
+                        </option>
+                        <option
+                          value="closed"
+                          selected={input.signupStatus === "closed"}
+                        >
+                          {copy.signupClosed}
+                        </option>
+                        <option
+                          value="unknown"
+                          selected={input.signupStatus === "unknown"}
+                        >
+                          {copy.signupUnknown}
+                        </option>
+                      </select>
+                    </label>
+                    <label class="hosts-filter-field">
+                      <span>{copy.verificationLabel}</span>
+                      <select name="verification">
+                        <option
+                          value="all"
+                          selected={input.verificationStatus === "all"}
+                        >
+                          {copy.verificationAll}
+                        </option>
+                        <option
+                          value="verified"
+                          selected={input.verificationStatus === "verified"}
+                        >
+                          {copy.verificationVerified}
+                        </option>
+                        <option
+                          value="claimed"
+                          selected={input.verificationStatus === "claimed"}
+                        >
+                          {copy.verificationClaimed}
+                        </option>
+                        <option
+                          value="observed"
+                          selected={input.verificationStatus === "observed"}
+                        >
+                          {copy.verificationObserved}
+                        </option>
+                      </select>
+                    </label>
+                    <button type="submit" class="hosts-filter-apply">
+                      {copy.apply}
+                    </button>
+                  </div>
+                </details>
                 <button type="submit" class="explore-search-submit">
-                  {copy.apply}
+                  {copy.search}
                 </button>
               </form>
             </div>
@@ -162,15 +252,7 @@ export default define.page(async function HostsPage(ctx) {
 async function loadHostsResult(
   input: AccountHostDirectoryOptions,
 ): Promise<AccountHostDirectoryResult> {
-  const key = hostCacheKey(input);
-  return await hostsCache.get(key, () => listHostsFromAppview(input));
-}
-
-function hostCacheKey(input: AccountHostDirectoryOptions): string {
-  return JSON.stringify({
-    ...input,
-    query: input.query?.trim().toLowerCase() ?? "",
-  });
+  return await listHostsFromAppview(input);
 }
 
 interface HostDirectoryInput extends AccountHostDirectoryOptions {
@@ -200,9 +282,10 @@ function readPositiveInteger(value: string | null, fallback: number): number {
 }
 
 function readSort(value: string | null): AccountHostSort {
-  return value === "active" || value === "name" || value === "recent"
+  return value === "accounts" || value === "active" || value === "name" ||
+      value === "recent"
     ? value
-    : "accounts";
+    : DEFAULT_ACCOUNT_HOST_SORT;
 }
 
 function readSignupStatus(
@@ -231,7 +314,7 @@ function emptyHostResult(
     total: 0,
     page: Math.max(1, input.page ?? 1),
     pageSize: Math.max(1, input.pageSize ?? 24),
-    sort: input.sort ?? "accounts",
+    sort: input.sort ?? DEFAULT_ACCOUNT_HOST_SORT,
   };
 }
 
@@ -267,7 +350,7 @@ function HostPagination(
 function hostDirectoryHref(input: HostDirectoryInput, page: number): string {
   const params = new URLSearchParams();
   if (input.query) params.set("q", input.query);
-  if (input.sort !== "accounts") params.set("sort", input.sort);
+  if (input.sort !== DEFAULT_ACCOUNT_HOST_SORT) params.set("sort", input.sort);
   if (input.signupStatus !== "all") {
     params.set("signup", input.signupStatus);
   }
@@ -277,6 +360,12 @@ function hostDirectoryHref(input: HostDirectoryInput, page: number): string {
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return `/hosts${query ? `?${query}` : ""}`;
+}
+
+function activeFilterCount(input: HostDirectoryInput): number {
+  return Number(input.sort !== DEFAULT_ACCOUNT_HOST_SORT) +
+    Number(input.signupStatus !== "all") +
+    Number(input.verificationStatus !== "all");
 }
 
 function DirectoryRegisterCta(

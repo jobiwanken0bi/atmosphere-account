@@ -9,7 +9,10 @@ import {
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
-import { listSeededAccountHostFallback } from "./account-hosts.ts";
+import {
+  DEFAULT_ACCOUNT_HOST_SORT,
+  listSeededAccountHostFallback,
+} from "./account-hosts.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -93,6 +96,30 @@ Deno.test("legacy host arrays are normalized for paginated rolling deploys", () 
   assertEquals(result.page, 2);
   assertEquals(result.hosts.length, 1);
   assertEquals(result.hosts[0]?.observedAccountCount, 1);
+});
+
+Deno.test("legacy host arrays use the recommended directory sort by default", () => {
+  const [claimedHost, observedHost] = listSeededAccountHostFallback().slice(
+    0,
+    2,
+  );
+  const result = hostDirectoryResultForHosts({}, [
+    {
+      ...observedHost,
+      verificationStatus: "observed",
+      observedAccountCount: 1_000,
+      observedActiveAccountCount: 1_000,
+    },
+    {
+      ...claimedHost,
+      verificationStatus: "claimed",
+      observedAccountCount: 1,
+      observedActiveAccountCount: 0,
+    },
+  ]);
+
+  assertEquals(result.sort, DEFAULT_ACCOUNT_HOST_SORT);
+  assertEquals(result.hosts[0]?.host, claimedHost?.host);
 });
 
 Deno.test("early appview proxy covers DB-backed APIs before session hydration", () => {

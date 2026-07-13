@@ -3,6 +3,7 @@ import {
   type AccountHostClaim,
   type AccountHostDirectoryOptions,
   type AccountHostDirectoryResult,
+  DEFAULT_ACCOUNT_HOST_SORT,
   getAccountHost,
   getAccountHostClaim,
   hydrateAccountHostProfiles,
@@ -471,7 +472,7 @@ export function hostDirectoryResultForHosts(
   input: AccountHostDirectoryOptions,
   sourceHosts: AccountHost[],
 ): AccountHostDirectoryResult {
-  const sort = input.sort ?? "accounts";
+  const sort = input.sort ?? DEFAULT_ACCOUNT_HOST_SORT;
   const pageSize = positiveDirectoryInteger(input.pageSize, 24, 200);
   const query = input.query?.trim().toLowerCase() ?? "";
   const filteredHosts = sourceHosts.filter((host) => {
