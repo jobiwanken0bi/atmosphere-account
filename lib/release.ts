@@ -29,6 +29,37 @@ function runtimeReleaseFromEnv(env: EnvReader): RuntimeRelease {
     ? "other"
     : "local";
 
+  // The current Deno Deploy platform does not provide DENO_GIT_* metadata.
+  // Prefer our explicit stamp there so a CLI production deploy cannot inherit
+  // stale legacy values. Other source-linked providers keep their native Git
+  // provenance ahead of manual fallback stamps.
+  const gitShaKeys = runtime === "deno-deploy"
+    ? [
+      "ATMOSPHERE_RELEASE_SHA",
+      "DENO_GIT_COMMIT_SHA",
+      "GITHUB_SHA",
+    ]
+    : [
+      "RAILWAY_GIT_COMMIT_SHA",
+      "GITHUB_SHA",
+      "VERCEL_GIT_COMMIT_SHA",
+      "RENDER_GIT_COMMIT",
+      "ATMOSPHERE_RELEASE_SHA",
+    ];
+  const gitBranchKeys = runtime === "deno-deploy"
+    ? [
+      "ATMOSPHERE_RELEASE_BRANCH",
+      "DENO_GIT_BRANCH",
+      "GITHUB_REF_NAME",
+    ]
+    : [
+      "RAILWAY_GIT_BRANCH",
+      "GITHUB_REF_NAME",
+      "VERCEL_GIT_COMMIT_REF",
+      "RENDER_GIT_BRANCH",
+      "ATMOSPHERE_RELEASE_BRANCH",
+    ];
+
   return {
     runtime,
     deploymentId: firstEnv(env, [
@@ -44,22 +75,8 @@ function runtimeReleaseFromEnv(env: EnvReader): RuntimeRelease {
       "FLY_APP_NAME",
       "VERCEL_PROJECT_PRODUCTION_URL",
     ]),
-    gitSha: shortSha(firstEnv(env, [
-      "RAILWAY_GIT_COMMIT_SHA",
-      "DENO_GIT_COMMIT_SHA",
-      "GITHUB_SHA",
-      "VERCEL_GIT_COMMIT_SHA",
-      "RENDER_GIT_COMMIT",
-      "ATMOSPHERE_RELEASE_SHA",
-    ])),
-    gitBranch: firstEnv(env, [
-      "RAILWAY_GIT_BRANCH",
-      "DENO_GIT_BRANCH",
-      "GITHUB_REF_NAME",
-      "VERCEL_GIT_COMMIT_REF",
-      "RENDER_GIT_BRANCH",
-      "ATMOSPHERE_RELEASE_BRANCH",
-    ]),
+    gitSha: shortSha(firstEnv(env, gitShaKeys)),
+    gitBranch: firstEnv(env, gitBranchKeys),
   };
 }
 
