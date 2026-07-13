@@ -12816,6 +12816,12 @@ body {
   font-weight: 650;
 }
 
+.host-card-tags .host-card-conformance {
+  background: rgba(23, 137, 91, 0.12);
+  border-color: rgba(23, 137, 91, 0.24);
+  color: #176047;
+}
+
 .host-status-verified {
   color: #176047;
   background: rgba(62, 164, 118, 0.16);
@@ -13624,6 +13630,12 @@ body {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.74);
+}
+
+.dark-phase .host-card-tags .host-card-conformance {
+  background: rgba(92, 220, 164, 0.13);
+  border-color: rgba(92, 220, 164, 0.26);
+  color: #a8f0cf;
 }
 
 .dark-phase .account-home-details dt,

@@ -41,6 +41,19 @@ Deno.test("runtimeRelease identifies Railway appview releases", () => {
   assertEquals(release.gitBranch, "main");
 });
 
+Deno.test("runtimeRelease prefers source-provider provenance over stale manual stamps", () => {
+  const release = runtimeReleaseFromEnvForTest(env({
+    RAILWAY_PROJECT_ID: "project",
+    RAILWAY_GIT_COMMIT_SHA: "abcdef1234567890",
+    RAILWAY_GIT_BRANCH: "main",
+    ATMOSPHERE_RELEASE_SHA: "0000000000000000",
+    ATMOSPHERE_RELEASE_BRANCH: "old-branch",
+  }));
+
+  assertEquals(release.gitSha, "abcdef123456");
+  assertEquals(release.gitBranch, "main");
+});
+
 Deno.test("runtimeRelease falls back to local without hosted env", () => {
   const release = runtimeReleaseFromEnvForTest(env({}));
 

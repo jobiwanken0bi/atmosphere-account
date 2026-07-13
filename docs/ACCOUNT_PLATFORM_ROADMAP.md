@@ -26,6 +26,9 @@ Atmosphere Account is becoming a developer platform with three layers:
   runner.
 - Add host-directory compatibility badges only after conformance tests.
 
+Completed in v0.1: the mock PDS, manifest/account-route/PDS-health conformance
+runner, expiring persisted results, and passing-only directory badges.
+
 ### Cycle 3: Developer Adoption
 
 - Expand `/developer-resources` into a full "Continue with Atmosphere" console.
@@ -33,6 +36,10 @@ Atmosphere Account is becoming a developer platform with three layers:
 - Add examples for Fresh/Deno, Next.js, and plain HTML.
 - Add an end-to-end sample app that completes AT Protocol OAuth after account
   selection.
+
+Completed examples: executable Fresh/Deno reference app, plain HTML browser
+integration, Next.js App Router callback, and a Chromium E2E covering picker →
+token verification → OAuth start.
 
 ### Cycle 4: Host-Owned Account Management Signals
 

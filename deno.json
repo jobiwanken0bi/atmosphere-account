@@ -21,11 +21,12 @@
     "smoke:production": "deno run --allow-env --allow-net scripts/smoke-production.ts",
     "smoke:public-shell": "deno run --allow-env --allow-net scripts/smoke-public-shell.ts",
     "smoke:picker-assets": "deno run --allow-env --allow-net scripts/smoke-picker-assets.ts",
+    "e2e:login": "node scripts/e2e-login-flow.mjs",
     "release:stamp": "deno run --allow-env --allow-run=git,deno,railway scripts/stamp-release-vars.ts",
     "db:maintain": "deno run -A scripts/maintain-db.ts",
     "railway:seed-secrets": "deno run -A scripts/seed-railway-secrets.ts",
     "indexer": "deno run -A worker/indexer.ts",
-    "pds:index": "deno run -A scripts/index-pds-hosts.ts",
+    "pds:index": "deno run -A scripts/index-relay-pds-inventory.ts",
     "backfill:atstore": "deno run -A scripts/backfill-atstore.ts",
     "backfill:hosts": "deno run -A scripts/backfill-host-records.ts",
     "backfill:og-jpegs": "deno run -A scripts/backfill-og-jpegs.ts",
@@ -34,6 +35,9 @@
     "rescore:app-trending": "deno run -A scripts/rescore-app-trending.ts",
     "publish:featured": "deno run -A scripts/publish-featured.ts",
     "host:dashboard:check": "deno run -A scripts/check-host-dashboard.ts",
+    "host:conformance": "deno run -A scripts/check-host-conformance.ts",
+    "host:conformance:smoke": "deno run -A scripts/smoke-host-conformance.ts",
+    "host:mock": "deno run -A scripts/mock-pds-host.ts",
     "lex:lint": "goat lex lint lexicons/",
     "lex:check-dns": "goat lex check-dns --example-did did:plc:ab7uvkn4kyf7l7prl26pz4r2 lexicons/",
     "lex:status": "goat lex status lexicons/",
@@ -64,7 +68,8 @@
     "@libsql/client": "npm:@libsql/client@^0.15.0",
     "@neon/serverless": "jsr:@neon/serverless@^1.0.1",
     "pg": "npm:pg@^8.16.3",
-    "@types/pg": "npm:@types/pg@^8.15.6"
+    "@types/pg": "npm:@types/pg@^8.15.6",
+    "playwright": "npm:playwright@1.61.1"
   },
   "compilerOptions": {
     "lib": [

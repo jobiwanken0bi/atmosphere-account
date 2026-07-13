@@ -66,6 +66,21 @@ Deno.test("account host hints resolve known Bluesky endpoints without DB hydrati
   );
 });
 
+Deno.test("account host hints aggregate known provider PDS aliases", () => {
+  assertEquals(lookupAccountHostHint("https://blacksky.app"), {
+    host: "blacksky.community",
+    displayName: "Blacksky",
+    endpoint: "https://blacksky.app",
+    verificationStatus: "observed",
+  });
+  assertEquals(lookupAccountHostHint("https://tngl.sh"), {
+    host: "tangled.org",
+    displayName: "Tangled",
+    endpoint: "https://tngl.sh",
+    verificationStatus: "observed",
+  });
+});
+
 Deno.test("account host hints fall back to observed endpoint names", () => {
   assertEquals(lookupAccountHostHint("https://pds.example.com"), {
     host: "pds.example.com",

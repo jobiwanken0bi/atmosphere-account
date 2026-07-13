@@ -11,6 +11,7 @@ runtime should run on Railway or call a Railway appview API.
 - Services:
   - `web` / appview runtime (`dd06ab3e-e2d0-4b53-b4a5-124794ec9b83`)
   - `indexer` (`6899add1-fe1b-4e40-a720-8e5f9bf88349`)
+  - `pds-inventory` (`fb40626f-7a6d-41d7-bee3-6a48c9446b9f`)
   - `Postgres` (`da15565c-bcbd-4c6e-8ab2-356fc8f7566c`)
 
 Repo-side deployment files:
@@ -109,17 +110,26 @@ The `indexer` service must run one replica only. The app's `worker_lease` table
 protects against duplicate consumers, but one active Railway replica avoids
 wasted Jetstream/PDS/DB traffic.
 
-## Deploy
+## Deployment provenance
 
-After secrets and Dockerfile settings are in place:
+Production application services are connected to the GitHub repository's `main`
+branch. Connect them once with explicit project/environment scope:
 
 ```sh
-railway up --service web --environment production --detach \
-  -m "Deploy Atmosphere Account web/appview"
-
-railway up --service indexer --environment production --detach \
-  -m "Deploy Atmosphere Account indexer"
+railway service source connect --repo jobiwanken0bi/atmosphere-account \
+  --branch main --service web --environment production \
+  --project f6fc622b-1fff-469e-9bb2-42210ac4a70c
+railway service source connect --repo jobiwanken0bi/atmosphere-account \
+  --branch main --service indexer --environment production \
+  --project f6fc622b-1fff-469e-9bb2-42210ac4a70c
+railway service source connect --repo jobiwanken0bi/atmosphere-account \
+  --branch main --service pds-inventory --environment production \
+  --project f6fc622b-1fff-469e-9bb2-42210ac4a70c
 ```
+
+Normal deploys are pushed, reviewed commits on `main`; do not use `railway up`
+for routine production releases. Railway's native commit SHA is authoritative
+even if an old manual `ATMOSPHERE_RELEASE_SHA` variable remains configured.
 
 Verify:
 
@@ -134,9 +144,9 @@ Health checks:
   `GET /api/health` and `GET /api/health/ready`. Both endpoints include a
   `release` object with runtime/deployment metadata when the host provides it.
   When Deno proxies Railway readiness, the shell release remains top-level and
-  the appview release appears at `appview.release`. To make that exact instead
-  of deployment-ID-only, set `ATMOSPHERE_RELEASE_SHA` and
-  `ATMOSPHERE_RELEASE_BRANCH` on both Deno Deploy and Railway before deploying.
+  the appview release appears at `appview.release`. Source-linked Railway
+  deploys report `RAILWAY_GIT_COMMIT_SHA`; stamp Deno only if it does not expose
+  its provider Git SHA.
 - Indexer health: check `GET /api/health/ready` for a fresh worker lease and
   verify `worker_lease` in Railway Postgres.
 - Production smoke suite: run `deno task smoke:production` after Deno or Railway
@@ -147,13 +157,12 @@ Health checks:
   `SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production`
   after deploys when the release SHA variables are configured; this fails if the
   Deno shell or Railway appview is stale.
-- Exact release helper: run `deno task release:stamp -- --write` before
-  deploying the Deno shell and Railway appview from the same working tree. The
-  helper updates `ATMOSPHERE_RELEASE_SHA` and `ATMOSPHERE_RELEASE_BRANCH` on the
-  Railway `web` service with `--skip-deploys`; deploy the appview afterwards
-  with `railway up --service web --environment production --detach`. The helper
-  requires a clean worktree and HEAD matching its tracked upstream unless you
-  pass an explicit emergency override such as `--allow-unpushed` or `--sha`.
+- Exact release helper: source-linked Railway deploys report their commit SHA
+  natively. Use `deno task release:stamp -- --write --deno` only if Deno Deploy
+  does not provide its Git SHA. The helper requires a clean worktree and HEAD
+  matching its tracked upstream unless you pass an explicit emergency override.
+- PDS inventory health: readiness requires a successful complete relay scan no
+  older than 42 hours. Partial and failed scans never refresh the heartbeat.
 
 ## Worker Cutover
 

@@ -59,6 +59,9 @@ export interface AccountHost {
   lastObservedAt: number | null;
   createdAt: number;
   updatedAt: number;
+  conformanceStatus?: "passed" | "failed" | null;
+  conformanceCheckedAt?: number | null;
+  conformanceExpiresAt?: number | null;
 }
 
 export interface AccountHostLookup {
@@ -300,7 +303,12 @@ const SEEDED_HOSTS: SeedHost[] = [
     signupStatus: "unknown",
     verificationStatus: "observed",
     source: "seeded",
-    matchPatterns: ["blacksky.community", "*.blacksky.community"],
+    matchPatterns: [
+      "blacksky.community",
+      "*.blacksky.community",
+      "blacksky.app",
+      "*.blacksky.app",
+    ],
   },
   {
     host: "sprk.so",
@@ -326,7 +334,13 @@ const SEEDED_HOSTS: SeedHost[] = [
     signupStatus: "open",
     verificationStatus: "observed",
     source: "seeded",
-    matchPatterns: ["tangled.org", "*.tangled.org", "tangled.sh"],
+    matchPatterns: [
+      "tangled.org",
+      "*.tangled.org",
+      "tangled.sh",
+      "tngl.sh",
+      "*.tngl.sh",
+    ],
   },
   {
     host: "pckt.cafe",
@@ -588,6 +602,16 @@ function parseHostRow(row: Record<string, unknown>): AccountHost {
       : Number(row.last_observed_at),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
+    conformanceStatus: row.conformance_status === "passed" ||
+        row.conformance_status === "failed"
+      ? row.conformance_status
+      : null,
+    conformanceCheckedAt: row.conformance_checked_at == null
+      ? null
+      : Number(row.conformance_checked_at),
+    conformanceExpiresAt: row.conformance_expires_at == null
+      ? null
+      : Number(row.conformance_expires_at),
   };
 }
 
@@ -1974,7 +1998,13 @@ export async function listAccountHosts(
     }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     const r = await c.execute({
-      sql: `SELECT * FROM account_host ${where}
+      sql: `SELECT account_host.*,
+          host_conformance.status AS conformance_status,
+          host_conformance.checked_at AS conformance_checked_at,
+          host_conformance.expires_at AS conformance_expires_at
+        FROM account_host
+        LEFT JOIN host_conformance ON host_conformance.host = account_host.host
+        ${where}
         ORDER BY
           CASE verification_status
             WHEN 'verified' THEN 0
@@ -2003,7 +2033,13 @@ export async function getAccountHost(
   return await withDb(async (c) => {
     await ensureSeededHosts(c);
     const r = await c.execute({
-      sql: `SELECT * FROM account_host WHERE host = ? LIMIT 1`,
+      sql: `SELECT account_host.*,
+          host_conformance.status AS conformance_status,
+          host_conformance.checked_at AS conformance_checked_at,
+          host_conformance.expires_at AS conformance_expires_at
+        FROM account_host
+        LEFT JOIN host_conformance ON host_conformance.host = account_host.host
+        WHERE account_host.host = ? LIMIT 1`,
       args: [normalized],
     });
     if (r.rows.length === 0) return null;

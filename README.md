@@ -86,6 +86,10 @@ deno task db:copy:postgres
 deno task db:smoke
 deno task smoke:production
 deno task db:maintain
+deno task pds:index -- --dry-run
+deno task pds:index
+deno task host:conformance:smoke
+deno task e2e:login
 deno task backfill:atstore
 deno task rescore:app-trending
 ```
@@ -93,10 +97,21 @@ deno task rescore:app-trending
 The Postgres migration/copy commands are used for Railway Postgres. The older
 Neon commands are retained for comparison and rollback/migration experiments.
 `smoke:production` runs the public-shell and picker asset smoke checks.
-`smoke:public-shell` checks production liveness/readiness, OAuth metadata, JWKS,
-core HTML pages, and standalone SDK assets. `smoke:picker-assets` verifies the
-hosted picker HTML, CSS, static scripts, generated Fresh assets, and imported
-chunks from both the login and main Atmosphere domains.
+`pds:index` performs a cheap full PDS inventory from the relay's paginated
+`com.atproto.sync.listHosts` endpoint. It stores one row per PDS instance and
+aggregates all Bluesky mushroom PDSes into the single `bsky.network` account
+host. `smoke:public-shell` checks production liveness/readiness, OAuth metadata,
+JWKS, core HTML pages, and standalone SDK assets. `smoke:picker-assets` verifies
+the hosted picker HTML, CSS, static scripts, generated Fresh assets, and
+imported chunks from both the login and main Atmosphere domains.
+`host:conformance:smoke` starts the repository's mock PDS and proves its
+manifest, account page, and health endpoint pass the same checks used for host
+directory badges. `e2e:login` runs the real picker and OAuth handoff in
+Chromium; install its browser once with
+`npx playwright@1.61.1 install chromium`.
+
+Database backup policy and restore drills are documented in
+[docs/DATABASE_RECOVERY.md](./docs/DATABASE_RECOVERY.md).
 
 GitHub Actions runs `deno task check` and `deno task build` on pushes and pull
 requests. The `Production Smoke` workflow also runs `deno task smoke:production`
@@ -108,12 +123,15 @@ deployed release.
 Health endpoints:
 
 - `/api/health` — liveness and release metadata, no DB dependency
-- `/api/health/ready` — DB readiness, indexer heartbeat, and proxied appview
-  release metadata when Deno is serving as the public shell
+- `/api/health/ready` — DB readiness, indexer heartbeat, complete relay-PDS
+  inventory freshness, and proxied appview release metadata when Deno is serving
+  as the public shell
 
-Set `ATMOSPHERE_RELEASE_SHA` and `ATMOSPHERE_RELEASE_BRANCH` on both the Deno
-shell and Railway appview to make release drift checks exact. With those vars in
-place, run this after deploying both layers:
+Railway services deploy from the GitHub `main` source and report
+`RAILWAY_GIT_COMMIT_SHA` directly. If Deno Deploy does not expose
+`DENO_GIT_COMMIT_SHA`, stamp only the Deno shell before its GitHub deployment.
+Provider-native provenance wins over a manual stamp. Run this after both layers
+finish deploying:
 
 ```sh
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
@@ -123,19 +141,17 @@ The GitHub `Production Smoke` workflow uses the checked-out SHA by default. If
 production is intentionally serving a different commit, pass that deployed SHA
 as `expected_release_sha` when manually running the workflow.
 
-Use the release-stamping helper before an exact release:
+Use the release-stamping helper only for the Deno side when needed:
 
 ```sh
-git push
-deno task release:stamp -- --write
-deno deploy --prod
-railway up --service web --environment production --detach -m "Deploy $(git rev-parse --short HEAD)"
+git push origin main
+deno task release:stamp -- --write --deno
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
 
 `release:stamp --write` requires a clean worktree and a release commit that
-matches its tracked upstream. Use `--allow-dirty`, `--allow-unpushed`, or an
-explicit `--sha` only for an intentional emergency override.
+matches its tracked upstream. A Railway local upload is an emergency procedure,
+not the normal deployment path.
 
 ## Contributing
 

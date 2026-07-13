@@ -188,23 +188,22 @@ Run `deno task smoke:production` after Deno or Railway appview deploys. It runs
 core HTML pages, and standalone SDK assets. The public shell health response and
 proxied appview readiness response must both expose `release.runtime`; this
 catches stale appview deployments where the Deno shell is current but Railway is
-still serving an older server bundle. For exact release drift detection, set
-`ATMOSPHERE_RELEASE_SHA` and `ATMOSPHERE_RELEASE_BRANCH` on both Deno Deploy and
-Railway before deploying, then run:
+still serving an older server bundle. For exact release drift detection, use
+provider-native Git metadata. Source-linked Railway services expose
+`RAILWAY_GIT_COMMIT_SHA`; Deno Deploy may expose `DENO_GIT_COMMIT_SHA`. If the
+Deno runtime does not, stamp only the Deno side before deploying, then run:
 
 ```sh
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
 
-The helper below stamps the current git SHA and branch onto Deno Deploy and the
-Railway appview service without triggering a Railway deploy. Run it before
-deploying both layers from the same working tree:
+The helper below stamps only Deno when its provider metadata is unavailable.
+Railway must deploy the same pushed `main` commit from its connected GitHub
+source:
 
 ```sh
-git push
-deno task release:stamp -- --write
-deno deploy --prod
-railway up --service web --environment production --detach -m "Deploy $(git rev-parse --short HEAD)"
+git push origin main
+deno task release:stamp -- --write --deno
 SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
 ```
 
@@ -227,6 +226,12 @@ release. Treat it as an early warning, not as a replacement for running
 `deno task smoke:production` immediately after an intentional deploy or DNS
 change. Manual dispatch accepts `expected_release_sha` only as an override when
 you intentionally need to smoke an older deployed release from GitHub.
+
+The appview readiness payload includes `pdsInventory`. Only a successful scan
+that reached the relay's final page satisfies freshness. The default 42-hour
+window is monitored by the hourly Production Smoke workflow, which opens or
+updates a GitHub issue on failure. A failed or partial scan remains visible as
+the latest attempt but cannot refresh the heartbeat.
 
 ## Neon Migration Track
 
@@ -426,6 +431,41 @@ Backfill generated OG JPEG cache outside the hosted web process:
 deno task backfill:og-jpegs
 deno task backfill:og-jpegs -- --limit=50
 ```
+
+## PDS Inventory
+
+PDS discovery uses the relay-level `com.atproto.sync.listHosts` inventory by
+default:
+
+```sh
+deno task pds:index -- --dry-run
+deno task pds:index
+```
+
+A full scan uses pages of up to 1,000 PDS instances and writes them to
+`pds_instance` in batches. The relay already supplies an account count for each
+PDS, so routine host inventory does not enumerate or permanently store every
+account DID. All `*.host.bsky.network` mushroom instances map to the single
+public `bsky.network` account host; known provider endpoints such as
+`blacksky.app` and `tngl.sh` similarly map to their friendly provider records.
+Unknown PDS instances stay in the raw inventory and are not automatically
+published on the account-host chooser.
+
+Partial scans update only the raw inventory; public account-host totals and
+`not_seen` reconciliation change only after a complete scan. Complete scans also
+refuse an empty result or an unexpected drop of more than 5% in the PDS instance
+count. After verifying a legitimate large removal, an operator can rerun with
+`--allow-large-drop`.
+
+Run this as a short scheduled job, initially daily. It does not belong in the
+always-on Jetstream process. The Jetstream worker still consumes Atmosphere's
+app, profile, review, and host protocol records, but no longer performs extra
+per-account DB writes merely to count PDS membership.
+
+The previous PLC export walker and per-DID discovery tables were removed after
+the relay inventory completed successfully in production. A complete PLC history
+walk scales with account operations rather than PDS instances and is materially
+more expensive in network, database, and execution time.
 
 ## Health Checks
 

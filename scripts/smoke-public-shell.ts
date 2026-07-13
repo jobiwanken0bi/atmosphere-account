@@ -322,6 +322,24 @@ async function smokeReadiness(
   assertString(body.service, `${url} service`);
   const shellRelease = readRelease(body.release, `${url} release`);
   assertExpectedReleaseSha(shellRelease, expectedReleaseSha, `${url} release`);
+  const pdsInventory = assertObject(
+    body.pdsInventory,
+    `${url} pdsInventory`,
+  );
+  assertEquals(
+    pdsInventory.present,
+    true,
+    `${url} pdsInventory.present`,
+  );
+  assertEquals(
+    pdsInventory.fresh,
+    true,
+    `${url} pdsInventory.fresh`,
+  );
+  assertString(
+    pdsInventory.completedAt,
+    `${url} pdsInventory.completedAt`,
+  );
   let appviewRelease: SmokeRelease | null = null;
   if (requireAppview) {
     const appview = body.appview;

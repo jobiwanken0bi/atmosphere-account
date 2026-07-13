@@ -158,10 +158,17 @@ It can also validate a JSON body directly:
 POST /api/hosts/dashboard/validate?host=host.example
 ```
 
-The next build cycles should add:
+The full v0.1 conformance runner is available now:
 
-- a mock PDS host,
-- a CLI conformance runner,
-- host directory badges only after tests pass,
-- account-route checks that confirm the published account-management URL is
-  reachable.
+```sh
+deno task host:conformance host.example
+deno task host:conformance host.example --json
+deno task host:conformance host.example --write
+```
+
+It validates the manifest, fetches the published account-management page, and
+checks the PDS health endpoint. `--write` stores a seven-day result for a
+registered host; only a current passing result unlocks the directory
+compatibility badge. A runnable local PDS fixture is available with
+`deno task host:mock`, and CI exercises it through
+`deno task host:conformance:smoke`.

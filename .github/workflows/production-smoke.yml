@@ -60,7 +60,7 @@ jobs:
             gh issue create \
               --repo "$GITHUB_REPOSITORY" \
               --title "$ALERT_TITLE" \
-              --body "The hourly production smoke failed. Investigate the Deno shell, Railway appview, indexer lease, and Postgres readiness.\n\nRun: ${run_url}"
+              --body "The hourly production smoke failed. Investigate the Deno shell, Railway appview, indexer lease, Postgres readiness, and the 42-hour complete PDS-inventory heartbeat.\n\nRun: ${run_url}"
           fi
 
       - name: Close recovered production alert
