@@ -6,6 +6,8 @@ import {
   type AppListingDraft,
   type AppReviewDraft,
   atmosphereProfileToDraft,
+  ATSTORE_LISTING_NSID,
+  parseAtstoreListing,
 } from "./app-lexicons.ts";
 import {
   APP_COLLECTIONS,
@@ -35,6 +37,8 @@ import {
 } from "./app-trending.ts";
 import type { ProfileRow } from "./registry.ts";
 import { searchProfiles } from "./registry.ts";
+import { findPdsEndpoint, resolveDidDocument } from "./identity.ts";
+import { getRecordPublic } from "./pds.ts";
 
 export type AppDirectorySort = "trending" | "newest" | "az";
 export type AppReviewSort = "newest" | "highest" | "lowest";
@@ -72,6 +76,7 @@ export interface AppListing {
   legacyProfileDid: string | null;
   accountHost: string | null;
   atstoreListingUri: string | null;
+  migratedFromAtUri: string | null;
   communityProfileUri: string | null;
   communityEntryUri: string | null;
   reviewCount: number;
@@ -160,6 +165,7 @@ interface RawAppListingRow {
   legacy_profile_did: string | null;
   account_host: string | null;
   atstore_listing_uri: string | null;
+  migrated_from_at_uri: string | null;
   community_profile_uri: string | null;
   community_entry_uri: string | null;
   review_count: number;
@@ -411,6 +417,7 @@ function rowToAppListing(input: unknown): AppListing {
     legacyProfileDid: row.legacy_profile_did,
     accountHost: row.account_host,
     atstoreListingUri: row.atstore_listing_uri,
+    migratedFromAtUri: row.migrated_from_at_uri ?? null,
     communityProfileUri: row.community_profile_uri,
     communityEntryUri: row.community_entry_uri,
     reviewCount: Number(row.review_count ?? 0),
@@ -427,6 +434,50 @@ function rowToAppListing(input: unknown): AppListing {
     updatedAt: Number(row.updated_at),
     indexedAt: Number(row.indexed_at),
   };
+}
+
+const MIGRATED_ATSTORE_URI_RE = /^at:\/\/(did:[^/]+)\/([^/]+)\/([^/?#]+)$/;
+
+async function hydrateMigratedHeroFallback(
+  app: AppListing,
+): Promise<AppListing> {
+  if (app.heroFallbackUrl || !app.migratedFromAtUri) return app;
+  const match = MIGRATED_ATSTORE_URI_RE.exec(app.migratedFromAtUri);
+  if (!match || match[2] !== ATSTORE_LISTING_NSID) return app;
+  const [, repoDid, collection, rkey] = match;
+  try {
+    const pdsUrl = findPdsEndpoint(await resolveDidDocument(repoDid));
+    const fetched = await getRecordPublic(pdsUrl, repoDid, collection, rkey);
+    if (!fetched) return app;
+    const draft = parseAtstoreListing({
+      uri: fetched.uri || app.migratedFromAtUri,
+      cid: fetched.cid,
+      repoDid,
+      rkey,
+      value: fetched.value,
+    });
+    const fallback = draft?.heroUrl;
+    if (!fallback || fallback === app.heroUrl) return app;
+    await withDb(async (c) => {
+      await c.execute({
+        sql: `
+          UPDATE app_listing
+          SET hero_fallback_url = ?
+          WHERE id = ?
+            AND (hero_fallback_url IS NULL OR hero_fallback_url = '')
+        `,
+        args: [fallback, app.id],
+      });
+    });
+    clearAppDirectorySearchCache();
+    return { ...app, heroFallbackUrl: fallback };
+  } catch (err) {
+    console.warn(
+      `[app-directory] could not hydrate migrated hero for ${app.slug}:`,
+      err,
+    );
+    return app;
+  }
 }
 
 export function mergeAppListingDrafts(drafts: AppListingDraft[]) {
@@ -1556,6 +1607,7 @@ function listSelect(prefix: string) {
       LIMIT 1
     ) AS account_host,
     ${p}atstore_listing_uri,
+    ${migratedSourceUri} AS migrated_from_at_uri,
     ${p}community_profile_uri, ${p}community_entry_uri, ${p}review_count,
     ${p}average_rating, ${p}favorite_count, ${p}mention_count_24h,
     ${p}mention_count_7d, ${p}trending_score, ${p}published_at,
@@ -1888,7 +1940,7 @@ export async function getAppListingByIdentifier(
     raw.startsWith("at://") ? `uri:${raw}` : null,
     urlAlias(raw),
   ]);
-  return await withDb(async (c) => {
+  const listing = await withDb(async (c) => {
     const bySlug = await c.execute({
       sql: `
         SELECT ${listSelect("l")}
@@ -1915,6 +1967,7 @@ export async function getAppListingByIdentifier(
     });
     return alias.rows.length > 0 ? rowToAppListing(alias.rows[0]) : null;
   });
+  return listing ? await hydrateMigratedHeroFallback(listing) : null;
 }
 
 export async function getVisibleAppListingByAccountDid(
