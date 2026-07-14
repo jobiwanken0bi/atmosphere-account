@@ -23,6 +23,12 @@ const developerOgPng = await sharp(developerOgSvg).png().resize(1200, 630)
 await writeFile(join(root, "static/og-developer.png"), developerOgPng);
 console.log("Wrote static/og-developer.png", developerOgPng.length, "bytes");
 
+const hostsOgSvg = await readFile(join(root, "static/og-hosts.svg"));
+const hostsOgPng = await sharp(hostsOgSvg).png().resize(1200, 630)
+  .toBuffer();
+await writeFile(join(root, "static/og-hosts.png"), hostsOgPng);
+console.log("Wrote static/og-hosts.png", hostsOgPng.length, "bytes");
+
 const unionSvg = await readFile(join(root, "static/union.svg"));
 const bg = { r: 0, g: 0, b: 0, alpha: 0 };
 const icon32 = await sharp(unionSvg).resize(32, 32, {

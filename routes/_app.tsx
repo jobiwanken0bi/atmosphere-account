@@ -35,12 +35,16 @@ export default define.page(function App(ctx) {
     ? "/og-developer.png"
     : url.pathname.startsWith("/apps")
     ? "/og-explore.png"
+    : url.pathname.startsWith("/hosts")
+    ? "/og-hosts.png"
     : "/og-hero.png";
   const defaultSocialImageAlt = url.pathname.startsWith("/docs") ||
       url.pathname.startsWith("/developer-resources")
     ? "Atmosphere developer resources: tools to make the Atmosphere easier to understand."
     : url.pathname.startsWith("/apps")
     ? "Atmosphere apps, profiles, reviews, and updates."
+    : url.pathname.startsWith("/hosts")
+    ? "Atmosphere account hosts: choose where your account lives."
     : t.meta.ogImageAlt;
   /**
    * Per-page OG overrides set by route handlers via `ctx.state.pageMeta`.
