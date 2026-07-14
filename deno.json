@@ -71,6 +71,7 @@
     "@neon/serverless": "jsr:@neon/serverless@^1.0.1",
     "pg": "npm:pg@^8.16.3",
     "@types/pg": "npm:@types/pg@^8.15.6",
+    "sharp": "npm:sharp@0.34.5",
     "playwright": "npm:playwright@1.61.1"
   },
   "compilerOptions": {

@@ -1803,6 +1803,7 @@
       "npm:pg@^8.16.3",
       "npm:playwright@1.61.1",
       "npm:preact@^10.27.2",
+      "npm:sharp@0.34.5",
       "npm:vite@^7.1.3"
     ]
   }

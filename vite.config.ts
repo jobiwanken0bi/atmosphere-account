@@ -2,6 +2,20 @@ import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      external: ["sharp"],
+    },
+  },
+  ssr: {
+    /**
+     * Sharp's CommonJS dependency graph is not safe to flatten into Vite's
+     * SSR chunks (its semver cycle can execute before initialization). Keep
+     * the native package external so Deno loads it through node_modules at
+     * runtime, matching the development and worker paths.
+     */
+    external: ["sharp"],
+  },
   plugins: [
     fresh(),
     {

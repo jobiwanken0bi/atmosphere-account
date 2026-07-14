@@ -1,4 +1,4 @@
-import sharp from "npm:sharp@0.34.5";
+import sharp from "sharp";
 
 export async function coverJpeg(
   bytes: Uint8Array,
