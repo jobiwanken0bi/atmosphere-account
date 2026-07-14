@@ -370,6 +370,7 @@ export function aliasesForDraft(draft: AppListingDraft): string[] {
     draft.legacyProfileDid ? `legacy:${draft.legacyProfileDid}` : null,
     urlAlias(draft.primaryUrl),
     draft.atstoreListingUri ? `atstore:${draft.atstoreListingUri}` : null,
+    draft.migratedFromAtUri ? `uri:${draft.migratedFromAtUri}` : null,
     draft.communityProfileUri ? `community:${draft.communityProfileUri}` : null,
     draft.communityEntryUri ? `community:${draft.communityEntryUri}` : null,
   ];
@@ -1498,15 +1499,32 @@ function listSelect(prefix: string) {
   const parsedHeroUrl = isPostgresBackend()
     ? "NULLIF(r.parsed_json::jsonb ->> 'heroUrl', '')"
     : "NULLIF(json_extract(r.parsed_json, '$.heroUrl'), '')";
+  const migratedFromAtUri = isPostgresBackend()
+    ? "NULLIF(current_record.raw_json::jsonb ->> 'migratedFromAtUri', '')"
+    : "NULLIF(json_extract(current_record.raw_json, '$.migratedFromAtUri'), '')";
+  const migratedSourceUri = `(
+    SELECT ${migratedFromAtUri}
+    FROM app_record current_record
+    WHERE current_record.listing_id = ${p}id
+      AND current_record.deleted_at IS NULL
+      AND current_record.source_type = 'atstore_listing'
+      AND ${migratedFromAtUri} IS NOT NULL
+    ORDER BY COALESCE(
+      current_record.record_updated_at,
+      current_record.record_created_at,
+      0
+    ) DESC, current_record.uri ASC
+    LIMIT 1
+  )`;
   return `
     ${p}id, ${p}slug, ${p}name, ${p}description, ${p}tagline,
     ${p}app_status, ${p}primary_url, ${p}icon_url, ${p}hero_url,
     COALESCE(${p}hero_fallback_url, (
       SELECT ${parsedHeroUrl}
       FROM app_record r
-      WHERE r.listing_id = ${p}id
+      WHERE (r.listing_id = ${p}id OR r.uri = ${migratedSourceUri})
         AND r.deleted_at IS NULL
-        AND r.source_type = 'atstore_listing'
+        AND r.source_type IN ('atstore_listing', 'atmosphere_profile')
         AND ${parsedHeroUrl} IS NOT NULL
         AND ${parsedHeroUrl} <> COALESCE(${p}hero_url, '')
       ORDER BY COALESCE(r.record_updated_at, r.record_created_at, 0) DESC,

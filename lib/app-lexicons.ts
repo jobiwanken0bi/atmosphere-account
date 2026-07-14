@@ -68,6 +68,7 @@ export interface AppListingDraft {
   profileDid?: string;
   legacyProfileDid?: string;
   atstoreListingUri?: string;
+  migratedFromAtUri?: string;
   communityProfileUri?: string;
   communityEntryUri?: string;
   createdAt?: number;
@@ -340,6 +341,7 @@ export function parseAtstoreListing(
     accountIndicators: [],
     productDid: str(value.productAccountDid, 2048),
     atstoreListingUri: input.uri,
+    migratedFromAtUri: str(value.migratedFromAtUri, 8192),
     createdAt: timestamp(value.createdAt),
     updatedAt: timestamp(value.updatedAt),
   };

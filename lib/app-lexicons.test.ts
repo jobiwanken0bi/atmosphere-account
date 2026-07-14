@@ -363,6 +363,7 @@ Deno.test("merged ATStore listings retain an older hero as a media fallback", ()
       tagline: "Automations",
       externalUrl: "https://airglow.run/",
       productAccountDid: "did:plc:airglow",
+      migratedFromAtUri: older?.sourceUri,
       icon: { ref: { $link: "currenticon" }, mimeType: "image/png" },
       heroImage: { ref: { $link: "currenthero" }, mimeType: "image/png" },
       updatedAt: "2026-07-01T00:00:00.000Z",
@@ -373,4 +374,8 @@ Deno.test("merged ATStore listings retain an older hero as a media fallback", ()
   const merged = mergeAppListingDrafts([older, current]);
   assert(merged.heroUrl?.includes("cid=currenthero"));
   assert(merged.heroFallbackUrl?.includes("cid=olderhero"));
+  assert(
+    aliasesForDraft(current).includes(`uri:${older.sourceUri}`),
+    "expected migration source URI to participate in listing identity",
+  );
 });
