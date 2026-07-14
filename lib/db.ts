@@ -426,6 +426,11 @@ const SCHEMA_STATEMENTS: string[] = [
     service_record_uri TEXT,
     service_record_cid TEXT,
     service_observed_at INTEGER,
+    public_intent_status TEXT NOT NULL DEFAULT 'unknown',
+    public_intent_source TEXT,
+    public_intent_checked_at INTEGER,
+    public_intent_attempted_at INTEGER,
+    public_intent_evidence_json TEXT,
     profile_checked_at INTEGER,
     observed_account_count INTEGER NOT NULL DEFAULT 0,
     observed_active_account_count INTEGER NOT NULL DEFAULT 0,
@@ -1187,6 +1192,35 @@ async function applyAdditiveMigrations(
         table: "account_host",
         column: "service_observed_at",
         ddl: "ALTER TABLE account_host ADD COLUMN service_observed_at INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "public_intent_status",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN public_intent_status TEXT NOT NULL DEFAULT 'unknown'",
+      },
+      {
+        table: "account_host",
+        column: "public_intent_source",
+        ddl: "ALTER TABLE account_host ADD COLUMN public_intent_source TEXT",
+      },
+      {
+        table: "account_host",
+        column: "public_intent_checked_at",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN public_intent_checked_at INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "public_intent_attempted_at",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN public_intent_attempted_at INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "public_intent_evidence_json",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN public_intent_evidence_json TEXT",
       },
       {
         table: "account_host",

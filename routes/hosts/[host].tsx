@@ -9,6 +9,7 @@ import HostVisitLink from "../../islands/HostVisitLink.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHost,
+  accountHostAvailability,
   type AccountHostClaim,
   type HostVerificationStatus,
 } from "../../lib/account-hosts.ts";
@@ -138,6 +139,7 @@ function HostDetailPage(
   const dashboard = buildHostDashboardState({ host });
   const friendly = hostFriendlyProfile(host);
   const signupSummary = hostSignupSummary(host, pdsDescription);
+  const temporarilyUnavailable = accountHostAvailability(host) === "grace";
   const handleSummary = hostHandleSummary(friendly, pdsDescription);
   const isManagedByCurrentAccount = Boolean(
     claim && account.user && claim.claimantDid === account.user.did,
@@ -194,20 +196,19 @@ function HostDetailPage(
                 <p class="host-detail-domain">
                   {directoryCopy.hostDomain}: {hostPdsDomain(host)}
                 </p>
-                {(host.observedAccountCount > 0 ||
-                  host.observedActiveAccountCount > 0) && (
+                {(host.observedAccountCount > 0 || temporarilyUnavailable) && (
                   <div
                     class="host-detail-status-row"
-                    aria-label={directoryCopy.activityLabel}
+                    aria-label={directoryCopy.availabilityLabel}
                   >
                     {host.observedAccountCount > 0 && (
                       <span class="host-card-account-count">
                         {directoryCopy.accounts(host.observedAccountCount)}
                       </span>
                     )}
-                    {host.observedActiveAccountCount > 0 && (
-                      <span class="host-card-active">
-                        {directoryCopy.active}
+                    {temporarilyUnavailable && (
+                      <span class="host-card-unavailable">
+                        {directoryCopy.temporarilyUnavailable}
                       </span>
                     )}
                   </div>
@@ -587,11 +588,12 @@ function hostHandleSummary(
   pds: PdsServerDescription | null,
 ): { label: string; detail: string } {
   if (!pds?.availableUserDomains.length) {
+    const baseDetail = friendly.handleDetail.replace(/\.$/, "");
     return {
       label: friendly.handleLabel,
-      detail: `${
-        friendly.handleDetail.replace(/\.$/, "")
-      }. You can also use your own domain.`,
+      detail: /own domain/i.test(baseDetail)
+        ? `${baseDetail}.`
+        : `${baseDetail}. You can also use your own domain.`,
     };
   }
 

@@ -13,6 +13,7 @@ import type {
   HostVerificationStatus,
 } from "../lib/account-hosts.ts";
 import { DEFAULT_ACCOUNT_HOST_SORT } from "../lib/account-hosts.ts";
+import { accountHostAvailability } from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
 import { hostFriendlyProfile, hostPdsDomain } from "../lib/host-friendly.ts";
 import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
@@ -410,6 +411,7 @@ function HostCard(
   const accountCountLabel = host.observedAccountCount > 0
     ? copy.accounts(host.observedAccountCount)
     : null;
+  const temporarilyUnavailable = accountHostAvailability(host) === "grace";
   return (
     <a
       href={hostDetailHref(host.host, returnTo)}
@@ -430,7 +432,7 @@ function HostCard(
             </p>
           </div>
         </div>
-        {(accountCountLabel || host.observedActiveAccountCount > 0) && (
+        {(accountCountLabel || temporarilyUnavailable) && (
           <div class="host-card-account-summary">
             {accountCountLabel && (
               <span
@@ -449,8 +451,10 @@ function HostCard(
                 </span>
               </span>
             )}
-            {host.observedActiveAccountCount > 0 && (
-              <span class="host-card-active">{copy.active}</span>
+            {temporarilyUnavailable && (
+              <span class="host-card-unavailable">
+                {copy.temporarilyUnavailable}
+              </span>
             )}
           </div>
         )}

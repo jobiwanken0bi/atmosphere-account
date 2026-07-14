@@ -239,6 +239,53 @@ await withDb(async (c) => {
     });
   }
 
+  await c.execute({
+    sql: `
+      INSERT INTO account_host (
+        host, display_name, description, signup_status,
+        verification_status, source,
+        public_intent_status, public_intent_source,
+        public_intent_checked_at, public_intent_attempted_at,
+        public_intent_evidence_json,
+        observed_account_count, observed_active_account_count,
+        last_active_at, last_indexed_account_at, last_observed_at,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, 'open', 'observed', 'observed',
+        'detected', 'pds_open_signup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(host) DO UPDATE SET
+        signup_status = excluded.signup_status,
+        public_intent_status = excluded.public_intent_status,
+        public_intent_source = excluded.public_intent_source,
+        public_intent_checked_at = excluded.public_intent_checked_at,
+        public_intent_attempted_at = excluded.public_intent_attempted_at,
+        public_intent_evidence_json = excluded.public_intent_evidence_json,
+        observed_account_count = excluded.observed_account_count,
+        observed_active_account_count = excluded.observed_active_account_count,
+        last_active_at = excluded.last_active_at,
+        last_indexed_account_at = excluded.last_indexed_account_at,
+        last_observed_at = excluded.last_observed_at,
+        updated_at = excluded.updated_at
+    `,
+    args: [
+      "open-garden.example",
+      "open-garden.example",
+      "An unclaimed multi-account host detected from its public PDS metadata.",
+      now,
+      now,
+      JSON.stringify({
+        availableUserDomains: ["open-garden.example"],
+        inviteCodeRequired: false,
+      }),
+      68,
+      68,
+      now,
+      now,
+      now,
+      now,
+      now,
+    ],
+  });
+
   const featured = listingIds.slice(0, 3);
   for (let index = 0; index < featured.length; index++) {
     await c.execute({
@@ -257,5 +304,5 @@ await withDb(async (c) => {
 await rescoreAppDirectoryTrending();
 
 console.log(
-  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), and refreshed seeded hosts in local.db`,
+  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), one detected unclaimed host, and refreshed seeded hosts in local.db`,
 );

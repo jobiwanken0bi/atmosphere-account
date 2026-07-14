@@ -14112,29 +14112,18 @@ body {
   font-weight: 650;
 }
 
-.host-card-active {
+.host-card-unavailable {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
   min-height: 1.55rem;
-  border: 1px solid rgba(91, 189, 132, 0.2);
+  border: 1px solid rgba(180, 119, 34, 0.22);
   border-radius: 999px;
   padding: 0.12rem 0.48rem;
-  color: #176440;
-  background: rgba(91, 189, 132, 0.16);
+  color: #7b4b0f;
+  background: rgba(226, 164, 73, 0.15);
   font-size: 0.69rem;
   font-weight: 650;
   white-space: nowrap;
-}
-
-.host-card-active::before {
-  width: 0.38rem;
-  height: 0.38rem;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: #2e9b63;
-  content: "";
-  box-shadow: 0 0 0 2px rgba(46, 155, 99, 0.12);
 }
 
 .host-card-tags .host-card-conformance {
@@ -14993,10 +14982,10 @@ body {
   color: #d8e4ff;
 }
 
-.dark-phase .host-card-active {
-  border-color: rgba(92, 220, 164, 0.26);
-  background: rgba(92, 220, 164, 0.13);
-  color: #a8f0cf;
+.dark-phase .host-card-unavailable {
+  border-color: rgba(246, 186, 92, 0.25);
+  background: rgba(246, 186, 92, 0.12);
+  color: #ffd898;
 }
 
 .dark-phase .host-card-domain {

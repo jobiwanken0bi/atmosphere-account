@@ -5,6 +5,10 @@ import {
   summarizeRelayPdsInventory,
 } from "../lib/pds-relay-inventory.ts";
 import {
+  DEFAULT_PUBLIC_HOST_ENRICHMENT_LIMIT,
+  enrichObservedAccountHostPublicIntent,
+} from "../lib/account-host-public-intent.ts";
+import {
   failPdsInventoryScan,
   finishPdsInventoryScan,
   startPdsInventoryScan,
@@ -14,7 +18,7 @@ function usage(exitCode = 0): never {
   const write = exitCode === 0 ? console.log : console.error;
   write(
     [
-      "Usage: deno task pds:index [--dry-run] [--limit=1000] [--max-pages=N] [--allow-large-drop]",
+      "Usage: deno task pds:index [--dry-run] [--limit=1000] [--max-pages=N] [--allow-large-drop] [--skip-enrichment] [--enrichment-limit=N]",
       "",
       "Fetches the PDS inventory exposed by bsky.network's listHosts API.",
       "The default full scan normally needs only a handful of HTTP requests",
@@ -27,6 +31,10 @@ function usage(exitCode = 0): never {
       "  --max-pages=N   Stop early after N pages (stored as a partial scan).",
       "  --allow-large-drop",
       "                  Reconcile a verified >5% drop in PDS instances.",
+      "  --skip-enrichment",
+      "                  Skip public-host metadata probes after the scan.",
+      `  --enrichment-limit=N`,
+      `                  Probe at most N stale active hosts (default: ${DEFAULT_PUBLIC_HOST_ENRICHMENT_LIMIT}).`,
     ].join("\n"),
   );
   Deno.exit(exitCode);
@@ -62,10 +70,15 @@ function validateArgs(args: string[]): void {
   const booleanFlags = new Set([
     "--dry-run",
     "--allow-large-drop",
+    "--skip-enrichment",
     "--help",
     "-h",
   ]);
-  const valueFlags = new Set(["--limit", "--max-pages"]);
+  const valueFlags = new Set([
+    "--limit",
+    "--max-pages",
+    "--enrichment-limit",
+  ]);
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (booleanFlags.has(arg)) continue;
@@ -92,8 +105,13 @@ const pageSize = numberFlag(args, "--limit", {
   maximum: 1000,
 });
 const maxPages = numberFlag(args, "--max-pages");
+const enrichmentLimit = numberFlag(args, "--enrichment-limit", {
+  fallback: DEFAULT_PUBLIC_HOST_ENRICHMENT_LIMIT,
+  maximum: 1000,
+});
 const dryRun = args.includes("--dry-run");
 const allowLargeDrop = args.includes("--allow-large-drop");
+const skipEnrichment = args.includes("--skip-enrichment");
 const observedAt = Date.now();
 const scanId = crypto.randomUUID();
 
@@ -107,6 +125,8 @@ try {
   const summary = summarizeRelayPdsInventory(fetched.instances);
 
   let persisted = null;
+  let publicHostEnrichment = null;
+  let publicHostEnrichmentError: string | null = null;
   if (!dryRun) {
     persisted = await persistRelayPdsInventory(fetched.instances, {
       complete: fetched.complete,
@@ -120,6 +140,21 @@ try {
       pages: fetched.pages,
       instanceCount: fetched.instances.length,
     });
+    if (!skipEnrichment) {
+      try {
+        publicHostEnrichment = await enrichObservedAccountHostPublicIntent({
+          limit: enrichmentLimit,
+        });
+      } catch (error) {
+        publicHostEnrichmentError = error instanceof Error
+          ? error.message
+          : String(error);
+        console.warn(
+          "[pds:index] public-host enrichment failed without invalidating the inventory scan:",
+          publicHostEnrichmentError,
+        );
+      }
+    }
   }
 
   console.log(JSON.stringify(
@@ -131,6 +166,8 @@ try {
       nextCursor: fetched.nextCursor,
       summary,
       persisted,
+      publicHostEnrichment,
+      publicHostEnrichmentError,
     },
     null,
     2,

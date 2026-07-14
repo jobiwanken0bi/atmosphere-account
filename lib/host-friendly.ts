@@ -110,7 +110,7 @@ function fallbackProfile(host: AccountHost): HostFriendlyProfile {
       "This host has not shared where account data is physically hosted yet.",
     handleLabel: handleDomain,
     handleDetail:
-      `You can use a ${handleDomain} handle, but you can use your own domain.`,
+      `You can use a handle ending in ${handleDomain}, or use your own domain.`,
     signupLabel: signupFriendlyLabel(host.signupStatus),
     signupDetail: signupFriendlyDetail(host.signupStatus),
   };

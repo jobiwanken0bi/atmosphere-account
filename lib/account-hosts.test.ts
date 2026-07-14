@@ -1,4 +1,5 @@
 import {
+  accountHostAvailability,
   DEFAULT_ACCOUNT_HOST_SORT,
   isAccountHostPubliclyListable,
   listSeededAccountHostFallback,
@@ -193,6 +194,24 @@ Deno.test("public host policy requires recent reachability and public intent", (
     }, now),
     false,
   );
+  assertEquals(
+    isAccountHostPubliclyListable({
+      ...base,
+      publicIntentStatus: "detected",
+      publicIntentSource: "pds_open_signup",
+      publicIntentCheckedAt: now,
+    }, now),
+    true,
+  );
+  assertEquals(
+    isAccountHostPubliclyListable({
+      ...base,
+      publicIntentStatus: "detected",
+      publicIntentSource: "pds_open_signup",
+      publicIntentCheckedAt: 0,
+    }, now),
+    false,
+  );
 });
 
 Deno.test("claimed hosts receive a short inactivity grace period", () => {
@@ -218,6 +237,34 @@ Deno.test("claimed hosts receive a short inactivity grace period", () => {
       conformanceExpiresAt: now + 1,
     }, now),
     true,
+  );
+});
+
+Deno.test("host availability distinguishes directory baseline from grace exceptions", () => {
+  const now = 1_000_000_000;
+  const host = {
+    ...listSeededAccountHostFallback()[0],
+    verificationStatus: "claimed" as const,
+    observedActiveAccountCount: 4,
+    lastIndexedAccountAt: now,
+    lastActiveAt: now,
+  };
+  assertEquals(accountHostAvailability(host, now), "relay_active");
+  assertEquals(
+    accountHostAvailability({
+      ...host,
+      observedActiveAccountCount: 0,
+      conformanceStatus: "passed",
+      conformanceExpiresAt: now + 1,
+    }, now),
+    "reachable",
+  );
+  assertEquals(
+    accountHostAvailability({
+      ...host,
+      observedActiveAccountCount: 0,
+    }, now),
+    "grace",
   );
 });
 

@@ -21,6 +21,15 @@ export type HostSignupStatus =
   | "unknown";
 export type HostVerificationStatus = "verified" | "claimed" | "observed";
 export type HostSource = "seeded" | "manual" | "observed";
+export type HostPublicIntentStatus = "unknown" | "detected" | "not_detected";
+export type HostPublicIntentSource =
+  | "pds_open_signup"
+  | "pds_managed_invites";
+export type AccountHostAvailability =
+  | "relay_active"
+  | "reachable"
+  | "grace"
+  | "unavailable";
 
 export interface AccountHost {
   host: string;
@@ -52,6 +61,11 @@ export interface AccountHost {
   serviceRecordUri: string | null;
   serviceRecordCid: string | null;
   serviceObservedAt: number | null;
+  publicIntentStatus: HostPublicIntentStatus;
+  publicIntentSource: HostPublicIntentSource | null;
+  publicIntentCheckedAt: number | null;
+  publicIntentAttemptedAt: number | null;
+  publicIntentEvidenceJson: string | null;
   profileCheckedAt: number | null;
   observedAccountCount: number;
   observedActiveAccountCount: number;
@@ -69,6 +83,7 @@ export interface AccountHost {
 export const DEFAULT_ACCOUNT_HOST_SORT = "recommended" as const;
 export const PUBLIC_ACCOUNT_HOST_ACTIVITY_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 export const PUBLIC_ACCOUNT_HOST_CLAIM_GRACE_MS = 72 * 60 * 60 * 1000;
+export const PUBLIC_ACCOUNT_HOST_INTENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type AccountHostSort =
   | typeof DEFAULT_ACCOUNT_HOST_SORT
@@ -596,6 +611,11 @@ function seedToAccountHost(seed: SeedHost, ts = now()): AccountHost {
     serviceRecordUri: null,
     serviceRecordCid: null,
     serviceObservedAt: null,
+    publicIntentStatus: "unknown",
+    publicIntentSource: null,
+    publicIntentCheckedAt: null,
+    publicIntentAttemptedAt: null,
+    publicIntentEvidenceJson: null,
     profileCheckedAt: null,
     observedAccountCount: 0,
     observedActiveAccountCount: 0,
@@ -700,6 +720,19 @@ function parseHostRow(row: Record<string, unknown>): AccountHost {
     serviceObservedAt: row.service_observed_at == null
       ? null
       : Number(row.service_observed_at),
+    publicIntentStatus: normalizePublicIntentStatus(
+      row.public_intent_status,
+    ),
+    publicIntentSource: normalizePublicIntentSource(row.public_intent_source),
+    publicIntentCheckedAt: row.public_intent_checked_at == null
+      ? null
+      : Number(row.public_intent_checked_at),
+    publicIntentAttemptedAt: row.public_intent_attempted_at == null
+      ? null
+      : Number(row.public_intent_attempted_at),
+    publicIntentEvidenceJson: row.public_intent_evidence_json
+      ? String(row.public_intent_evidence_json)
+      : null,
     profileCheckedAt: row.profile_checked_at == null
       ? null
       : Number(row.profile_checked_at),
@@ -753,6 +786,18 @@ function normalizeSource(value: unknown): HostSource {
   return value === "seeded" || value === "manual" || value === "observed"
     ? value
     : "observed";
+}
+
+function normalizePublicIntentStatus(value: unknown): HostPublicIntentStatus {
+  return value === "detected" || value === "not_detected" ? value : "unknown";
+}
+
+function normalizePublicIntentSource(
+  value: unknown,
+): HostPublicIntentSource | null {
+  return value === "pds_open_signup" || value === "pds_managed_invites"
+    ? value
+    : null;
 }
 
 interface HostProfile {
@@ -2220,6 +2265,7 @@ export async function listAccountHostDirectory(
         publicNow - PUBLIC_ACCOUNT_HOST_ACTIVITY_MAX_AGE_MS,
         publicNow,
         publicNow - PUBLIC_ACCOUNT_HOST_CLAIM_GRACE_MS,
+        publicNow - PUBLIC_ACCOUNT_HOST_INTENT_MAX_AGE_MS,
       );
     }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
@@ -2350,19 +2396,49 @@ export function isAccountHostPubliclyListable(
   const hasPublicIntent = host.verificationStatus === "claimed" ||
     host.verificationStatus === "verified" || host.source === "seeded" ||
     !!host.serviceRecordUri ||
-    normalizeAccountHostPublicHttpsUrl(host.signupUrl) !== null;
+    normalizeAccountHostPublicHttpsUrl(host.signupUrl) !== null ||
+    hasFreshDetectedPublicIntent(host, at);
   if (!hasPublicIntent) return false;
 
+  return accountHostAvailability(host, at) !== "unavailable";
+}
+
+export function hasFreshDetectedPublicIntent(
+  host: Pick<
+    AccountHost,
+    "publicIntentStatus" | "publicIntentCheckedAt"
+  >,
+  at = now(),
+): boolean {
+  return host.publicIntentStatus === "detected" &&
+    host.publicIntentCheckedAt != null &&
+    host.publicIntentCheckedAt >= at - PUBLIC_ACCOUNT_HOST_INTENT_MAX_AGE_MS;
+}
+
+export function accountHostAvailability(
+  host: Pick<
+    AccountHost,
+    | "lastIndexedAccountAt"
+    | "observedActiveAccountCount"
+    | "conformanceStatus"
+    | "conformanceExpiresAt"
+    | "verificationStatus"
+    | "lastActiveAt"
+  >,
+  at = now(),
+): AccountHostAvailability {
   const inventoryIsFresh = host.lastIndexedAccountAt != null &&
     host.lastIndexedAccountAt >= at - PUBLIC_ACCOUNT_HOST_ACTIVITY_MAX_AGE_MS;
   const relayActive = inventoryIsFresh && host.observedActiveAccountCount > 0;
+  if (relayActive) return "relay_active";
   const directlyReachable = host.conformanceStatus === "passed" &&
     host.conformanceExpiresAt != null && host.conformanceExpiresAt > at;
+  if (directlyReachable) return "reachable";
   const claimedGrace = (host.verificationStatus === "claimed" ||
     host.verificationStatus === "verified") &&
     host.lastActiveAt != null &&
     host.lastActiveAt >= at - PUBLIC_ACCOUNT_HOST_CLAIM_GRACE_MS;
-  return relayActive || directlyReachable || claimedGrace;
+  return claimedGrace ? "grace" : "unavailable";
 }
 
 function publicAccountHostVisibilitySql(): string {
@@ -2388,6 +2464,10 @@ function publicAccountHostVisibilitySql(): string {
       OR account_host.source = 'seeded'
       OR COALESCE(account_host.service_record_uri, '') <> ''
       OR lower(COALESCE(account_host.signup_url, '')) LIKE 'https://%'
+      OR (
+        account_host.public_intent_status = 'detected'
+        AND account_host.public_intent_checked_at >= ?
+      )
     )
   )`;
 }

@@ -40,6 +40,25 @@ Deno.test("Postgres baseline adds app hero fallback media", async () => {
   }
 });
 
+Deno.test("Postgres baseline adds durable public host intent evidence", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  for (
+    const column of [
+      "public_intent_status text NOT NULL DEFAULT 'unknown'",
+      "public_intent_source text",
+      "public_intent_checked_at bigint",
+      "public_intent_attempted_at bigint",
+      "public_intent_evidence_json text",
+    ]
+  ) {
+    if (!schema.includes(`ADD COLUMN IF NOT EXISTS ${column}`)) {
+      throw new Error(
+        `Expected the account_host ${column} migration to be additive`,
+      );
+    }
+  }
+});
+
 function assertStringArrayEquals(actual: string[], expected: string[]): void {
   if (actual.length === expected.length) {
     const mismatch = actual.find((value, index) => value !== expected[index]);

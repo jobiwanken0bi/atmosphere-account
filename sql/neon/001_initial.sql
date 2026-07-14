@@ -257,6 +257,11 @@ CREATE TABLE IF NOT EXISTS account_host (
   service_record_uri text,
   service_record_cid text,
   service_observed_at bigint,
+  public_intent_status text NOT NULL DEFAULT 'unknown',
+  public_intent_source text,
+  public_intent_checked_at bigint,
+  public_intent_attempted_at bigint,
+  public_intent_evidence_json text,
   profile_checked_at bigint,
   observed_account_count integer NOT NULL DEFAULT 0,
   observed_active_account_count integer NOT NULL DEFAULT 0,
@@ -284,6 +289,11 @@ ALTER TABLE account_host ADD COLUMN IF NOT EXISTS account_management_url text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_record_uri text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_record_cid text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_observed_at bigint;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_status text NOT NULL DEFAULT 'unknown';
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_source text;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_checked_at bigint;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_attempted_at bigint;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_evidence_json text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS bsky_profile_visible integer NOT NULL DEFAULT 1;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_account_count integer NOT NULL DEFAULT 0;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_active_account_count integer NOT NULL DEFAULT 0;
