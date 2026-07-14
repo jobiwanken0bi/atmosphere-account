@@ -20,6 +20,26 @@ Deno.test("Postgres baseline removes legacy per-DID PDS discovery tables", async
   }
 });
 
+Deno.test("Postgres baseline adds the verified preferred account host field", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  if (
+    !schema.includes(
+      "ADD COLUMN IF NOT EXISTS preferred_account_host text",
+    )
+  ) {
+    throw new Error(
+      "Expected the login_app preferred account host migration to be additive",
+    );
+  }
+});
+
+Deno.test("Postgres baseline adds app hero fallback media", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  if (!schema.includes("ADD COLUMN IF NOT EXISTS hero_fallback_url text")) {
+    throw new Error("Expected the app hero fallback migration to be additive");
+  }
+});
+
 function assertStringArrayEquals(actual: string[], expected: string[]): void {
   if (actual.length === expected.length) {
     const mismatch = actual.find((value, index) => value !== expected[index]);

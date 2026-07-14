@@ -85,6 +85,20 @@ export function hostFriendlyProfile(host: AccountHost): HostFriendlyProfile {
   };
 }
 
+/** The user-facing PDS domain shown on host cards and detail pages. */
+export function hostPdsDomain(
+  host: Pick<AccountHost, "host" | "serviceEndpoint">,
+): string {
+  if (host.serviceEndpoint) {
+    try {
+      return new URL(host.serviceEndpoint).hostname.toLowerCase();
+    } catch {
+      // Fall through to the canonical inventory host.
+    }
+  }
+  return host.host;
+}
+
 function fallbackProfile(host: AccountHost): HostFriendlyProfile {
   const handleDomain = friendlyHandleDomain(host);
   return {

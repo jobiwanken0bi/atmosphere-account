@@ -125,6 +125,39 @@ Deno.test("legacy host arrays prioritize account totals in the default sort", ()
   assertEquals(result.hosts[0]?.host, observedHost?.host);
 });
 
+Deno.test("public host arrays hide active personal PDSes without listing intent", () => {
+  const now = 1_000_000_000;
+  const [personal, published] = listSeededAccountHostFallback().slice(0, 2);
+  const result = hostDirectoryResultForHosts(
+    { publicOnly: true, now },
+    [
+      {
+        ...personal,
+        source: "observed",
+        verificationStatus: "observed",
+        signupUrl: null,
+        serviceRecordUri: null,
+        observedActiveAccountCount: 1,
+        lastIndexedAccountAt: now,
+        lastActiveAt: now,
+      },
+      {
+        ...published,
+        source: "manual",
+        verificationStatus: "observed",
+        serviceRecordUri:
+          "at://did:plc:host/account.atmosphere.host.service/self",
+        observedActiveAccountCount: 1,
+        lastIndexedAccountAt: now,
+        lastActiveAt: now,
+      },
+    ],
+  );
+
+  assertEquals(result.total, 1);
+  assertEquals(result.hosts[0]?.host, published?.host);
+});
+
 Deno.test("create-account host discovery requires trusted signup URLs", () => {
   const hosts = listSeededAccountHostFallback();
   const result = hostDirectoryResultForHosts(
@@ -132,8 +165,55 @@ Deno.test("create-account host discovery requires trusted signup URLs", () => {
     hosts,
   );
 
+  assertEquals(result.hosts.length, 2);
+  assertEquals(result.hosts.some((host) => host.host === "bsky.network"), true);
+  assertEquals(result.hosts.some((host) => host.host === "tangled.org"), true);
+});
+
+Deno.test("create-account host discovery can include open and invite hosts together", () => {
+  const [first, second, third] = listSeededAccountHostFallback();
+  const result = hostDirectoryResultForHosts(
+    {
+      signupStatuses: ["open", "invite_required"],
+      hasSignupUrl: true,
+      trustedOnly: true,
+    },
+    [
+      { ...first, signupStatus: "open", signupUrl: "https://one.test/signup" },
+      {
+        ...second,
+        signupStatus: "invite_required",
+        signupUrl: "https://two.test/signup",
+      },
+      {
+        ...third,
+        signupStatus: "closed",
+        signupUrl: "https://three.test/signup",
+      },
+    ],
+  );
+
+  assertEquals(result.hosts.length, 2);
+  assertEquals(
+    result.hosts.some((host) => host.signupStatus === "open"),
+    true,
+  );
+  assertEquals(
+    result.hosts.some((host) => host.signupStatus === "invite_required"),
+    true,
+  );
+});
+
+Deno.test("host discovery searches inferred locations", () => {
+  const host = {
+    ...listSeededAccountHostFallback()[0],
+    inferredLocation: "North America",
+  };
+  const result = hostDirectoryResultForHosts(
+    { query: "north america" },
+    [host],
+  );
   assertEquals(result.hosts.length, 1);
-  assertEquals(result.hosts[0]?.host, "tangled.org");
 });
 
 Deno.test("seeded host detail fallback only resolves exact curated hosts", () => {
@@ -153,6 +233,7 @@ Deno.test("early appview proxy covers DB-backed APIs before session hydration", 
       "/api/account/profile",
       "/api/admin/app-directory/rescore",
       "/api/login/selection",
+      "/api/login/account-hosts",
       "/api/registry/profile",
       "/api/appview/apps/home",
       "/api/atproto/blob",

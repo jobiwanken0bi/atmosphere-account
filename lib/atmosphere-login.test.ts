@@ -8,8 +8,14 @@ import {
   LoginRequestError,
   readLoginRequest,
   resolveLoginAppForRequest,
+  resolveVerifiedPreferredAccountHost,
   verifyLoginAppDomainManifest,
+  verifyPreferredAccountHostForOwner,
 } from "./atmosphere-login.ts";
+import {
+  type AccountHostClaim,
+  listSeededAccountHostFallback,
+} from "./account-hosts.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   const a = JSON.stringify(actual);
@@ -35,10 +41,88 @@ function app(overrides: Partial<LoginApp> = {}): LoginApp {
     reviewDecisionBy: null,
     reviewDecisionReason: null,
     contactDid: "did:plc:owner",
+    preferredAccountHost: null,
     registered: true,
     ...overrides,
   };
 }
+
+const preferredHost = {
+  ...listSeededAccountHostFallback()[0],
+  host: "accounts.example.com",
+  signupUrl: "https://accounts.example.com/signup",
+  signupStatus: "open" as const,
+  verificationStatus: "claimed" as const,
+};
+const preferredClaim: AccountHostClaim = {
+  host: preferredHost.host,
+  claimantDid: "did:plc:owner",
+  claimantHandle: "owner.example.com",
+  method: "oauth_atproto_account",
+  claimedAt: 1,
+  verifiedAt: 1,
+  updatedAt: 1,
+};
+
+Deno.test("preferred account host registration requires the app owner's claim", async () => {
+  const verified = await verifyPreferredAccountHostForOwner(
+    "did:plc:owner",
+    preferredHost.host,
+    {
+      getHost: () => Promise.resolve(preferredHost),
+      getClaim: () => Promise.resolve(preferredClaim),
+    },
+  );
+  assertEquals(verified, preferredHost.host);
+
+  try {
+    await verifyPreferredAccountHostForOwner(
+      "did:plc:different-owner",
+      preferredHost.host,
+      {
+        getHost: () => Promise.resolve(preferredHost),
+        getClaim: () => Promise.resolve(preferredClaim),
+      },
+    );
+    throw new Error("Expected preferred host verification to fail");
+  } catch (err) {
+    if (!(err instanceof LoginRequestError)) throw err;
+    assertEquals(err.status, 400);
+  }
+});
+
+Deno.test("preferred account host is re-verified when the picker opens", async () => {
+  const resolved = await resolveVerifiedPreferredAccountHost(
+    app({ preferredAccountHost: preferredHost.host }),
+    {
+      getHost: () => Promise.resolve(preferredHost),
+      getClaim: () => Promise.resolve(preferredClaim),
+    },
+  );
+  assertEquals(resolved?.host, preferredHost.host);
+
+  const revoked = await resolveVerifiedPreferredAccountHost(
+    app({ preferredAccountHost: preferredHost.host }),
+    {
+      getHost: () => Promise.resolve(preferredHost),
+      getClaim: () => Promise.resolve(null),
+    },
+  );
+  assertEquals(revoked, null);
+
+  const closed = await resolveVerifiedPreferredAccountHost(
+    app({ preferredAccountHost: preferredHost.host }),
+    {
+      getHost: () =>
+        Promise.resolve({
+          ...preferredHost,
+          signupStatus: "closed" as const,
+        }),
+      getClaim: () => Promise.resolve(preferredClaim),
+    },
+  );
+  assertEquals(closed, null);
+});
 
 Deno.test("evaluateLoginAppDomainManifest accepts an apps-array manifest", () => {
   const check = evaluateLoginAppDomainManifest(app(), {

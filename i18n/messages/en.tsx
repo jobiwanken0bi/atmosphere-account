@@ -264,6 +264,8 @@ const en = {
         maximumFractionDigits: 1,
       }).format(count),
     accountCountUnavailable: "Account count unavailable",
+    hostDomain: "Host domain",
+    activityLabel: "Host activity",
     active: "Active",
     compatibilityChecked: "Compatibility checked",
     view: "View",

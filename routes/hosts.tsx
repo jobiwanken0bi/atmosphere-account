@@ -14,7 +14,7 @@ import type {
 } from "../lib/account-hosts.ts";
 import { DEFAULT_ACCOUNT_HOST_SORT } from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
-import { hostFriendlyProfile } from "../lib/host-friendly.ts";
+import { hostFriendlyProfile, hostPdsDomain } from "../lib/host-friendly.ts";
 import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
 import { hostDetailHref } from "../lib/host-directory-navigation.ts";
 import { getMessages } from "../i18n/mod.ts";
@@ -398,17 +398,6 @@ function DirectoryRegisterCta(
 }
 
 type HostsDirectoryCopy = ReturnType<typeof getMessages>["hostsDirectory"];
-
-function hostPdsDomain(host: AccountHost): string {
-  if (host.serviceEndpoint) {
-    try {
-      return new URL(host.serviceEndpoint).hostname.toLowerCase();
-    } catch {
-      // Fall through to the canonical inventory host.
-    }
-  }
-  return host.host;
-}
 
 function HostCard(
   { host, copy, returnTo }: {

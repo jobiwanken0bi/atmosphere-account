@@ -177,7 +177,7 @@ export const docsPages: DocsPage[] = [
               ],
               [
                 "Host directory",
-                "Shows friendly host profiles, signup information, location/style, and optional compatibility signals.",
+                "Shows reachable, intentionally public provider profiles with signup information, location/style, and optional compatibility signals. Raw observed personal PDSes remain private.",
                 "Publishes authoritative host service/profile records and owns the account page destination.",
               ],
               [
@@ -715,7 +715,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             method: "GET",
             path: "/account/developer/apps",
             body:
-              "Signed-in developer page for registering an app name, client ID, logo URL, homepage, and allowed return URIs.",
+              "Signed-in developer page for registering an app name, client ID, logo URL, homepage, allowed return URIs, and an optional verified preferred account host.",
           },
           {
             type: "steps",
@@ -735,7 +735,18 @@ return redirect("/oauth/start?" + new URLSearchParams({
                 body:
                   "Every production callback that receives `selection_token` must be listed exactly. Atmosphere strips URL fragments before matching.",
               },
+              {
+                title: "Recommend a host you operate (optional)",
+                body:
+                  "If the same owner account has claimed a joinable account host, select it as the preferred host. The picker pins it first and labels it as recommended by the app, while keeping every other eligible host available.",
+              },
             ],
+          },
+          {
+            type: "callout",
+            title: "Preferred hosts are registration data, not request input",
+            body:
+              "Atmosphere verifies the host claim when the registration is saved and again when the picker opens. Apps cannot nominate an arbitrary host in the picker URL, and revoked, transferred, closed, or unconfigured hosts stop being recommended.",
           },
           {
             type: "table",
@@ -1158,6 +1169,7 @@ return Response.redirect(oauthUrl);`,
     summary: [
       "App registration is tied to the signed-in Atmosphere owner account.",
       "Production apps use HTTPS identity and exact allowed return URIs.",
+      "Apps may recommend a currently claimed, joinable account host without preventing other choices.",
       "Review states control picker copy and trust warnings.",
     ],
     primaryCta: {
@@ -1224,6 +1236,11 @@ return Response.redirect(oauthUrl);`,
                 "Allowed return URIs",
                 "Callbacks allowed to receive `selection_token`.",
                 "Exact-match production URLs. Loopback IP callbacks are local development only.",
+              ],
+              [
+                "Preferred account host (optional)",
+                "Pins a host first in the Create Account chooser and labels it as recommended by the app.",
+                "Must be a joinable grouped host currently claimed by the app owner. Atmosphere re-verifies the claim at picker time.",
               ],
             ],
           },
@@ -2309,7 +2326,7 @@ deno task host:conformance host.example --write`,
             type: "callout",
             title: "Badge policy",
             body:
-              "Atmosphere only shows a compatibility badge after the manifest, account route, and PDS health checks pass. Stored results expire after seven days; observed or claimed hosts can remain listed without a badge.",
+              "Atmosphere only shows a compatibility badge after the manifest, account route, and PDS health checks pass. Stored results expire after seven days. Public listing is separate: a host must be reachable and intentionally public, with a short grace period for temporarily inactive claimed hosts.",
           },
         ],
       },

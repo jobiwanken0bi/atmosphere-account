@@ -56,6 +56,7 @@ export interface AppListing {
   primaryUrl: string | null;
   iconUrl: string | null;
   heroUrl: string | null;
+  heroFallbackUrl: string | null;
   screenshotUrls: string[];
   links: AppDirectoryLink[];
   tags: string[];
@@ -143,6 +144,7 @@ interface RawAppListingRow {
   primary_url: string | null;
   icon_url: string | null;
   hero_url: string | null;
+  hero_fallback_url: string | null;
   screenshot_urls: string;
   links_json: string;
   tags_json: string;
@@ -386,6 +388,7 @@ function rowToAppListing(input: unknown): AppListing {
     primaryUrl: row.primary_url,
     iconUrl: row.icon_url,
     heroUrl: row.hero_url,
+    heroFallbackUrl: row.hero_fallback_url ?? null,
     screenshotUrls: safeJson<string[]>(row.screenshot_urls, []),
     links: safeJson<AppDirectoryLink[]>(row.links_json, []),
     tags: safeJson<string[]>(row.tags_json, []),
@@ -462,6 +465,9 @@ export function mergeAppListingDrafts(drafts: AppListingDraft[]) {
       sourceRefs.communityEntry ??= draft.sourceUri;
     }
   }
+  const heroUrls = uniqueStrings(
+    contentDrafts.flatMap((draft) => draft.heroUrl ? [draft.heroUrl] : []),
+  );
   return {
     slug: displaySlug(canonical),
     name: String(first("name") ?? "Untitled app"),
@@ -470,7 +476,8 @@ export function mergeAppListingDrafts(drafts: AppListingDraft[]) {
     appStatus: first("status") as string | undefined,
     primaryUrl: first("primaryUrl") as string | undefined,
     iconUrl: first("iconUrl") as string | undefined,
-    heroUrl: first("heroUrl") as string | undefined,
+    heroUrl: heroUrls[0],
+    heroFallbackUrl: heroUrls[1],
     screenshotUrls: uniqueStrings(
       contentDrafts.flatMap((draft) => draft.screenshotUrls),
     ),
@@ -765,14 +772,14 @@ async function recomputeListing(
     sql: `
       INSERT INTO app_listing (
         id, slug, name, description, tagline, app_status,
-        primary_url, icon_url, hero_url, screenshot_urls, links_json,
+        primary_url, icon_url, hero_url, hero_fallback_url, screenshot_urls, links_json,
         tags_json, platforms_json,
         category_slugs_json, lexicons_json, account_indicators_json,
         source_refs_json, canonical_source, canonical_uri, product_did,
         profile_did, legacy_profile_did, atstore_listing_uri,
         community_profile_uri, community_entry_uri, published_at, updated_at,
         indexed_at, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(id) DO UPDATE SET
         slug=excluded.slug,
         name=excluded.name,
@@ -782,6 +789,7 @@ async function recomputeListing(
         primary_url=excluded.primary_url,
         icon_url=excluded.icon_url,
         hero_url=excluded.hero_url,
+        hero_fallback_url=excluded.hero_fallback_url,
         screenshot_urls=excluded.screenshot_urls,
         links_json=excluded.links_json,
         tags_json=excluded.tags_json,
@@ -813,6 +821,7 @@ async function recomputeListing(
       merged.primaryUrl ?? null,
       merged.iconUrl ?? null,
       merged.heroUrl ?? null,
+      merged.heroFallbackUrl ?? null,
       JSON.stringify(merged.screenshotUrls),
       JSON.stringify(merged.links),
       JSON.stringify(merged.tags),
@@ -1486,9 +1495,25 @@ export function syncLegacyAppProfilesToDirectory(): Promise<void> {
 
 function listSelect(prefix: string) {
   const p = prefix ? `${prefix}.` : "";
+  const parsedHeroUrl = isPostgresBackend()
+    ? "NULLIF(r.parsed_json::jsonb ->> 'heroUrl', '')"
+    : "NULLIF(json_extract(r.parsed_json, '$.heroUrl'), '')";
   return `
     ${p}id, ${p}slug, ${p}name, ${p}description, ${p}tagline,
-    ${p}app_status, ${p}primary_url, ${p}icon_url, ${p}hero_url, ${p}screenshot_urls,
+    ${p}app_status, ${p}primary_url, ${p}icon_url, ${p}hero_url,
+    COALESCE(${p}hero_fallback_url, (
+      SELECT ${parsedHeroUrl}
+      FROM app_record r
+      WHERE r.listing_id = ${p}id
+        AND r.deleted_at IS NULL
+        AND r.source_type = 'atstore_listing'
+        AND ${parsedHeroUrl} IS NOT NULL
+        AND ${parsedHeroUrl} <> COALESCE(${p}hero_url, '')
+      ORDER BY COALESCE(r.record_updated_at, r.record_created_at, 0) DESC,
+        r.uri ASC
+      LIMIT 1
+    )) AS hero_fallback_url,
+    ${p}screenshot_urls,
     ${p}links_json, ${p}tags_json, ${p}platforms_json,
     ${p}category_slugs_json, ${p}lexicons_json,
     ${p}account_indicators_json, ${p}source_refs_json,

@@ -7,6 +7,7 @@ import {
   getAccountHost,
   getAccountHostClaim,
   hydrateAccountHostProfiles,
+  isAccountHostPubliclyListable,
   listAccountHostDirectory,
   listSeededAccountHostFallback,
   sortAccountHostsForDirectory,
@@ -119,6 +120,7 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/account" || pathname.startsWith("/api/account/") ||
     pathname === "/api/admin" || pathname.startsWith("/api/admin/") ||
     pathname === "/api/login/selection" ||
+    pathname === "/api/login/account-hosts" ||
     pathname === "/api/registry" || pathname.startsWith("/api/registry/") ||
     pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
     pathname === "/api/atproto/blob" ||
@@ -242,6 +244,7 @@ export async function searchAppsFromAppview(input: {
 export async function listHostsFromAppview(
   input: AccountHostDirectoryOptions = {},
 ): Promise<AccountHostDirectoryResult> {
+  const publicInput = { ...input, publicOnly: true };
   const remote = appviewBaseUrl();
   if (remote) {
     const params = new URLSearchParams();
@@ -249,6 +252,9 @@ export async function listHostsFromAppview(
     if (input.sort) params.set("sort", input.sort);
     if (input.signupStatus && input.signupStatus !== "all") {
       params.set("signup", input.signupStatus);
+    }
+    for (const status of input.signupStatuses ?? []) {
+      params.append("signup", status);
     }
     if (input.verificationStatus && input.verificationStatus !== "all") {
       params.set("verification", input.verificationStatus);
@@ -266,13 +272,17 @@ export async function listHostsFromAppview(
       // Keep rolling deployments compatible with the pre-pagination appview,
       // which returned the host array directly.
       return hostDirectoryResultForHosts(
-        input,
+        publicInput,
         payload as AccountHost[],
       );
     }
-    return payload as AccountHostDirectoryResult;
+    const result = payload as AccountHostDirectoryResult;
+    return {
+      ...result,
+      hosts: result.hosts.filter((host) => isAccountHostPubliclyListable(host)),
+    };
   }
-  return await listPublicAccountHosts(input);
+  return await listPublicAccountHosts(publicInput);
 }
 
 export async function getHostDetailFromAppview(
@@ -280,10 +290,13 @@ export async function getHostDetailFromAppview(
 ): Promise<PublicHostDetail> {
   const remote = appviewBaseUrl();
   if (remote) {
-    return await fetchAppviewJson<PublicHostDetail>(
+    const detail = await fetchAppviewJson<PublicHostDetail>(
       remote,
       `/api/appview/hosts/${encodeURIComponent(host)}`,
     );
+    return detail.host && !isAccountHostPubliclyListable(detail.host)
+      ? { host: null, claim: null }
+      : detail;
   }
   return await getPublicHostDetail(host);
 }
@@ -462,9 +475,10 @@ export async function appviewProxyRequestBodyForTest(
 export async function listPublicAccountHosts(
   input: AccountHostDirectoryOptions = {},
 ): Promise<AccountHostDirectoryResult> {
-  const result = await listAccountHostDirectory(input).catch((err) => {
+  const publicInput = { ...input, publicOnly: true };
+  const result = await listAccountHostDirectory(publicInput).catch((err) => {
     console.warn("[appview] list account hosts failed:", err);
-    return seededHostDirectoryResult(input);
+    return hostDirectoryResultForHosts(publicInput, []);
   });
   let visibleHosts = result.hosts;
   if (visibleHosts.length > 0) {
@@ -475,16 +489,12 @@ export async function listPublicAccountHosts(
       },
     );
   }
-  return { ...result, hosts: visibleHosts };
-}
-
-function seededHostDirectoryResult(
-  input: AccountHostDirectoryOptions,
-): AccountHostDirectoryResult {
-  return hostDirectoryResultForHosts(
-    input,
-    listSeededAccountHostFallback({ query: input.query }),
+  // Keep the SQL projection cheap, then enforce the full URL/reachability
+  // policy on hydrated rows as a defense against unsafe legacy signup URLs.
+  visibleHosts = visibleHosts.filter((host) =>
+    isAccountHostPubliclyListable(host, publicInput.now)
   );
+  return { ...result, hosts: visibleHosts };
 }
 
 export function hostDirectoryResultForHosts(
@@ -495,12 +505,17 @@ export function hostDirectoryResultForHosts(
   const pageSize = positiveDirectoryInteger(input.pageSize, 24, 200);
   const query = input.query?.trim().toLowerCase() ?? "";
   const filteredHosts = sourceHosts.filter((host) => {
+    if (input.publicOnly && !isAccountHostPubliclyListable(host, input.now)) {
+      return false;
+    }
     if (input.hasSignupUrl && !host.signupUrl) return false;
     if (
       input.trustedOnly && host.verificationStatus !== "claimed" &&
       host.verificationStatus !== "verified" && host.source !== "seeded"
     ) return false;
-    if (
+    if (input.signupStatuses?.length) {
+      if (!input.signupStatuses.includes(host.signupStatus)) return false;
+    } else if (
       input.signupStatus && input.signupStatus !== "all" &&
       host.signupStatus !== input.signupStatus
     ) return false;
@@ -515,6 +530,7 @@ export function hostDirectoryResultForHosts(
       host.description,
       host.profileHandle ?? "",
       host.dataLocation ?? "",
+      host.inferredLocation ?? "",
     ].some((value) => value.toLowerCase().includes(query));
   });
   const hosts = sortAccountHostsForDirectory(filteredHosts, sort);
@@ -546,7 +562,7 @@ export async function getPublicHostDetail(
   hostId: string,
 ): Promise<PublicHostDetail> {
   let host = await getAccountHost(hostId).catch(() => null);
-  if (!host) host = seededHostDetailFallback(hostId);
+  if (host && !isAccountHostPubliclyListable(host)) host = null;
   if (host) {
     host = (await hydrateAccountHostProfiles([host]).catch((err) => {
       console.warn("[appview] hydrate host profile failed:", err);

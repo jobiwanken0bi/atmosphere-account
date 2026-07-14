@@ -55,6 +55,7 @@ export interface AccountHost {
   profileCheckedAt: number | null;
   observedAccountCount: number;
   observedActiveAccountCount: number;
+  lastActiveAt: number | null;
   lastIndexedAccountAt: number | null;
   lastCheckedAt: number | null;
   lastObservedAt: number | null;
@@ -66,6 +67,8 @@ export interface AccountHost {
 }
 
 export const DEFAULT_ACCOUNT_HOST_SORT = "recommended" as const;
+export const PUBLIC_ACCOUNT_HOST_ACTIVITY_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+export const PUBLIC_ACCOUNT_HOST_CLAIM_GRACE_MS = 72 * 60 * 60 * 1000;
 
 export type AccountHostSort =
   | typeof DEFAULT_ACCOUNT_HOST_SORT
@@ -78,8 +81,11 @@ export interface AccountHostDirectoryOptions {
   query?: string;
   verificationStatus?: HostVerificationStatus | "all";
   signupStatus?: HostSignupStatus | "all";
+  signupStatuses?: HostSignupStatus[];
   hasSignupUrl?: boolean;
   trustedOnly?: boolean;
+  publicOnly?: boolean;
+  now?: number;
   sort?: AccountHostSort;
   page?: number;
   pageSize?: number;
@@ -292,6 +298,7 @@ const SEEDED_HOSTS: SeedHost[] = [
     description:
       "A large general-purpose account host for people using Bluesky and other Atmosphere apps.",
     homepageUrl: "https://bsky.app",
+    signupUrl: "https://bsky.app/",
     serviceEndpoint: "https://bsky.social",
     accountManagementUrl: "https://bsky.app/settings",
     profileHandle: "bsky.app",
@@ -592,6 +599,7 @@ function seedToAccountHost(seed: SeedHost, ts = now()): AccountHost {
     profileCheckedAt: null,
     observedAccountCount: 0,
     observedActiveAccountCount: 0,
+    lastActiveAt: null,
     lastIndexedAccountAt: null,
     lastCheckedAt: null,
     lastObservedAt: null,
@@ -609,6 +617,7 @@ function hostMatchesPublicQuery(host: AccountHost, query: string): boolean {
     host.description,
     host.profileHandle,
     host.dataLocation,
+    host.inferredLocation,
   ].some((value) => value?.toLowerCase().includes(q));
 }
 
@@ -700,6 +709,9 @@ function parseHostRow(row: Record<string, unknown>): AccountHost {
     observedActiveAccountCount: row.observed_active_account_count == null
       ? 0
       : Number(row.observed_active_account_count),
+    lastActiveAt: row.last_active_at == null
+      ? null
+      : Number(row.last_active_at),
     lastIndexedAccountAt: row.last_indexed_account_at == null
       ? null
       : Number(row.last_indexed_account_at),
@@ -1258,6 +1270,27 @@ export async function listManagedAccountHosts(
         LIMIT 20
       `,
       args: [normalized, normalized, normalized],
+    });
+    return r.rows.map((row) => parseHostRow(row as Record<string, unknown>));
+  });
+}
+
+export async function listClaimedAccountHostsForOwner(
+  did: string,
+): Promise<AccountHost[]> {
+  const normalized = did.trim();
+  if (!normalized) return [];
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `
+        SELECT h.*
+        FROM account_host h
+        INNER JOIN account_host_claim c ON c.host = h.host
+        WHERE c.claimant_did = ?
+        ORDER BY lower(h.display_name), h.host
+        LIMIT 20
+      `,
+      args: [normalized],
     });
     return r.rows.map((row) => parseHostRow(row as Record<string, unknown>));
   });
@@ -2145,16 +2178,28 @@ export async function listAccountHostDirectory(
     const query = opts.query?.trim();
     if (query) {
       filters.push(
-        `(lower(account_host.display_name) LIKE ? OR lower(account_host.host) LIKE ? OR lower(account_host.description) LIKE ? OR lower(COALESCE(account_host.profile_handle, '')) LIKE ? OR lower(COALESCE(account_host.data_location, '')) LIKE ?)`,
+        `(lower(account_host.display_name) LIKE ? OR lower(account_host.host) LIKE ? OR lower(account_host.description) LIKE ? OR lower(COALESCE(account_host.profile_handle, '')) LIKE ? OR lower(COALESCE(account_host.data_location, '')) LIKE ? OR lower(COALESCE(account_host.inferred_location, '')) LIKE ?)`,
       );
       const like = `%${query.toLowerCase()}%`;
-      args.push(like, like, like, like, like);
+      args.push(like, like, like, like, like, like);
     }
     if (opts.verificationStatus && opts.verificationStatus !== "all") {
       filters.push(`account_host.verification_status = ?`);
       args.push(opts.verificationStatus);
     }
-    if (opts.signupStatus && opts.signupStatus !== "all") {
+    const signupStatuses = [...new Set(opts.signupStatuses ?? [])].filter(
+      (status): status is HostSignupStatus =>
+        status === "open" || status === "invite_required" ||
+        status === "closed" || status === "unknown",
+    );
+    if (signupStatuses.length > 0) {
+      filters.push(
+        `account_host.signup_status IN (${
+          signupStatuses.map(() => "?").join(", ")
+        })`,
+      );
+      args.push(...signupStatuses);
+    } else if (opts.signupStatus && opts.signupStatus !== "all") {
       filters.push(`account_host.signup_status = ?`);
       args.push(opts.signupStatus);
     }
@@ -2164,6 +2209,17 @@ export async function listAccountHostDirectory(
     if (opts.trustedOnly) {
       filters.push(
         `(account_host.verification_status IN ('verified', 'claimed') OR account_host.source = 'seeded')`,
+      );
+    }
+    if (opts.publicOnly) {
+      const publicNow = Number.isFinite(opts.now)
+        ? Math.floor(opts.now!)
+        : now();
+      filters.push(publicAccountHostVisibilitySql());
+      args.push(
+        publicNow - PUBLIC_ACCOUNT_HOST_ACTIVITY_MAX_AGE_MS,
+        publicNow,
+        publicNow - PUBLIC_ACCOUNT_HOST_CLAIM_GRACE_MS,
       );
     }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
@@ -2232,15 +2288,11 @@ function accountHostOrder(sort: AccountHostSort): string {
   if (sort === DEFAULT_ACCOUNT_HOST_SORT) {
     return `account_host.observed_account_count DESC,
       CASE
-        WHEN account_host.observed_active_account_count > 0 THEN 0
-        ELSE 1
-      END,
-      CASE
         WHEN account_host.verification_status IN ('verified', 'claimed') THEN 0
         ELSE 1
       END,
-      account_host.observed_active_account_count DESC,
-      ${stable}`;
+      lower(account_host.display_name) ASC,
+      account_host.host ASC`;
   }
   return `account_host.observed_account_count DESC,
     account_host.observed_active_account_count DESC,
@@ -2263,9 +2315,9 @@ export function sortAccountHostsForDirectory(
   return [...hosts].sort((a, b) => {
     if (sort === DEFAULT_ACCOUNT_HOST_SORT) {
       const recommended = b.observedAccountCount - a.observedAccountCount ||
-        activeHostRank(a) - activeHostRank(b) ||
         claimedHostRank(a) - claimedHostRank(b) ||
-        b.observedActiveAccountCount - a.observedActiveAccountCount;
+        a.displayName.localeCompare(b.displayName) ||
+        a.host.localeCompare(b.host);
       if (recommended) return recommended;
     } else if (sort === "accounts") {
       const count = b.observedAccountCount - a.observedAccountCount ||
@@ -2291,12 +2343,57 @@ export function sortAccountHostsForDirectory(
   });
 }
 
-function claimedHostRank(host: AccountHost): number {
-  return host.verificationStatus === "observed" ? 1 : 0;
+export function isAccountHostPubliclyListable(
+  host: AccountHost,
+  at = now(),
+): boolean {
+  const hasPublicIntent = host.verificationStatus === "claimed" ||
+    host.verificationStatus === "verified" || host.source === "seeded" ||
+    !!host.serviceRecordUri ||
+    normalizeAccountHostPublicHttpsUrl(host.signupUrl) !== null;
+  if (!hasPublicIntent) return false;
+
+  const inventoryIsFresh = host.lastIndexedAccountAt != null &&
+    host.lastIndexedAccountAt >= at - PUBLIC_ACCOUNT_HOST_ACTIVITY_MAX_AGE_MS;
+  const relayActive = inventoryIsFresh && host.observedActiveAccountCount > 0;
+  const directlyReachable = host.conformanceStatus === "passed" &&
+    host.conformanceExpiresAt != null && host.conformanceExpiresAt > at;
+  const claimedGrace = (host.verificationStatus === "claimed" ||
+    host.verificationStatus === "verified") &&
+    host.lastActiveAt != null &&
+    host.lastActiveAt >= at - PUBLIC_ACCOUNT_HOST_CLAIM_GRACE_MS;
+  return relayActive || directlyReachable || claimedGrace;
 }
 
-function activeHostRank(host: AccountHost): number {
-  return host.observedActiveAccountCount > 0 ? 0 : 1;
+function publicAccountHostVisibilitySql(): string {
+  return `(
+    (
+      (
+        account_host.observed_active_account_count > 0
+        AND account_host.last_indexed_account_at >= ?
+      )
+      OR EXISTS (
+        SELECT 1 FROM host_conformance public_conformance
+        WHERE public_conformance.host = account_host.host
+          AND public_conformance.status = 'passed'
+          AND public_conformance.expires_at > ?
+      )
+      OR (
+        account_host.verification_status IN ('verified', 'claimed')
+        AND account_host.last_active_at >= ?
+      )
+    )
+    AND (
+      account_host.verification_status IN ('verified', 'claimed')
+      OR account_host.source = 'seeded'
+      OR COALESCE(account_host.service_record_uri, '') <> ''
+      OR lower(COALESCE(account_host.signup_url, '')) LIKE 'https://%'
+    )
+  )`;
+}
+
+function claimedHostRank(host: AccountHost): number {
+  return host.verificationStatus === "observed" ? 1 : 0;
 }
 
 function accountHostRecentAt(host: AccountHost): number {

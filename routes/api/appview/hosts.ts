@@ -30,10 +30,16 @@ export const handler = define.handlers({
 });
 
 function readDirectoryInput(search: URLSearchParams) {
+  const signupStatuses = search.getAll("signup")
+    .map(readSignupStatus)
+    .filter((status): status is HostSignupStatus => status !== "all");
   return {
     query: search.get("q")?.trim() ?? "",
     sort: readSort(search.get("sort")),
-    signupStatus: readSignupStatus(search.get("signup")),
+    signupStatus: signupStatuses.length <= 1
+      ? (signupStatuses[0] ?? "all")
+      : "all" as const,
+    signupStatuses: signupStatuses.length > 1 ? signupStatuses : undefined,
     verificationStatus: readVerificationStatus(search.get("verification")),
     hasSignupUrl: search.get("hasSignupUrl") === "1",
     trustedOnly: search.get("trusted") === "1",

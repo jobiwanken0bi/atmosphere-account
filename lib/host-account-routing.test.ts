@@ -48,6 +48,7 @@ function host(overrides: Partial<AccountHost> = {}): AccountHost {
     profileCheckedAt: null,
     observedAccountCount: 0,
     observedActiveAccountCount: 0,
+    lastActiveAt: null,
     lastIndexedAccountAt: null,
     lastCheckedAt: null,
     lastObservedAt: null,

@@ -230,10 +230,12 @@ await withDb(async (c) => {
         UPDATE account_host
         SET observed_account_count = ?,
             observed_active_account_count = ?,
+            last_active_at = ?,
+            last_indexed_account_at = ?,
             updated_at = ?
         WHERE host = ?
       `,
-      args: [accountCount, accountCount, now, host],
+      args: [accountCount, accountCount, now, now, now, host],
     });
   }
 

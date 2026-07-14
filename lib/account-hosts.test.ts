@@ -1,5 +1,6 @@
 import {
   DEFAULT_ACCOUNT_HOST_SORT,
+  isAccountHostPubliclyListable,
   listSeededAccountHostFallback,
   lookupAccountHostHint,
   normalizeAccountHostPublicHttpsUrl,
@@ -97,7 +98,7 @@ Deno.test("host directory sorts provider totals without splitting PDS nodes", ()
   );
 });
 
-Deno.test("recommended host sort prioritizes account count before active and claimed", () => {
+Deno.test("default host sort prioritizes account count before claims", () => {
   const [first, second, third, fourth] = listSeededAccountHostFallback().slice(
     0,
     4,
@@ -150,10 +151,73 @@ Deno.test("recommended host sort prioritizes account count before active and cla
       { ...claimedActiveSmall, observedAccountCount: 100 },
     ], DEFAULT_ACCOUNT_HOST_SORT).map((host) => host.host),
     [
+      claimedInactive.host,
       claimedActiveSmall.host,
       observedActive.host,
-      claimedInactive.host,
     ],
+  );
+});
+
+Deno.test("public host policy requires recent reachability and public intent", () => {
+  const now = 1_000_000_000;
+  const base = {
+    ...listSeededAccountHostFallback()[0],
+    source: "observed" as const,
+    verificationStatus: "observed" as const,
+    signupUrl: null,
+    serviceRecordUri: null,
+    observedActiveAccountCount: 1,
+    lastIndexedAccountAt: now,
+    lastActiveAt: now,
+  };
+  assertEquals(isAccountHostPubliclyListable(base, now), false);
+  assertEquals(
+    isAccountHostPubliclyListable(
+      { ...base, serviceRecordUri: "at://host" },
+      now,
+    ),
+    true,
+  );
+  assertEquals(
+    isAccountHostPubliclyListable({
+      ...base,
+      signupUrl: "https://host.example/signup",
+    }, now),
+    true,
+  );
+  assertEquals(
+    isAccountHostPubliclyListable({
+      ...base,
+      serviceRecordUri: "at://host",
+      lastIndexedAccountAt: 0,
+    }, now),
+    false,
+  );
+});
+
+Deno.test("claimed hosts receive a short inactivity grace period", () => {
+  const now = 1_000_000_000;
+  const base = {
+    ...listSeededAccountHostFallback()[0],
+    source: "manual" as const,
+    verificationStatus: "claimed" as const,
+    observedActiveAccountCount: 0,
+    lastIndexedAccountAt: now,
+    lastActiveAt: now - 60 * 60 * 1000,
+  };
+  assertEquals(isAccountHostPubliclyListable(base, now), true);
+  assertEquals(
+    isAccountHostPubliclyListable({ ...base, lastActiveAt: 0 }, now),
+    false,
+  );
+  assertEquals(
+    isAccountHostPubliclyListable({
+      ...base,
+      lastActiveAt: 0,
+      conformanceStatus: "passed",
+      conformanceExpiresAt: now + 1,
+    }, now),
+    true,
   );
 });
 

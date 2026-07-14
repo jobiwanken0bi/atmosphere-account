@@ -429,6 +429,7 @@ const SCHEMA_STATEMENTS: string[] = [
     profile_checked_at INTEGER,
     observed_account_count INTEGER NOT NULL DEFAULT 0,
     observed_active_account_count INTEGER NOT NULL DEFAULT 0,
+    last_active_at INTEGER,
     last_indexed_account_at INTEGER,
     last_checked_at INTEGER,
     last_observed_at INTEGER,
@@ -492,7 +493,23 @@ const SCHEMA_STATEMENTS: string[] = [
     is_bluesky_host INTEGER NOT NULL DEFAULT 0,
     first_observed_at INTEGER NOT NULL,
     last_observed_at INTEGER NOT NULL,
+    last_active_at INTEGER,
     last_scan_id TEXT NOT NULL
+  )`,
+  /**
+   * Append-only relay status transitions. This records the initial status and
+   * subsequent changes without writing a duplicate history row on every scan.
+   */
+  `CREATE TABLE IF NOT EXISTS pds_instance_status_history (
+    transition_id TEXT PRIMARY KEY,
+    service_host TEXT NOT NULL,
+    account_host TEXT NOT NULL,
+    relay_url TEXT NOT NULL,
+    relay_status TEXT NOT NULL,
+    relay_account_count INTEGER,
+    relay_seq INTEGER,
+    observed_at INTEGER NOT NULL,
+    scan_id TEXT NOT NULL
   )`,
   /**
    * One row per relay inventory attempt. `pds_instance.last_observed_at`
@@ -542,6 +559,7 @@ const SCHEMA_STATEMENTS: string[] = [
     primary_url TEXT,
     icon_url TEXT,
     hero_url TEXT,
+    hero_fallback_url TEXT,
     screenshot_urls TEXT NOT NULL DEFAULT '[]',
     links_json TEXT NOT NULL DEFAULT '[]',
     tags_json TEXT NOT NULL DEFAULT '[]',
@@ -678,6 +696,7 @@ const SCHEMA_STATEMENTS: string[] = [
     allowed_origins TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'unverified',
     contact_did TEXT,
+    preferred_account_host TEXT,
     review_status TEXT NOT NULL DEFAULT 'none',
     review_requested_at INTEGER,
     review_notes TEXT,
@@ -783,6 +802,8 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS pds_instance_account_host ON pds_instance(account_host, relay_status)`,
   `CREATE INDEX IF NOT EXISTS pds_instance_status ON pds_instance(relay_status, last_observed_at)`,
   `CREATE INDEX IF NOT EXISTS pds_instance_bluesky ON pds_instance(is_bluesky_host, relay_status)`,
+  `CREATE INDEX IF NOT EXISTS pds_instance_status_history_host ON pds_instance_status_history(service_host, observed_at)`,
+  `CREATE INDEX IF NOT EXISTS pds_instance_status_history_status ON pds_instance_status_history(relay_status, observed_at)`,
   `CREATE INDEX IF NOT EXISTS pds_inventory_scan_freshness ON pds_inventory_scan(status, complete, completed_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_collection ON app_record(collection, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS app_record_listing ON app_record(listing_id, deleted_at)`,
@@ -1192,6 +1213,16 @@ async function applyAdditiveMigrations(
       },
       {
         table: "account_host",
+        column: "last_active_at",
+        ddl: "ALTER TABLE account_host ADD COLUMN last_active_at INTEGER",
+      },
+      {
+        table: "pds_instance",
+        column: "last_active_at",
+        ddl: "ALTER TABLE pds_instance ADD COLUMN last_active_at INTEGER",
+      },
+      {
+        table: "account_host",
         column: "claim_handle",
         ddl: "ALTER TABLE account_host ADD COLUMN claim_handle TEXT",
       },
@@ -1199,6 +1230,11 @@ async function applyAdditiveMigrations(
         table: "account_host",
         column: "claim_did",
         ddl: "ALTER TABLE account_host ADD COLUMN claim_did TEXT",
+      },
+      {
+        table: "login_app",
+        column: "preferred_account_host",
+        ddl: "ALTER TABLE login_app ADD COLUMN preferred_account_host TEXT",
       },
       {
         table: "login_app",
@@ -1235,6 +1271,11 @@ async function applyAdditiveMigrations(
         table: "app_listing",
         column: "app_status",
         ddl: "ALTER TABLE app_listing ADD COLUMN app_status TEXT",
+      },
+      {
+        table: "app_listing",
+        column: "hero_fallback_url",
+        ddl: "ALTER TABLE app_listing ADD COLUMN hero_fallback_url TEXT",
       },
     ];
   for (const m of additiveColumns) {

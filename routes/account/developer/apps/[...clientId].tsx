@@ -21,12 +21,17 @@ import {
 } from "../../../../lib/atmosphere-login.ts";
 import { rejectLargeRequest } from "../../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
+import {
+  type AccountHost,
+  listClaimedAccountHostsForOwner,
+} from "../../../../lib/account-hosts.ts";
 
 interface DeveloperAppFormValues {
   appName: string;
   appUri: string;
   logoUri: string;
   allowedReturnUris: string;
+  preferredAccountHost: string;
 }
 
 interface DeveloperAppDetailProps {
@@ -36,6 +41,7 @@ interface DeveloperAppDetailProps {
   readiness: LoginAppReadiness | null;
   defaultOrigin: string;
   values: DeveloperAppFormValues;
+  claimedHosts: AccountHost[];
   reviewNotes: string;
   error: string | null;
   message: string | null;
@@ -54,10 +60,13 @@ export const handler = define.handlers({
     const user = ctx.state.user;
     if (!user) return redirectToSignin(ctx.url);
 
-    const app = await getLoginAppForOwner(
-      user.did,
-      clientIdFromParams(ctx.params.clientId),
-    ).catch(() => null);
+    const [app, claimedHosts] = await Promise.all([
+      getLoginAppForOwner(
+        user.did,
+        clientIdFromParams(ctx.params.clientId),
+      ).catch(() => null),
+      loadPreferredHostChoices(user.did),
+    ]);
     if (!app) {
       return ctx.render(
         <DeveloperAppDetailPage
@@ -67,6 +76,7 @@ export const handler = define.handlers({
           readiness={null}
           defaultOrigin={ctx.url.origin}
           values={emptyValues()}
+          claimedHosts={claimedHosts}
           reviewNotes=""
           error="App registration not found."
           message={null}
@@ -86,6 +96,7 @@ export const handler = define.handlers({
         readiness={readiness}
         defaultOrigin={ctx.url.origin}
         values={valuesFromApp(app)}
+        claimedHosts={claimedHosts}
         reviewNotes={app.reviewNotes ?? ""}
         error={null}
         message={messageFor(ctx.url.searchParams.get("saved"))}
@@ -117,6 +128,7 @@ export const handler = define.handlers({
     if (large) return large;
 
     const clientId = clientIdFromParams(ctx.params.clientId);
+    const claimedHosts = await loadPreferredHostChoices(user.did);
     const app = await getLoginAppForOwner(user.did, clientId).catch(() => null);
     if (!app) {
       return ctx.render(
@@ -127,6 +139,7 @@ export const handler = define.handlers({
           readiness={null}
           defaultOrigin={ctx.url.origin}
           values={emptyValues()}
+          claimedHosts={claimedHosts}
           reviewNotes=""
           error="App registration not found."
           message={null}
@@ -151,6 +164,7 @@ export const handler = define.handlers({
         appUri: values.appUri,
         logoUri: values.logoUri,
         allowedReturnUris: splitAllowedReturnUris(values.allowedReturnUris),
+        preferredAccountHost: values.preferredAccountHost,
       });
       return redirectTo(`${loginAppDetailPath(clientId)}?saved=app`);
     } catch (err) {
@@ -172,6 +186,7 @@ export const handler = define.handlers({
           readiness={readiness}
           defaultOrigin={ctx.url.origin}
           values={values}
+          claimedHosts={claimedHosts}
           reviewNotes={reviewNotes}
           error={err instanceof Error ? err.message : String(err)}
           message={null}
@@ -205,6 +220,7 @@ function DeveloperAppDetailPage(
     readiness,
     defaultOrigin,
     values,
+    claimedHosts,
     reviewNotes,
     error,
     message,
@@ -356,6 +372,29 @@ function DeveloperAppDetailPage(
                         >
                           {values.allowedReturnUris}
                         </textarea>
+                      </label>
+
+                      <label class="profile-form-field">
+                        <span class="profile-form-label">
+                          Preferred account host
+                        </span>
+                        <select
+                          class="profile-form-input"
+                          name="preferred_account_host"
+                          value={values.preferredAccountHost}
+                        >
+                          <option value="">No preferred host</option>
+                          {claimedHosts.map((host) => (
+                            <option value={host.host} key={host.host}>
+                              {host.displayName} ({host.host})
+                            </option>
+                          ))}
+                        </select>
+                        <span class="profile-form-hint">
+                          Only a joinable host claimed by this account can be
+                          pinned as a recommendation. People can always choose
+                          another host.
+                        </span>
                       </label>
 
                       <div class="account-developer-form-actions">
@@ -601,6 +640,7 @@ function emptyValues(): DeveloperAppFormValues {
     appUri: "",
     logoUri: "",
     allowedReturnUris: "",
+    preferredAccountHost: "",
   };
 }
 
@@ -610,6 +650,7 @@ function valuesFromApp(app: LoginApp): DeveloperAppFormValues {
     appUri: app.appUri ?? "",
     logoUri: app.logoUri ?? "",
     allowedReturnUris: app.allowedReturnUris.join("\n"),
+    preferredAccountHost: app.preferredAccountHost ?? "",
   };
 }
 
@@ -623,7 +664,16 @@ function valuesFromForm(
     logoUri: formText(form, "logo_uri"),
     allowedReturnUris: formText(form, "allowed_return_uris") ||
       fallback.allowedReturnUris.join("\n"),
+    preferredAccountHost: formText(form, "preferred_account_host"),
   };
+}
+
+async function loadPreferredHostChoices(did: string): Promise<AccountHost[]> {
+  const hosts = await listClaimedAccountHostsForOwner(did).catch(() => []);
+  return hosts.filter((host) =>
+    !!host.signupUrl &&
+    (host.signupStatus === "open" || host.signupStatus === "invite_required")
+  );
 }
 
 function formText(form: FormData | null, key: string): string {

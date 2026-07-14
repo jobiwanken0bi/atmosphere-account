@@ -233,7 +233,12 @@ export const handler = define.handlers({
     const useAppListingMeta = !!appListing?.atstoreListingUri || !profile;
     if (useAppListingMeta && appListing) {
       const pageTitle = `${appListing.name} on Atmosphere Apps`;
-      const imageUrl = appListing.heroUrl || appListing.iconUrl || undefined;
+      const imageUrl = appImageUrl(
+        appListing.heroUrl,
+        "media",
+        1200,
+        appListing.heroFallbackUrl,
+      ) || appImageUrl(appListing.iconUrl, "icon") || undefined;
       ctx.state.pageMeta = {
         title: pageTitle,
         description: appListing.description || appListing.tagline ||
@@ -612,6 +617,17 @@ function AppListingDetailPage(
   }: AppListingDetailProps,
 ) {
   const shareTitle = `${app.name} on Atmosphere Apps`;
+  const heroUrl = appImageUrl(
+    app.heroUrl,
+    "media",
+    1200,
+    app.heroFallbackUrl,
+  );
+  const heroFallbackUrl = appImageUrl(
+    app.heroFallbackUrl,
+    "media",
+    1200,
+  );
   const isOwner = signedInUser?.did === app.productDid ||
     signedInUser?.did === app.profileDid ||
     signedInUser?.did === app.legacyProfileDid;
@@ -637,10 +653,11 @@ function AppListingDetailPage(
               />
             </div>
 
-            {app.heroUrl && (
+            {heroUrl && (
               <div class="project-page-banner app-detail-banner">
                 <img
-                  src={app.heroUrl}
+                  src={heroUrl}
+                  data-fallback-src={heroFallbackUrl ?? undefined}
                   alt=""
                   class="project-page-banner-img"
                   loading="eager"
@@ -663,12 +680,10 @@ function AppListingDetailPage(
                 <div class="app-detail-screenshot-grid">
                   {app.screenshotUrls.slice(0, 6).map((url, index) => (
                     <img
-                      src={url}
+                      src={appImageUrl(url, "media", 800) ?? url}
                       alt={`${app.name} screenshot ${index + 1}`}
                       loading="lazy"
                       decoding="async"
-                      width={960}
-                      height={540}
                       key={url}
                     />
                   ))}

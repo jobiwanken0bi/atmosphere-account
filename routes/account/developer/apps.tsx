@@ -15,6 +15,10 @@ import {
 } from "../../../lib/atmosphere-login.ts";
 import { rejectLargeRequest } from "../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import {
+  type AccountHost,
+  listClaimedAccountHostsForOwner,
+} from "../../../lib/account-hosts.ts";
 
 interface DeveloperAppFormValues {
   appName: string;
@@ -22,12 +26,14 @@ interface DeveloperAppFormValues {
   appUri: string;
   logoUri: string;
   allowedReturnUris: string;
+  preferredAccountHost: string;
 }
 
 interface DeveloperAppsPageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   handle: string;
   apps: LoginApp[];
+  claimedHosts: AccountHost[];
   values: DeveloperAppFormValues;
   error: string | null;
   saved: boolean;
@@ -46,12 +52,16 @@ export const handler = define.handlers({
     if (!user) {
       return redirectToSignin(ctx.url);
     }
-    const apps = await listLoginAppsForOwner(user.did).catch(() => []);
+    const [apps, claimedHosts] = await Promise.all([
+      listLoginAppsForOwner(user.did).catch(() => []),
+      loadPreferredHostChoices(user.did),
+    ]);
     return ctx.render(
       <DeveloperAppsPage
         account={buildAccountMenuProps(ctx.state)}
         handle={user.handle}
         apps={apps}
+        claimedHosts={claimedHosts}
         values={emptyValues()}
         error={null}
         saved={ctx.url.searchParams.get("saved") === "1"}
@@ -86,6 +96,7 @@ export const handler = define.handlers({
         appUri: values.appUri,
         logoUri: values.logoUri,
         allowedReturnUris: splitAllowedReturnUris(values.allowedReturnUris),
+        preferredAccountHost: values.preferredAccountHost,
       });
       return new Response(null, {
         status: 303,
@@ -94,13 +105,17 @@ export const handler = define.handlers({
         },
       });
     } catch (err) {
-      const apps = await listLoginAppsForOwner(user.did).catch(() => []);
+      const [apps, claimedHosts] = await Promise.all([
+        listLoginAppsForOwner(user.did).catch(() => []),
+        loadPreferredHostChoices(user.did),
+      ]);
       const status = err instanceof LoginRequestError ? err.status : 400;
       return ctx.render(
         <DeveloperAppsPage
           account={buildAccountMenuProps(ctx.state)}
           handle={user.handle}
           apps={apps}
+          claimedHosts={claimedHosts}
           values={values}
           error={err instanceof Error ? err.message : String(err)}
           saved={false}
@@ -126,7 +141,15 @@ function appviewUnavailable(scope: string, err: unknown): Response {
 }
 
 function DeveloperAppsPage(
-  { account, handle, apps, values, error, saved }: DeveloperAppsPageProps,
+  {
+    account,
+    handle,
+    apps,
+    claimedHosts,
+    values,
+    error,
+    saved,
+  }: DeveloperAppsPageProps,
 ) {
   return (
     <div id="page-top">
@@ -189,6 +212,29 @@ function DeveloperAppsPage(
                     autocomplete="off"
                     required
                   />
+                </label>
+
+                <label class="profile-form-field">
+                  <span class="profile-form-label">
+                    Preferred account host
+                  </span>
+                  <select
+                    class="profile-form-input"
+                    name="preferred_account_host"
+                    value={values.preferredAccountHost}
+                  >
+                    <option value="">No preferred host</option>
+                    {claimedHosts.map((host) => (
+                      <option value={host.host} key={host.host}>
+                        {host.displayName} ({host.host})
+                      </option>
+                    ))}
+                  </select>
+                  <span class="profile-form-hint">
+                    Optional. Only a joinable host claimed by this account can
+                    be recommended. It is pinned first, but people can still
+                    choose another host.
+                  </span>
                 </label>
 
                 <label class="profile-form-field">
@@ -380,6 +426,12 @@ function DeveloperAppCard({ app }: { app: LoginApp }) {
             </ul>
           </dd>
         </div>
+        {app.preferredAccountHost && (
+          <div>
+            <dt>Preferred account host</dt>
+            <dd>{app.preferredAccountHost}</dd>
+          </div>
+        )}
       </dl>
       {app.appUri && (
         <div class="account-developer-card-actions">
@@ -427,6 +479,7 @@ function emptyValues(): DeveloperAppFormValues {
     appUri: "",
     logoUri: "",
     allowedReturnUris: "",
+    preferredAccountHost: "",
   };
 }
 
@@ -437,7 +490,16 @@ function valuesFromForm(form: FormData | null): DeveloperAppFormValues {
     appUri: formText(form, "app_uri"),
     logoUri: formText(form, "logo_uri"),
     allowedReturnUris: formText(form, "allowed_return_uris"),
+    preferredAccountHost: formText(form, "preferred_account_host"),
   };
+}
+
+async function loadPreferredHostChoices(did: string): Promise<AccountHost[]> {
+  const hosts = await listClaimedAccountHostsForOwner(did).catch(() => []);
+  return hosts.filter((host) =>
+    !!host.signupUrl &&
+    (host.signupStatus === "open" || host.signupStatus === "invite_required")
+  );
 }
 
 function formText(form: FormData | null, key: string): string {

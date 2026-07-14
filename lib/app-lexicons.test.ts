@@ -336,3 +336,41 @@ Deno.test("ATStore content only supplements install and Tangled links from legac
     "https://tangled.org/sprk.so",
   ]);
 });
+
+Deno.test("merged ATStore listings retain an older hero as a media fallback", () => {
+  const older = parseAtstoreListing({
+    uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/older`,
+    cid: "older-record",
+    repoDid: "did:plc:store",
+    rkey: "older",
+    value: {
+      name: "Airglow",
+      tagline: "Automations",
+      externalUrl: "https://airglow.run/",
+      productAccountDid: "did:plc:airglow",
+      icon: { ref: { $link: "oldericon" }, mimeType: "image/png" },
+      heroImage: { ref: { $link: "olderhero" }, mimeType: "image/png" },
+      updatedAt: "2026-04-01T00:00:00.000Z",
+    },
+  });
+  const current = parseAtstoreListing({
+    uri: `at://did:plc:airglow/${ATSTORE_LISTING_NSID}/current`,
+    cid: "current-record",
+    repoDid: "did:plc:airglow",
+    rkey: "current",
+    value: {
+      name: "Airglow",
+      tagline: "Automations",
+      externalUrl: "https://airglow.run/",
+      productAccountDid: "did:plc:airglow",
+      icon: { ref: { $link: "currenticon" }, mimeType: "image/png" },
+      heroImage: { ref: { $link: "currenthero" }, mimeType: "image/png" },
+      updatedAt: "2026-07-01T00:00:00.000Z",
+    },
+  });
+  assert(older && current, "expected both ATStore drafts");
+
+  const merged = mergeAppListingDrafts([older, current]);
+  assert(merged.heroUrl?.includes("cid=currenthero"));
+  assert(merged.heroFallbackUrl?.includes("cid=olderhero"));
+});

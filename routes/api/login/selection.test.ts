@@ -48,6 +48,7 @@ function app(overrides: Partial<LoginApp> = {}): LoginApp {
     reviewDecisionBy: null,
     reviewDecisionReason: null,
     contactDid: "did:plc:owner",
+    preferredAccountHost: null,
     registered: true,
     ...overrides,
   };

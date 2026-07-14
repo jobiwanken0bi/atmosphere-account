@@ -55,6 +55,7 @@ async function createInventoryTestDb() {
     source TEXT NOT NULL DEFAULT 'observed',
     observed_account_count INTEGER NOT NULL DEFAULT 0,
     observed_active_account_count INTEGER NOT NULL DEFAULT 0,
+    last_active_at INTEGER,
     last_indexed_account_at INTEGER,
     last_observed_at INTEGER,
     created_at INTEGER NOT NULL DEFAULT 0,
@@ -71,7 +72,19 @@ async function createInventoryTestDb() {
     is_bluesky_host INTEGER NOT NULL DEFAULT 0,
     first_observed_at INTEGER NOT NULL,
     last_observed_at INTEGER NOT NULL,
+    last_active_at INTEGER,
     last_scan_id TEXT NOT NULL
+  )`);
+  await db.execute(`CREATE TABLE pds_instance_status_history (
+    transition_id TEXT PRIMARY KEY,
+    service_host TEXT NOT NULL,
+    account_host TEXT NOT NULL,
+    relay_url TEXT NOT NULL,
+    relay_status TEXT NOT NULL,
+    relay_account_count INTEGER,
+    relay_seq INTEGER,
+    observed_at INTEGER NOT NULL,
+    scan_id TEXT NOT NULL
   )`);
   return db;
 }
@@ -353,6 +366,57 @@ Deno.test("relay inventory persistence aggregates mushrooms and marks stale rows
       { host: "bsky.network", observed_account_count: 12 },
       { host: "independent.example", observed_account_count: 0 },
       { host: "legacy.example", observed_account_count: 0 },
+    ]);
+    const lastActive = await db.execute(
+      "SELECT host, last_active_at FROM account_host ORDER BY host",
+    );
+    assertEquals(lastActive.rows, [
+      { host: "blacksky.community", last_active_at: 100 },
+      { host: "bsky.network", last_active_at: 200 },
+      { host: "independent.example", last_active_at: 100 },
+      { host: "legacy.example", last_active_at: null },
+    ]);
+    const statusHistory = await db.execute(
+      `SELECT service_host, relay_status, observed_at
+        FROM pds_instance_status_history
+        ORDER BY observed_at, service_host, relay_status`,
+    );
+    assertEquals(statusHistory.rows, [
+      {
+        service_host: "amanita.us-east.host.bsky.network",
+        relay_status: "active",
+        observed_at: 100,
+      },
+      {
+        service_host: "blacksky.app",
+        relay_status: "active",
+        observed_at: 100,
+      },
+      {
+        service_host: "blewit.us-west.host.bsky.network",
+        relay_status: "active",
+        observed_at: 100,
+      },
+      {
+        service_host: "independent.example",
+        relay_status: "active",
+        observed_at: 100,
+      },
+      {
+        service_host: "blacksky.app",
+        relay_status: "not_seen",
+        observed_at: 200,
+      },
+      {
+        service_host: "blewit.us-west.host.bsky.network",
+        relay_status: "not_seen",
+        observed_at: 200,
+      },
+      {
+        service_host: "independent.example",
+        relay_status: "not_seen",
+        observed_at: 200,
+      },
     ]);
   } finally {
     db.close();

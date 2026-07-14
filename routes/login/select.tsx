@@ -1,6 +1,8 @@
 import { define, type State } from "../../utils.ts";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
+import type { CreateAccountHostOption } from "../../lib/create-account-hosts.ts";
+import { listCreateAccountHostOptions } from "../../lib/create-account-hosts.ts";
 import {
   appendSelectionToReturnUri,
   type LoginApp,
@@ -47,6 +49,7 @@ interface PickerPageProps {
   request: LoginRequest | null;
   selectPath: string | null;
   pickerAccounts: PickerAccount[];
+  createAccountHosts: CreateAccountHostOption[];
   error: string | null;
   status: number;
 }
@@ -338,11 +341,19 @@ async function buildPickerPageProps(
         };
       }),
     );
+    const createAccountHosts = await listCreateAccountHostOptions({
+      app,
+      pageSize: 24,
+    }).catch((err) => {
+      console.warn("[login] account host discovery failed:", err);
+      return [];
+    });
     return {
       app,
       request,
       selectPath: loginRequestToPath(request),
       pickerAccounts,
+      createAccountHosts,
       error: null,
       status: 200,
     };
@@ -352,6 +363,7 @@ async function buildPickerPageProps(
       request: null,
       selectPath: null,
       pickerAccounts: [],
+      createAccountHosts: [],
       error: err instanceof Error ? err.message : String(err),
       status: err instanceof LoginRequestError ? err.status : 400,
     };
@@ -403,7 +415,14 @@ export function pickerAccountsForStateForTest(state: State): PickerAccount[] {
 }
 
 function LoginPickerPage(props: PickerPageProps) {
-  const { app, request, selectPath, pickerAccounts, error } = props;
+  const {
+    app,
+    request,
+    selectPath,
+    pickerAccounts,
+    createAccountHosts,
+    error,
+  } = props;
   return (
     <div id="page-top" class="login-picker-page">
       <section class="signin-page-section login-picker-section">
@@ -428,6 +447,7 @@ function LoginPickerPage(props: PickerPageProps) {
                   app={app}
                   selectPath={selectPath}
                   pickerAccounts={pickerAccounts}
+                  createAccountHosts={createAccountHosts}
                 />
               )}
           </div>
@@ -438,12 +458,16 @@ function LoginPickerPage(props: PickerPageProps) {
 }
 
 function LoginPickerBody(
-  { app, selectPath, pickerAccounts }: {
+  { app, selectPath, pickerAccounts, createAccountHosts }: {
     app: LoginApp;
     selectPath: string;
     pickerAccounts: PickerAccount[];
+    createAccountHosts: CreateAccountHostOption[];
   },
 ) {
+  const hostEndpoint = `/api/login/account-hosts?client_id=${
+    encodeURIComponent(app.clientId)
+  }`;
   return (
     <>
       <header class="login-picker-app">
@@ -490,18 +514,23 @@ function LoginPickerBody(
                 </a>
               ))}
             </div>
-            <form method="POST" action="/oauth/add-account">
-              <input type="hidden" name="next" value={selectPath} />
-              <button
-                type="submit"
-                class="profile-form-button-secondary login-picker-secondary"
-              >
+            <details class="login-picker-add-account">
+              <summary class="profile-form-button-secondary login-picker-secondary">
                 <span class="login-picker-secondary-symbol" aria-hidden="true">
                   +
                 </span>
                 Add another account
-              </button>
-            </form>
+              </summary>
+              <div class="login-picker-add-account-body">
+                <SignInForm
+                  returnTo={selectPath}
+                  rememberedAccounts={[]}
+                  createAccountHosts={createAccountHosts}
+                  createAccountHostsEndpoint={hostEndpoint}
+                  rich
+                />
+              </div>
+            </details>
           </>
         )
         : (
@@ -511,6 +540,8 @@ function LoginPickerBody(
                 <SignInForm
                   returnTo={selectPath}
                   rememberedAccounts={[]}
+                  createAccountHosts={createAccountHosts}
+                  createAccountHostsEndpoint={hostEndpoint}
                   rich
                 />
               )

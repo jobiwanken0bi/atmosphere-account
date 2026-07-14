@@ -72,6 +72,14 @@ interface RelayListHost {
   status?: unknown;
 }
 
+interface RelayStatusTransition {
+  serviceHost: string;
+  accountHost: string;
+  relayStatus: RelayHostStatus | "not_seen";
+  relayAccountCount: number | null;
+  relaySeq: number | null;
+}
+
 function integerOrNull(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) return null;
   return value >= 0 ? value : null;
@@ -336,6 +344,12 @@ export async function persistRelayPdsInventoryForClient(
 
   for (let offset = 0; offset < instances.length; offset += UPSERT_CHUNK_SIZE) {
     const chunk = instances.slice(offset, offset + UPSERT_CHUNK_SIZE);
+    await recordRelayStatusTransitions(
+      c,
+      chunk,
+      observedAt,
+      scanId,
+    );
     const groups = [
       {
         rows: chunk.filter((row) => row.relayAccountCount != null),
@@ -348,7 +362,9 @@ export async function persistRelayPdsInventoryForClient(
     ];
     for (const group of groups) {
       if (group.rows.length === 0) continue;
-      const values = group.rows.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      const values = group.rows.map(() =>
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
         .join(", ");
       const args: Array<string | number | null> = [];
       for (const instance of group.rows) {
@@ -363,6 +379,7 @@ export async function persistRelayPdsInventoryForClient(
           instance.isBlueskyHost ? 1 : 0,
           observedAt,
           observedAt,
+          instance.relayStatus === "active" ? observedAt : null,
           scanId,
         );
       }
@@ -370,7 +387,7 @@ export async function persistRelayPdsInventoryForClient(
         sql: `INSERT INTO pds_instance (
             service_host, service_endpoint, account_host, relay_url,
             relay_status, relay_account_count, relay_seq, is_bluesky_host,
-            first_observed_at, last_observed_at, last_scan_id
+            first_observed_at, last_observed_at, last_active_at, last_scan_id
           ) VALUES ${values}
           ON CONFLICT(service_host) DO UPDATE SET
             service_endpoint = excluded.service_endpoint,
@@ -385,6 +402,11 @@ export async function persistRelayPdsInventoryForClient(
             relay_seq = excluded.relay_seq,
             is_bluesky_host = excluded.is_bluesky_host,
             last_observed_at = excluded.last_observed_at,
+            last_active_at = CASE
+              WHEN excluded.relay_status = 'active'
+              THEN excluded.last_observed_at
+              ELSE pds_instance.last_active_at
+            END,
             last_scan_id = excluded.last_scan_id`,
         args,
       });
@@ -394,6 +416,26 @@ export async function persistRelayPdsInventoryForClient(
   let staleInstances = 0;
   let publishedHosts = 0;
   if (complete) {
+    const staleRows = await c.execute({
+      sql: `SELECT service_host, account_host, relay_account_count, relay_seq
+        FROM pds_instance
+        WHERE relay_url = ? AND last_scan_id <> ? AND relay_status <> 'not_seen'`,
+      args: [PDS_RELAY_BASE_URL, scanId],
+    });
+    await insertRelayStatusTransitions(
+      c,
+      staleRows.rows.map((row) => ({
+        serviceHost: String(row.service_host),
+        accountHost: String(row.account_host),
+        relayStatus: "not_seen" as const,
+        relayAccountCount: row.relay_account_count == null
+          ? null
+          : Number(row.relay_account_count),
+        relaySeq: row.relay_seq == null ? null : Number(row.relay_seq),
+      })),
+      observedAt,
+      scanId,
+    );
     const stale = await c.execute({
       sql: `UPDATE pds_instance
         SET relay_status = 'not_seen'
@@ -438,6 +480,11 @@ export async function persistRelayPdsInventoryForClient(
               WHERE p.account_host = account_host.host
                 AND p.relay_status <> 'not_seen'
             ), 0),
+            last_active_at = COALESCE((
+              SELECT MAX(p.last_active_at)
+              FROM pds_instance p
+              WHERE p.account_host = account_host.host
+            ), account_host.last_active_at),
             last_indexed_account_at = ?,
             last_observed_at = COALESCE((
               SELECT MAX(p.last_observed_at)
@@ -462,4 +509,83 @@ export async function persistRelayPdsInventoryForClient(
     complete,
     scanId,
   };
+}
+
+async function recordRelayStatusTransitions(
+  c: DbClient,
+  instances: RelayPdsInstance[],
+  observedAt: number,
+  scanId: string,
+): Promise<void> {
+  if (instances.length === 0) return;
+  const placeholders = instances.map(() => "?").join(", ");
+  const existing = await c.execute({
+    sql: `SELECT p.service_host, p.relay_status,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM pds_instance_status_history h
+          WHERE h.service_host = p.service_host
+        ) THEN 1 ELSE 0 END AS has_history
+      FROM pds_instance p
+      WHERE p.service_host IN (${placeholders})`,
+    args: instances.map((instance) => instance.serviceHost),
+  });
+  const previous = new Map(
+    existing.rows.map((row) => [
+      String(row.service_host),
+      {
+        status: String(row.relay_status),
+        hasHistory: Number(row.has_history) === 1,
+      },
+    ]),
+  );
+  const transitions = instances.filter((instance) => {
+    const prior = previous.get(instance.serviceHost);
+    return !prior || !prior.hasHistory || prior.status !== instance.relayStatus;
+  });
+  await insertRelayStatusTransitions(
+    c,
+    transitions,
+    observedAt,
+    scanId,
+  );
+}
+
+async function insertRelayStatusTransitions(
+  c: DbClient,
+  transitions: RelayStatusTransition[],
+  observedAt: number,
+  scanId: string,
+): Promise<void> {
+  for (
+    let offset = 0;
+    offset < transitions.length;
+    offset += UPSERT_CHUNK_SIZE
+  ) {
+    const chunk = transitions.slice(offset, offset + UPSERT_CHUNK_SIZE);
+    const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?)").join(
+      ", ",
+    );
+    const args: Array<string | number | null> = [];
+    for (const transition of chunk) {
+      args.push(
+        `${scanId}:${transition.serviceHost}:${transition.relayStatus}`,
+        transition.serviceHost,
+        transition.accountHost,
+        PDS_RELAY_BASE_URL,
+        transition.relayStatus,
+        transition.relayAccountCount,
+        transition.relaySeq,
+        observedAt,
+        scanId,
+      );
+    }
+    await c.execute({
+      sql: `INSERT INTO pds_instance_status_history (
+          transition_id, service_host, account_host, relay_url,
+          relay_status, relay_account_count, relay_seq, observed_at, scan_id
+        ) VALUES ${values}
+        ON CONFLICT(transition_id) DO NOTHING`,
+      args,
+    });
+  }
 }

@@ -260,6 +260,7 @@ CREATE TABLE IF NOT EXISTS account_host (
   profile_checked_at bigint,
   observed_account_count integer NOT NULL DEFAULT 0,
   observed_active_account_count integer NOT NULL DEFAULT 0,
+  last_active_at bigint,
   last_indexed_account_at bigint,
   last_checked_at bigint,
   last_observed_at bigint,
@@ -286,6 +287,7 @@ ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_observed_at bigint;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS bsky_profile_visible integer NOT NULL DEFAULT 1;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_account_count integer NOT NULL DEFAULT 0;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_active_account_count integer NOT NULL DEFAULT 0;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS last_active_at bigint;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS last_indexed_account_at bigint;
 
 CREATE TABLE IF NOT EXISTS account_host_claim (
@@ -345,12 +347,32 @@ CREATE TABLE IF NOT EXISTS pds_instance (
   is_bluesky_host integer NOT NULL DEFAULT 0,
   first_observed_at bigint NOT NULL,
   last_observed_at bigint NOT NULL,
+  last_active_at bigint,
   last_scan_id text NOT NULL
 );
+
+ALTER TABLE pds_instance ADD COLUMN IF NOT EXISTS last_active_at bigint;
 
 CREATE INDEX IF NOT EXISTS pds_instance_account_host ON pds_instance(account_host, relay_status);
 CREATE INDEX IF NOT EXISTS pds_instance_status ON pds_instance(relay_status, last_observed_at);
 CREATE INDEX IF NOT EXISTS pds_instance_bluesky ON pds_instance(is_bluesky_host, relay_status);
+
+CREATE TABLE IF NOT EXISTS pds_instance_status_history (
+  transition_id text PRIMARY KEY,
+  service_host text NOT NULL,
+  account_host text NOT NULL,
+  relay_url text NOT NULL,
+  relay_status text NOT NULL,
+  relay_account_count integer,
+  relay_seq bigint,
+  observed_at bigint NOT NULL,
+  scan_id text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS pds_instance_status_history_host
+  ON pds_instance_status_history(service_host, observed_at);
+CREATE INDEX IF NOT EXISTS pds_instance_status_history_status
+  ON pds_instance_status_history(relay_status, observed_at);
 
 CREATE TABLE IF NOT EXISTS pds_inventory_scan (
   scan_id text PRIMARY KEY,
@@ -403,6 +425,7 @@ CREATE TABLE IF NOT EXISTS app_listing (
   primary_url text,
   icon_url text,
   hero_url text,
+  hero_fallback_url text,
   screenshot_urls text NOT NULL DEFAULT '[]',
   links_json text NOT NULL DEFAULT '[]',
   tags_json text NOT NULL DEFAULT '[]',
@@ -438,6 +461,7 @@ CREATE TABLE IF NOT EXISTS app_listing (
 );
 
 ALTER TABLE app_listing ADD COLUMN IF NOT EXISTS app_status text;
+ALTER TABLE app_listing ADD COLUMN IF NOT EXISTS hero_fallback_url text;
 CREATE UNIQUE INDEX IF NOT EXISTS app_listing_slug ON app_listing(slug);
 CREATE INDEX IF NOT EXISTS app_listing_slug_trgm ON app_listing USING gin (slug gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS app_listing_name_trgm ON app_listing USING gin (name gin_trgm_ops);
@@ -577,6 +601,7 @@ CREATE TABLE IF NOT EXISTS login_app (
   allowed_origins text NOT NULL DEFAULT '[]',
   status text NOT NULL DEFAULT 'unverified',
   contact_did text,
+  preferred_account_host text,
   review_status text NOT NULL DEFAULT 'none',
   review_requested_at bigint,
   review_notes text,
@@ -586,6 +611,9 @@ CREATE TABLE IF NOT EXISTS login_app (
   created_at bigint NOT NULL,
   updated_at bigint NOT NULL
 );
+
+ALTER TABLE login_app
+  ADD COLUMN IF NOT EXISTS preferred_account_host text;
 
 CREATE INDEX IF NOT EXISTS login_app_status ON login_app(status);
 CREATE INDEX IF NOT EXISTS login_app_review_status ON login_app(review_status, review_requested_at);

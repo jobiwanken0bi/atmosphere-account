@@ -25,6 +25,11 @@ import {
   isPrivateNetworkHostname,
   readResponseTextWithLimit,
 } from "./security.ts";
+import {
+  type AccountHost,
+  getAccountHost,
+  getAccountHostClaim,
+} from "./account-hosts.ts";
 
 const SELECTION_TOKEN_TTL_SEC = 2 * 60;
 const MAX_STATE_LEN = 500;
@@ -63,6 +68,7 @@ export interface LoginApp {
   reviewDecisionBy: string | null;
   reviewDecisionReason: string | null;
   contactDid: string | null;
+  preferredAccountHost: string | null;
   registered: boolean;
 }
 
@@ -115,6 +121,7 @@ export interface LoginAppRegistrationInput {
   appUri: string;
   logoUri?: string | null;
   allowedReturnUris: string[];
+  preferredAccountHost?: string | null;
 }
 
 export class LoginRequestError extends Error {
@@ -203,6 +210,9 @@ function rowToLoginApp(row: Record<string, unknown>): LoginApp {
       ? row.review_decision_reason
       : null,
     contactDid: typeof row.contact_did === "string" ? row.contact_did : null,
+    preferredAccountHost: typeof row.preferred_account_host === "string"
+      ? row.preferred_account_host
+      : null,
     registered: true,
   };
 }
@@ -358,6 +368,7 @@ function appFromClientId(clientId: string): LoginApp {
     reviewDecisionBy: null,
     reviewDecisionReason: null,
     contactDid: null,
+    preferredAccountHost: null,
     registered: false,
   };
 }
@@ -439,6 +450,61 @@ export async function getLoginAppForOwner(
   return app;
 }
 
+interface PreferredAccountHostDependencies {
+  getHost?: typeof getAccountHost;
+  getClaim?: typeof getAccountHostClaim;
+}
+
+export async function verifyPreferredAccountHostForOwner(
+  ownerDid: string,
+  value: string | null | undefined,
+  dependencies: PreferredAccountHostDependencies = {},
+): Promise<string | null> {
+  const host = value?.trim().toLowerCase() ?? "";
+  if (!host) return null;
+  const getHostClaim = dependencies.getClaim ?? getAccountHostClaim;
+  const getHost = dependencies.getHost ?? getAccountHost;
+  const [claim, accountHost] = await Promise.all([
+    getHostClaim(host),
+    getHost(host),
+  ]);
+  if (
+    !accountHost || !claim || claim.claimantDid !== ownerDid.trim() ||
+    !accountHost.signupUrl ||
+    (accountHost.signupStatus !== "open" &&
+      accountHost.signupStatus !== "invite_required")
+  ) {
+    throw new LoginRequestError(
+      "You can only recommend a joinable account host claimed by this account.",
+      400,
+    );
+  }
+  return accountHost.host;
+}
+
+export async function resolveVerifiedPreferredAccountHost(
+  app: LoginApp,
+  dependencies: PreferredAccountHostDependencies = {},
+): Promise<AccountHost | null> {
+  if (!app.registered || !app.contactDid || !app.preferredAccountHost) {
+    return null;
+  }
+  const getHostClaim = dependencies.getClaim ?? getAccountHostClaim;
+  const getHost = dependencies.getHost ?? getAccountHost;
+  const [claim, host] = await Promise.all([
+    getHostClaim(app.preferredAccountHost),
+    getHost(app.preferredAccountHost),
+  ]);
+  if (
+    !host || !claim || claim.claimantDid !== app.contactDid ||
+    !host.signupUrl ||
+    (host.signupStatus !== "open" && host.signupStatus !== "invite_required")
+  ) {
+    return null;
+  }
+  return host;
+}
+
 export async function listLoginAppsForTrustReview(): Promise<LoginApp[]> {
   return await withDb(async (c) => {
     const result = await c.execute({
@@ -478,6 +544,7 @@ export async function upsertLoginApp(app: {
   allowedOrigins?: string[];
   status?: LoginApp["status"];
   contactDid?: string | null;
+  preferredAccountHost?: string | null;
 }): Promise<void> {
   const now = Date.now();
   await withDb(async (c) => {
@@ -485,8 +552,9 @@ export async function upsertLoginApp(app: {
       sql: `
         INSERT INTO login_app (
           client_id, app_name, app_uri, logo_uri, allowed_return_uris,
-          allowed_origins, status, contact_did, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          allowed_origins, status, contact_did, preferred_account_host,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(client_id) DO UPDATE SET
           app_name = excluded.app_name,
           app_uri = excluded.app_uri,
@@ -495,6 +563,7 @@ export async function upsertLoginApp(app: {
           allowed_origins = excluded.allowed_origins,
           status = excluded.status,
           contact_did = excluded.contact_did,
+          preferred_account_host = excluded.preferred_account_host,
           updated_at = excluded.updated_at
       `,
       args: [
@@ -506,6 +575,7 @@ export async function upsertLoginApp(app: {
         JSON.stringify(app.allowedOrigins ?? []),
         app.status ?? "unverified",
         app.contactDid ?? null,
+        app.preferredAccountHost ?? null,
         now,
         now,
       ],
@@ -543,6 +613,12 @@ export async function registerLoginAppForOwner(
       409,
     );
   }
+  const preferredAccountHost = input.preferredAccountHost === undefined
+    ? (existing?.preferredAccountHost ?? null)
+    : await verifyPreferredAccountHostForOwner(
+      owner,
+      input.preferredAccountHost,
+    );
 
   const changed = existing
     ? registrationChanged(existing, {
@@ -567,6 +643,7 @@ export async function registerLoginAppForOwner(
     allowedOrigins: [],
     status,
     contactDid: owner,
+    preferredAccountHost,
   });
 
   if (

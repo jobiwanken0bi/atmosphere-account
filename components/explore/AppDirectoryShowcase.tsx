@@ -66,7 +66,12 @@ export function FreshAppCard(
   const bannerUrl = appImageUrl(
     app.heroUrl || app.screenshotUrls[0],
     "media",
+    800,
+    app.heroUrl ? app.heroFallbackUrl : null,
   );
+  const bannerFallbackUrl = app.heroUrl
+    ? appImageUrl(app.heroFallbackUrl, "media", 800)
+    : null;
   const mediaUrl = bannerUrl || iconUrl;
   const host = hostname(app.primaryUrl);
   const category = appPrimaryCollection(app) ?? "App";
@@ -83,6 +88,7 @@ export function FreshAppCard(
             <img
               class={bannerUrl ? undefined : "app-fresh-media-icon-backdrop"}
               src={mediaUrl}
+              data-fallback-src={bannerFallbackUrl ?? undefined}
               alt=""
               loading="lazy"
               decoding="async"
@@ -130,7 +136,16 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
     apps.find((app) => app.heroUrl || app.screenshotUrls.length > 0) ??
       apps[0];
   const secondary = apps.filter((app) => app.id !== lead.id);
-  const leadBannerUrl = appImageUrl(lead.heroUrl, "media");
+  const leadBannerUrl = appImageUrl(
+    lead.heroUrl,
+    "media",
+    1200,
+    lead.heroFallbackUrl,
+  );
+  const leadBannerFallbackUrl = appImageUrl(
+    lead.heroFallbackUrl,
+    "media",
+  );
   const leadScreenshotUrl = appImageUrl(lead.screenshotUrls[0], "media");
   const wideMediaUrl = leadBannerUrl || leadScreenshotUrl;
   const leadIconUrl = appImageUrl(lead.iconUrl, "icon");
@@ -245,6 +260,9 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
                 ? (
                   <img
                     src={wideMediaUrl}
+                    data-fallback-src={leadBannerUrl
+                      ? leadBannerFallbackUrl ?? undefined
+                      : undefined}
                     alt=""
                     loading="eager"
                     decoding="async"

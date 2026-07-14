@@ -14,7 +14,7 @@ import {
 } from "../../lib/account-hosts.ts";
 import { getHostDetailFromAppview } from "../../lib/appview-client.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
-import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
+import { hostFriendlyProfile, hostPdsDomain } from "../../lib/host-friendly.ts";
 import {
   fetchPdsServerDescription,
   type PdsServerDescription,
@@ -25,6 +25,7 @@ import { hostHasCurrentConformance } from "../../lib/host-conformance.ts";
 import { normalizeHostDirectoryReturnTo } from "../../lib/host-directory-navigation.ts";
 import { getVisibleAppListingByAccountDid } from "../../lib/app-directory.ts";
 import { appHrefForHost } from "../../lib/directory-identity-links.ts";
+import { getMessages, type Messages } from "../../i18n/mod.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -75,6 +76,7 @@ export const handler = define.handlers({
           ? pdsServerDescriptionForAccountHost(host.host, pdsDescription)
           : null}
         linkedAppHref={host ? appHrefForHost(host, linkedApp) : null}
+        directoryCopy={getMessages(ctx.state.locale).hostsDirectory}
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}
         backHref={normalizeHostDirectoryReturnTo(
@@ -93,6 +95,7 @@ function HostDetailPage(
     claim,
     pdsDescription,
     linkedAppHref,
+    directoryCopy,
     claimed,
     managed,
     backHref,
@@ -102,6 +105,7 @@ function HostDetailPage(
     claim: AccountHostClaim | null;
     pdsDescription: PdsServerDescription | null;
     linkedAppHref: string | null;
+    directoryCopy: Messages["hostsDirectory"];
     claimed: boolean;
     managed: boolean;
     backHref: string;
@@ -182,11 +186,32 @@ function HostDetailPage(
                 <div class="profile-hero-name-row">
                   <h1 class="profile-hero-name">{host.displayName}</h1>
                 </div>
-                <p class="profile-hero-handle">
-                  {host.profileHandle
-                    ? <AtmosphereHandle handle={host.profileHandle} />
-                    : host.host}
+                {host.profileHandle && (
+                  <p class="profile-hero-handle">
+                    <AtmosphereHandle handle={host.profileHandle} />
+                  </p>
+                )}
+                <p class="host-detail-domain">
+                  {directoryCopy.hostDomain}: {hostPdsDomain(host)}
                 </p>
+                {(host.observedAccountCount > 0 ||
+                  host.observedActiveAccountCount > 0) && (
+                  <div
+                    class="host-detail-status-row"
+                    aria-label={directoryCopy.activityLabel}
+                  >
+                    {host.observedAccountCount > 0 && (
+                      <span class="host-card-account-count">
+                        {directoryCopy.accounts(host.observedAccountCount)}
+                      </span>
+                    )}
+                    {host.observedActiveAccountCount > 0 && (
+                      <span class="host-card-active">
+                        {directoryCopy.active}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div class="profile-hero-meta">
                   <div class="profile-card-categories">
                     <span class="profile-card-category">
@@ -198,6 +223,11 @@ function HostDetailPage(
                     <span class="profile-card-category">
                       {signupSummary.label}
                     </span>
+                    {hostHasCurrentConformance(host) && (
+                      <span class="profile-card-category host-card-conformance">
+                        {directoryCopy.compatibilityChecked}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <p class="profile-hero-description">{friendly.summary}</p>

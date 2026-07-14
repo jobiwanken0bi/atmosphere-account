@@ -448,15 +448,34 @@ PDS, so routine host inventory does not enumerate or permanently store every
 account DID. All `*.host.bsky.network` mushroom instances map to the single
 public `bsky.network` account host; known provider endpoints such as
 `blacksky.app` and `tngl.sh` similarly map to their friendly provider records.
-Independent PDS instances are published as unverified, observed entries in the
-paginated account-host directory after a complete scan. Their relay-supplied DID
-counts make the directory sortable without storing the individual account DIDs.
+Independent PDS instances remain in the raw inventory, including their current
+relay status and last-active time. The append-only status history writes only
+the initial state and subsequent transitions (including `not_seen` after a
+complete scan), rather than duplicating every host on every scan. Their
+relay-supplied DID counts make the directory sortable without storing the
+individual account DIDs.
 
-Partial scans update only the raw inventory; public account-host totals and
-`not_seen` reconciliation change only after a complete scan. Complete scans also
-refuse an empty result or an unexpected drop of more than 5% in the PDS instance
-count. After verifying a legitimate large removal, an operator can rerun with
-`--allow-large-drop`.
+The public host directory is a curated projection, not a dump of that relay
+inventory. A grouped host is public only when it is recently relay-active or
+passes a current reachability check and also has an intentional-publication
+signal: a claimed or verified profile, a seed maintained by Atmosphere, a
+published Atmosphere host service record, or a safe public HTTPS signup URL.
+Observed-only personal PDSes remain private. Claimed and verified hosts retain a
+72-hour grace period after their last active relay observation so a temporary
+outage does not make their directory page flap. The normal activity window is 48
+hours. The default public sort is total observed accounts, then claimed/verified
+status, then name.
+
+The Create Account picker applies a narrower projection again: a host must pass
+the public reachability policy, be claimed, verified, or seeded, accept open or
+invite-based signup, and publish a safe HTTPS signup URL. Signup and invite-code
+entry remain entirely on the host's page.
+
+Partial scans update only the raw inventory; public account-host totals,
+last-active aggregation, and `not_seen` reconciliation change only after a
+complete scan. Complete scans also refuse an empty result or an unexpected drop
+of more than 5% in the PDS instance count. After verifying a legitimate large
+removal, an operator can rerun with `--allow-large-drop`.
 
 Run this as a short scheduled job, initially daily. It does not belong in the
 always-on Jetstream process. The Jetstream worker still consumes Atmosphere's

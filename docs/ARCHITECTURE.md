@@ -59,6 +59,9 @@ runtime migration path, baseline schema, and migration tests together.
   host-owned pages.
 - Host records are self-asserted; conformance and local verification are
   separate signals.
+- The database retains raw relay PDS inventory and status history, while the
+  public host directory exposes only reachable providers with an explicit
+  public-intent signal. Observed-only personal PDSes are not directory entries.
 - Admin routes are deny-by-default when no admin DID is configured.
 - Public images and SVGs are proxied or sanitized with restrictive headers.
 

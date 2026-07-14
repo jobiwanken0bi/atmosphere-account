@@ -64,10 +64,23 @@ status. Trusted and local development apps use a compact status pill. Unverified
 apps receive an expanded warning before account selection. Blocked apps cannot
 open the picker.
 
-“Add another account” opens the full sign-in flow while preserving remembered
-accounts and the picker return path. Its Create Account tab lists trusted or
-seeded account hosts that publish open or invite-based signup URLs. Signup and
-invite-code entry happen on the selected host's own page.
+“Add another account” expands the full sign-in flow inside the picker, so the
+requesting app and return path remain in place. Its Create Account tab searches
+the grouped account-host directory by host name, domain, description, or
+location. Open-signup and invite-accepting hosts are included by default and can
+be filtered independently. Atmosphere never asks for an invite code: signup and
+invite-code entry happen on the selected host's own page in a new browser tab,
+and the user returns to the preserved picker to select the new account. Picker
+results must also be recently active or directly reachable, claimed, verified,
+or seeded, and backed by a safe public HTTPS signup URL. Raw relay-observed
+personal PDSes are never offered as account-creation providers.
+
+A registered app may set an optional `preferredAccountHost`. The host is pinned
+first and labelled “Recommended by [app]”, but users can choose any other host.
+Atmosphere accepts this field only when the app owner has a current verified
+claim for that grouped host. The claim, signup URL, and joinable status are
+checked again when the picker opens. A request URL cannot nominate a preferred
+host.
 
 For local visual testing, `GET /dev/login-picker` seeds four fictional saved
 accounts with profile portraits and opens the redirect picker. The route and its

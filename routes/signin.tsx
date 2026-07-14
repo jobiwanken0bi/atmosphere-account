@@ -5,7 +5,7 @@ import SignInForm, {
   type CreateAccountHostOption,
 } from "../islands/SignInForm.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
-import { listHostsFromAppview } from "../lib/appview-client.ts";
+import { listCreateAccountHostOptions } from "../lib/create-account-hosts.ts";
 import { isOAuthConfigured } from "../lib/oauth.ts";
 import { refreshRememberedAccountCookies } from "../lib/remembered-accounts.ts";
 import { isSafeRelativePath } from "../lib/security.ts";
@@ -96,6 +96,7 @@ function SignInPageContent(
                     rememberedAccounts={account.rememberedAccounts}
                     initialHandle={initialHandle}
                     createAccountHosts={createAccountHosts}
+                    createAccountHostsEndpoint="/api/login/account-hosts"
                     rich
                   />
                 )
@@ -115,32 +116,8 @@ function SignInPageContent(
 }
 
 async function loadCreateAccountHosts(): Promise<CreateAccountHostOption[]> {
-  const result = await listHostsFromAppview({
-    signupStatus: "all",
-    hasSignupUrl: true,
-    trustedOnly: true,
-    sort: "recommended",
-    page: 1,
-    pageSize: 12,
-  }).catch((err) => {
+  return await listCreateAccountHostOptions().catch((err) => {
     console.warn("[signin] account host discovery failed:", err);
-    return null;
+    return [];
   });
-  if (!result) return [];
-  return result.hosts
-    .filter((host) =>
-      !!host.signupUrl &&
-      (host.signupStatus === "open" ||
-        host.signupStatus === "invite_required") &&
-      (host.verificationStatus === "claimed" ||
-        host.verificationStatus === "verified" || host.source === "seeded")
-    )
-    .slice(0, 12)
-    .map((host) => ({
-      name: host.displayName,
-      host: host.host,
-      href: host.signupUrl!,
-      description: host.description || `Create an account with ${host.host}.`,
-      statusLabel: host.signupStatus === "open" ? "Open" : "Invite",
-    }));
 }

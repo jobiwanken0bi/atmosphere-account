@@ -24,6 +24,8 @@ export default define.page(function App(ctx) {
     url.pathname === "/account";
   const needsDocsScript = url.pathname === "/docs" ||
     url.pathname.startsWith("/docs/");
+  const needsAppMediaFallback = url.pathname === "/apps" ||
+    url.pathname.startsWith("/apps/");
   const needsBskyCdnPreconnect = url.pathname.startsWith("/apps") ||
     url.pathname.startsWith("/hosts") ||
     url.pathname.startsWith("/account") ||
@@ -136,6 +138,9 @@ export default define.page(function App(ctx) {
         )}
         {needsDocsScript && (
           <script type="module" src="/docs.js?v=scrollspy2" />
+        )}
+        {needsAppMediaFallback && (
+          <script type="module" src="/app-media-fallback.js" />
         )}
         {needsSigninPreview && (
           <script type="module" src="/signin-preview.js" />

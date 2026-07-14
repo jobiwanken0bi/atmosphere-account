@@ -17,6 +17,7 @@ export const NEON_APP_TABLES = [
   "host_conformance",
   "host_record",
   "pds_instance",
+  "pds_instance_status_history",
   "pds_inventory_scan",
   "app_record",
   "app_listing",
