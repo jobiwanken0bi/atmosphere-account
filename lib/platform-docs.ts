@@ -637,7 +637,16 @@ return redirect("/oauth/start?" + new URLSearchParams({
         title: "Try it locally",
         intro:
           "Generate a picker URL from the reference app or your registered app metadata, inspect redirect and popup button snippets, and paste a token to check pass/fail verification.",
-        blocks: [{ type: "atmosphereLoginConsole" }],
+        blocks: [
+          { type: "atmosphereLoginConsole" },
+          {
+            type: "callout",
+            tone: "blue",
+            title: "Seed the local redirect picker",
+            body:
+              "Open `/dev/login-picker` during local development to seed four fictional saved accounts with profile portraits and enter the normal same-tab redirect picker. The route and avatar mapping are unavailable in hosted production environments.",
+          },
+        ],
       },
       {
         id: "add-button",
@@ -685,7 +694,13 @@ return redirect("/oauth/start?" + new URLSearchParams({
             tone: "blue",
             title: "Popup mode completion",
             body:
-              "In popup mode, the callback page should load the browser SDK and call `AtmosphereLogin.consumeSelection({ clientId })`. The SDK posts the selection back to the opener, and the opener only accepts it when the return URI origin, client ID, and state all match.",
+              "In popup mode, the callback page should load the browser SDK and call `AtmosphereLogin.consumeSelection({ clientId })`. The SDK opens a centered window that adapts to the available screen, posts the selection back to the opener, and accepts it only when the return URI origin, client ID, and state all match. Browsers can still promote the flow to a tab or block it unless it starts from a direct user action.",
+          },
+          {
+            type: "callout",
+            title: "Native mobile apps use the system browser",
+            body:
+              "Open the picker URL with `ASWebAuthenticationSession` on Apple platforms or an Android Custom Tab, then return through an app/universal link. Mobile websites should use the normal same-tab redirect. Do not depend on the JavaScript popup handoff from a native webview.",
           },
         ],
       },
@@ -747,6 +762,13 @@ return redirect("/oauth/start?" + new URLSearchParams({
                 "This app cannot use the hosted picker.",
               ],
             ],
+          },
+          {
+            type: "callout",
+            tone: "blue",
+            title: "Trust information stays compact",
+            body:
+              "Trusted and local development apps show their state in the app card's status pill. Unverified apps receive an expanded warning before account selection, while blocked apps cannot open the picker.",
           },
         ],
       },
@@ -1546,7 +1568,13 @@ location.href = url;`,
             tone: "amber",
             title: "Redirect is still the default",
             body:
-              "Use popup mode only when it materially improves your app. Browsers can block popups unless they start from a direct user action, and strict opener isolation headers can prevent popup completion events.",
+              "Use popup mode only when it materially improves your desktop web app. The SDK centers it and adapts its size to the available screen, but browsers can block popups unless they start from a direct user action, promote them to full tabs, and prevent completion events under strict opener isolation headers.",
+          },
+          {
+            type: "callout",
+            title: "Mobile launch behavior",
+            body:
+              "Mobile websites should keep the default same-tab redirect. Native apps should open the picker in `ASWebAuthenticationSession` or an Android Custom Tab and return through an app/universal link rather than using the JavaScript popup API.",
           },
           {
             type: "code",

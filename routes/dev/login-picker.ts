@@ -1,33 +1,11 @@
 import { define } from "../../utils.ts";
+import { DEV_PICKER_ACCOUNTS } from "../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../lib/env.ts";
 import {
   addRememberedAccountCookies,
   type RememberedAccount,
 } from "../../lib/remembered-accounts.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
-
-const DEV_PICKER_ACCOUNTS: RememberedAccount[] = [
-  {
-    did: "did:plc:aalocalpicker",
-    handle: "local-picker.test",
-    pdsUrl: "https://local-picker.test",
-  },
-  {
-    did: "did:plc:aaaccountdemoone",
-    handle: "alice.bsky.social",
-    pdsUrl: "https://bsky.social",
-  },
-  {
-    did: "did:plc:aaaccountdemotwo",
-    handle: "you.com",
-    pdsUrl: "https://pds.you.com",
-  },
-  {
-    did: "did:plc:aaaccountdemothree",
-    handle: "you.eurosky.social",
-    pdsUrl: "https://eurosky.social",
-  },
-];
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -40,7 +18,7 @@ export const handler = define.handlers({
       handle: current.handle,
     });
     const rememberedCookies = await addRememberedAccountCookies(
-      DEV_PICKER_ACCOUNTS,
+      [...DEV_PICKER_ACCOUNTS],
       current,
     );
 

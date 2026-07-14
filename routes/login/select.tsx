@@ -410,8 +410,11 @@ function LoginPickerPage(props: PickerPageProps) {
         <div class="container signin-page-container login-picker-container">
           <p class="text-eyebrow">Account picker</p>
           <h1 class="text-section login-picker-title">
-            <img src="/union.svg" alt="" width="36" height="36" />
-            <span>Continue with Atmosphere</span>
+            <span>Continue with</span>
+            <span class="login-picker-title-brand">
+              <img src="/union.svg" alt="" width="36" height="36" />
+              <span>Atmosphere</span>
+            </span>
           </h1>
           <div class="glass signin-page-card login-picker-card">
             {error || !app || !request || !selectPath
@@ -493,6 +496,9 @@ function LoginPickerBody(
                 type="submit"
                 class="profile-form-button-secondary login-picker-secondary"
               >
+                <span class="login-picker-secondary-symbol" aria-hidden="true">
+                  +
+                </span>
                 Add another account
               </button>
             </form>
@@ -517,8 +523,7 @@ function LoginPickerBody(
         )}
 
       <p class="login-picker-footnote">
-        Atmosphere shares only the account you choose. {app.appName}{" "}
-        will ask your account host to finish signing you in.
+        {app.appName} will ask your account host to finish signing you in.
       </p>
     </>
   );
@@ -557,28 +562,7 @@ function StatusPill({ app }: { app: LoginApp }) {
 }
 
 function PickerTrustNotice({ app }: { app: LoginApp }) {
-  if (app.status === "trusted") {
-    return (
-      <div class="login-picker-notice login-picker-notice--trusted">
-        <strong>Trusted app</strong>
-        <span>
-          Atmosphere has reviewed this app and checked that it sends you back to
-          the right place after you choose an account.
-        </span>
-      </div>
-    );
-  }
-  if (app.status === "development") {
-    return (
-      <div class="login-picker-notice login-picker-notice--development">
-        <strong>Development app</strong>
-        <span>
-          This is a local test app. Only continue if you opened this flow
-          yourself.
-        </span>
-      </div>
-    );
-  }
+  if (app.status !== "unverified") return null;
   return (
     <div class="login-picker-notice login-picker-notice--unverified">
       <strong>Unverified app</strong>

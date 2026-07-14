@@ -12,6 +12,11 @@ Atmosphere Account ships three integration levels:
   a client button and a Route Handler that verifies the signed callback before
   redirecting to the app's own OAuth start endpoint.
 
+For native mobile apps, open the same picker URL in the operating system's
+authentication browser (`ASWebAuthenticationSession` or an Android Custom Tab)
+and return through an app/universal link. Redirect mode remains the default for
+mobile websites; the JavaScript popup mode is a desktop-only convenience.
+
 All examples preserve the same security boundary: Atmosphere returns a
 short-lived account selection, while the relying app owns AT Protocol OAuth,
 tokens, and its authenticated session.

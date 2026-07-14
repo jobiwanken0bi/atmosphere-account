@@ -37,6 +37,41 @@ Optional options:
 - `state`: caller-provided nonce. If omitted, the SDK creates one.
 - `scope`: app-specific request hint displayed/preserved by Atmosphere.
 - `atmosphereOrigin`: alternate Atmosphere origin for dev/test.
+- `popup`: opt into a separate browser window. Redirecting the current page is
+  the default and recommended behavior.
+- `closePopupOnComplete`: close an SDK-opened popup after a valid selection
+  message. Defaults to `true`.
+
+## Launch Behavior
+
+Redirect mode navigates the app's existing browser tab to the picker and returns
+to the registered `return_uri`. It is the default for desktop and mobile web.
+
+Popup mode is an optional desktop convenience. The SDK centers the popup and
+sizes it to the available screen, up to 800 by 900 CSS pixels with a 16-pixel
+inset on each edge. Browsers may ignore those hints, promote the flow to a full
+tab, or block it unless it starts directly from a user action.
+
+Native mobile apps should open the picker URL in the platform authentication
+browser (`ASWebAuthenticationSession` on Apple platforms or a Custom Tab on
+Android) and return through an app/universal link. Native apps should not depend
+on the JavaScript popup handoff.
+
+## Picker Presentation
+
+The picker shows remembered browser accounts and the requesting app's trust
+status. Trusted and local development apps use a compact status pill. Unverified
+apps receive an expanded warning before account selection. Blocked apps cannot
+open the picker.
+
+“Add another account” opens the full sign-in flow while preserving remembered
+accounts and the picker return path. Its Create Account tab lists trusted or
+seeded account hosts that publish open or invite-based signup URLs. Signup and
+invite-code entry happen on the selected host's own page.
+
+For local visual testing, `GET /dev/login-picker` seeds four fictional saved
+accounts with profile portraits and opens the redirect picker. The route and its
+avatar mapping are disabled in hosted production environments.
 
 ## Selection Token
 

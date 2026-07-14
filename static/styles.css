@@ -10231,8 +10231,16 @@ body {
 .login-picker-title {
   display: flex;
   align-items: center;
-  gap: 0.72rem;
+  flex-wrap: wrap;
+  gap: 0.3em;
   margin-bottom: 1rem;
+}
+
+.login-picker-title-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
 }
 
 .login-picker-title img {
@@ -10382,14 +10390,6 @@ body {
   color: #0e1428;
 }
 
-.login-picker-notice--trusted {
-  background: rgba(232, 247, 238, 0.58);
-}
-
-.login-picker-notice--development {
-  background: rgba(235, 243, 255, 0.6);
-}
-
 .login-picker-notice--unverified {
   background: rgba(255, 247, 232, 0.72);
 }
@@ -10458,6 +10458,11 @@ body {
   line-height: 1.55;
 }
 
+.login-picker-footnote {
+  text-align: center;
+  text-wrap: balance;
+}
+
 .login-picker-account-action {
   flex: 0 0 auto;
   color: rgba(18, 26, 47, 0.5);
@@ -10478,10 +10483,14 @@ body {
   }
 
   .login-picker-title {
-    gap: 0.55rem;
+    gap: 0.28em;
     margin-bottom: 0.8rem;
     font-size: clamp(1.55rem, 8vw, 2.1rem);
     line-height: 1.05;
+  }
+
+  .login-picker-title-brand {
+    gap: 0.38rem;
   }
 
   .login-picker-title img {
@@ -10558,9 +10567,18 @@ body {
 }
 
 .login-picker-secondary {
+  display: inline-flex;
   width: 100%;
   min-height: 2.75rem;
+  align-items: center;
   justify-content: center;
+  gap: 0.42rem;
+}
+
+.login-picker-secondary-symbol {
+  font-size: 1.15em;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .login-picker-empty {

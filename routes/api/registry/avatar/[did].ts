@@ -5,6 +5,8 @@
 import { define } from "../../../../utils.ts";
 import { getAppUser } from "../../../../lib/account-types.ts";
 import { bskyCdnAvatarUrl } from "../../../../lib/avatar.ts";
+import { devPickerAvatarUrl } from "../../../../lib/dev-picker-demo.ts";
+import { IS_DEV } from "../../../../lib/env.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
@@ -14,6 +16,16 @@ const EMPTY_AVATAR_SVG =
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
     const did = decodeURIComponent(ctx.params.did);
+    const devAvatar = IS_DEV ? devPickerAvatarUrl(did) : null;
+    if (devAvatar) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: devAvatar,
+          "cache-control": "no-store",
+        },
+      });
+    }
     const profile = await getProfileByDid(did).catch(() => null);
     const avatarCid = profile?.avatarCid ??
       (await getAppUser(did).catch(() => null))?.avatarCid;

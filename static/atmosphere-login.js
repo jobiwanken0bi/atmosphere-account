@@ -222,7 +222,7 @@
       const popup = globalThis.open(
         built.url,
         "atmosphere-login",
-        "popup,width=520,height=680",
+        popupWindowFeatures(),
       );
       if (popup) {
         const cleanup = installPopupSelectionListener(
@@ -235,6 +235,37 @@
     }
     globalThis.location.href = built.url;
     return { state: built.state, url: built.url };
+  }
+
+  function popupWindowFeatures() {
+    const screen = globalThis.screen || {};
+    const availableWidth = positiveNumber(screen.availWidth) ||
+      positiveNumber(globalThis.innerWidth) || 800;
+    const availableHeight = positiveNumber(screen.availHeight) ||
+      positiveNumber(globalThis.innerHeight) || 900;
+    const width = Math.max(1, Math.min(800, availableWidth - 32));
+    const height = Math.max(1, Math.min(900, availableHeight - 32));
+    const availableLeft = finiteNumber(screen.availLeft) || 0;
+    const availableTop = finiteNumber(screen.availTop) || 0;
+    const left = availableLeft + Math.max(0, (availableWidth - width) / 2);
+    const top = availableTop + Math.max(0, (availableHeight - height) / 2);
+    return [
+      "popup",
+      `width=${Math.round(width)}`,
+      `height=${Math.round(height)}`,
+      `left=${Math.round(left)}`,
+      `top=${Math.round(top)}`,
+    ].join(",");
+  }
+
+  function positiveNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : 0;
+  }
+
+  function finiteNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
   }
 
   function readButtonOptions(button) {

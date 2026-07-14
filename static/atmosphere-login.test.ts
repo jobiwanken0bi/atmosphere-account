@@ -493,6 +493,69 @@ Deno.test("browser SDK popup listener accepts only matching origin client and st
   }
 });
 
+Deno.test("browser SDK sizes and centers the popup for the available screen", async () => {
+  const clientId = "https://app.example/client.json";
+  let popupFeatures = "";
+  const sdk = await loadBrowserSdk("https://app.example/start", {
+    screen: {
+      availLeft: 100,
+      availTop: 40,
+      availWidth: 1440,
+      availHeight: 900,
+    },
+    open: (_url: string, _target: string, features: string) => {
+      popupFeatures = features;
+      return null;
+    },
+  });
+  try {
+    sdk.login.continueWithAtmosphere({
+      clientId,
+      returnUri: "https://app.example/callback",
+      state: "state-123",
+      popup: true,
+    });
+
+    assertEquals(
+      popupFeatures,
+      "popup,width=800,height=868,left=420,top=56",
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
+Deno.test("browser SDK keeps the popup inside a compact screen", async () => {
+  let popupFeatures = "";
+  const sdk = await loadBrowserSdk("https://app.example/start", {
+    screen: {
+      availLeft: 0,
+      availTop: 0,
+      availWidth: 390,
+      availHeight: 844,
+    },
+    open: (_url: string, _target: string, features: string) => {
+      popupFeatures = features;
+      return null;
+    },
+  });
+  try {
+    sdk.login.continueWithAtmosphere({
+      clientId: "https://app.example/client.json",
+      returnUri: "https://app.example/callback",
+      state: "state-123",
+      popup: true,
+    });
+
+    assertEquals(
+      popupFeatures,
+      "popup,width=358,height=812,left=16,top=16",
+    );
+  } finally {
+    sdk.cleanup();
+  }
+});
+
 function assertThrows(fn: () => unknown, expectedMessage: string): void {
   try {
     fn();
