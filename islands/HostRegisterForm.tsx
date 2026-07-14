@@ -15,6 +15,7 @@ interface RegisterValues {
   inferenceMessage: string;
   inferenceState: LocationInferenceState;
   homepageUrl: string;
+  signupUrl: string;
   serviceEndpoint: string;
   accountManagementUrl: string;
   supportUrl: string;
@@ -43,6 +44,7 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
   const host = useSignal(values.host);
   const displayName = useSignal(values.displayName);
   const homepageUrl = useSignal(values.homepageUrl);
+  const signupUrl = useSignal(values.signupUrl);
   const serviceEndpoint = useSignal(values.serviceEndpoint);
   const accountManagementUrl = useSignal(values.accountManagementUrl);
   const supportUrl = useSignal(values.supportUrl);
@@ -367,6 +369,24 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
                 </option>
               ))}
             </select>
+          </label>
+          <label class="profile-form-field">
+            <span class="profile-form-label">Signup URL</span>
+            <input
+              class="profile-form-input"
+              name="signupUrl"
+              type="url"
+              value={signupUrl.value}
+              onInput={(event) =>
+                signupUrl.value =
+                  (event.currentTarget as HTMLInputElement).value}
+              placeholder="https://pckt.cafe/signup"
+              autoComplete="url"
+            />
+            <span class="profile-form-hint">
+              The direct create-account or invite-request flow. This can be
+              different from the public website.
+            </span>
           </label>
           <label class="profile-form-field">
             <span class="profile-form-label">Support URL</span>

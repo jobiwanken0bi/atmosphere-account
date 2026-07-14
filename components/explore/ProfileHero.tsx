@@ -12,10 +12,12 @@ import WebsiteIcon from "../icons/WebsiteIcon.tsx";
 import { AndroidIcon, AppleIcon } from "../icons/PlatformIcons.tsx";
 import BskyIcon from "../icons/BskyIcon.tsx";
 import TangledIcon from "../icons/TangledIcon.tsx";
+import DirectoryIdentityLink from "../DirectoryIdentityLink.tsx";
 
 interface Props {
   profile: ProfileRow;
   microblogViewerClientId?: string | null;
+  hostHref?: string | null;
 }
 
 /**
@@ -23,7 +25,7 @@ interface Props {
  * secondary Atmosphere/custom links sit under the avatar.
  */
 export default function ProfileHero(
-  { profile, microblogViewerClientId }: Props,
+  { profile, microblogViewerClientId, hostHref = null }: Props,
 ) {
   const t = useT();
   const tCat = t.categories as Record<string, string>;
@@ -157,8 +159,11 @@ export default function ProfileHero(
           <p class="profile-hero-description">{profile.description}</p>
         )}
       </div>
-      {primaryLinks.length > 0 && (
+      {(hostHref || primaryLinks.length > 0) && (
         <div class="profile-hero-actions" aria-label="Primary links">
+          {hostHref && (
+            <DirectoryIdentityLink href={hostHref} destination="host" />
+          )}
           {primaryLinks.map((link) => (
             <a
               class="profile-hero-action"

@@ -1,6 +1,7 @@
 import {
   aliasesForDraft,
   compareAppListingDraftPrecedence,
+  mergeAppListingDrafts,
 } from "./app-directory.ts";
 import {
   atmosphereProfileToDraft,
@@ -253,7 +254,7 @@ Deno.test("real shared records outrank local dev app fixtures", () => {
       name: "Leaflet",
       tagline: "Publish lightly",
       externalUrl: "https://leaflet.pub/",
-      categorySlug: "apps/publishing",
+      categorySlug: "apps/account-tool",
       productAccountDid: "did:plc:localdevleaflet",
       icon: { ref: { $link: "localicon" }, mimeType: "image/png" },
       heroImage: { ref: { $link: "localhero" }, mimeType: "image/png" },
@@ -272,4 +273,62 @@ Deno.test("real shared records outrank local dev app fixtures", () => {
     sorted[0].heroUrl?.includes("cid=bafyhero"),
     "expected the real ATStore hero to win",
   );
+  const merged = mergeAppListingDrafts([localFixture, realAtstore]);
+  assertEquals(merged.categorySlugs, ["apps/publishing"]);
+  assertEquals(merged.productDid, "did:plc:leaflet");
+});
+
+Deno.test("ATStore content only supplements install and Tangled links from legacy profiles", () => {
+  const atstore = parseAtstoreListing({
+    uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/spark`,
+    cid: "bafyrecord",
+    repoDid: "did:plc:store",
+    rkey: "spark",
+    value: {
+      name: "Spark",
+      tagline: "Real Moments, Shared Together",
+      description: "ATStore description",
+      externalUrl: "https://sprk.so/",
+      categorySlug: "apps/video",
+      appTags: ["video"],
+      productAccountDid: "did:plc:spark",
+      icon: { ref: { $link: "bafyicon" }, mimeType: "image/png" },
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    },
+  });
+  const legacy = atmosphereProfileToDraft({
+    did: "did:plc:spark",
+    handle: "sprk.so",
+    uri: "at://did:plc:spark/com.atmosphereaccount.registry.profile/self",
+    cid: "legacy-profile",
+    screenshotUrls: ["https://sprk.so/legacy-shot.png"],
+    record: {
+      name: "Old Spark",
+      description: "Legacy description",
+      mainLink: "https://legacy.sprk.so",
+      iosLink: "https://apps.apple.com/app/spark",
+      androidLink: "https://play.google.com/store/apps/details?id=so.sprk.app",
+      links: [{
+        url: "https://tangled.org/sprk.so",
+        label: "Tangled",
+        kind: "tangled",
+      }],
+      categories: ["app", "accountProvider"],
+      subcategories: ["music", "social", "photo"],
+      createdAt: "2026-02-01T00:00:00.000Z",
+    },
+  });
+
+  assert(atstore, "expected an ATStore listing draft");
+  const merged = mergeAppListingDrafts([legacy, atstore]);
+  assertEquals(merged.name, "Spark");
+  assertEquals(merged.description, "ATStore description");
+  assertEquals(merged.categorySlugs, ["apps/video"]);
+  assertEquals(merged.tags, ["video"]);
+  assertEquals(merged.screenshotUrls, []);
+  assertEquals(merged.links.map((link) => link.uri), [
+    "https://apps.apple.com/app/spark",
+    "https://play.google.com/store/apps/details?id=so.sprk.app",
+    "https://tangled.org/sprk.so",
+  ]);
 });

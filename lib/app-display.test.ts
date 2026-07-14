@@ -38,3 +38,15 @@ Deno.test("appDisplayTaxonomy falls back to tag-derived collections", () => {
     tags: ["library"],
   });
 });
+
+Deno.test("appDisplayTaxonomy keeps account-host roles out of app collections", () => {
+  const app = {
+    categorySlugs: ["apps/spark", "app", "accountProvider"],
+    tags: ["video", "music", "social"],
+  } as unknown as AppListing;
+
+  assertEquals(appDisplayTaxonomy(app), {
+    collections: ["Video", "Audio"],
+    tags: ["social"],
+  });
+});

@@ -403,14 +403,13 @@ export async function persistRelayPdsInventoryForClient(
     staleInstances = Number(stale.rowsAffected ?? 0);
     const published = await c.execute({
       sql: `INSERT INTO account_host (
-          host, display_name, description, homepage_url, service_endpoint,
+          host, display_name, description, service_endpoint,
           signup_status, verification_status, source,
           last_observed_at, created_at, updated_at
         )
         SELECT p.account_host,
           p.account_host,
           'An account host observed in the public relay inventory.',
-          'https://' || p.account_host,
           MIN(p.service_endpoint),
           'unknown', 'observed', 'observed',
           MAX(p.last_observed_at), ?, ?

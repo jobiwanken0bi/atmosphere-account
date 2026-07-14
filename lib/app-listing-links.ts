@@ -9,6 +9,7 @@ import {
 export type AppActionLinkKind =
   | "website"
   | "bluesky"
+  | "tangled"
   | "ios"
   | "android"
   | "external";
@@ -132,6 +133,13 @@ export function appActionLinkKind(
     return "bluesky";
   }
   if (
+    text.includes("tangled") || host === "tangled.org" ||
+    host.endsWith(".tangled.org") || host === "tangled.sh" ||
+    host.endsWith(".tangled.sh")
+  ) {
+    return "tangled";
+  }
+  if (
     text.includes("appstore") || text.includes("app store") ||
     text.includes("ios") || host === "apps.apple.com"
   ) {
@@ -155,6 +163,7 @@ function appActionLinkLabel(
   kind: AppActionLinkKind,
 ): string {
   if (kind === "bluesky") return "Bluesky";
+  if (kind === "tangled") return "Tangled";
   if (kind === "ios") return "App Store";
   if (kind === "android") return "Play Store";
   if (kind === "website") return "Explore";

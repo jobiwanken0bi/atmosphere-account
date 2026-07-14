@@ -147,7 +147,7 @@ function BrowseAppsPage({ data }: { data: BrowseAppsData }) {
           </div>
         </section>
 
-        <section class="section app-browse-results-section">
+        <section id="app-results" class="section app-browse-results-section">
           <div class="container">
             <AppGrid
               apps={data.result.apps}

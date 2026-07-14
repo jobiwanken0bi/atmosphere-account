@@ -238,8 +238,6 @@ async function AccountPage(
                       <ProfileSourcePanel
                         profileUrl={publicProfileUrl}
                         profileViewerName={microblogViewer.name}
-                        hostManagementUrl={hostRoute?.accountManagementUrl ??
-                          null}
                       />
                     )}
                   {managesHost && primaryManagedHost && (
@@ -337,10 +335,9 @@ async function AccountPage(
 export default define.page(AccountPage);
 
 function ProfileSourcePanel(
-  { profileUrl, profileViewerName, hostManagementUrl }: {
+  { profileUrl, profileViewerName }: {
     profileUrl: string;
     profileViewerName: string;
-    hostManagementUrl: string | null;
   },
 ) {
   return (
@@ -363,17 +360,6 @@ function ProfileSourcePanel(
           <AccountIcon name="external" />
           <span>Open in {profileViewerName}</span>
         </a>
-        {hostManagementUrl && (
-          <a
-            href={hostManagementUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="account-dashboard-button account-dashboard-button--secondary"
-          >
-            <AccountIcon name="host" />
-            <span>Manage account at host</span>
-          </a>
-        )}
       </div>
     </div>
   );

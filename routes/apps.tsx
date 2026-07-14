@@ -2,6 +2,7 @@ import { define } from "../utils.ts";
 import Nav from "../components/Nav.tsx";
 import Footer from "../components/Footer.tsx";
 import StoreHero from "../components/explore/StoreHero.tsx";
+import AppBrowseControls from "../islands/AppBrowseControls.tsx";
 import {
   AppCategoryTiles,
   AppDiscoverySplit,
@@ -80,6 +81,14 @@ function ExplorePage({ data, locale: _locale }: ExplorePageProps) {
           activeTag={null}
           sort="trending"
           searchAction="/apps/all"
+          controls={
+            <AppBrowseControls
+              initialQuery=""
+              selectedTags={[]}
+              sort="trending"
+              tags={data.result.tags}
+            />
+          }
         />
 
         <AppSpotlight apps={data.result.featured} />

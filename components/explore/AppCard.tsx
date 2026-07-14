@@ -39,14 +39,10 @@ export default function AppCard({ app, compact = false }: Props) {
   const rating = ratingLabel(app);
   const href = `/apps/${encodeURIComponent(app.slug)}`;
   const taxonomy = appDisplayTaxonomy(app);
-  const primaryCollection = appPrimaryCollection(app);
-  const collections = taxonomy.collections.slice(0, compact ? 1 : 2);
-  const visibleCollections = primaryCollection
-    ? collections.filter((collection) => collection !== primaryCollection)
-    : collections;
-  const tags = taxonomy.tags.slice(0, compact ? 1 : 3);
+  const tags = taxonomy.tags.slice(0, compact ? 1 : 2);
   const host = hostname(app.primaryUrl);
   const description = app.tagline || app.description;
+  const category = appPrimaryCollection(app) ?? "App";
   const iconUrl = appImageUrl(app.iconUrl, "icon");
   const icon = iconUrl
     ? (
@@ -80,16 +76,23 @@ export default function AppCard({ app, compact = false }: Props) {
         )
         : <div class="profile-card-avatar app-card-icon">{icon}</div>}
       <div class="profile-card-body">
-        <div class="profile-card-title-row">
-          <h3 class="profile-card-name">{app.name}</h3>
-          <AppCollectionBadge app={app} />
+        <div class="app-card-identity-header">
+          <div class="app-card-identity-copy">
+            <div class="profile-card-title-row">
+              <h3 class="profile-card-name">{app.name}</h3>
+              <p
+                class={`profile-card-handle${
+                  host ? "" : " app-card-placeholder"
+                }`}
+                aria-hidden={host ? undefined : "true"}
+              >
+                <AtmosphereHandle handle={host || "app.example"} />
+              </p>
+            </div>
+            <span class="app-card-category-label">{category}</span>
+          </div>
+          <span class="app-card-view">View</span>
         </div>
-        <p
-          class={`profile-card-handle${host ? "" : " app-card-placeholder"}`}
-          aria-hidden={host ? undefined : "true"}
-        >
-          <AtmosphereHandle handle={host || "app.example"} />
-        </p>
         <p
           class={`profile-card-description${
             description ? "" : " app-card-placeholder"
@@ -99,27 +102,35 @@ export default function AppCard({ app, compact = false }: Props) {
           {description || "App description placeholder."}
         </p>
         <div class="profile-card-meta app-card-meta">
-          {(visibleCollections.length > 0 || tags.length > 0) && (
+          {tags.length > 0 && (
             <div class="app-card-taxonomy">
-              {visibleCollections.length > 0 && (
-                <div class="profile-card-categories">
-                  {visibleCollections.map((collection) => (
-                    <span key={collection} class="profile-card-category">
-                      {collection}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {tags.length > 0 && (
-                <div class="profile-card-subcategories">
-                  {tags.map((tag) => (
-                    <span key={tag} class="profile-card-sub">{tag}</span>
-                  ))}
-                </div>
-              )}
+              <div class="profile-card-subcategories">
+                {tags.map((tag) => (
+                  <span key={tag} class="profile-card-sub">{tag}</span>
+                ))}
+              </div>
             </div>
           )}
           <div class="app-card-signals">
+            {app.accountHost && (
+              <span
+                class="app-card-host-indicator"
+                title={`Also operates the ${app.accountHost} account host`}
+                aria-label={`Also operates the ${app.accountHost} account host`}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <rect x="2.5" y="2.5" width="11" height="4" rx="1" />
+                  <rect x="2.5" y="9.5" width="11" height="4" rx="1" />
+                  <circle cx="5" cy="4.5" r="0.7" />
+                  <circle cx="5" cy="11.5" r="0.7" />
+                </svg>
+                Host
+              </span>
+            )}
             {rating && <span>{rating}</span>}
             {app.favoriteCount > 0 && (
               <span>
@@ -128,7 +139,6 @@ export default function AppCard({ app, compact = false }: Props) {
             )}
           </div>
         </div>
-        {compact && <span class="app-card-compact-cta">View</span>}
       </div>
     </a>
   );

@@ -1,8 +1,11 @@
 import { define } from "../utils.ts";
 import Nav from "../components/Nav.tsx";
 import Footer from "../components/Footer.tsx";
-import SignInForm from "../islands/SignInForm.tsx";
+import SignInForm, {
+  type CreateAccountHostOption,
+} from "../islands/SignInForm.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
+import { listHostsFromAppview } from "../lib/appview-client.ts";
 import { isOAuthConfigured } from "../lib/oauth.ts";
 import { refreshRememberedAccountCookies } from "../lib/remembered-accounts.ts";
 import { isSafeRelativePath } from "../lib/security.ts";
@@ -22,6 +25,7 @@ export const handler = define.handlers({
       });
     }
     const account = buildAccountMenuProps(ctx.state);
+    const createAccountHosts = await loadCreateAccountHosts();
     const response = await ctx.render(
       (
         <SignInPageContent
@@ -29,6 +33,7 @@ export const handler = define.handlers({
           next={next ?? "/account"}
           intent={intent}
           initialHandle={initialHandle}
+          createAccountHosts={createAccountHosts}
         />
       ),
       { headers: { "cache-control": "no-store" } },
@@ -62,11 +67,12 @@ function safeHandle(raw: string | null): string | undefined {
 }
 
 function SignInPageContent(
-  { account, next, intent, initialHandle }: {
+  { account, next, intent, initialHandle, createAccountHosts }: {
     account: ReturnType<typeof buildAccountMenuProps>;
     next: string;
     intent?: "user" | "project";
     initialHandle?: string;
+    createAccountHosts: CreateAccountHostOption[];
   },
 ) {
   return (
@@ -89,6 +95,7 @@ function SignInPageContent(
                     intent={intent}
                     rememberedAccounts={account.rememberedAccounts}
                     initialHandle={initialHandle}
+                    createAccountHosts={createAccountHosts}
                     rich
                   />
                 )
@@ -105,4 +112,32 @@ function SignInPageContent(
       </div>
     </div>
   );
+}
+
+async function loadCreateAccountHosts(): Promise<CreateAccountHostOption[]> {
+  const result = await listHostsFromAppview({
+    signupStatus: "open",
+    hasSignupUrl: true,
+    trustedOnly: true,
+    sort: "recommended",
+    page: 1,
+    pageSize: 12,
+  }).catch((err) => {
+    console.warn("[signin] account host discovery failed:", err);
+    return null;
+  });
+  if (!result) return [];
+  return result.hosts
+    .filter((host) =>
+      !!host.signupUrl &&
+      (host.verificationStatus === "claimed" ||
+        host.verificationStatus === "verified" || host.source === "seeded")
+    )
+    .slice(0, 12)
+    .map((host) => ({
+      name: host.displayName,
+      host: host.host,
+      href: host.signupUrl!,
+      description: host.description || `Create an account with ${host.host}.`,
+    }));
 }

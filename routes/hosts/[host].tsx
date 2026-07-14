@@ -4,6 +4,7 @@ import Footer from "../../components/Footer.tsx";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import HostMark from "../../components/hosts/HostMark.tsx";
 import BskyIcon from "../../components/icons/BskyIcon.tsx";
+import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
 import HostVisitLink from "../../islands/HostVisitLink.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
@@ -13,7 +14,6 @@ import {
 } from "../../lib/account-hosts.ts";
 import { getHostDetailFromAppview } from "../../lib/appview-client.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
-import { buildHostAccountRoute } from "../../lib/host-account-routing.ts";
 import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
 import {
   fetchPdsServerDescription,
@@ -21,6 +21,9 @@ import {
 } from "../../lib/pds-server-description.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { hostHasCurrentConformance } from "../../lib/host-conformance.ts";
+import { normalizeHostDirectoryReturnTo } from "../../lib/host-directory-navigation.ts";
+import { getVisibleAppListingByAccountDid } from "../../lib/app-directory.ts";
+import { appHrefForHost } from "../../lib/directory-identity-links.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -45,19 +48,35 @@ export const handler = define.handlers({
         imageUrl: host.avatarUrl ?? undefined,
       };
     }
-    const pdsDescription = host?.serviceEndpoint
-      ? await fetchPdsServerDescription(host.serviceEndpoint).catch((err) => {
-        console.warn("[host] PDS describeServer failed:", err);
-        return null;
-      })
-      : null;
+    const [pdsDescription, linkedApp] = host
+      ? await Promise.all([
+        host.serviceEndpoint
+          ? fetchPdsServerDescription(host.serviceEndpoint).catch((err) => {
+            console.warn("[host] PDS describeServer failed:", err);
+            return null;
+          })
+          : null,
+        host.profileDid
+          ? getVisibleAppListingByAccountDid(host.profileDid, {
+            syncLegacy: false,
+          }).catch((err) => {
+            console.warn("[host] linked app lookup failed:", err);
+            return null;
+          })
+          : null,
+      ])
+      : [null, null];
     return ctx.render(
       <HostDetailPage
         host={host}
         claim={claim}
         pdsDescription={pdsDescription}
+        linkedAppHref={host ? appHrefForHost(host, linkedApp) : null}
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}
+        backHref={normalizeHostDirectoryReturnTo(
+          ctx.url.searchParams.get("from"),
+        )}
         account={buildAccountMenuProps(ctx.state)}
       />,
       { status: host ? 200 : 404 },
@@ -66,12 +85,23 @@ export const handler = define.handlers({
 });
 
 function HostDetailPage(
-  { host, claim, pdsDescription, claimed, managed, account }: {
+  {
+    host,
+    claim,
+    pdsDescription,
+    linkedAppHref,
+    claimed,
+    managed,
+    backHref,
+    account,
+  }: {
     host: AccountHost | null;
     claim: AccountHostClaim | null;
     pdsDescription: PdsServerDescription | null;
+    linkedAppHref: string | null;
     claimed: boolean;
     managed: boolean;
+    backHref: string;
     account: ReturnType<typeof buildAccountMenuProps>;
   },
 ) {
@@ -82,7 +112,7 @@ function HostDetailPage(
           <Nav account={account} active="hosts" />
           <section class="explore-profile-detail">
             <div class="container" style={{ maxWidth: "880px" }}>
-              <a href="/hosts" class="text-link-button">
+              <a href={backHref} class="text-link-button">
                 ← Back to hosts
               </a>
               <div class="glass hosts-empty" style={{ marginTop: "1rem" }}>
@@ -98,14 +128,19 @@ function HostDetailPage(
       </div>
     );
   }
-  const accountRoute = buildHostAccountRoute({ host });
   const dashboard = buildHostDashboardState({ host });
-  const accountUrl = accountRoute?.accountManagementUrl ?? null;
   const friendly = hostFriendlyProfile(host);
   const signupSummary = hostSignupSummary(host, pdsDescription);
   const handleSummary = hostHandleSummary(friendly, pdsDescription);
   const isManagedByCurrentAccount = Boolean(
     claim && account.user && claim.claimantDid === account.user.did,
+  );
+  const canOfferSignup = Boolean(
+    host.signupUrl &&
+      (host.verificationStatus === "claimed" ||
+        host.verificationStatus === "verified" || host.source === "seeded") &&
+      (host.signupStatus === "open" ||
+        host.signupStatus === "invite_required"),
   );
 
   return (
@@ -115,7 +150,7 @@ function HostDetailPage(
         <section class="explore-profile-detail host-detail-section">
           <div class="container" style={{ maxWidth: "880px" }}>
             <div class="project-page-toolbar">
-              <a href="/hosts" class="text-link-button">
+              <a href={backHref} class="text-link-button">
                 ← Back to hosts
               </a>
             </div>
@@ -165,23 +200,25 @@ function HostDetailPage(
                 <p class="profile-hero-description">{friendly.summary}</p>
               </div>
               <div class="profile-hero-actions" aria-label="Host actions">
+                {linkedAppHref && (
+                  <DirectoryIdentityLink
+                    href={linkedAppHref}
+                    destination="app"
+                  />
+                )}
                 {host.homepageUrl && (
                   <HostVisitLink
                     href={host.homepageUrl}
-                    label={host.signupStatus === "open"
-                      ? "Create account"
-                      : "Visit host"}
+                    label="Explore"
                   />
                 )}
-                {accountUrl && (
-                  <a
-                    href={accountUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="profile-form-button-secondary profile-form-button-secondary--lg"
-                  >
-                    Manage account at host
-                  </a>
+                {canOfferSignup && (
+                  <HostVisitLink
+                    href={host.signupUrl!}
+                    label={host.signupStatus === "invite_required"
+                      ? "Request invite"
+                      : "Create account"}
+                  />
                 )}
               </div>
             </div>

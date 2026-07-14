@@ -67,6 +67,7 @@ interface ManageFormValues {
   description: string;
   dataLocation: string;
   homepageUrl: string;
+  signupUrl: string;
   signupStatus: HostSignupStatus;
   profileHandle: string;
   bskyProfileVisible: boolean;
@@ -214,6 +215,7 @@ export const handler = define.handlers({
         description: values.description,
         dataLocation: values.dataLocation,
         homepageUrl: values.homepageUrl,
+        signupUrl: values.signupUrl,
         signupStatus: values.signupStatus,
         profileHandle: values.profileHandle,
         bskyProfileVisible: values.bskyProfileVisible,
@@ -421,6 +423,7 @@ async function publishManagedHostProfile(
       description: values.description,
       dataLocation: values.dataLocation,
       homepageUrl: values.homepageUrl,
+      signupUrl: values.signupUrl,
       serviceEndpoint,
       accountManagementUrl: host.accountManagementUrl,
       supportUrl: host.supportUrl,
@@ -463,6 +466,7 @@ async function publishManagedHostService(
       description: host.description,
       dataLocation: host.dataLocation ?? "",
       homepageUrl: host.homepageUrl,
+      signupUrl: values.signupUrl,
       serviceEndpoint: endpoint,
       accountManagementUrl,
       supportUrl,
@@ -701,7 +705,7 @@ function ManageBody(
                 />
               </label>
               <label class="profile-form-field">
-                <span class="profile-form-label">Website or signup URL</span>
+                <span class="profile-form-label">Website</span>
                 <input
                   class="profile-form-input"
                   type="url"
@@ -709,6 +713,20 @@ function ManageBody(
                   value={values.homepageUrl}
                   placeholder="https://pckt.cafe"
                 />
+              </label>
+              <label class="profile-form-field">
+                <span class="profile-form-label">Signup URL</span>
+                <input
+                  class="profile-form-input"
+                  type="url"
+                  name="signupUrl"
+                  value={values.signupUrl}
+                  placeholder="https://pckt.cafe/signup"
+                />
+                <span class="profile-form-hint">
+                  The direct create-account or invite-request flow. This can be
+                  different from the public website.
+                </span>
               </label>
               <label class="profile-form-field">
                 <span class="profile-form-label">Data location</span>
@@ -1016,6 +1034,7 @@ function valuesFromHost(host: AccountHost): ManageFormValues {
     description: host.description,
     dataLocation: host.dataLocation ?? "",
     homepageUrl: host.homepageUrl ?? "",
+    signupUrl: host.signupUrl ?? "",
     signupStatus: host.signupStatus,
     profileHandle: host.profileHandle ?? "",
     bskyProfileVisible: host.bskyProfileVisible,
@@ -1043,6 +1062,9 @@ function valuesFromForm(
     homepageUrl: form.has("homepageUrl")
       ? textValue(form.get("homepageUrl"))
       : fallback.homepageUrl,
+    signupUrl: form.has("signupUrl")
+      ? textValue(form.get("signupUrl"))
+      : fallback.signupUrl,
     signupStatus: form.has("signupStatus")
       ? readSignupStatus(form.get("signupStatus"))
       : fallback.signupStatus,
@@ -1068,6 +1090,7 @@ function emptyValues(): ManageFormValues {
     description: "",
     dataLocation: "",
     homepageUrl: "",
+    signupUrl: "",
     signupStatus: "unknown",
     profileHandle: "",
     bskyProfileVisible: true,

@@ -32,6 +32,7 @@ export interface AccountHost {
   inferredLocationCheckedAt: number | null;
   inferredLocationEvidenceJson: string | null;
   homepageUrl: string | null;
+  signupUrl: string | null;
   serviceEndpoint: string | null;
   accountManagementUrl: string | null;
   dashboardUrl: string | null;
@@ -77,6 +78,8 @@ export interface AccountHostDirectoryOptions {
   query?: string;
   verificationStatus?: HostVerificationStatus | "all";
   signupStatus?: HostSignupStatus | "all";
+  hasSignupUrl?: boolean;
+  trustedOnly?: boolean;
   sort?: AccountHostSort;
   page?: number;
   pageSize?: number;
@@ -110,6 +113,7 @@ interface SeedHost {
   description: string;
   dataLocation?: string;
   homepageUrl: string;
+  signupUrl?: string;
   serviceEndpoint?: string;
   accountManagementUrl?: string;
   dashboardUrl?: string;
@@ -160,6 +164,7 @@ export interface AccountHostProfileSettingsInput {
   inferredLocationCheckedAt?: number | null;
   inferredLocationEvidenceJson?: string | null;
   homepageUrl?: string | null;
+  signupUrl?: string | null;
   signupStatus?: HostSignupStatus | null;
   profileHandle?: string | null;
   bskyProfileVisible?: boolean | null;
@@ -176,6 +181,7 @@ export interface AccountHostRegistrationInput {
   inferredLocationCheckedAt?: number | null;
   inferredLocationEvidenceJson?: string | null;
   homepageUrl?: string | null;
+  signupUrl?: string | null;
   serviceEndpoint?: string | null;
   accountManagementUrl?: string | null;
   supportUrl?: string | null;
@@ -209,6 +215,7 @@ export type AccountHostRegistrationResult =
       | "invalid_host"
       | "invalid_display_name"
       | "invalid_homepage_url"
+      | "invalid_signup_url"
       | "invalid_service_endpoint"
       | "invalid_account_management_url"
       | "invalid_support_url"
@@ -230,6 +237,7 @@ export interface ValidAccountHostRegistrationInput {
   inferredLocationCheckedAt: number | null;
   inferredLocationEvidenceJson: string | null;
   homepageUrl: string | null;
+  signupUrl: string | null;
   serviceEndpoint: string | null;
   accountManagementUrl: string | null;
   supportUrl: string | null;
@@ -247,6 +255,7 @@ export type AccountHostRegistrationFieldValidationResult =
       | "invalid_host"
       | "invalid_display_name"
       | "invalid_homepage_url"
+      | "invalid_signup_url"
       | "invalid_service_endpoint"
       | "invalid_account_management_url"
       | "invalid_support_url"
@@ -262,6 +271,7 @@ export type AccountHostProfileSettingsResult =
     reason:
       | "invalid_display_name"
       | "invalid_homepage_url"
+      | "invalid_signup_url"
       | "invalid_profile_handle"
       | "invalid_avatar_url";
     message: string;
@@ -273,7 +283,7 @@ const HOST_PROFILE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const HOST_PROFILE_MISS_RETRY_MS = 6 * 60 * 60 * 1000;
 // Keep this above the seeded host count so first-run directory hydration can
 // pick up avatars for every known host without waiting for a later request.
-const HOST_PROFILE_REFRESH_BATCH_SIZE = 12;
+const HOST_PROFILE_REFRESH_BATCH_SIZE = 16;
 
 const SEEDED_HOSTS: SeedHost[] = [
   {
@@ -290,6 +300,76 @@ const SEEDED_HOSTS: SeedHost[] = [
     verificationStatus: "observed",
     source: "seeded",
     matchPatterns: ["bsky.network", "bsky.social", "*.bsky.network"],
+  },
+  {
+    host: "atproto.brid.gy",
+    displayName: "Bridgy Fed for the fediverse",
+    description:
+      "An account host that connects AT Protocol accounts with the fediverse through Bridgy Fed.",
+    homepageUrl: "https://fed.brid.gy/",
+    serviceEndpoint: "https://atproto.brid.gy",
+    profileHandle: "ap.brid.gy",
+    claimHandle: "ap.brid.gy",
+    signupStatus: "unknown",
+    verificationStatus: "observed",
+    source: "seeded",
+    matchPatterns: ["atproto.brid.gy"],
+  },
+  {
+    host: "pds.wsocial.network",
+    displayName: "W Social",
+    description:
+      "A social account host for people using W Social and other Atmosphere apps.",
+    homepageUrl: "https://wsocial.eu/",
+    serviceEndpoint: "https://pds.wsocial.network",
+    profileHandle: "wsocial.eu",
+    claimHandle: "wsocial.eu",
+    signupStatus: "invite_required",
+    verificationStatus: "observed",
+    source: "seeded",
+    matchPatterns: ["pds.wsocial.network"],
+  },
+  {
+    host: "roomy.chat",
+    displayName: "Roomy",
+    description:
+      "A Roomy account host listed while more host details are confirmed.",
+    homepageUrl: "https://roomy.chat",
+    serviceEndpoint: "https://roomy.chat",
+    profileHandle: "roomy.space",
+    claimHandle: "roomy.space",
+    signupStatus: "unknown",
+    verificationStatus: "observed",
+    source: "seeded",
+    matchPatterns: ["roomy.chat", "*.roomy.chat"],
+  },
+  {
+    host: "northsky.social",
+    displayName: "Northsky",
+    description:
+      "A Northsky account host listed while more host details are confirmed.",
+    homepageUrl: "https://northsky.social",
+    serviceEndpoint: "https://northsky.social",
+    profileHandle: "transrights.northsky.social",
+    claimHandle: "transrights.northsky.social",
+    signupStatus: "unknown",
+    verificationStatus: "observed",
+    source: "seeded",
+    matchPatterns: ["northsky.social", "*.northsky.social"],
+  },
+  {
+    host: "bookhive.social",
+    displayName: "BookHive",
+    description:
+      "A BookHive account host listed while more host details are confirmed.",
+    homepageUrl: "https://bookhive.social",
+    serviceEndpoint: "https://bookhive.social",
+    profileHandle: "bookhive.buzz",
+    claimHandle: "bookhive.buzz",
+    signupStatus: "unknown",
+    verificationStatus: "observed",
+    source: "seeded",
+    matchPatterns: ["bookhive.social", "*.bookhive.social"],
   },
   {
     host: "selfhosted.social",
@@ -354,7 +434,8 @@ const SEEDED_HOSTS: SeedHost[] = [
     displayName: "Tangled",
     description:
       "A Tangled Atmosphere domain with a public signup page for new accounts.",
-    homepageUrl: "https://tangled.org/signup",
+    homepageUrl: "https://tangled.org",
+    signupUrl: "https://tangled.org/signup",
     profileHandle: "tangled.org",
     claimHandle: "tangled.org",
     signupStatus: "open",
@@ -488,6 +569,7 @@ function seedToAccountHost(seed: SeedHost, ts = now()): AccountHost {
     inferredLocationCheckedAt: null,
     inferredLocationEvidenceJson: null,
     homepageUrl: seed.homepageUrl ?? null,
+    signupUrl: seed.signupUrl ?? null,
     serviceEndpoint: seed.serviceEndpoint ?? null,
     accountManagementUrl: seed.accountManagementUrl ?? null,
     dashboardUrl: seed.dashboardUrl ?? null,
@@ -575,6 +657,7 @@ function parseHostRow(row: Record<string, unknown>): AccountHost {
       ? String(row.inferred_location_evidence_json)
       : null,
     homepageUrl: row.homepage_url ? String(row.homepage_url) : null,
+    signupUrl: row.signup_url ? String(row.signup_url) : null,
     serviceEndpoint: row.service_endpoint ? String(row.service_endpoint) : null,
     accountManagementUrl: row.account_management_url
       ? String(row.account_management_url)
@@ -1028,19 +1111,23 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
     const claimHandle = seed.claimHandle ?? seed.profileHandle ?? seed.host;
     await c.execute({
       sql: `INSERT INTO account_host (
-          host, display_name, description, data_location, homepage_url,
+          host, display_name, description, data_location, homepage_url, signup_url,
           service_endpoint, account_management_url, dashboard_url,
           capability_manifest_url, capabilities_json, support_url,
           profile_handle, bsky_profile_visible, claim_handle, signup_status, verification_status,
           source, match_patterns,
           last_checked_at,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(host) DO UPDATE SET
           display_name = excluded.display_name,
           description = excluded.description,
           data_location = COALESCE(excluded.data_location, account_host.data_location),
           homepage_url = excluded.homepage_url,
+          signup_url = CASE
+            WHEN account_host.claim_did IS NULL THEN excluded.signup_url
+            ELSE account_host.signup_url
+          END,
           service_endpoint = COALESCE(account_host.service_endpoint, excluded.service_endpoint),
           account_management_url = CASE
             WHEN excluded.account_management_url IS NOT NULL
@@ -1092,6 +1179,7 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
         seed.description,
         normalizeDataLocation(seed.dataLocation),
         seed.homepageUrl,
+        seed.signupUrl ?? null,
         seed.serviceEndpoint ?? null,
         seed.accountManagementUrl ?? null,
         seed.dashboardUrl ?? null,
@@ -1329,7 +1417,18 @@ export function validateAccountHostRegistrationInput(
     return {
       ok: false,
       reason: "invalid_homepage_url",
-      message: "Use an HTTPS URL for the host website or signup page.",
+      message: "Use an HTTPS URL for the host website.",
+    };
+  }
+
+  const signupUrl = input.signupUrl?.trim()
+    ? normalizeAccountHostPublicHttpsUrl(input.signupUrl)
+    : null;
+  if (input.signupUrl?.trim() && !signupUrl) {
+    return {
+      ok: false,
+      reason: "invalid_signup_url",
+      message: "Use an HTTPS URL for the host signup flow.",
     };
   }
 
@@ -1404,6 +1503,7 @@ export function validateAccountHostRegistrationInput(
       inferredLocationEvidenceJson:
         textOrNull(input.inferredLocationEvidenceJson)?.slice(0, 4000) ?? null,
       homepageUrl,
+      signupUrl,
       serviceEndpoint,
       accountManagementUrl,
       supportUrl,
@@ -1444,7 +1544,17 @@ export async function registerAccountHost(
     return {
       ok: false,
       reason: "invalid_homepage_url",
-      message: "Use an HTTPS URL for the host website or signup page.",
+      message: "Use an HTTPS URL for the host website.",
+    };
+  }
+  const signupUrl = input.signupUrl?.trim()
+    ? normalizeAccountHostPublicHttpsUrl(input.signupUrl)
+    : null;
+  if (input.signupUrl?.trim() && !signupUrl) {
+    return {
+      ok: false,
+      reason: "invalid_signup_url",
+      message: "Use an HTTPS URL for the host signup flow.",
     };
   }
   const serviceEndpoint = input.serviceEndpoint?.trim()
@@ -1587,13 +1697,13 @@ export async function registerAccountHost(
           host, display_name, description, data_location,
           inferred_location, inferred_location_source,
           inferred_location_checked_at, inferred_location_evidence_json,
-          homepage_url,
+          homepage_url, signup_url,
           service_endpoint, account_management_url,
           profile_handle, profile_did, bsky_profile_visible, avatar_url, claim_handle, claim_did,
           support_url, service_record_uri, service_record_cid, service_observed_at,
           signup_status, verification_status, source, match_patterns,
           last_checked_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?)
         ON CONFLICT(host) DO UPDATE SET
           display_name = excluded.display_name,
           description = excluded.description,
@@ -1603,6 +1713,7 @@ export async function registerAccountHost(
           inferred_location_checked_at = COALESCE(excluded.inferred_location_checked_at, account_host.inferred_location_checked_at),
           inferred_location_evidence_json = COALESCE(excluded.inferred_location_evidence_json, account_host.inferred_location_evidence_json),
           homepage_url = COALESCE(excluded.homepage_url, account_host.homepage_url),
+          signup_url = COALESCE(excluded.signup_url, account_host.signup_url),
           service_endpoint = COALESCE(excluded.service_endpoint, account_host.service_endpoint),
           account_management_url = CASE
             WHEN excluded.account_management_url IS NOT NULL
@@ -1639,6 +1750,7 @@ export async function registerAccountHost(
         inferredLocationCheckedAt,
         inferredLocationEvidenceJson,
         homepageUrl,
+        signupUrl,
         serviceEndpoint,
         accountManagementUrl,
         profileHandle,
@@ -1698,7 +1810,18 @@ export async function updateAccountHostProfileSettings(
     return {
       ok: false,
       reason: "invalid_homepage_url",
-      message: "Use an HTTPS URL for the host website or signup page.",
+      message: "Use an HTTPS URL for the host website.",
+    };
+  }
+
+  const signupUrl = input.signupUrl?.trim()
+    ? normalizeAccountHostPublicHttpsUrl(input.signupUrl)
+    : null;
+  if (input.signupUrl?.trim() && !signupUrl) {
+    return {
+      ok: false,
+      reason: "invalid_signup_url",
+      message: "Use an HTTPS URL for the host signup flow.",
     };
   }
 
@@ -1738,6 +1861,7 @@ export async function updateAccountHostProfileSettings(
             description = ?,
             data_location = ?,
             homepage_url = ?,
+            signup_url = ?,
             signup_status = ?,
             profile_handle = ?,
             bsky_profile_visible = ?,
@@ -1755,6 +1879,7 @@ export async function updateAccountHostProfileSettings(
         (input.description ?? "").trim().slice(0, 600),
         normalizeDataLocation(input.dataLocation),
         homepageUrl,
+        signupUrl,
         normalizeSignupStatus(input.signupStatus),
         profileHandle,
         input.bskyProfileVisible === false ? 0 : 1,
@@ -1981,7 +2106,7 @@ export async function observeAccountHost(
         host,
         host,
         "An account host observed from public account activity.",
-        origin,
+        null,
         serviceEndpoint,
         null,
         host,
@@ -2032,6 +2157,14 @@ export async function listAccountHostDirectory(
     if (opts.signupStatus && opts.signupStatus !== "all") {
       filters.push(`account_host.signup_status = ?`);
       args.push(opts.signupStatus);
+    }
+    if (opts.hasSignupUrl) {
+      filters.push(`COALESCE(account_host.signup_url, '') <> ''`);
+    }
+    if (opts.trustedOnly) {
+      filters.push(
+        `(account_host.verification_status IN ('verified', 'claimed') OR account_host.source = 'seeded')`,
+      );
     }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     const countResult = await c.execute({
@@ -2097,15 +2230,15 @@ function accountHostOrder(sort: AccountHostSort): string {
       ${stable}`;
   }
   if (sort === DEFAULT_ACCOUNT_HOST_SORT) {
-    return `CASE
-        WHEN account_host.verification_status IN ('verified', 'claimed') THEN 0
-        ELSE 1
-      END,
+    return `account_host.observed_account_count DESC,
       CASE
         WHEN account_host.observed_active_account_count > 0 THEN 0
         ELSE 1
       END,
-      account_host.observed_account_count DESC,
+      CASE
+        WHEN account_host.verification_status IN ('verified', 'claimed') THEN 0
+        ELSE 1
+      END,
       account_host.observed_active_account_count DESC,
       ${stable}`;
   }
@@ -2129,9 +2262,9 @@ export function sortAccountHostsForDirectory(
 ): AccountHost[] {
   return [...hosts].sort((a, b) => {
     if (sort === DEFAULT_ACCOUNT_HOST_SORT) {
-      const recommended = claimedHostRank(a) - claimedHostRank(b) ||
+      const recommended = b.observedAccountCount - a.observedAccountCount ||
         activeHostRank(a) - activeHostRank(b) ||
-        b.observedAccountCount - a.observedAccountCount ||
+        claimedHostRank(a) - claimedHostRank(b) ||
         b.observedActiveAccountCount - a.observedActiveAccountCount;
       if (recommended) return recommended;
     } else if (sort === "accounts") {

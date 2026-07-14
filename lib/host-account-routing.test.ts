@@ -25,6 +25,7 @@ function host(overrides: Partial<AccountHost> = {}): AccountHost {
     inferredLocationCheckedAt: null,
     inferredLocationEvidenceJson: null,
     homepageUrl: "https://example.host",
+    signupUrl: "https://example.host/signup",
     serviceEndpoint: "https://pds.example.host",
     accountManagementUrl: null,
     dashboardUrl: null,

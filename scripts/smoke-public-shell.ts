@@ -280,6 +280,47 @@ async function smokeHtml(
   console.log(`[smoke:public-shell] ok html ${url}`);
 }
 
+function generatedModuleAssetPaths(html: string): string[] {
+  return [
+    ...html.matchAll(
+      /["'](\/(?:_appview\/)?assets\/[^"'<>]+\.js(?:\?[^"'<>]*)?)["']/g,
+    ),
+  ]
+    .map((match) => match[1])
+    .filter((path, index, paths) => paths.indexOf(path) === index);
+}
+
+async function smokeHydrationAssets(
+  origin: string,
+  path: string,
+  expectedPrefix: "/assets/" | "/_appview/assets/",
+): Promise<void> {
+  const pageUrl = new URL(path, origin);
+  const { response: pageResponse, text: html } = await fetchText(pageUrl);
+  assertStatus(pageResponse, pageUrl);
+  assertContentType(pageResponse, pageUrl, "html");
+
+  const assets = generatedModuleAssetPaths(html);
+  if (assets.length === 0) {
+    throw new Error(`${pageUrl} did not reference any hydration assets`);
+  }
+  for (const asset of assets) {
+    if (!asset.startsWith(expectedPrefix)) {
+      throw new Error(
+        `${pageUrl} referenced ${asset}; expected ${expectedPrefix} assets`,
+      );
+    }
+    const assetUrl = new URL(asset, origin);
+    const { response } = await fetchText(assetUrl);
+    assertStatus(response, assetUrl);
+    assertContentType(response, assetUrl, "javascript");
+  }
+
+  console.log(
+    `[smoke:public-shell] ok hydration ${pageUrl} assets=${assets.length}`,
+  );
+}
+
 async function smokeSiteStyles(origin: string): Promise<void> {
   const url = new URL("/styles.css", origin);
   const { response, text } = await fetchText(url);
@@ -519,6 +560,12 @@ export async function main(): Promise<void> {
     forbiddenText: ["up.railway.app"],
     canonicalPath: "/apps/bluesky/",
   });
+  await smokeHydrationAssets(options.siteOrigin, "/apps", "/assets/");
+  await smokeHydrationAssets(
+    options.siteOrigin,
+    "/apps/bluesky/",
+    "/_appview/assets/",
+  );
   await smokeHtml(options.siteOrigin, "/hosts", {
     expectedText: ["Account hosts", "bsky.network"],
     forbiddenText: [

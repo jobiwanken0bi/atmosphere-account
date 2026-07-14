@@ -227,9 +227,9 @@ const en = {
     activeFilters: (count: number): string =>
       `${count} active ${count === 1 ? "setting" : "settings"}`,
     sortLabel: "Sort",
-    sortRecommended: "Recommended: claimed, active, accounts",
+    sortRecommended: "Default",
     sortAccounts: "Most accounts",
-    sortActive: "Most accounts on active PDSes",
+    sortActive: "Most accounts on active hosts",
     sortName: "Name",
     sortRecent: "Recently observed",
     signupLabel: "Signup",
@@ -246,8 +246,6 @@ const en = {
     apply: "Apply",
     count: (count: number): string =>
       `${count.toLocaleString()} account host${count === 1 ? "" : "s"}`,
-    aggregationNote:
-      "Relay PDS nodes operated by the same provider are grouped together—for example, Bluesky's mushroom hosts appear as one Bluesky host. Account totals are DIDs observed on that provider.",
     noQueryMatch: (query: string): string =>
       `No account hosts match \"${query}\".`,
     noFilterMatch: "No account hosts match these filters.",
@@ -257,14 +255,13 @@ const en = {
     next: "Next",
     page: (page: number, pageCount: number): string =>
       `Page ${page} of ${pageCount}`,
-    cardEyebrow: "Account host",
     factsLabel: "Host facts",
     accounts: (count: number): string =>
       `${count.toLocaleString()} account${count === 1 ? "" : "s"}`,
     accountCountUnavailable: "Account count unavailable",
-    activeAccounts: (count: number): string =>
-      `${count.toLocaleString()} on active PDSes`,
+    active: "Active",
     compatibilityChecked: "Compatibility checked",
+    view: "View",
     register: "Register a host",
   },
 
@@ -1174,7 +1171,6 @@ const en = {
         `${count.toLocaleString()} like${count === 1 ? "" : "s"}`,
       like: {
         like: "Like",
-        liked: "Liked",
         unlike: "Unlike this app",
         signIn: "Sign in to like this app",
         error: "Couldn’t update your like. Please try again.",

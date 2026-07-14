@@ -16,6 +16,7 @@ import { DEFAULT_ACCOUNT_HOST_SORT } from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
 import { hostFriendlyProfile } from "../lib/host-friendly.ts";
 import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
+import { hostDetailHref } from "../lib/host-directory-navigation.ts";
 import { getMessages } from "../i18n/mod.ts";
 
 export default define.page(async function HostsPage(ctx) {
@@ -30,6 +31,7 @@ export default define.page(async function HostsPage(ctx) {
   });
   const { hosts: visibleHosts } = result;
   const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
+  const directoryReturnTo = hostDirectoryHref(input, result.page);
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -48,26 +50,37 @@ export default define.page(async function HostsPage(ctx) {
 
             <div class="hosts-search-panel">
               <form
-                class="explore-search-form hosts-search-form"
+                class="hosts-search-form"
                 method="GET"
                 action="/hosts"
                 role="search"
               >
-                <label class="visually-hidden" for="hosts-search-input">
-                  {copy.searchLabel}
-                </label>
-                <input
-                  id="hosts-search-input"
-                  class="explore-search-input"
-                  name="q"
-                  type="search"
-                  value={input.query}
-                  autoComplete="off"
-                  spellcheck={false}
-                  placeholder={copy.searchPlaceholder}
-                />
+                <div class="explore-search-form hosts-search-query">
+                  <label class="visually-hidden" for="hosts-search-input">
+                    {copy.searchLabel}
+                  </label>
+                  <input
+                    id="hosts-search-input"
+                    class="explore-search-input"
+                    name="q"
+                    type="search"
+                    value={input.query}
+                    autoComplete="off"
+                    spellcheck={false}
+                    placeholder={copy.searchPlaceholder}
+                  />
+                  <button type="submit" class="explore-search-submit">
+                    {copy.search}
+                  </button>
+                </div>
                 <details class="hosts-filter-menu">
-                  <summary class="hosts-filter-trigger">
+                  <summary
+                    class="hosts-filter-trigger"
+                    aria-label={appliedFilterCount > 0
+                      ? copy.activeFilters(appliedFilterCount)
+                      : copy.filters}
+                    title={copy.filters}
+                  >
                     <svg
                       aria-hidden="true"
                       viewBox="0 0 24 24"
@@ -82,7 +95,6 @@ export default define.page(async function HostsPage(ctx) {
                         stroke-linecap="round"
                       />
                     </svg>
-                    <span>{copy.filters}</span>
                     {appliedFilterCount > 0 && (
                       <span
                         class="hosts-filter-count"
@@ -197,9 +209,6 @@ export default define.page(async function HostsPage(ctx) {
                     </button>
                   </div>
                 </details>
-                <button type="submit" class="explore-search-submit">
-                  {copy.search}
-                </button>
               </form>
             </div>
 
@@ -207,7 +216,6 @@ export default define.page(async function HostsPage(ctx) {
               <p>
                 <strong>{copy.count(result.total)}</strong>
               </p>
-              <p>{copy.aggregationNote}</p>
             </div>
 
             {visibleHosts.length === 0
@@ -225,7 +233,12 @@ export default define.page(async function HostsPage(ctx) {
               : (
                 <div class="hosts-grid">
                   {visibleHosts.map((host) => (
-                    <HostCard key={host.host} host={host} copy={copy} />
+                    <HostCard
+                      key={host.host}
+                      host={host}
+                      copy={copy}
+                      returnTo={directoryReturnTo}
+                    />
                   ))}
                 </div>
               )}
@@ -244,6 +257,7 @@ export default define.page(async function HostsPage(ctx) {
           </div>
         </section>
         <Footer variant="compact" />
+        <script type="module" src="/hosts-filter-menu.js" />
       </div>
     </div>
   );
@@ -385,46 +399,71 @@ function DirectoryRegisterCta(
 
 type HostsDirectoryCopy = ReturnType<typeof getMessages>["hostsDirectory"];
 
+function hostPdsDomain(host: AccountHost): string {
+  if (host.serviceEndpoint) {
+    try {
+      return new URL(host.serviceEndpoint).hostname.toLowerCase();
+    } catch {
+      // Fall through to the canonical inventory host.
+    }
+  }
+  return host.host;
+}
+
 function HostCard(
-  { host, copy }: { host: AccountHost; copy: HostsDirectoryCopy },
+  { host, copy, returnTo }: {
+    host: AccountHost;
+    copy: HostsDirectoryCopy;
+    returnTo: string;
+  },
 ) {
   const friendly = hostFriendlyProfile(host);
+  const accountCountLabel = host.observedAccountCount > 0
+    ? copy.accounts(host.observedAccountCount)
+    : null;
   return (
     <a
-      href={`/hosts/${encodeURIComponent(host.host)}`}
+      href={hostDetailHref(host.host, returnTo)}
       class="glass host-card"
     >
       <div class="host-card-top">
         <div class="host-card-identity">
           <HostMark host={host} />
           <div class="host-card-title-block">
-            <span class="host-card-eyebrow">{copy.cardEyebrow}</span>
-            <h2>{host.displayName}</h2>
-            {host.profileHandle && (
-              <p class="host-card-handle">
-                <AtmosphereHandle handle={host.profileHandle} />
-              </p>
-            )}
+            <div class="host-card-title-row">
+              <h2>{host.displayName}</h2>
+              {host.profileHandle && (
+                <p class="host-card-handle">
+                  <AtmosphereHandle handle={host.profileHandle} />
+                </p>
+              )}
+            </div>
+            <p class="host-card-domain">
+              {hostPdsDomain(host)}
+            </p>
           </div>
         </div>
-      </div>
-      <p class="host-card-description">{friendly.summary}</p>
-      <div class="host-card-tags" aria-label={copy.factsLabel}>
-        <span>
-          {host.observedAccountCount > 0
-            ? copy.accounts(host.observedAccountCount)
-            : copy.accountCountUnavailable}
-        </span>
-        {host.observedActiveAccountCount > 0 && (
-          <span>{copy.activeAccounts(host.observedActiveAccountCount)}</span>
-        )}
-        <span>{friendly.location}</span>
-        <span>{friendly.signupLabel}</span>
-        {hostHasCurrentConformance(host) && (
-          <span class="host-card-conformance">
-            {copy.compatibilityChecked}
+        {accountCountLabel && (
+          <span class="host-card-account-count" title={accountCountLabel}>
+            {accountCountLabel}
           </span>
         )}
+      </div>
+      <p class="host-card-description">{friendly.summary}</p>
+      <div class="host-card-footer">
+        <div class="host-card-tags" aria-label={copy.factsLabel}>
+          {host.observedActiveAccountCount > 0 && (
+            <span class="host-card-active">{copy.active}</span>
+          )}
+          <span>{friendly.location}</span>
+          <span>{friendly.signupLabel}</span>
+          {hostHasCurrentConformance(host) && (
+            <span class="host-card-conformance">
+              {copy.compatibilityChecked}
+            </span>
+          )}
+        </div>
+        <span class="host-card-view">{copy.view}</span>
       </div>
     </a>
   );

@@ -12,6 +12,16 @@ export interface AppDisplayTaxonomy {
   tags: string[];
 }
 
+const NON_APP_COLLECTION_ROLES = new Set([
+  "app",
+  "apps",
+  "accountprovider",
+  "account provider",
+  "moderator",
+  "infrastructure",
+  "user",
+]);
+
 export function appDisplayTaxonomy(app: AppListing): AppDisplayTaxonomy {
   const collectionKeys = new Set<string>();
   const collections: string[] = [];
@@ -78,7 +88,7 @@ function categoryCollectionFromSlug(
   slug: string,
 ): { key: string; label: string } | null {
   const raw = slug.trim().toLowerCase();
-  if (!raw || raw === "app" || raw === "apps") return null;
+  if (!raw || NON_APP_COLLECTION_ROLES.has(raw)) return null;
   const parts = raw.split("/").map((part) => part.trim()).filter(Boolean);
   if (parts[0] === "apps") {
     if (parts.length === 2) {
@@ -95,7 +105,7 @@ function categoryCollectionFromSlug(
       : { key: leaf, label: appCollectionLabel(leaf) };
   }
   const normalized = normalizeAppCollectionSlug(slug);
-  if (!normalized || normalized === "app" || normalized === "apps") {
+  if (!normalized || NON_APP_COLLECTION_ROLES.has(normalized)) {
     return null;
   }
   return { key: normalized, label: appCollectionLabel(normalized) };

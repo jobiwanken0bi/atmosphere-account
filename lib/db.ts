@@ -406,6 +406,7 @@ const SCHEMA_STATEMENTS: string[] = [
     inferred_location_checked_at INTEGER,
     inferred_location_evidence_json TEXT,
     homepage_url TEXT,
+    signup_url TEXT,
     service_endpoint TEXT,
     account_management_url TEXT,
     dashboard_url TEXT,
@@ -1093,6 +1094,11 @@ async function applyAdditiveMigrations(
         column: "inferred_location_evidence_json",
         ddl:
           "ALTER TABLE account_host ADD COLUMN inferred_location_evidence_json TEXT",
+      },
+      {
+        table: "account_host",
+        column: "signup_url",
+        ddl: "ALTER TABLE account_host ADD COLUMN signup_url TEXT",
       },
       {
         table: "account_host",

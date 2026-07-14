@@ -45,6 +45,7 @@ Deno.test("parseHostServiceRecord normalizes host service records", () => {
   assertEquals(parsed?.serviceEndpoint, "https://pds.example.com");
   assertEquals(parsed?.accountManagementUrl, null);
   assertEquals(parsed?.homepageUrl, "https://example.com/");
+  assertEquals(parsed?.signupUrl, "https://example.com/signup");
   assertEquals(parsed?.supportUrl, "https://example.com/help");
   assertEquals(parsed?.signupStatus, "invite_required");
   assertEquals(parsed?.matchPatterns, ["example.com", "*.example.net"]);

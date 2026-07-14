@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS account_host (
   inferred_location_checked_at bigint,
   inferred_location_evidence_json text,
   homepage_url text,
+  signup_url text,
   service_endpoint text,
   account_management_url text,
   dashboard_url text,
@@ -275,6 +276,7 @@ ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location_source text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location_checked_at bigint;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location_evidence_json text;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS signup_url text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_endpoint text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS account_management_url text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS service_record_uri text;

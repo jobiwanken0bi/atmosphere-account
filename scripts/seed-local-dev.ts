@@ -127,9 +127,13 @@ const apps = [
       "A local development fixture representing Spark-style account and community tooling in the Atmosphere.",
     url: "https://sprk.so",
     profile: "https://bsky.app/profile/sprk.so",
+    iosUrl:
+      "https://apps.apple.com/us/app/spark-social-in-your-hands/id6743555448",
+    androidUrl: "https://play.google.com/store/apps/details?id=so.sprk.app",
+    tangledUrl: "https://tangled.org/sprk.so",
     heroAsset: "spark.png",
-    collections: ["account tool", "community"],
-    tags: ["spark", "accounts"],
+    collections: ["community"],
+    tags: ["video", "spark"],
   },
 ] as const;
 
@@ -163,6 +167,15 @@ for (const app of apps) {
     links: [
       { uri: app.url, label: "Explore", role: "web" },
       { uri: app.profile, label: "Bluesky", role: "bsky" },
+      ...("iosUrl" in app
+        ? [{ uri: app.iosUrl, label: "App Store", role: "ios" }]
+        : []),
+      ...("androidUrl" in app
+        ? [{ uri: app.androidUrl, label: "Play Store", role: "android" }]
+        : []),
+      ...("tangledUrl" in app
+        ? [{ uri: app.tangledUrl, label: "Tangled", role: "tangled" }]
+        : []),
     ],
     tags: [...app.tags],
     platforms: ["web"],
@@ -191,7 +204,7 @@ for (const app of apps) {
 }
 
 await withDb(async (c) => {
-  const featured = listingIds.slice(0, 4);
+  const featured = listingIds.slice(0, 3);
   for (let index = 0; index < featured.length; index++) {
     await c.execute({
       sql: `

@@ -35,6 +35,8 @@ function readDirectoryInput(search: URLSearchParams) {
     sort: readSort(search.get("sort")),
     signupStatus: readSignupStatus(search.get("signup")),
     verificationStatus: readVerificationStatus(search.get("verification")),
+    hasSignupUrl: search.get("hasSignupUrl") === "1",
+    trustedOnly: search.get("trusted") === "1",
     page: readPositiveInteger(search.get("page"), 1),
     pageSize: readPositiveInteger(search.get("pageSize"), 24, 72),
   };

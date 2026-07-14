@@ -21,10 +21,39 @@ function assertEquals(actual: unknown, expected: unknown): void {
 
 Deno.test("seeded account host fallback includes known public hosts", () => {
   const hosts = listSeededAccountHostFallback();
-  assert(hosts.length >= 9);
+  assert(hosts.length >= 14);
   assert(hosts.some((host) => host.host === "bsky.network"));
   assert(hosts.some((host) => host.host === "blacksky.community"));
   assert(hosts.some((host) => host.host === "pckt.cafe"));
+  assertEquals(
+    hosts.find((host) => host.host === "atproto.brid.gy")?.profileHandle,
+    "ap.brid.gy",
+  );
+  assertEquals(
+    hosts.find((host) => host.host === "pds.wsocial.network")?.profileHandle,
+    "wsocial.eu",
+  );
+  assertEquals(
+    hosts.find((host) => host.host === "roomy.chat")?.profileHandle,
+    "roomy.space",
+  );
+  assertEquals(
+    hosts.find((host) => host.host === "northsky.social")?.profileHandle,
+    "transrights.northsky.social",
+  );
+  assertEquals(
+    hosts.find((host) => host.host === "bookhive.social")?.profileHandle,
+    "bookhive.buzz",
+  );
+});
+
+Deno.test("seeded social identities preserve their separate PDS domains", () => {
+  const hosts = listSeededAccountHostFallback();
+  const bridgy = hosts.find((host) => host.host === "atproto.brid.gy");
+  const wsocial = hosts.find((host) => host.host === "pds.wsocial.network");
+  assertEquals(bridgy?.serviceEndpoint, "https://atproto.brid.gy");
+  assertEquals(wsocial?.serviceEndpoint, "https://pds.wsocial.network");
+  assertEquals(wsocial?.signupStatus, "invite_required");
 });
 
 Deno.test("seeded account host fallback searches friendly host fields", () => {
@@ -68,7 +97,7 @@ Deno.test("host directory sorts provider totals without splitting PDS nodes", ()
   );
 });
 
-Deno.test("recommended host sort prioritizes claimed, active, then account count", () => {
+Deno.test("recommended host sort prioritizes account count before active and claimed", () => {
   const [first, second, third, fourth] = listSeededAccountHostFallback().slice(
     0,
     4,
@@ -107,10 +136,23 @@ Deno.test("recommended host sort prioritizes claimed, active, then account count
       verifiedActiveLarge,
     ], DEFAULT_ACCOUNT_HOST_SORT).map((host) => host.host),
     [
+      observedActive.host,
+      claimedInactive.host,
       verifiedActiveLarge.host,
       claimedActiveSmall.host,
-      claimedInactive.host,
+    ],
+  );
+
+  assertEquals(
+    sortAccountHostsForDirectory([
+      { ...observedActive, observedAccountCount: 100 },
+      { ...claimedInactive, observedAccountCount: 100 },
+      { ...claimedActiveSmall, observedAccountCount: 100 },
+    ], DEFAULT_ACCOUNT_HOST_SORT).map((host) => host.host),
+    [
+      claimedActiveSmall.host,
       observedActive.host,
+      claimedInactive.host,
     ],
   );
 });
@@ -226,6 +268,20 @@ Deno.test("account host registration validation rejects unsafe fields before pub
       ok: false,
       reason: "invalid_service_endpoint",
       message: "Use an HTTPS origin for the host PDS service endpoint.",
+    },
+  );
+  assertEquals(
+    validateAccountHostRegistrationInput({
+      host: "pckt.cafe",
+      displayName: "Pckt",
+      signupUrl: "https://127.0.0.1/signup",
+      serviceEndpoint: "https://pds.pckt.cafe",
+      signupStatus: "open",
+    }, user),
+    {
+      ok: false,
+      reason: "invalid_signup_url",
+      message: "Use an HTTPS URL for the host signup flow.",
     },
   );
   assertEquals(

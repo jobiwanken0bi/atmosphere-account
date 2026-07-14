@@ -1,6 +1,7 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
+import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import ProfileHero from "../../components/explore/ProfileHero.tsx";
 import ProfileScreenshots from "../../components/explore/ProfileScreenshots.tsx";
 import ProfileWhatsNew from "../../components/explore/ProfileWhatsNew.tsx";
@@ -8,9 +9,8 @@ import ProfileRatingSummary from "../../components/explore/ProfileRatingSummary.
 import ProfileReviewList, {
   type DisplayReview,
 } from "../../components/explore/ProfileReviewList.tsx";
-import AppCard, {
-  AppCollectionBadge,
-} from "../../components/explore/AppCard.tsx";
+import { AppCollectionBadge } from "../../components/explore/AppCard.tsx";
+import { FreshAppCard } from "../../components/explore/AppDirectoryShowcase.tsx";
 import AppLikeButton, {
   appLikeReauthHref,
 } from "../../islands/AppLikeButton.tsx";
@@ -20,6 +20,8 @@ import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import ShareButton from "../../islands/ShareButton.tsx";
 import WebsiteIcon from "../../components/icons/WebsiteIcon.tsx";
 import BskyIcon from "../../components/icons/BskyIcon.tsx";
+import TangledIcon from "../../components/icons/TangledIcon.tsx";
+import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
 import {
   AndroidIcon,
   AppleIcon,
@@ -72,14 +74,11 @@ import {
   type AppActionLinkKind,
   appActionLinks,
 } from "../../lib/app-listing-links.ts";
-import {
-  appDisplayTaxonomy,
-  appPrimaryCollection,
-} from "../../lib/app-display.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
+import { hostHrefForApp } from "../../lib/directory-identity-links.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -446,6 +445,7 @@ function ProfileDetailPage(
               <ProfileHero
                 profile={profile}
                 microblogViewerClientId={microblogViewerClientId}
+                hostHref={appListing ? hostHrefForApp(appListing) : null}
               />
             </div>
             <ProfileScreenshots profile={profile} />
@@ -711,17 +711,17 @@ function AppListingHero(
   },
 ) {
   const links = appActionLinks(app, { microblogViewerClientId });
-  const taxonomy = appDisplayTaxonomy(app);
-  const primaryCollection = appPrimaryCollection(app);
-  const visibleCollections = primaryCollection
-    ? taxonomy.collections.filter((collection) =>
-      collection !== primaryCollection
-    )
-    : taxonomy.collections;
+  const primaryLinks = links
+    .filter((link) => !isCompactAppAction(link.kind))
+    .sort((a, b) =>
+      primaryAppActionRank(a.kind) - primaryAppActionRank(b.kind)
+    );
+  const compactLinks = links.filter((link) => isCompactAppAction(link.kind));
+  const hostHref = hostHrefForApp(app);
   const displayPlatforms = app.atstoreListingUri ? [] : app.platforms;
   const iconUrl = appImageUrl(app.iconUrl, "icon");
   return (
-    <div class="profile-hero app-detail-hero glass">
+    <div id="app-details" class="profile-hero app-detail-hero glass">
       <div class="app-detail-hero-summary">
         <div class="profile-hero-media">
           <div class="profile-hero-avatar">
@@ -745,71 +745,40 @@ function AppListingHero(
         <div class="profile-hero-body app-detail-hero-body">
           <div class="app-detail-hero-heading">
             <div class="app-detail-hero-title">
-              <div class="profile-hero-name-row">
-                <h1 class="profile-hero-name">{app.name}</h1>
-                <AppCollectionBadge app={app} />
-              </div>
-              {app.primaryUrl && (
-                <p class="profile-hero-handle">{displayHost(app.primaryUrl)}</p>
-              )}
-              {(visibleCollections.length > 0 || taxonomy.tags.length > 0) &&
-                (
-                  <div class="profile-hero-meta app-detail-hero-categories">
-                    {visibleCollections.length > 0 && (
-                      <div class="profile-card-categories">
-                        {visibleCollections.slice(0, 3).map((collection) => (
-                          <span
-                            key={collection}
-                            class="profile-card-category"
-                          >
-                            {collection}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {taxonomy.tags.length > 0 && (
-                      <div class="profile-card-subcategories">
-                        {taxonomy.tags.slice(0, 6).map((tag) => (
-                          <span key={tag} class="profile-card-sub">{tag}</span>
-                        ))}
-                      </div>
-                    )}
+              <div class="app-detail-hero-identity">
+                <div class="profile-hero-name-row">
+                  <h1 class="profile-hero-name">{app.name}</h1>
+                  <AppCollectionBadge app={app} />
+                </div>
+                {app.primaryUrl && (
+                  <p class="profile-hero-handle">
+                    <AtmosphereHandle handle={displayHost(app.primaryUrl)} />
+                  </p>
+                )}
+                {compactLinks.length > 0 && (
+                  <div
+                    class="app-detail-inline-actions"
+                    aria-label="App profiles and source"
+                  >
+                    {compactLinks.map(renderAppAction)}
                   </div>
                 )}
+              </div>
             </div>
             <div class="app-detail-hero-side">
-              {links.length > 0 && (
+              {(hostHref || primaryLinks.length > 0) && (
                 <div class="profile-hero-actions" aria-label="App links">
-                  {links.map((link) => (
-                    <a
-                      class={`profile-hero-action${
-                        isCompactAppAction(link.kind)
-                          ? " profile-hero-action--icon-only"
-                          : ""
-                      }`}
-                      href={link.uri}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={link.label}
-                      title={link.label}
-                      key={`${link.role ?? link.label ?? "link"}-${link.uri}`}
-                    >
-                      <span class="profile-hero-action-icon app-detail-link-icon">
-                        {renderAppActionIcon(link)}
-                      </span>
-                      {!isCompactAppAction(link.kind) && (
-                        <>
-                          <span>{link.label}</span>
-                          <span
-                            class="profile-hero-action-arrow"
-                            aria-hidden="true"
-                          >
-                            ↗
-                          </span>
-                        </>
-                      )}
-                    </a>
-                  ))}
+                  {hostHref && (
+                    <DirectoryIdentityLink
+                      href={hostHref}
+                      destination="host"
+                    />
+                  )}
+                  {primaryLinks.length > 0 && (
+                    <div class="app-detail-primary-actions">
+                      {primaryLinks.map(renderAppAction)}
+                    </div>
+                  )}
                 </div>
               )}
               {displayPlatforms.length > 0 && (
@@ -836,6 +805,33 @@ function AppListingHero(
   );
 }
 
+function renderAppAction(link: AppActionLink) {
+  const compact = isCompactAppAction(link.kind);
+  return (
+    <a
+      class={`profile-hero-action${
+        compact ? " profile-hero-action--icon-only" : ""
+      }`}
+      href={link.uri}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={link.label}
+      title={link.label}
+      key={`${link.role ?? link.label ?? "link"}-${link.uri}`}
+    >
+      <span class="profile-hero-action-icon app-detail-link-icon">
+        {renderAppActionIcon(link)}
+      </span>
+      {!compact && (
+        <>
+          <span>{link.label}</span>
+          <span class="profile-hero-action-arrow" aria-hidden="true">↗</span>
+        </>
+      )}
+    </a>
+  );
+}
+
 function renderAppActionIcon(
   link: Pick<AppActionLink, "kind" | "iconUrl" | "label">,
 ) {
@@ -857,6 +853,9 @@ function renderAppActionIcon(
     }
     return <BskyIcon class="profile-hero-action-icon-svg" />;
   }
+  if (kind === "tangled") {
+    return <TangledIcon class="profile-hero-action-icon-svg" />;
+  }
   if (kind === "ios") {
     return <AppleIcon class="profile-hero-action-icon-svg" />;
   }
@@ -867,7 +866,14 @@ function renderAppActionIcon(
 }
 
 function isCompactAppAction(kind: AppActionLinkKind): boolean {
-  return kind === "bluesky" || kind === "ios" || kind === "android";
+  return kind === "bluesky" || kind === "tangled";
+}
+
+function primaryAppActionRank(kind: AppActionLinkKind): number {
+  if (kind === "website") return 0;
+  if (kind === "ios") return 1;
+  if (kind === "android") return 2;
+  return 3;
 }
 
 function AppReviewsSection(
@@ -999,12 +1005,8 @@ function RelatedAppsSection({ apps }: { apps: AppListing[] }) {
       <div class="app-directory-section-heading">
         <h2 class="text-subsection featured-rail-heading">Related apps</h2>
       </div>
-      <div class="featured-rail-track app-rail-track">
-        {apps.map((app) => (
-          <div key={app.id} class="featured-rail-item app-rail-item">
-            <AppCard app={app} compact />
-          </div>
-        ))}
+      <div class="app-fresh-grid app-detail-related-grid">
+        {apps.map((app) => <FreshAppCard key={app.id} app={app} />)}
       </div>
     </section>
   );

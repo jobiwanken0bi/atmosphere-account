@@ -14,34 +14,15 @@ interface Props {
   rememberedAccounts?: Array<{ did: string; handle: string }>;
   rich?: boolean;
   initialHandle?: string;
+  createAccountHosts?: CreateAccountHostOption[];
 }
 
-const HOST_OPTIONS = [
-  {
-    name: "Bluesky",
-    href: "https://bsky.app",
-    tag: "Popular",
-    description: "The first Atmosphere app and the easiest place to start.",
-  },
-  {
-    name: "Blacksky",
-    href: "https://blacksky.community/",
-    tag: "Community",
-    description: "A community-run path into the Atmosphere.",
-  },
-  {
-    name: "selfhosted.social",
-    href: "https://selfhosted.social",
-    tag: "Independent",
-    description: "A community-run host with open signup.",
-  },
-  {
-    name: "Tangled",
-    href: "https://tangled.org/signup",
-    tag: "Developer-friendly",
-    description: "Create an account with Tangled's host.",
-  },
-] as const;
+export interface CreateAccountHostOption {
+  name: string;
+  host: string;
+  href: string;
+  description: string;
+}
 
 export default function SignInForm(
   {
@@ -50,6 +31,7 @@ export default function SignInForm(
     rememberedAccounts = [],
     rich = false,
     initialHandle,
+    createAccountHosts = [],
   }: Props,
 ) {
   const t = useT();
@@ -234,7 +216,7 @@ export default function SignInForm(
             </p>
           </div>
           <div class="signin-host-list">
-            {HOST_OPTIONS.map((host) => (
+            {createAccountHosts.map((host) => (
               <a
                 key={host.name}
                 class="signin-host-row"
@@ -248,7 +230,7 @@ export default function SignInForm(
                 <span class="signin-host-copy">
                   <strong>
                     {host.name}
-                    <span>{host.tag}</span>
+                    <span>{host.host}</span>
                   </strong>
                   <em>{host.description}</em>
                 </span>

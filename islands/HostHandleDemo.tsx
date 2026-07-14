@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import type { JSX } from "preact";
 
 interface HostHandleExample {
   label: string;
@@ -12,97 +12,91 @@ interface HostHandleDemoProps {
   demoButton: string;
 }
 
+type HostHandleFrameStyle = JSX.CSSProperties & {
+  "--host-handle-cycle": string;
+  "--host-handle-delay": string;
+  "--host-handle-suffix-width": string;
+  "--host-handle-suffix-steps": number;
+};
+
 function labelPrefix(label: string) {
   return label.replace(/\s+handle$/i, "");
 }
 
-const TYPE_MS = 82;
-const DELETE_MS = 42;
-const HOLD_MS = 1100;
-const SWITCH_MS = 180;
+const FRAME_MS = 3200;
+const FRAME_COUNT = 6;
+
+const FALLBACK_EXAMPLE: HostHandleExample = {
+  label: "Bluesky handle",
+  prefix: "you.",
+  suffix: "bsky.social",
+};
+
+export function hostHandleDemoFrames(
+  examples: readonly HostHandleExample[],
+): readonly HostHandleExample[] {
+  const source = examples.length > 0
+    ? examples.slice(0, FRAME_COUNT)
+    : [FALLBACK_EXAMPLE];
+
+  return Array.from(
+    { length: FRAME_COUNT },
+    (_, index) => source[index % source.length],
+  );
+}
 
 export default function HostHandleDemo(
   { examples, demoAriaLabel, demoButton }: HostHandleDemoProps,
 ) {
-  const safeExamples = useMemo(
-    () =>
-      examples.length > 0
-        ? examples.slice(0, 6)
-        : [{ label: "Bluesky handle", prefix: "you.", suffix: "bsky.social" }],
-    [examples],
-  );
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [typedSuffix, setTypedSuffix] = useState("");
-  const [mode, setMode] = useState<"typing" | "holding" | "deleting">(
-    "typing",
-  );
-  const activeExample = safeExamples[activeIndex] ?? safeExamples[0];
-  const prefix = activeExample?.prefix ?? "you.";
-  const suffix = activeExample?.suffix ?? "bsky.social";
-  const labelWord = labelPrefix(activeExample?.label ?? "Bluesky handle");
-
-  useEffect(() => {
-    if (safeExamples.length <= 0) return;
-
-    let delay = TYPE_MS;
-    const next = () => {
-      if (mode === "typing") {
-        if (typedSuffix.length < suffix.length) {
-          setTypedSuffix(suffix.slice(0, typedSuffix.length + 1));
-          return;
-        }
-        setMode("holding");
-        return;
-      }
-
-      if (mode === "holding") {
-        setMode("deleting");
-        return;
-      }
-
-      if (typedSuffix.length > 0) {
-        setTypedSuffix(suffix.slice(0, typedSuffix.length - 1));
-        return;
-      }
-
-      setActiveIndex((index) => (index + 1) % safeExamples.length);
-      setMode("typing");
-    };
-
-    if (mode === "holding") delay = HOLD_MS;
-    if (mode === "deleting") {
-      delay = typedSuffix.length > 0 ? DELETE_MS : SWITCH_MS;
-    }
-
-    const timeout = setTimeout(next, delay);
-    return () => clearTimeout(timeout);
-  }, [mode, safeExamples, suffix, typedSuffix]);
+  const frames = hostHandleDemoFrames(examples);
+  const cycleMs = frames.length * FRAME_MS;
 
   return (
     <div class="host-handle-demo" aria-label={demoAriaLabel}>
-      <div class="host-handle-demo-label-window" aria-hidden="true">
-        <span class="host-handle-label-phrase">
-          <span
-            key={activeExample?.label ?? activeIndex}
-            class="host-handle-label-word"
-          >
-            {labelWord}
-          </span>
-          <span class="host-handle-label-kind">handle</span>
-        </span>
-      </div>
-      <div class="host-handle-demo-input" aria-hidden="true">
-        <span class="host-handle-at">
-          <img src="/union.svg" alt="" />
-        </span>
-        <span class="host-handle-value-text">
-          <span class="host-handle-value-prefix">{prefix}</span>
-          <span class="host-handle-demo-window">
-            <span class="host-handle-suffix">
-              <span class="host-handle-suffix-text">{typedSuffix}</span>
-            </span>
-          </span>
-        </span>
+      <div class="host-handle-demo-stage" aria-hidden="true">
+        {frames.map((example, index) => {
+          const suffixLength = Math.max(1, example.suffix.length);
+          const style: HostHandleFrameStyle = {
+            "--host-handle-cycle": `${cycleMs}ms`,
+            "--host-handle-delay": `${index * FRAME_MS}ms`,
+            "--host-handle-suffix-width": `${suffixLength}ch`,
+            "--host-handle-suffix-steps": suffixLength,
+          };
+
+          return (
+            <div
+              key={`${index}:${example.label}:${example.suffix}`}
+              class="host-handle-demo-frame"
+              style={style}
+            >
+              <div class="host-handle-demo-label-window">
+                <span class="host-handle-label-phrase">
+                  <span class="host-handle-label-word">
+                    {labelPrefix(example.label)}
+                  </span>
+                  <span class="host-handle-label-kind">handle</span>
+                </span>
+              </div>
+              <div class="host-handle-demo-input">
+                <span class="host-handle-at">
+                  <img src="/union.svg" alt="" />
+                </span>
+                <span class="host-handle-value-text">
+                  <span class="host-handle-value-prefix">
+                    {example.prefix}
+                  </span>
+                  <span class="host-handle-demo-window">
+                    <span class="host-handle-suffix">
+                      <span class="host-handle-suffix-text">
+                        {example.suffix}
+                      </span>
+                    </span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
       <div class="host-handle-demo-button" aria-hidden="true">
         <img src="/union.svg" alt="" class="host-handle-demo-button-icon" />

@@ -3,7 +3,6 @@ import ContentVisualIcon from "../components/icons/ContentVisualIcon.tsx";
 
 interface AppLikeCopy {
   like: string;
-  liked: string;
   unlike: string;
   signIn: string;
   error: string;
@@ -70,18 +69,14 @@ export default function AppLikeButton(
       <a
         class="profile-form-button-secondary app-like-button"
         href={loginHref}
-        aria-label={copy.signIn}
+        aria-label={`${copy.signIn}. ${
+          appLikeCountLabel(likeCount.value, copy)
+        }`}
       >
         <ContentVisualIcon name="like" class="app-like-icon" />
-        <span>{copy.like}</span>
-        {likeCount.value > 0 && (
-          <span
-            class="app-like-count"
-            aria-label={appLikeCountLabel(likeCount.value, copy)}
-          >
-            {likeCount.value.toLocaleString()}
-          </span>
-        )}
+        <span class="app-like-count" aria-hidden="true">
+          {likeCount.value.toLocaleString()}
+        </span>
       </a>
     );
   }
@@ -131,18 +126,14 @@ export default function AppLikeButton(
         onClick={submit}
         disabled={busy.value}
         aria-pressed={liked.value}
-        aria-label={liked.value ? copy.unlike : copy.like}
+        aria-label={`${liked.value ? copy.unlike : copy.like}. ${
+          appLikeCountLabel(likeCount.value, copy)
+        }`}
       >
         <ContentVisualIcon name="like" class="app-like-icon" />
-        <span>{liked.value ? copy.liked : copy.like}</span>
-        {likeCount.value > 0 && (
-          <span
-            class="app-like-count"
-            aria-label={appLikeCountLabel(likeCount.value, copy)}
-          >
-            {likeCount.value.toLocaleString()}
-          </span>
-        )}
+        <span class="app-like-count" aria-hidden="true">
+          {likeCount.value.toLocaleString()}
+        </span>
       </button>
       {error.value && (
         <p

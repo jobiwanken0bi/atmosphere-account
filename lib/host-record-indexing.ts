@@ -8,7 +8,6 @@ import {
 import { HOST_PROFILE_NSID, HOST_SERVICE_NSID } from "./lexicons.ts";
 
 const HOST_LINK_ROLE_SIGNUP = "account.atmosphere.host.defs#linkRoleSignup";
-const HOST_LINK_ROLE_LOGIN = "account.atmosphere.host.defs#linkRoleLogin";
 const HOST_LINK_ROLE_DASHBOARD =
   "account.atmosphere.host.defs#linkRoleDashboard";
 const HOST_IMAGE_PURPOSE_LOGO = "account.atmosphere.host.defs#purposeLogo";
@@ -36,6 +35,7 @@ export interface ParsedHostServiceRecord {
   serviceEndpoint: string;
   accountManagementUrl: string | null;
   homepageUrl: string | null;
+  signupUrl: string | null;
   supportUrl: string | null;
   signupStatus: HostSignupStatus;
   dashboardManifestUrl: string | null;
@@ -282,12 +282,9 @@ export function parseHostServiceRecord(
   if (!host || !displayName || !serviceEndpoint || !createdAt) return null;
   const links = readLinks(record.links);
   const signup = asRecord(record.signup);
-  const signupUrl = normalizePublicHttpsUrl(signup?.url);
-  const homepageUrl = linkForRole(links, [
-    HOST_LINK_ROLE_HOMEPAGE,
-    HOST_LINK_ROLE_SIGNUP,
-    HOST_LINK_ROLE_LOGIN,
-  ]) ?? signupUrl;
+  const signupUrl = normalizePublicHttpsUrl(signup?.url) ??
+    linkForRole(links, [HOST_LINK_ROLE_SIGNUP]);
+  const homepageUrl = linkForRole(links, [HOST_LINK_ROLE_HOMEPAGE]);
   const accountManagementUrl = normalizePublicHttpsUrl(
     record.accountManagementUrl,
   );
@@ -309,6 +306,7 @@ export function parseHostServiceRecord(
     serviceEndpoint,
     accountManagementUrl,
     homepageUrl,
+    signupUrl,
     supportUrl: linkForRole(links, [HOST_LINK_ROLE_SUPPORT]) ??
       normalizePublicHttpsUrl(asRecord(record.contact)?.url),
     signupStatus: signupStatus(record.signup),
@@ -335,11 +333,7 @@ export function parseHostProfileRecord(
     kind: "profile",
     name,
     description: str(record.description, 3000) ?? "",
-    homepageUrl: linkForRole(links, [
-      HOST_LINK_ROLE_HOMEPAGE,
-      HOST_LINK_ROLE_SIGNUP,
-      HOST_LINK_ROLE_LOGIN,
-    ]),
+    homepageUrl: linkForRole(links, [HOST_LINK_ROLE_HOMEPAGE]),
     supportUrl: linkForRole(links, [HOST_LINK_ROLE_SUPPORT]) ??
       normalizePublicHttpsUrl(asRecord(record.contact)?.url),
     avatarUrl: readProfileAvatar(record.images, input.repoDid),
@@ -504,14 +498,14 @@ async function upsertAccountHostFromService(
   const authorHandle = normalizeHandle(input.authorHandle);
   await c.execute({
     sql: `INSERT INTO account_host (
-        host, display_name, description, data_location, homepage_url,
+        host, display_name, description, data_location, homepage_url, signup_url,
         service_endpoint, account_management_url, dashboard_url,
         capability_manifest_url, capabilities_json, support_url,
         profile_handle, profile_did, claim_handle, claim_did,
         signup_status, verification_status, source, match_patterns,
         service_record_uri, service_record_cid, service_observed_at,
         last_checked_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(host) DO UPDATE SET
         display_name = excluded.display_name,
         description = CASE
@@ -520,6 +514,7 @@ async function upsertAccountHostFromService(
         END,
         data_location = COALESCE(excluded.data_location, account_host.data_location),
         homepage_url = COALESCE(excluded.homepage_url, account_host.homepage_url),
+        signup_url = excluded.signup_url,
         service_endpoint = excluded.service_endpoint,
         account_management_url = COALESCE(excluded.account_management_url, account_host.account_management_url),
         capability_manifest_url = COALESCE(excluded.capability_manifest_url, account_host.capability_manifest_url),
@@ -544,13 +539,20 @@ async function upsertAccountHostFromService(
         service_record_cid = excluded.service_record_cid,
         service_observed_at = excluded.service_observed_at,
         last_checked_at = excluded.last_checked_at,
-        updated_at = excluded.updated_at`,
+        updated_at = excluded.updated_at
+      WHERE (
+          account_host.verification_status = 'observed'
+          AND account_host.source <> 'seeded'
+        )
+        OR account_host.claim_did = excluded.claim_did
+        OR account_host.profile_did = excluded.profile_did`,
     args: [
       parsed.host,
       parsed.displayName,
       parsed.description,
       parsed.dataLocation,
       parsed.homepageUrl,
+      parsed.signupUrl,
       parsed.serviceEndpoint,
       parsed.accountManagementUrl,
       parsed.dashboardManifestUrl,
@@ -619,7 +621,12 @@ async function enrichAccountHostsFromProfile(
             claim_did = COALESCE(account_host.claim_did, ?),
             profile_checked_at = ?,
             updated_at = ?
-        WHERE host = ?`,
+        WHERE host = ?
+          AND (
+            (verification_status = 'observed' AND source <> 'seeded')
+            OR claim_did = ?
+            OR profile_did = ?
+          )`,
       args: [
         parsed.name,
         parsed.description,
@@ -633,6 +640,8 @@ async function enrichAccountHostsFromProfile(
         indexedAt,
         indexedAt,
         host,
+        input.repoDid,
+        input.repoDid,
       ],
     });
   }

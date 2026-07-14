@@ -41,6 +41,7 @@ Deno.test("buildHostServiceRecord creates account.atmosphere.host.service shape"
     description: "A cozy host.",
     dataLocation: "Europe",
     homepageUrl: "https://pckt.cafe",
+    signupUrl: "https://pckt.cafe/signup",
     serviceEndpoint: "https://pds.pckt.cafe",
     accountManagementUrl: "https://pds.pckt.cafe/account",
     supportUrl: "https://pckt.cafe/support",
@@ -54,6 +55,10 @@ Deno.test("buildHostServiceRecord creates account.atmosphere.host.service shape"
   assertEquals(
     (record.signup as Record<string, unknown>).status,
     HOST_SIGNUP_VALUES.open,
+  );
+  assertEquals(
+    (record.signup as Record<string, unknown>).url,
+    "https://pckt.cafe/signup",
   );
   assertEquals(record.hostPatterns, ["pckt.cafe"]);
   assert(
@@ -106,6 +111,7 @@ Deno.test("buildHostServiceRecord omits unsafe public links", () => {
     host: "Pckt.Cafe",
     displayName: "Pckt",
     homepageUrl: "http://pckt.cafe",
+    signupUrl: "http://pckt.cafe/signup",
     serviceEndpoint: "https://192.168.1.10",
     accountManagementUrl: "https://127.0.0.1/account",
     supportUrl: "https://user:pass@pckt.cafe/support",

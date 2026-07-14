@@ -30,6 +30,8 @@ const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
 const DEFAULT_APPVIEW_FETCH_TIMEOUT_MS = 5000;
 const MIN_APPVIEW_FETCH_TIMEOUT_MS = 1000;
 const MAX_APPVIEW_HANDOFF_BODY_BYTES = 64 * 1024;
+const APPVIEW_ASSET_PROXY_PREFIX = "/_appview/assets/";
+const APPVIEW_ASSET_SOURCE_PREFIX = "/assets/";
 
 const APPVIEW_FETCH_TIMEOUT_MS = appviewFetchTimeoutMs(
   Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS"),
@@ -56,7 +58,10 @@ export const appviewAssetProxyMiddleware = define.middleware(
       return await ctx.next();
     }
 
-    const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
+    const proxied = await proxyAppviewPageResponse(
+      appviewAssetSourceUrl(ctx.url),
+      ctx.req,
+    ).catch(
       (err) => {
         console.error("[appview] asset proxy failed:", err);
         return appviewEarlyProxyUnavailable(ctx.url.pathname);
@@ -130,7 +135,7 @@ function shouldProxyAppviewAsset(
 }
 
 function isGeneratedAppviewAssetPath(pathname: string): boolean {
-  return pathname.startsWith("/assets/");
+  return pathname.startsWith(APPVIEW_ASSET_PROXY_PREFIX);
 }
 
 export function isGeneratedAppviewAssetPathForTest(pathname: string): boolean {
@@ -142,6 +147,18 @@ export function shouldProxyAppviewAssetForTest(
   trustedOrigins?: string[],
 ): boolean {
   return shouldProxyAppviewAsset(url, trustedOrigins);
+}
+
+function appviewAssetSourceUrl(url: URL): URL {
+  const source = new URL(url);
+  source.pathname = `${APPVIEW_ASSET_SOURCE_PREFIX}${
+    url.pathname.slice(APPVIEW_ASSET_PROXY_PREFIX.length)
+  }`;
+  return source;
+}
+
+export function appviewAssetSourceUrlForTest(url: URL): URL {
+  return appviewAssetSourceUrl(url);
 }
 
 function isEdgeOwnedOauthDocument(pathname: string): boolean {
@@ -236,6 +253,8 @@ export async function listHostsFromAppview(
     if (input.verificationStatus && input.verificationStatus !== "all") {
       params.set("verification", input.verificationStatus);
     }
+    if (input.hasSignupUrl) params.set("hasSignupUrl", "1");
+    if (input.trustedOnly) params.set("trusted", "1");
     if (input.page) params.set("page", String(input.page));
     if (input.pageSize) params.set("pageSize", String(input.pageSize));
     const qs = params.toString();
@@ -476,6 +495,11 @@ export function hostDirectoryResultForHosts(
   const pageSize = positiveDirectoryInteger(input.pageSize, 24, 200);
   const query = input.query?.trim().toLowerCase() ?? "";
   const filteredHosts = sourceHosts.filter((host) => {
+    if (input.hasSignupUrl && !host.signupUrl) return false;
+    if (
+      input.trustedOnly && host.verificationStatus !== "claimed" &&
+      host.verificationStatus !== "verified" && host.source !== "seeded"
+    ) return false;
     if (
       input.signupStatus && input.signupStatus !== "all" &&
       host.signupStatus !== input.signupStatus
@@ -649,7 +673,25 @@ function rewriteAppviewHtml(
   remote: string,
   currentUrl: URL,
 ): string {
-  return body.replaceAll(appviewBaseUrlForRewrite(remote), currentUrl.origin);
+  const remoteBase = appviewBaseUrlForRewrite(remote);
+  return body
+    .replaceAll(
+      `${remoteBase}${APPVIEW_ASSET_SOURCE_PREFIX}`,
+      `${currentUrl.origin}${APPVIEW_ASSET_PROXY_PREFIX}`,
+    )
+    .replaceAll(remoteBase, currentUrl.origin)
+    .replaceAll(
+      /(["'(=])\/assets\//g,
+      `$1${APPVIEW_ASSET_PROXY_PREFIX}`,
+    );
+}
+
+export function rewriteAppviewHtmlForTest(
+  body: string,
+  remote: string,
+  currentUrl: URL,
+): string {
+  return rewriteAppviewHtml(body, remote, currentUrl);
 }
 
 function rewriteAppviewUrl(

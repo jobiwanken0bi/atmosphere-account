@@ -59,46 +59,66 @@ function signalText(app: AppListing): string | null {
   return null;
 }
 
-function FreshAppCard({ app }: { app: AppListing }) {
+export function FreshAppCard(
+  { app, compact = false }: { app: AppListing; compact?: boolean },
+) {
   const iconUrl = appImageUrl(app.iconUrl, "icon");
+  const bannerUrl = appImageUrl(
+    app.heroUrl || app.screenshotUrls[0],
+    "media",
+  );
+  const mediaUrl = bannerUrl || iconUrl;
   const host = hostname(app.primaryUrl);
-  const signal = signalText(app);
+  const category = appPrimaryCollection(app) ?? "App";
 
   return (
     <a
-      class="glass app-fresh-card"
+      class={`glass app-fresh-card${compact ? " app-fresh-card--compact" : ""}`}
       href={appHref(app)}
       aria-label={`View ${app.name}`}
     >
-      <span class="app-fresh-icon" aria-hidden="true">
-        {iconUrl
+      <span class="app-fresh-media" aria-hidden="true">
+        {mediaUrl
           ? (
             <img
-              src={iconUrl}
+              class={bannerUrl ? undefined : "app-fresh-media-icon-backdrop"}
+              src={mediaUrl}
               alt=""
               loading="lazy"
               decoding="async"
-              width={64}
-              height={64}
             />
           )
           : <span>{app.name.slice(0, 1).toUpperCase()}</span>}
       </span>
-      <span class="app-fresh-copy">
-        <span class="app-fresh-title-row">
-          <span class="app-fresh-title">{app.name}</span>
+      <span class="app-fresh-footer">
+        <span class="app-fresh-icon" aria-hidden="true">
+          {iconUrl
+            ? (
+              <img
+                src={iconUrl}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                width={64}
+                height={64}
+              />
+            )
+            : <span>{app.name.slice(0, 1).toUpperCase()}</span>}
         </span>
-        {host && (
-          <span class="app-fresh-handle">
-            <AtmosphereHandle handle={host} />
+        <span class="app-fresh-copy">
+          <span class="app-fresh-title-row">
+            <span class="app-fresh-title">{app.name}</span>
+            {host && (
+              <span class="app-fresh-handle">
+                <AtmosphereHandle handle={host} />
+              </span>
+            )}
           </span>
-        )}
-        <span class="app-fresh-description">{description(app)}</span>
-        {signal && <span class="app-fresh-signal">{signal}</span>}
-      </span>
-      <span class="app-fresh-actions">
-        <AppCollectionBadge app={app} />
-        <span class="app-fresh-action">View</span>
+          <span class="app-store-category">{category}</span>
+        </span>
+        <span class="app-fresh-actions">
+          <span class="app-fresh-action">View</span>
+        </span>
       </span>
     </a>
   );
@@ -137,29 +157,78 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
           </a>
         </div>
         <div class="app-spotlight-layout">
-          <a class="glass app-spotlight-card" href={appHref(lead)}>
+          <a
+            class={`glass app-spotlight-card${
+              leadBannerUrl ? " app-spotlight-card--banner" : ""
+            }`}
+            href={appHref(lead)}
+          >
             <div class="app-spotlight-copy">
-              <h3>{lead.name}</h3>
-              {host && (
-                <p class="app-spotlight-host">
-                  <AtmosphereHandle handle={host} />
-                </p>
+              {leadBannerUrl
+                ? (
+                  <>
+                    <span class="app-spotlight-footer-icon" aria-hidden="true">
+                      {leadIconUrl
+                        ? (
+                          <img
+                            src={leadIconUrl}
+                            alt=""
+                            loading="eager"
+                            decoding="async"
+                            width={72}
+                            height={72}
+                          />
+                        )
+                        : (
+                          <span>
+                            {lead.name.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                    </span>
+                    <div class="app-spotlight-identity">
+                      <div class="app-spotlight-title-line">
+                        <h3>{lead.name}</h3>
+                        {host && (
+                          <p class="app-spotlight-host">
+                            <AtmosphereHandle handle={host} />
+                          </p>
+                        )}
+                      </div>
+                      <span class="app-spotlight-category">
+                        {leadPrimaryCollection ?? "App"}
+                      </span>
+                    </div>
+                  </>
+                )
+                : (
+                  <div class="app-spotlight-identity">
+                    <h3>{lead.name}</h3>
+                    {host && (
+                      <p class="app-spotlight-host">
+                        <AtmosphereHandle handle={host} />
+                      </p>
+                    )}
+                    <div class="app-spotlight-kicker app-spotlight-kicker--below">
+                      <AppCollectionBadge app={lead} />
+                      {leadSignal && <span>{leadSignal}</span>}
+                    </div>
+                  </div>
+                )}
+              {!leadBannerUrl && (
+                <>
+                  <p class="app-spotlight-description">{description(lead)}</p>
+                  <div class="app-spotlight-tags">
+                    {leadCollections.slice(0, 2).map((collection) => (
+                      <span class="is-collection" key={collection}>
+                        {collection}
+                      </span>
+                    ))}
+                    {leadTaxonomy.tags.slice(0, 3).map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                </>
               )}
-              <div class="app-spotlight-kicker app-spotlight-kicker--below">
-                <AppCollectionBadge app={lead} />
-                {leadSignal && <span>{leadSignal}</span>}
-              </div>
-              <p class="app-spotlight-description">{description(lead)}</p>
-              <div class="app-spotlight-tags">
-                {leadCollections.slice(0, 2).map((collection) => (
-                  <span class="is-collection" key={collection}>
-                    {collection}
-                  </span>
-                ))}
-                {leadTaxonomy.tags.slice(0, 3).map((tag) => (
-                  <span key={tag}>{tag}</span>
-                ))}
-              </div>
               <span class="app-spotlight-cta">View</span>
             </div>
             <div
@@ -203,50 +272,9 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
             </div>
           </a>
           <div class="app-promo-column">
-            {secondary.slice(0, 3).map((app) => {
-              const appHost = hostname(app.primaryUrl);
-              const iconUrl = appImageUrl(app.iconUrl, "icon");
-              return (
-                <a
-                  class="glass app-promo-card"
-                  href={appHref(app)}
-                  aria-label={`View ${app.name}`}
-                  key={app.id}
-                >
-                  <span class="app-promo-icon" aria-hidden="true">
-                    {iconUrl
-                      ? (
-                        <img
-                          src={iconUrl}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          width={64}
-                          height={64}
-                        />
-                      )
-                      : <span>{app.name.slice(0, 1).toUpperCase()}</span>}
-                  </span>
-                  <span class="app-promo-copy">
-                    <span class="app-promo-title-row">
-                      <span class="app-promo-title">{app.name}</span>
-                    </span>
-                    {appHost && (
-                      <span class="app-promo-handle">
-                        <AtmosphereHandle handle={appHost} />
-                      </span>
-                    )}
-                    <span class="app-promo-description">
-                      {description(app)}
-                    </span>
-                  </span>
-                  <span class="app-promo-actions">
-                    <AppCollectionBadge app={app} />
-                    <span class="app-promo-cta">View</span>
-                  </span>
-                </a>
-              );
-            })}
+            {secondary.slice(0, 2).map((app) => (
+              <FreshAppCard key={app.id} app={app} compact />
+            ))}
           </div>
         </div>
       </div>
@@ -322,7 +350,7 @@ export function AppDiscoverySplit(
             <div class="app-showcase-heading app-showcase-heading--compact">
               <div>
                 <p class="text-eyebrow">Popular right now</p>
-                <h2 class="text-subsection">Trending across the ecosystem</h2>
+                <h2 class="text-subsection">Trending across the Atmosphere</h2>
               </div>
               <a class="app-section-link" href="/apps/all?sort=trending">
                 See all
@@ -331,7 +359,13 @@ export function AppDiscoverySplit(
             <div class="app-ranked-list">
               {trending.slice(0, 6).map((app, index) => {
                 const appHost = hostname(app.primaryUrl);
-                const signal = signalText(app);
+                const signal = app.reviewCount > 0 &&
+                    app.averageRating != null
+                  ? `${
+                    app.averageRating.toFixed(1)
+                  } from ${app.reviewCount} reviews`
+                  : null;
+                const category = appPrimaryCollection(app) ?? "App";
                 return (
                   <a
                     class="glass app-ranked-row"
@@ -358,23 +392,20 @@ export function AppDiscoverySplit(
                       </span>
                     </span>
                     <span class="app-ranked-copy">
-                      <span class="app-ranked-title">{app.name}</span>
-                      <span class="app-ranked-meta">
-                        {appHost && <AtmosphereHandle handle={appHost} />}
-                        {appHost && signal && (
-                          <span class="app-ranked-dot" aria-hidden="true">
-                            /
+                      <span class="app-ranked-title-row">
+                        <span class="app-ranked-title">{app.name}</span>
+                        {appHost && (
+                          <span class="app-ranked-handle">
+                            <AtmosphereHandle handle={appHost} />
                           </span>
                         )}
-                        {signal && <span>{signal}</span>}
                       </span>
-                      {app.favoriteCount > 0 &&
-                        app.reviewCount > 0 && (
-                        <span class="app-ranked-saves">
-                          {app.favoriteCount}{" "}
-                          {app.favoriteCount === 1 ? "like" : "likes"}
-                        </span>
-                      )}
+                      <span class="app-ranked-detail-row">
+                        <span class="app-store-category">{category}</span>
+                        {signal && (
+                          <span class="app-ranked-signal">{signal}</span>
+                        )}
+                      </span>
                     </span>
                     <span class="app-ranked-action">View</span>
                   </a>

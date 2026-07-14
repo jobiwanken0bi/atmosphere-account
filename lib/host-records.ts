@@ -54,6 +54,7 @@ export interface HostRecordInput {
   description?: string | null;
   dataLocation?: string | null;
   homepageUrl?: string | null;
+  signupUrl?: string | null;
   serviceEndpoint: string;
   accountManagementUrl?: string | null;
   supportUrl?: string | null;
@@ -77,6 +78,7 @@ export function buildHostServiceRecord(
 ): Record<string, unknown> {
   const host = hostServiceRkey(input.host);
   const homepageUrl = normalizeAccountHostPublicHttpsUrl(input.homepageUrl);
+  const signupUrl = normalizeAccountHostPublicHttpsUrl(input.signupUrl);
   const serviceEndpoint = normalizeAccountHostPublicServiceEndpoint(
     input.serviceEndpoint,
   );
@@ -95,7 +97,7 @@ export function buildHostServiceRecord(
     status: "account.atmosphere.host.defs#statusActive",
     signup: {
       status: HOST_SIGNUP_VALUES[input.signupStatus],
-      url: homepageUrl || undefined,
+      url: signupUrl || undefined,
     },
     capabilities: hostServiceCapabilities(
       accountManagementUrl,

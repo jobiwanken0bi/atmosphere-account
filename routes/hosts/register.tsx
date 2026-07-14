@@ -36,6 +36,7 @@ interface RegisterValues {
   inferenceMessage: string;
   inferenceState: "idle" | "ok" | "error";
   homepageUrl: string;
+  signupUrl: string;
   serviceEndpoint: string;
   accountManagementUrl: string;
   supportUrl: string;
@@ -191,6 +192,7 @@ function emptyValues(): RegisterValues {
     inferenceMessage: "",
     inferenceState: "idle",
     homepageUrl: "",
+    signupUrl: "",
     serviceEndpoint: "",
     accountManagementUrl: "",
     supportUrl: "",
@@ -223,6 +225,7 @@ function valuesFromUrl(url: URL): RegisterValues {
     url.searchParams.get("inferenceState"),
   );
   values.homepageUrl = textValue(url.searchParams.get("homepageUrl"));
+  values.signupUrl = textValue(url.searchParams.get("signupUrl"));
   values.serviceEndpoint = textValue(url.searchParams.get("serviceEndpoint"));
   values.accountManagementUrl = textValue(
     url.searchParams.get("accountManagementUrl"),
@@ -252,6 +255,7 @@ function valuesFromForm(form: FormData | null): RegisterValues {
     inferenceMessage: "",
     inferenceState: "idle",
     homepageUrl: textValue(form?.get("homepageUrl")),
+    signupUrl: textValue(form?.get("signupUrl")),
     serviceEndpoint: textValue(form?.get("serviceEndpoint")),
     accountManagementUrl: textValue(form?.get("accountManagementUrl")),
     supportUrl: textValue(form?.get("supportUrl")),
@@ -275,6 +279,7 @@ function registrationInputFromValues(
     inferredLocationCheckedAt: values.inferredLocationCheckedAt,
     inferredLocationEvidenceJson: values.inferredLocationEvidenceJson,
     homepageUrl: values.homepageUrl,
+    signupUrl: values.signupUrl,
     serviceEndpoint: values.serviceEndpoint,
     accountManagementUrl: values.accountManagementUrl,
     supportUrl: values.supportUrl,
@@ -503,6 +508,7 @@ async function publishHostProfileFromForm(
       description: values.description,
       dataLocation: values.dataLocation,
       homepageUrl: values.homepageUrl,
+      signupUrl: values.signupUrl,
       serviceEndpoint,
       accountManagementUrl: values.accountManagementUrl || null,
       supportUrl: values.supportUrl,

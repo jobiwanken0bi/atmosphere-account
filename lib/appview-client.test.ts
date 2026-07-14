@@ -1,10 +1,12 @@
 import {
+  appviewAssetSourceUrlForTest,
   appviewFetchTimeoutMs,
   appviewProxyRequestBodyForTest,
   appviewRequestHeadersForTest,
   hostDirectoryResultForHosts,
   isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
+  rewriteAppviewHtmlForTest,
   shouldBufferAppviewRequestBodyForTest,
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
@@ -98,7 +100,7 @@ Deno.test("legacy host arrays are normalized for paginated rolling deploys", () 
   assertEquals(result.hosts[0]?.observedAccountCount, 1);
 });
 
-Deno.test("legacy host arrays use the recommended directory sort by default", () => {
+Deno.test("legacy host arrays prioritize account totals in the default sort", () => {
   const [claimedHost, observedHost] = listSeededAccountHostFallback().slice(
     0,
     2,
@@ -119,7 +121,18 @@ Deno.test("legacy host arrays use the recommended directory sort by default", ()
   ]);
 
   assertEquals(result.sort, DEFAULT_ACCOUNT_HOST_SORT);
-  assertEquals(result.hosts[0]?.host, claimedHost?.host);
+  assertEquals(result.hosts[0]?.host, observedHost?.host);
+});
+
+Deno.test("create-account host discovery requires trusted signup URLs", () => {
+  const hosts = listSeededAccountHostFallback();
+  const result = hostDirectoryResultForHosts(
+    { signupStatus: "open", hasSignupUrl: true, trustedOnly: true },
+    hosts,
+  );
+
+  assertEquals(result.hosts.length, 1);
+  assertEquals(result.hosts[0]?.host, "tangled.org");
 });
 
 Deno.test("early appview proxy covers DB-backed APIs before session hydration", () => {
@@ -160,16 +173,22 @@ Deno.test("early appview proxy leaves static, docs, and health routes on the Den
   }
 });
 
-Deno.test("generated assets can be proxied from the appview bundle", () => {
+Deno.test("only namespaced appview assets are proxied from the appview bundle", () => {
   assertEquals(
-    isGeneratedAppviewAssetPathForTest("/assets/client-entry.js"),
+    isGeneratedAppviewAssetPathForTest(
+      "/_appview/assets/client-entry.js",
+    ),
     true,
   );
   assertEquals(
     isGeneratedAppviewAssetPathForTest(
-      "/assets/fresh-island__SignInForm-B3cwBuRQ.js",
+      "/_appview/assets/fresh-island__SignInForm-B3cwBuRQ.js",
     ),
     true,
+  );
+  assertEquals(
+    isGeneratedAppviewAssetPathForTest("/assets/client-entry.js"),
+    false,
   );
   assertEquals(isGeneratedAppviewAssetPathForTest("/styles.css"), false);
   assertEquals(
@@ -185,31 +204,77 @@ Deno.test("appview asset proxy is limited to trusted Atmosphere origins", () => 
   ];
   assertEquals(
     shouldProxyAppviewAssetForTest(
+      new URL(
+        "https://atmosphereaccount.com/_appview/assets/client-entry.js",
+      ),
+      trustedOrigins,
+    ),
+    true,
+  );
+  assertEquals(
+    shouldProxyAppviewAssetForTest(
+      new URL(
+        "https://login.atmosphereaccount.com/_appview/assets/client-entry.js",
+      ),
+      trustedOrigins,
+    ),
+    true,
+  );
+  assertEquals(
+    shouldProxyAppviewAssetForTest(
+      new URL("https://example.com/_appview/assets/client-entry.js"),
+      trustedOrigins,
+    ),
+    false,
+  );
+  assertEquals(
+    shouldProxyAppviewAssetForTest(
       new URL("https://atmosphereaccount.com/assets/client-entry.js"),
       trustedOrigins,
     ),
+    false,
+  );
+});
+
+Deno.test("namespaced appview asset requests map back to appview build assets", () => {
+  const source = appviewAssetSourceUrlForTest(
+    new URL(
+      "https://atmosphereaccount.com/_appview/assets/client-entry.js?v=1",
+    ),
+  );
+
+  assertEquals(
+    source.href,
+    "https://atmosphereaccount.com/assets/client-entry.js?v=1",
+  );
+});
+
+Deno.test("appview HTML keeps its generated assets in the proxy namespace", () => {
+  const rewritten = rewriteAppviewHtmlForTest(
+    [
+      '<script type="module">import { boot } from "/assets/client.js";</script>',
+      '<link rel="modulepreload" href="/assets/island.js">',
+      '<script src="https://appview.example/assets/absolute.js"></script>',
+      '<a href="https://appview.example/apps/spark">Spark</a>',
+    ].join(""),
+    "https://appview.example",
+    new URL("https://atmosphereaccount.com/apps/spark"),
+  );
+
+  assertEquals(rewritten.includes('from "/_appview/assets/client.js"'), true);
+  assertEquals(
+    rewritten.includes('href="/_appview/assets/island.js"'),
     true,
   );
   assertEquals(
-    shouldProxyAppviewAssetForTest(
-      new URL("https://login.atmosphereaccount.com/assets/client-entry.js"),
-      trustedOrigins,
+    rewritten.includes(
+      'src="https://atmosphereaccount.com/_appview/assets/absolute.js"',
     ),
     true,
   );
   assertEquals(
-    shouldProxyAppviewAssetForTest(
-      new URL("https://example.com/assets/client-entry.js"),
-      trustedOrigins,
-    ),
-    false,
-  );
-  assertEquals(
-    shouldProxyAppviewAssetForTest(
-      new URL("https://atmosphereaccount.com/styles.css"),
-      trustedOrigins,
-    ),
-    false,
+    rewritten.includes('href="https://atmosphereaccount.com/apps/spark"'),
+    true,
   );
 });
 

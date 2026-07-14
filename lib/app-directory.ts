@@ -69,6 +69,7 @@ export interface AppListing {
   productDid: string | null;
   profileDid: string | null;
   legacyProfileDid: string | null;
+  accountHost: string | null;
   atstoreListingUri: string | null;
   communityProfileUri: string | null;
   communityEntryUri: string | null;
@@ -155,6 +156,7 @@ interface RawAppListingRow {
   product_did: string | null;
   profile_did: string | null;
   legacy_profile_did: string | null;
+  account_host: string | null;
   atstore_listing_uri: string | null;
   community_profile_uri: string | null;
   community_entry_uri: string | null;
@@ -176,7 +178,7 @@ const SOURCE_RANK: Record<string, number> = {
   atmosphere_profile: 3,
 };
 
-const FEATURED_SECTION_SIZE = 4;
+const FEATURED_SECTION_SIZE = 3;
 const FEATURED_CANDIDATE_LIMIT = 18;
 const FEATURED_ROTATION_MS = 1000 * 60 * 60 * 12;
 const SEARCH_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -403,6 +405,7 @@ function rowToAppListing(input: unknown): AppListing {
     productDid: row.product_did,
     profileDid: row.profile_did,
     legacyProfileDid: row.legacy_profile_did,
+    accountHost: row.account_host,
     atstoreListingUri: row.atstore_listing_uri,
     communityProfileUri: row.community_profile_uri,
     communityEntryUri: row.community_entry_uri,
@@ -422,16 +425,30 @@ function rowToAppListing(input: unknown): AppListing {
   };
 }
 
-function mergeDrafts(drafts: AppListingDraft[]) {
-  const sorted = [...drafts].sort(compareAppListingDraftPrecedence);
+export function mergeAppListingDrafts(drafts: AppListingDraft[]) {
+  const nonLocalDrafts = drafts.filter((draft) =>
+    !isLocalDevListingDraft(draft)
+  );
+  const sourceDrafts = nonLocalDrafts.length > 0 ? nonLocalDrafts : drafts;
+  const sorted = [...sourceDrafts].sort(compareAppListingDraftPrecedence);
+  const allSorted = [...drafts].sort(compareAppListingDraftPrecedence);
   const canonical = sorted[0]!;
+  const atstoreDrafts = sorted.filter((draft) =>
+    draft.sourceType === "atstore_listing"
+  );
+  const contentDrafts = atstoreDrafts.length > 0 ? atstoreDrafts : sorted;
   const first = <K extends keyof AppListingDraft>(key: K) =>
+    contentDrafts.find((draft) => draft[key] != null && draft[key] !== "")
+      ?.[key];
+  const identityFirst = <K extends keyof AppListingDraft>(key: K) =>
     sorted.find((draft) => draft[key] != null && draft[key] !== "")?.[key];
   const publishedAt = Math.min(
-    ...sorted.map((draft) => draft.createdAt ?? Date.now()),
+    ...contentDrafts.map((draft) => draft.createdAt ?? Date.now()),
   );
   const updatedAt = Math.max(
-    ...sorted.map((draft) => draft.updatedAt ?? draft.createdAt ?? Date.now()),
+    ...contentDrafts.map((draft) =>
+      draft.updatedAt ?? draft.createdAt ?? Date.now()
+    ),
   );
   const sourceRefs: AppListingSourceRefs = {};
   for (const draft of sorted) {
@@ -455,37 +472,75 @@ function mergeDrafts(drafts: AppListingDraft[]) {
     iconUrl: first("iconUrl") as string | undefined,
     heroUrl: first("heroUrl") as string | undefined,
     screenshotUrls: uniqueStrings(
-      sorted.flatMap((draft) => draft.screenshotUrls),
+      contentDrafts.flatMap((draft) => draft.screenshotUrls),
     ),
-    links: dedupeLinks(sorted.flatMap((draft) => draft.links)),
-    tags: uniqueStrings(sorted.flatMap((draft) => draft.tags)).slice(0, 16),
-    platforms: uniqueStrings(sorted.flatMap((draft) => draft.platforms)),
+    links: mergedListingLinks(contentDrafts, allSorted),
+    tags: uniqueStrings(contentDrafts.flatMap((draft) => draft.tags)).slice(
+      0,
+      16,
+    ),
+    platforms: uniqueStrings(
+      contentDrafts.flatMap((draft) => draft.platforms),
+    ),
     categorySlugs: uniqueStrings(
-      sorted.flatMap((draft) => draft.categorySlugs),
+      contentDrafts.flatMap((draft) => draft.categorySlugs),
     ),
     lexicons: {
       produces: uniqueStrings(
-        sorted.flatMap((draft) => draft.lexiconsProduces),
+        contentDrafts.flatMap((draft) => draft.lexiconsProduces),
       ),
       consumes: uniqueStrings(
-        sorted.flatMap((draft) => draft.lexiconsConsumes),
+        contentDrafts.flatMap((draft) => draft.lexiconsConsumes),
       ),
     },
     accountIndicators: dedupeIndicators(
-      sorted.flatMap((draft) => draft.accountIndicators),
+      contentDrafts.flatMap((draft) => draft.accountIndicators),
     ),
     sourceRefs,
     canonicalSource: canonical.sourceType,
     canonicalUri: canonical.sourceUri,
     productDid: first("productDid") as string | undefined,
-    profileDid: first("profileDid") as string | undefined,
-    legacyProfileDid: first("legacyProfileDid") as string | undefined,
+    profileDid: identityFirst("profileDid") as string | undefined,
+    legacyProfileDid: identityFirst("legacyProfileDid") as string | undefined,
     atstoreListingUri: first("atstoreListingUri") as string | undefined,
     communityProfileUri: first("communityProfileUri") as string | undefined,
     communityEntryUri: first("communityEntryUri") as string | undefined,
     publishedAt: Number.isFinite(publishedAt) ? publishedAt : Date.now(),
     updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
   };
+}
+
+function mergedListingLinks(
+  contentDrafts: AppListingDraft[],
+  sortedDrafts: AppListingDraft[],
+): AppDirectoryLink[] {
+  const contentSet = new Set(contentDrafts);
+  const supplementalLinks = sortedDrafts
+    .filter((draft) => !contentSet.has(draft))
+    .flatMap((draft) => draft.links)
+    .filter(isLegacySupplementalAppLink);
+  return dedupeLinks([
+    ...contentDrafts.flatMap((draft) => draft.links),
+    ...supplementalLinks,
+  ]);
+}
+
+function isLegacySupplementalAppLink(link: AppDirectoryLink): boolean {
+  const url = canonicalUrl(link.uri);
+  if (!url) return false;
+  const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  if (
+    host === "apps.apple.com" || host === "play.google.com" ||
+    host === "tangled.org" || host.endsWith(".tangled.org") ||
+    host === "tangled.sh" || host.endsWith(".tangled.sh")
+  ) {
+    return true;
+  }
+  const text = `${link.role ?? ""} ${link.label ?? ""}`.toLowerCase();
+  return text.includes("appstore") || text.includes("app store") ||
+    text.includes("playstore") || text.includes("play store") ||
+    text.includes("google play") || text.includes("ios") ||
+    text.includes("android") || text.includes("tangled");
 }
 
 function dedupeLinks(links: AppDirectoryLink[]) {
@@ -703,7 +758,7 @@ async function recomputeListing(
     });
     return;
   }
-  const merged = mergeDrafts(drafts);
+  const merged = mergeAppListingDrafts(drafts);
   const slug = await ensureUniqueSlug(
     c.execute.bind(c),
     merged.slug,
@@ -1433,7 +1488,7 @@ export function syncLegacyAppProfilesToDirectory(): Promise<void> {
   return legacySyncPromise;
 }
 
-function listSelect(prefix = "") {
+function listSelect(prefix: string) {
   const p = prefix ? `${prefix}.` : "";
   return `
     ${p}id, ${p}slug, ${p}name, ${p}description, ${p}tagline,
@@ -1442,7 +1497,26 @@ function listSelect(prefix = "") {
     ${p}category_slugs_json, ${p}lexicons_json,
     ${p}account_indicators_json, ${p}source_refs_json,
     ${p}canonical_source, ${p}canonical_uri, ${p}product_did,
-    ${p}profile_did, ${p}legacy_profile_did, ${p}atstore_listing_uri,
+    ${p}profile_did, ${p}legacy_profile_did,
+    (SELECT h.host
+      FROM account_host h
+      WHERE h.profile_did IS NOT NULL
+        AND h.profile_did IN (
+          ${p}product_did,
+          ${p}profile_did,
+          ${p}legacy_profile_did
+        )
+      ORDER BY
+        CASE
+          WHEN h.verification_status IN ('verified', 'claimed') THEN 0
+          WHEN h.source = 'seeded' THEN 1
+          ELSE 2
+        END,
+        h.observed_account_count DESC,
+        h.host ASC
+      LIMIT 1
+    ) AS account_host,
+    ${p}atstore_listing_uri,
     ${p}community_profile_uri, ${p}community_entry_uri, ${p}review_count,
     ${p}average_rating, ${p}favorite_count, ${p}mention_count_24h,
     ${p}mention_count_7d, ${p}trending_score, ${p}published_at,
@@ -1778,9 +1852,9 @@ export async function getAppListingByIdentifier(
   return await withDb(async (c) => {
     const bySlug = await c.execute({
       sql: `
-        SELECT ${listSelect()}
-        FROM app_listing
-        WHERE slug = ? AND deleted_at IS NULL
+        SELECT ${listSelect("l")}
+        FROM app_listing l
+        WHERE l.slug = ? AND l.deleted_at IS NULL
         LIMIT 1
       `,
       args: [slugify(raw)],
@@ -1801,5 +1875,39 @@ export async function getAppListingByIdentifier(
       args: keyCandidates,
     });
     return alias.rows.length > 0 ? rowToAppListing(alias.rows[0]) : null;
+  });
+}
+
+export async function getVisibleAppListingByAccountDid(
+  did: string,
+  options: { syncLegacy?: boolean } = {},
+): Promise<AppListing | null> {
+  if (options.syncLegacy !== false) {
+    await syncLegacyAppProfilesToDirectory().catch(() => {});
+  }
+  const normalized = did.trim();
+  if (!normalized.startsWith("did:")) return null;
+  return await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `
+        SELECT ${listSelect("l")}
+        FROM app_listing l
+        LEFT JOIN app_moderation m ON m.listing_id = l.id
+        WHERE l.deleted_at IS NULL
+          AND COALESCE(m.status, 'visible') = 'visible'
+          AND (
+            l.product_did = ? OR
+            l.profile_did = ? OR
+            l.legacy_profile_did = ?
+          )
+        ORDER BY
+          CASE WHEN l.atstore_listing_uri IS NOT NULL THEN 0 ELSE 1 END,
+          l.updated_at DESC,
+          l.slug ASC
+        LIMIT 1
+      `,
+      args: [normalized, normalized, normalized],
+    });
+    return result.rows.length > 0 ? rowToAppListing(result.rows[0]) : null;
   });
 }

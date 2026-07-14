@@ -111,4 +111,11 @@ Deno.test("appActionLinkKind recognizes common ATStore link shapes", () => {
     }),
     "bluesky",
   );
+  assertEquals(
+    appActionLinkKind({
+      uri: "https://tangled.org/example.com",
+      label: "Source",
+    }),
+    "tangled",
+  );
 });

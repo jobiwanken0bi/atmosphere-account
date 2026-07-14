@@ -29,6 +29,7 @@ Deno.test("app like count copy crosses the island boundary as strings", () => {
     countOne: "{count} like",
     countMany: "{count} likes",
   };
+  assertEquals(appLikeCountLabel(0, copy), "0 likes");
   assertEquals(appLikeCountLabel(1, copy), "1 like");
   assertEquals(appLikeCountLabel(2, copy), "2 likes");
 });
