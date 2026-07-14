@@ -166,7 +166,12 @@ function extractPaths(text: string, pattern: RegExp): string[] {
   return [...values];
 }
 
-function extractHtmlAssetPaths(html: string): {
+export function isGeneratedPickerAssetPath(path: string): boolean {
+  return path.startsWith("/assets/") ||
+    path.startsWith("/_appview/assets/");
+}
+
+export function extractHtmlAssetPaths(html: string): {
   stylesheets: string[];
   staticScripts: string[];
   generatedAssets: string[];
@@ -176,17 +181,20 @@ function extractHtmlAssetPaths(html: string): {
     staticScripts: extractPaths(
       html,
       /<script[^>]+src="([^"]+\.js[^"]*)"/g,
-    ).filter((path) => !path.startsWith("/assets/")),
-    generatedAssets: extractPaths(html, /["'](\/assets\/[^"']+\.js)["']/g),
+    ).filter((path) => !isGeneratedPickerAssetPath(path)),
+    generatedAssets: extractPaths(
+      html,
+      /["'](\/(?:_appview\/)?assets\/[^"']+\.js)["']/g,
+    ),
   };
 }
 
-function extractJsImports(js: string, assetUrl: URL): string[] {
+export function extractJsImports(js: string, assetUrl: URL): string[] {
   const paths = extractPaths(js, /(?:from|import)\s*["']([^"']+\.js)["']/g);
   const dynamicPaths = extractPaths(js, /import\(["']([^"']+\.js)["']\)/g);
   return [...new Set([...paths, ...dynamicPaths])]
     .map((path) => new URL(path, assetUrl).pathname)
-    .filter((path) => path.startsWith("/assets/"));
+    .filter(isGeneratedPickerAssetPath);
 }
 
 async function smokePath(
@@ -258,7 +266,7 @@ export async function main(): Promise<void> {
     throw new Error("picker HTML did not include any static scripts");
   }
   if (assets.generatedAssets.length === 0) {
-    throw new Error("picker HTML did not include generated /assets scripts");
+    throw new Error("picker HTML did not include generated asset scripts");
   }
 
   console.log(
