@@ -173,15 +173,17 @@ async function loadCandidates(
   attemptedBefore: number,
   limit: number,
 ): Promise<PublicHostEnrichmentCandidate[]> {
+  // A manual row can originate from an unverified published host record. Probe
+  // it just like relay-observed rows so only independent PDS metadata can turn
+  // that self-assertion into public directory eligibility.
   const result = await client.execute({
     sql: `SELECT host, service_endpoint, observed_account_count
       FROM account_host
-      WHERE source = 'observed'
+      WHERE source IN ('observed', 'manual')
         AND verification_status = 'observed'
         AND observed_active_account_count > 0
         AND observed_account_count >= ?
         AND lower(COALESCE(service_endpoint, '')) LIKE 'https://%'
-        AND COALESCE(service_record_uri, '') = ''
         AND COALESCE(signup_url, '') = ''
         AND (
           public_intent_attempted_at IS NULL

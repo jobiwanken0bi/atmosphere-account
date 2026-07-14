@@ -125,9 +125,12 @@ Deno.test("legacy host arrays prioritize account totals in the default sort", ()
   assertEquals(result.hosts[0]?.host, observedHost?.host);
 });
 
-Deno.test("public host arrays hide active personal PDSes without listing intent", () => {
+Deno.test("public host arrays do not treat unverified records as listing authority", () => {
   const now = 1_000_000_000;
-  const [personal, published] = listSeededAccountHostFallback().slice(0, 2);
+  const [personal, published, detected] = listSeededAccountHostFallback().slice(
+    0,
+    3,
+  );
   const result = hostDirectoryResultForHosts(
     { publicOnly: true, now },
     [
@@ -151,11 +154,24 @@ Deno.test("public host arrays hide active personal PDSes without listing intent"
         lastIndexedAccountAt: now,
         lastActiveAt: now,
       },
+      {
+        ...detected,
+        source: "manual",
+        verificationStatus: "observed",
+        serviceRecordUri:
+          "at://did:plc:provider/account.atmosphere.host.service/self",
+        publicIntentStatus: "detected",
+        publicIntentSource: "pds_managed_invites",
+        publicIntentCheckedAt: now,
+        observedActiveAccountCount: 2,
+        lastIndexedAccountAt: now,
+        lastActiveAt: now,
+      },
     ],
   );
 
   assertEquals(result.total, 1);
-  assertEquals(result.hosts[0]?.host, published?.host);
+  assertEquals(result.hosts[0]?.host, detected?.host);
 });
 
 Deno.test("create-account host discovery requires trusted signup URLs", () => {

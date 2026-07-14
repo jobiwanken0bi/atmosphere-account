@@ -81,7 +81,7 @@ Deno.test("seeded account host fallback preserves real empty search states", () 
   assertEquals(listSeededAccountHostFallback({ query: "zzzz-no-host" }), []);
 });
 
-Deno.test("host directory sorts provider totals without splitting PDS nodes", () => {
+Deno.test("host directory sorts providers by total accounts", () => {
   const [first, second, third] = listSeededAccountHostFallback().slice(0, 3);
   assert(first && second && third, "expected seeded hosts");
   const hosts = [
@@ -92,10 +92,6 @@ Deno.test("host directory sorts provider totals without splitting PDS nodes", ()
   assertEquals(
     sortAccountHostsForDirectory(hosts, "accounts").map((host) => host.host),
     [third.host, first.host, second.host],
-  );
-  assertEquals(
-    sortAccountHostsForDirectory(hosts, "active").map((host) => host.host),
-    [second.host, first.host, third.host],
   );
 });
 
@@ -177,7 +173,7 @@ Deno.test("public host policy requires recent reachability and public intent", (
       { ...base, serviceRecordUri: "at://host" },
       now,
     ),
-    true,
+    false,
   );
   assertEquals(
     isAccountHostPubliclyListable({

@@ -162,6 +162,9 @@ Implementation notes:
 
 - Raw protocol records are stored in `host_record`.
 - The merged public listing remains `account_host`.
+- Indexing a self-declared record does not prove control of its host domain or
+  independently grant public-directory eligibility. Unclaimed hosts still need a
+  safe signup URL or conservative public-intent detection from their PDS.
 - Jetstream indexes `account.atmosphere.host.profile` and
   `account.atmosphere.host.service` records as they change.
 - `deno task backfill:hosts [handle ...]` reads existing host records directly

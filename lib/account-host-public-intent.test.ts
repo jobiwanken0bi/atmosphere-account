@@ -98,6 +98,19 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
         args: [host, `https://${host}`, verification, count, count],
       });
     }
+    await db.execute({
+      sql: `INSERT INTO account_host (
+          host, service_endpoint, service_record_uri, source,
+          observed_account_count, observed_active_account_count
+        ) VALUES (?, ?, ?, 'manual', ?, ?)`,
+      args: [
+        "published.example",
+        "https://published.example",
+        "at://did:plc:publisher/account.atmosphere.host.service/published.example",
+        7,
+        7,
+      ],
+    });
 
     const summary = await enrichObservedAccountHostPublicIntentForClient(
       db as unknown as DbClient,
@@ -121,9 +134,9 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
     );
 
     assertEquals(summary, {
-      candidates: 3,
-      checked: 3,
-      detected: 2,
+      candidates: 4,
+      checked: 4,
+      detected: 3,
       notDetected: 1,
       unavailable: 0,
     });
@@ -166,6 +179,13 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
         signup_status: "unknown",
         public_intent_status: "not_detected",
         public_intent_source: null,
+        public_intent_checked_at: 1_000_000,
+      },
+      {
+        host: "published.example",
+        signup_status: "open",
+        public_intent_status: "detected",
+        public_intent_source: "pds_open_signup",
         public_intent_checked_at: 1_000_000,
       },
     ]);

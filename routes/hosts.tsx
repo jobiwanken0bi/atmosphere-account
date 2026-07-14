@@ -122,12 +122,6 @@ export default define.page(async function HostsPage(ctx) {
                           {copy.sortAccounts}
                         </option>
                         <option
-                          value="active"
-                          selected={input.sort === "active"}
-                        >
-                          {copy.sortActive}
-                        </option>
-                        <option
                           value="name"
                           selected={input.sort === "name"}
                         >
@@ -161,18 +155,6 @@ export default define.page(async function HostsPage(ctx) {
                           selected={input.signupStatus === "invite_required"}
                         >
                           {copy.signupInvite}
-                        </option>
-                        <option
-                          value="closed"
-                          selected={input.signupStatus === "closed"}
-                        >
-                          {copy.signupClosed}
-                        </option>
-                        <option
-                          value="unknown"
-                          selected={input.signupStatus === "unknown"}
-                        >
-                          {copy.signupUnknown}
                         </option>
                       </select>
                     </label>
@@ -297,8 +279,8 @@ function readPositiveInteger(value: string | null, fallback: number): number {
 }
 
 function readSort(value: string | null): AccountHostSort {
-  return value === "accounts" || value === "active" || value === "name" ||
-      value === "recent"
+  if (value === "active") return "accounts";
+  return value === "accounts" || value === "name" || value === "recent"
     ? value
     : DEFAULT_ACCOUNT_HOST_SORT;
 }
@@ -306,11 +288,7 @@ function readSort(value: string | null): AccountHostSort {
 function readSignupStatus(
   value: string | null,
 ): HostSignupStatus | "all" {
-  return value === "open" || value === "invite_required" ||
-      value === "closed" ||
-      value === "unknown"
-    ? value
-    : "all";
+  return value === "open" || value === "invite_required" ? value : "all";
 }
 
 function readVerificationStatus(

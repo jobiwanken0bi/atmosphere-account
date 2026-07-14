@@ -88,7 +88,6 @@ export const PUBLIC_ACCOUNT_HOST_INTENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export type AccountHostSort =
   | typeof DEFAULT_ACCOUNT_HOST_SORT
   | "accounts"
-  | "active"
   | "name"
   | "recent";
 
@@ -2319,11 +2318,6 @@ function accountHostOrder(sort: AccountHostSort): string {
     END,
     lower(account_host.display_name) ASC,
     account_host.host ASC`;
-  if (sort === "active") {
-    return `account_host.observed_active_account_count DESC,
-      account_host.observed_account_count DESC,
-      ${stable}`;
-  }
   if (sort === "name") {
     return `lower(account_host.display_name) ASC, account_host.host ASC`;
   }
@@ -2369,11 +2363,6 @@ export function sortAccountHostsForDirectory(
       const count = b.observedAccountCount - a.observedAccountCount ||
         b.observedActiveAccountCount - a.observedActiveAccountCount;
       if (count) return count;
-    } else if (sort === "active") {
-      const count = b.observedActiveAccountCount -
-          a.observedActiveAccountCount ||
-        b.observedAccountCount - a.observedAccountCount;
-      if (count) return count;
     } else if (sort === "recent") {
       const recent = accountHostRecentAt(b) - accountHostRecentAt(a);
       if (recent) return recent;
@@ -2393,9 +2382,10 @@ export function isAccountHostPubliclyListable(
   host: AccountHost,
   at = now(),
 ): boolean {
+  // Host records are self-asserted metadata. Until the operator claims the
+  // host, they must not establish domain authority or directory visibility.
   const hasPublicIntent = host.verificationStatus === "claimed" ||
     host.verificationStatus === "verified" || host.source === "seeded" ||
-    !!host.serviceRecordUri ||
     normalizeAccountHostPublicHttpsUrl(host.signupUrl) !== null ||
     hasFreshDetectedPublicIntent(host, at);
   if (!hasPublicIntent) return false;
@@ -2442,6 +2432,8 @@ export function accountHostAvailability(
 }
 
 function publicAccountHostVisibilitySql(): string {
+  // Deliberately keep service_record_uri out of this projection: the record is
+  // useful profile data, but is not proof that its author controls the host.
   return `(
     (
       (
@@ -2462,7 +2454,6 @@ function publicAccountHostVisibilitySql(): string {
     AND (
       account_host.verification_status IN ('verified', 'claimed')
       OR account_host.source = 'seeded'
-      OR COALESCE(account_host.service_record_uri, '') <> ''
       OR lower(COALESCE(account_host.signup_url, '')) LIKE 'https://%'
       OR (
         account_host.public_intent_status = 'detected'

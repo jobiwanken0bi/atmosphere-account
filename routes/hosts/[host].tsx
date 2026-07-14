@@ -632,7 +632,12 @@ function formatDate(ms: number): string {
 }
 
 function registryStatusLabel(host: AccountHost): string {
-  if (host.serviceRecordUri) return "Published by host";
+  if (host.serviceRecordUri) {
+    return host.verificationStatus === "claimed" ||
+        host.verificationStatus === "verified"
+      ? "Published by host"
+      : "Published AT Protocol record";
+  }
   switch (host.source) {
     case "seeded":
       return "Seeded by Atmosphere";

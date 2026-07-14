@@ -458,16 +458,18 @@ individual account DIDs.
 The public host directory is a curated projection, not a dump of that relay
 inventory. A grouped host is public only when it is recently relay-active or
 passes a current reachability check and also has an intentional-publication
-signal: a claimed or verified profile, a seed maintained by Atmosphere, a
-published Atmosphere host service record, or a safe public HTTPS signup URL. The
-scheduled inventory job also enriches a bounded batch of stale, active
-multi-account PDSes through the standard `describeServer` endpoint. Open
-registration is an independent public-intent signal; invite-based registration
-also requires published operator contact and policy metadata. These detected
-providers can appear before they are claimed, while claiming remains the way an
-operator customizes and controls the profile. One-user and observed-only PDSes
-remain private. Detection is refreshed daily, expires from public eligibility
-after seven days without a successful check, and can be skipped or bounded with
+signal: a claimed or verified profile, a seed maintained by Atmosphere, a safe
+public HTTPS signup URL, or conservative PDS metadata. A self-published
+Atmosphere host service record can enrich stored profile data, but does not by
+itself establish domain authority or directory eligibility. The scheduled
+inventory job also enriches a bounded batch of stale, active multi-account PDSes
+through the standard `describeServer` endpoint. Open registration is an
+independent public-intent signal; invite-based registration also requires
+published operator contact and policy metadata. These detected providers can
+appear before they are claimed, while claiming remains the way an operator
+customizes and controls the profile. One-user and observed-only PDSes remain
+private. Detection is refreshed daily, expires from public eligibility after
+seven days without a successful check, and can be skipped or bounded with
 `--skip-enrichment` and `--enrichment-limit=N`.
 
 Claimed and verified hosts retain a 72-hour grace period after their last active

@@ -61,10 +61,12 @@ runtime migration path, baseline schema, and migration tests together.
   separate signals.
 - The database retains raw relay PDS inventory and status history, while the
   public host directory exposes only reachable providers with an explicit
-  public-intent signal. That signal can come from a published/claimed profile,
+  public-intent signal. That signal can come from a claimed or verified profile,
   curated seed, safe signup URL, or conservative `describeServer` enrichment;
-  claiming is not required for an otherwise public provider to appear.
-  Observed-only personal PDSes are not directory entries.
+  claiming is not required for an otherwise public provider to appear. A
+  self-published host record can supply profile metadata, but does not by itself
+  establish control of a domain or make an unverified PDS public. Observed-only
+  personal PDSes are not directory entries.
 - Admin routes are deny-by-default when no admin DID is configured.
 - Public images and SVGs are proxied or sanitized with restrictive headers.
 
