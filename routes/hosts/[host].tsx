@@ -18,6 +18,7 @@ import { hostFriendlyProfile } from "../../lib/host-friendly.ts";
 import {
   fetchPdsServerDescription,
   type PdsServerDescription,
+  pdsServerDescriptionForAccountHost,
 } from "../../lib/pds-server-description.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { hostHasCurrentConformance } from "../../lib/host-conformance.ts";
@@ -70,7 +71,9 @@ export const handler = define.handlers({
       <HostDetailPage
         host={host}
         claim={claim}
-        pdsDescription={pdsDescription}
+        pdsDescription={host
+          ? pdsServerDescriptionForAccountHost(host.host, pdsDescription)
+          : null}
         linkedAppHref={host ? appHrefForHost(host, linkedApp) : null}
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}

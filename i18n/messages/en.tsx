@@ -258,6 +258,11 @@ const en = {
     factsLabel: "Host facts",
     accounts: (count: number): string =>
       `${count.toLocaleString()} account${count === 1 ? "" : "s"}`,
+    compactAccountCount: (count: number): string =>
+      new Intl.NumberFormat("en", {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }).format(count),
     accountCountUnavailable: "Account count unavailable",
     active: "Active",
     compatibilityChecked: "Compatibility checked",

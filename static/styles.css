@@ -7289,6 +7289,21 @@ body {
   width: 100%;
 }
 
+.app-detail-hero .profile-hero-actions.app-detail-action-columns {
+  width: min(100%, 18.5rem);
+  min-width: 18.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.75rem;
+  align-items: start;
+  gap: 0.55rem;
+}
+
+.app-detail-store-actions .profile-hero-action--store-icon {
+  width: 100%;
+  padding-inline: 0.6rem;
+  gap: 0.35rem;
+}
+
 .app-detail-inline-actions {
   display: flex;
   align-items: center;
@@ -7391,6 +7406,11 @@ body {
     border-top: 0;
     padding-top: 0;
     justify-content: flex-start;
+  }
+
+  .app-detail-hero .profile-hero-actions.app-detail-action-columns {
+    width: 100%;
+    min-width: 0;
   }
 
   .app-detail-hero-platforms,
@@ -13618,6 +13638,7 @@ body {
 }
 
 .host-card {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 0.72rem;
@@ -13659,12 +13680,10 @@ body {
 
 .host-card-account-count {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  max-width: 45%;
   min-height: 1.7rem;
-  overflow: hidden;
   border: 1px solid rgba(42, 90, 168, 0.18);
   border-radius: 999px;
   padding: 0.16rem 0.56rem;
@@ -13673,8 +13692,29 @@ body {
   font-size: 0.7rem;
   font-weight: 700;
   line-height: 1;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.host-card-account-summary {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.32rem;
+}
+
+.host-card-account-count-compact {
+  display: none;
+}
+
+@container (max-width: 360px) {
+  .host-card-account-count-full {
+    display: none;
+  }
+
+  .host-card-account-count-compact {
+    display: inline;
+  }
 }
 
 .host-card-mark {
@@ -13762,38 +13802,31 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.28rem;
+  gap: 0.08rem;
   flex: 1 1 auto;
   align-self: stretch;
   height: 3.25rem;
   min-width: 0;
-  padding-block: 0.16rem;
-  overflow: hidden;
-}
-
-.host-card-title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.38rem;
-  min-width: 0;
+  padding-block: 0.08rem;
   overflow: hidden;
 }
 
 .host-card-title-block h2 {
   display: block;
-  flex: 0 1 auto;
-  min-width: 2.5rem;
-  max-width: 100%;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
   margin-bottom: 0;
   font-size: 0.92rem;
-  line-height: 1.2;
+  line-height: 1.12;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .host-card-handle {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
   margin: 0;
   color: rgba(18, 26, 47, 0.58);
@@ -13859,10 +13892,19 @@ body {
   font-weight: 650;
 }
 
-.host-card-tags .host-card-active {
+.host-card-active {
+  display: inline-flex;
+  align-items: center;
   gap: 0.3rem;
+  min-height: 1.55rem;
+  border: 1px solid rgba(91, 189, 132, 0.2);
+  border-radius: 999px;
+  padding: 0.12rem 0.48rem;
   color: #176440;
   background: rgba(91, 189, 132, 0.16);
+  font-size: 0.69rem;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .host-card-active::before {
@@ -14708,6 +14750,12 @@ body {
   color: #d8e4ff;
 }
 
+.dark-phase .host-card-active {
+  border-color: rgba(92, 220, 164, 0.26);
+  background: rgba(92, 220, 164, 0.13);
+  color: #a8f0cf;
+}
+
 .dark-phase .host-card-domain {
   color: rgba(255, 255, 255, 0.66);
 }
@@ -15076,6 +15124,65 @@ body {
 
   .account-dashboard-empty--visual .account-dashboard-empty-actions {
     grid-column: 1;
+  }
+}
+
+@media (max-width: 520px) {
+  .host-card-top {
+    gap: 0.5rem;
+  }
+
+  .host-card-identity {
+    gap: 0.6rem;
+  }
+
+  .host-detail-hero {
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .host-detail-hero .profile-hero-media {
+    flex-basis: 96px;
+    gap: 0.55rem;
+  }
+
+  .host-detail-hero .host-card-mark {
+    width: 96px;
+    height: 96px;
+    border-radius: 19px;
+  }
+
+  .host-detail-hero .host-card-mark-icon {
+    width: 3.6rem;
+    height: 3.6rem;
+  }
+
+  .host-detail-hero .profile-hero-body {
+    flex: 1 0 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .host-detail-hero .profile-hero-actions {
+    gap: 0.5rem;
+    padding-top: 0.85rem;
+  }
+
+  .host-detail-choice-card {
+    gap: 0.8rem;
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .host-detail-choice-icon {
+    width: 2.55rem;
+    height: 2.55rem;
+    border-radius: 12px;
+  }
+
+  .host-detail-choice-icon svg {
+    width: 1.4rem;
+    height: 1.4rem;
   }
 }
 
@@ -18223,12 +18330,11 @@ body {
   background: rgba(255, 255, 255, 0.56);
 }
 
-/* Active page: distinct from hover — accent colour + inset left bar. */
+/* Active page: distinct from hover through its card and accent treatment. */
 .docs-nav-group a.is-active {
   color: #1f4fa8;
   font-weight: 800;
   background: rgba(255, 255, 255, 0.64);
-  box-shadow: inset 3px 0 0 #2f6ae0;
 }
 
 .docs-main {

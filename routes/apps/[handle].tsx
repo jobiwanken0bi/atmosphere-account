@@ -716,8 +716,16 @@ function AppListingHero(
     .sort((a, b) =>
       primaryAppActionRank(a.kind) - primaryAppActionRank(b.kind)
     );
+  const storeLinks = primaryLinks.filter((link) =>
+    link.kind === "ios" || link.kind === "android"
+  );
+  const destinationLinks = primaryLinks.filter((link) =>
+    link.kind !== "ios" && link.kind !== "android"
+  );
   const compactLinks = links.filter((link) => isCompactAppAction(link.kind));
   const hostHref = hostHrefForApp(app);
+  const hasDestinationLinks = !!hostHref || destinationLinks.length > 0;
+  const hasSplitActionColumns = storeLinks.length > 0 && hasDestinationLinks;
   const displayPlatforms = app.atstoreListingUri ? [] : app.platforms;
   const iconUrl = appImageUrl(app.iconUrl, "icon");
   return (
@@ -766,17 +774,27 @@ function AppListingHero(
               </div>
             </div>
             <div class="app-detail-hero-side">
-              {(hostHref || primaryLinks.length > 0) && (
-                <div class="profile-hero-actions" aria-label="App links">
-                  {hostHref && (
-                    <DirectoryIdentityLink
-                      href={hostHref}
-                      destination="host"
-                    />
+              {(hasDestinationLinks || storeLinks.length > 0) && (
+                <div
+                  class={`profile-hero-actions${
+                    hasSplitActionColumns ? " app-detail-action-columns" : ""
+                  }`}
+                  aria-label="App links"
+                >
+                  {hasDestinationLinks && (
+                    <div class="app-detail-primary-actions app-detail-destination-actions">
+                      {hostHref && (
+                        <DirectoryIdentityLink
+                          href={hostHref}
+                          destination="host"
+                        />
+                      )}
+                      {destinationLinks.map(renderAppAction)}
+                    </div>
                   )}
-                  {primaryLinks.length > 0 && (
-                    <div class="app-detail-primary-actions">
-                      {primaryLinks.map(renderAppAction)}
+                  {storeLinks.length > 0 && (
+                    <div class="app-detail-primary-actions app-detail-store-actions">
+                      {storeLinks.map(renderAppAction)}
                     </div>
                   )}
                 </div>
@@ -807,11 +825,12 @@ function AppListingHero(
 
 function renderAppAction(link: AppActionLink) {
   const compact = isCompactAppAction(link.kind);
+  const storeIconOnly = link.kind === "ios" || link.kind === "android";
   return (
     <a
       class={`profile-hero-action${
         compact ? " profile-hero-action--icon-only" : ""
-      }`}
+      }${storeIconOnly ? " profile-hero-action--store-icon" : ""}`}
       href={link.uri}
       target="_blank"
       rel="noopener noreferrer"
@@ -824,7 +843,7 @@ function renderAppAction(link: AppActionLink) {
       </span>
       {!compact && (
         <>
-          <span>{link.label}</span>
+          {!storeIconOnly && <span>{link.label}</span>}
           <span class="profile-hero-action-arrow" aria-hidden="true">↗</span>
         </>
       )}

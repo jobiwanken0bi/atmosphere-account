@@ -12,6 +12,26 @@ export interface PdsServerDescription {
   checkedAt: number;
 }
 
+/**
+ * Apply narrowly scoped corrections when a provider's public describeServer
+ * response does not match its actual signup flow. The AT Protocol lexicon says
+ * phoneVerificationRequired means every new account must supply a phone token;
+ * Bluesky currently advertises true even though its signup flow does not.
+ */
+export function pdsServerDescriptionForAccountHost(
+  accountHost: string,
+  description: PdsServerDescription | null,
+): PdsServerDescription | null {
+  if (!description) return null;
+  if (
+    accountHost.trim().toLowerCase() === "bsky.network" &&
+    description.phoneVerificationRequired === true
+  ) {
+    return { ...description, phoneVerificationRequired: false };
+  }
+  return description;
+}
+
 const DESCRIBE_SERVER_PATH = "/xrpc/com.atproto.server.describeServer";
 const DESCRIBE_SERVER_TIMEOUT_MS = 2500;
 const DESCRIBE_SERVER_MAX_BYTES = 32_000;

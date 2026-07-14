@@ -16,6 +16,26 @@ const { withDb } = await import("../lib/db.ts");
 
 const now = Date.now();
 
+// Representative UI fixtures only; these are intentionally not production
+// inventory figures. The spread makes count formatting, sorting, and card
+// density easy to inspect in local development.
+const hostAccountCounts = [
+  ["bsky.network", 42_356_901],
+  ["atproto.brid.gy", 184_230],
+  ["pds.wsocial.network", 12_480],
+  ["roomy.chat", 6_720],
+  ["northsky.social", 3_140],
+  ["bookhive.social", 1_860],
+  ["selfhosted.social", 742],
+  ["eurosky.social", 9_540],
+  ["blacksky.community", 28_300],
+  ["sprk.so", 76_210],
+  ["tangled.org", 4_890],
+  ["pckt.cafe", 1_275],
+  ["margin.cafe", 2_340],
+  ["npmx.social", 915],
+] as const;
+
 const apps = [
   {
     slug: "bluesky",
@@ -204,6 +224,19 @@ for (const app of apps) {
 }
 
 await withDb(async (c) => {
+  for (const [host, accountCount] of hostAccountCounts) {
+    await c.execute({
+      sql: `
+        UPDATE account_host
+        SET observed_account_count = ?,
+            observed_active_account_count = ?,
+            updated_at = ?
+        WHERE host = ?
+      `,
+      args: [accountCount, accountCount, now, host],
+    });
+  }
+
   const featured = listingIds.slice(0, 3);
   for (let index = 0; index < featured.length; index++) {
     await c.execute({
@@ -222,5 +255,5 @@ await withDb(async (c) => {
 await rescoreAppDirectoryTrending();
 
 console.log(
-  `[dev:seed] seeded ${apps.length} local app listing(s) and refreshed seeded hosts in local.db`,
+  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), and refreshed seeded hosts in local.db`,
 );

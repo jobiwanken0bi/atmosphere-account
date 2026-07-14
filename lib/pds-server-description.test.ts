@@ -1,6 +1,7 @@
 import {
   fetchPdsServerDescription,
   parsePdsServerDescription,
+  pdsServerDescriptionForAccountHost,
 } from "./pds-server-description.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -51,6 +52,26 @@ Deno.test("parsePdsServerDescription tolerates partial PDS responses", () => {
     contactEmail: null,
     checkedAt: 456,
   });
+});
+
+Deno.test("Bluesky signup facts do not repeat its incorrect phone requirement", () => {
+  const description = parsePdsServerDescription({
+    did: "did:web:bsky.social",
+    availableUserDomains: [".bsky.social"],
+    inviteCodeRequired: false,
+    phoneVerificationRequired: true,
+  }, 456);
+
+  assertEquals(
+    pdsServerDescriptionForAccountHost("bsky.network", description)
+      ?.phoneVerificationRequired,
+    false,
+  );
+  assertEquals(
+    pdsServerDescriptionForAccountHost("another.host", description)
+      ?.phoneVerificationRequired,
+    true,
+  );
 });
 
 Deno.test("fetchPdsServerDescription reads describeServer from a normalized PDS endpoint", async () => {

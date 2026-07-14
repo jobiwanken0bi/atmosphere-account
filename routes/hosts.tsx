@@ -430,31 +430,45 @@ function HostCard(
         <div class="host-card-identity">
           <HostMark host={host} />
           <div class="host-card-title-block">
-            <div class="host-card-title-row">
-              <h2>{host.displayName}</h2>
-              {host.profileHandle && (
-                <p class="host-card-handle">
-                  <AtmosphereHandle handle={host.profileHandle} />
-                </p>
-              )}
-            </div>
+            <h2>{host.displayName}</h2>
+            {host.profileHandle && (
+              <p class="host-card-handle">
+                <AtmosphereHandle handle={host.profileHandle} />
+              </p>
+            )}
             <p class="host-card-domain">
               {hostPdsDomain(host)}
             </p>
           </div>
         </div>
-        {accountCountLabel && (
-          <span class="host-card-account-count" title={accountCountLabel}>
-            {accountCountLabel}
-          </span>
+        {(accountCountLabel || host.observedActiveAccountCount > 0) && (
+          <div class="host-card-account-summary">
+            {accountCountLabel && (
+              <span
+                class="host-card-account-count"
+                title={accountCountLabel}
+                aria-label={accountCountLabel}
+              >
+                <span class="host-card-account-count-full" aria-hidden="true">
+                  {accountCountLabel}
+                </span>
+                <span
+                  class="host-card-account-count-compact"
+                  aria-hidden="true"
+                >
+                  {copy.compactAccountCount(host.observedAccountCount)}
+                </span>
+              </span>
+            )}
+            {host.observedActiveAccountCount > 0 && (
+              <span class="host-card-active">{copy.active}</span>
+            )}
+          </div>
         )}
       </div>
       <p class="host-card-description">{friendly.summary}</p>
       <div class="host-card-footer">
         <div class="host-card-tags" aria-label={copy.factsLabel}>
-          {host.observedActiveAccountCount > 0 && (
-            <span class="host-card-active">{copy.active}</span>
-          )}
           <span>{friendly.location}</span>
           <span>{friendly.signupLabel}</span>
           {hostHasCurrentConformance(host) && (
