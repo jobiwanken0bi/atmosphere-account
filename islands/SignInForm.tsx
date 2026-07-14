@@ -22,6 +22,7 @@ export interface CreateAccountHostOption {
   host: string;
   href: string;
   description: string;
+  statusLabel: string;
 }
 
 export default function SignInForm(
@@ -234,7 +235,7 @@ export default function SignInForm(
                   </strong>
                   <em>{host.description}</em>
                 </span>
-                <span class="signin-account-status">Open</span>
+                <span class="signin-account-status">{host.statusLabel}</span>
               </a>
             ))}
             <a class="signin-host-row signin-host-row--all" href="/hosts">

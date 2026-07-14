@@ -116,7 +116,7 @@ function SignInPageContent(
 
 async function loadCreateAccountHosts(): Promise<CreateAccountHostOption[]> {
   const result = await listHostsFromAppview({
-    signupStatus: "open",
+    signupStatus: "all",
     hasSignupUrl: true,
     trustedOnly: true,
     sort: "recommended",
@@ -130,6 +130,8 @@ async function loadCreateAccountHosts(): Promise<CreateAccountHostOption[]> {
   return result.hosts
     .filter((host) =>
       !!host.signupUrl &&
+      (host.signupStatus === "open" ||
+        host.signupStatus === "invite_required") &&
       (host.verificationStatus === "claimed" ||
         host.verificationStatus === "verified" || host.source === "seeded")
     )
@@ -139,5 +141,6 @@ async function loadCreateAccountHosts(): Promise<CreateAccountHostOption[]> {
       host: host.host,
       href: host.signupUrl!,
       description: host.description || `Create an account with ${host.host}.`,
+      statusLabel: host.signupStatus === "open" ? "Open" : "Invite",
     }));
 }

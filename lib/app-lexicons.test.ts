@@ -312,6 +312,10 @@ Deno.test("ATStore content only supplements install and Tangled links from legac
         url: "https://tangled.org/sprk.so",
         label: "Tangled",
         kind: "tangled",
+      }, {
+        url: "https://example.com/not-an-app-store",
+        label: "iOS",
+        kind: "ios",
       }],
       categories: ["app", "accountProvider"],
       subcategories: ["music", "social", "photo"],

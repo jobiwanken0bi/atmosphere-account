@@ -7,6 +7,7 @@ import {
   isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
   rewriteAppviewHtmlForTest,
+  seededHostDetailFallback,
   shouldBufferAppviewRequestBodyForTest,
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
@@ -133,6 +134,15 @@ Deno.test("create-account host discovery requires trusted signup URLs", () => {
 
   assertEquals(result.hosts.length, 1);
   assertEquals(result.hosts[0]?.host, "tangled.org");
+});
+
+Deno.test("seeded host detail fallback only resolves exact curated hosts", () => {
+  assertEquals(
+    seededHostDetailFallback(" BSKY.NETWORK ")?.displayName,
+    "Bluesky",
+  );
+  assertEquals(seededHostDetailFallback("bsky"), null);
+  assertEquals(seededHostDetailFallback("example.com"), null);
 });
 
 Deno.test("early appview proxy covers DB-backed APIs before session hydration", () => {

@@ -529,18 +529,14 @@ function isLegacySupplementalAppLink(link: AppDirectoryLink): boolean {
   const url = canonicalUrl(link.uri);
   if (!url) return false;
   const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  if (
-    host === "apps.apple.com" || host === "play.google.com" ||
+  // Legacy profiles are only additive for links whose destination proves what
+  // they are. Labels and roles are user-controlled and must not turn an
+  // arbitrary URL into an App Store, Play Store, or Tangled action on an
+  // otherwise authoritative ATStore listing.
+  return host === "apps.apple.com" || host === "itunes.apple.com" ||
+    host === "play.google.com" ||
     host === "tangled.org" || host.endsWith(".tangled.org") ||
-    host === "tangled.sh" || host.endsWith(".tangled.sh")
-  ) {
-    return true;
-  }
-  const text = `${link.role ?? ""} ${link.label ?? ""}`.toLowerCase();
-  return text.includes("appstore") || text.includes("app store") ||
-    text.includes("playstore") || text.includes("play store") ||
-    text.includes("google play") || text.includes("ios") ||
-    text.includes("android") || text.includes("tangled");
+    host === "tangled.sh" || host.endsWith(".tangled.sh");
 }
 
 function dedupeLinks(links: AppDirectoryLink[]) {

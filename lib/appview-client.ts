@@ -546,6 +546,7 @@ export async function getPublicHostDetail(
   hostId: string,
 ): Promise<PublicHostDetail> {
   let host = await getAccountHost(hostId).catch(() => null);
+  if (!host) host = seededHostDetailFallback(hostId);
   if (host) {
     host = (await hydrateAccountHostProfiles([host]).catch((err) => {
       console.warn("[appview] hydrate host profile failed:", err);
@@ -556,6 +557,14 @@ export async function getPublicHostDetail(
     ? await getAccountHostClaim(host.host).catch(() => null)
     : null;
   return { host, claim };
+}
+
+export function seededHostDetailFallback(hostId: string): AccountHost | null {
+  const normalized = hostId.trim().toLowerCase();
+  if (!normalized) return null;
+  return listSeededAccountHostFallback().find((host) =>
+    host.host === normalized
+  ) ?? null;
 }
 
 async function appviewPageHeaders(

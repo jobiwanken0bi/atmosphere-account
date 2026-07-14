@@ -774,6 +774,7 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS account_host_verification ON account_host(verification_status)`,
   `CREATE INDEX IF NOT EXISTS account_host_signup ON account_host(signup_status)`,
   `CREATE INDEX IF NOT EXISTS account_host_source ON account_host(source)`,
+  `CREATE INDEX IF NOT EXISTS account_host_profile_did ON account_host(profile_did)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did)`,
   `CREATE INDEX IF NOT EXISTS host_conformance_status ON host_conformance(status, expires_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at)`,
