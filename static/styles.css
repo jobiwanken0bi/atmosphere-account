@@ -20088,26 +20088,33 @@ body {
     align-self: start;
     min-width: 0;
   }
-  /* Keep the name + compact count on one line beside the avatar; a long name
-     truncates rather than bumping the count to its own line. */
+  /* The name wraps to show in full (host page carries all the info); the
+     compact count stays pinned top-right beside the first line. */
   .host-detail-hero .profile-hero-name-row {
-    flex-wrap: nowrap;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    column-gap: 0.5rem;
+    row-gap: 0.2rem;
   }
   .host-detail-hero .profile-hero-name {
     font-size: 1.5rem;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .host-detail-hero .host-detail-account-count {
+    align-self: flex-start;
+    margin-top: 0.15rem;
   }
   .host-detail-hero .profile-hero-meta {
     grid-area: meta;
     margin: 0;
   }
+  /* Shrink the status pills so the Bluesky button + both pills share one row
+     even for longer labels ("Location not listed" + "Signup unclear"). */
   .host-detail-hero .profile-card-categories .profile-card-category {
-    font-size: 0.72rem;
-    padding: 0.16rem 0.5rem;
+    font-size: 0.58rem;
+    padding: 0.18rem 0.4rem;
     letter-spacing: 0.02em;
   }
 
