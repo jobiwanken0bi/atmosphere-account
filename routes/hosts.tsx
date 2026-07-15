@@ -96,6 +96,9 @@ export default define.page(async function HostsPage(ctx) {
                         stroke-linecap="round"
                       />
                     </svg>
+                    <span class="hosts-filter-trigger-label">
+                      {copy.filters}
+                    </span>
                     {appliedFilterCount > 0 && (
                       <span
                         class="hosts-filter-count"

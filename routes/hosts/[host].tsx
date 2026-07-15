@@ -181,39 +181,58 @@ function HostDetailPage(
                 )}
               </div>
               <div class="profile-hero-body">
-                <div class="profile-hero-name-row">
-                  <h1 class="profile-hero-name">{host.displayName}</h1>
-                </div>
-                {host.profileHandle && (
-                  <p class="profile-hero-handle">
-                    <AtmosphereHandle handle={host.profileHandle} />
-                  </p>
-                )}
-                <p class="host-detail-domain">
-                  {directoryCopy.hostDomain}: {hostPdsDomain(host)}
-                </p>
-                {(host.observedAccountCount > 0 || temporarilyUnavailable) && (
-                  <div
-                    class="host-detail-status-row"
-                    aria-label={directoryCopy.availabilityLabel}
-                  >
+                <div class="profile-hero-identity">
+                  <div class="profile-hero-name-row">
+                    <h1 class="profile-hero-name">{host.displayName}</h1>
                     {host.observedAccountCount > 0 && (
-                      <span class="host-card-account-count">
-                        {directoryCopy.accounts(host.observedAccountCount)}
-                      </span>
-                    )}
-                    {temporarilyUnavailable && (
-                      <span class="host-card-unavailable">
-                        {directoryCopy.temporarilyUnavailable}
+                      <span
+                        class="host-card-account-count host-detail-account-count"
+                        title={directoryCopy.accounts(
+                          host.observedAccountCount,
+                        )}
+                        aria-label={directoryCopy.accounts(
+                          host.observedAccountCount,
+                        )}
+                      >
+                        {directoryCopy.compactAccountCount(
+                          host.observedAccountCount,
+                        )}
                       </span>
                     )}
                   </div>
-                )}
+                  {host.profileHandle && (
+                    <p class="profile-hero-handle">
+                      <AtmosphereHandle handle={host.profileHandle} />
+                    </p>
+                  )}
+                  <p class="host-detail-domain">{hostPdsDomain(host)}</p>
+                  {temporarilyUnavailable && (
+                    <div
+                      class="host-detail-status-row"
+                      aria-label={directoryCopy.availabilityLabel}
+                    >
+                      <span class="host-card-unavailable">
+                        {directoryCopy.temporarilyUnavailable}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <div class="profile-hero-meta">
                   <div class="profile-card-categories">
-                    <span class="profile-card-category">
-                      Account host
-                    </span>
+                    {host.profileHandle && host.bskyProfileVisible && (
+                      <a
+                        class="profile-action profile-action--compact host-detail-bsky-link"
+                        href={bskyProfileHref(host.profileHandle)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Bluesky profile"
+                        title="Bluesky profile"
+                      >
+                        <span class="profile-action-icon profile-action-icon--brand">
+                          <BskyIcon class="profile-action-icon-svg" />
+                        </span>
+                      </a>
+                    )}
                     <span class="profile-card-category">
                       {friendly.location}
                     </span>
@@ -253,6 +272,7 @@ function HostDetailPage(
                     label={host.signupStatus === "invite_required"
                       ? "Request invite"
                       : "Create account"}
+                    icon="signup"
                   />
                 )}
               </div>
@@ -283,7 +303,7 @@ function HostDetailPage(
                   <HostDetailIcon name="handle" />
                 </span>
                 <div>
-                  <p class="text-eyebrow">Handle endings</p>
+                  <p class="text-eyebrow">Host domain</p>
                   <h2>{handleSummary.label}</h2>
                   <p>{handleSummary.detail}</p>
                 </div>

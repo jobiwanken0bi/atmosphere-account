@@ -4018,7 +4018,7 @@ h1, h2, h3, h4 {
   align-items: center;
   justify-content: center;
   margin-left: 0.1rem;
-  padding: 0.1rem;
+  padding: 0.35rem;
   line-height: 1;
   vertical-align: middle;
   color: #1185fe;
@@ -6354,7 +6354,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.15rem;
+  min-height: 2.75rem;
   border-radius: 999px;
   font-size: 0.86rem;
 }
@@ -7192,7 +7192,9 @@ body {
 }
 .profile-hero-body {
   flex: 1;
-  min-width: 240px;
+  /* Never demand more width than the container: prevents the 120px hero icon
+     + 240px body from forcing horizontal overflow in the 521–720px band. */
+  min-width: min(240px, 100%);
 }
 .profile-hero-actions {
   align-self: stretch;
@@ -7351,6 +7353,9 @@ body {
   margin: 0.2rem 0 0.4rem;
   font-family: "IBM Plex Mono", monospace;
   color: rgba(18, 26, 47, 0.55);
+  /* Fallback host domains render here as plain text with no whitespace —
+     let long ones wrap instead of overflowing the hero. */
+  overflow-wrap: anywhere;
 }
 .dark-phase .profile-hero-handle {
   color: rgba(255, 255, 255, 0.55);
@@ -8841,7 +8846,8 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.6);
   font: inherit;
-  font-size: 0.95rem;
+  /* 16px keeps iOS Safari from auto-zooming the page on focus. */
+  font-size: 1rem;
   color: #0e1428;
   outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -8984,7 +8990,9 @@ body {
 }
 .atmosphere-row-toggle input {
   position: absolute;
-  inset: 0;
+  /* Extend the (invisible) hit area beyond the small visual track so the
+     tap target clears ~44px without shifting layout. */
+  inset: -0.7rem -0.4rem;
   opacity: 0;
   cursor: pointer;
 }
@@ -11517,7 +11525,7 @@ body {
   justify-content: center;
   gap: 0.42rem;
   flex: 0 0 auto;
-  min-height: 2.2rem;
+  min-height: 2.75rem;
   padding: 0.42rem 0.9rem;
   border-radius: 999px;
   color: rgba(18, 26, 47, 0.72);
@@ -11525,7 +11533,7 @@ body {
   border: 1px solid rgba(18, 26, 47, 0.08);
   box-shadow: 0 8px 20px rgba(48, 70, 128, 0.07);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 600;
   text-decoration: none;
   transition:
@@ -13743,6 +13751,12 @@ body {
   background: rgba(255, 255, 255, 0.9);
 }
 
+/* Desktop keeps the compact icon-only trigger; the text label is revealed
+   only on mobile, where the trigger becomes a full-width button. */
+.hosts-filter-trigger-label {
+  display: none;
+}
+
 .hosts-filter-count {
   position: absolute;
   top: -0.3rem;
@@ -13810,7 +13824,8 @@ body {
   background-size: 0.75rem auto;
   color: #0e1428;
   font: inherit;
-  font-size: 0.86rem;
+  /* 16px keeps iOS Safari from auto-zooming the page on focus. */
+  font-size: 1rem;
 }
 
 .app-browse-control-form.hosts-search-form {
@@ -14203,7 +14218,7 @@ body {
   margin: 0;
   color: rgba(18, 26, 47, 0.58);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -14214,7 +14229,7 @@ body {
   margin: 0;
   color: rgba(18, 26, 47, 0.5);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   line-height: 1.15;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -14364,6 +14379,41 @@ body {
   align-items: center;
   gap: 0.4rem;
   margin-top: 0.65rem;
+}
+
+/* Compact account count ("42M") sits in the name row, pushed to the right.
+   Kept small so it doesn't crowd the name out of the narrow mobile column. */
+.host-detail-account-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  align-self: center;
+  min-height: 0;
+  padding: 0.12rem 0.46rem;
+  font-size: 0.72rem;
+}
+
+/* Bluesky profile button now shares the status-pill row; size it to match the
+   pills and keep the row vertically centered. */
+.host-detail-hero .profile-card-categories {
+  align-items: center;
+  gap: 0.3rem;
+}
+.host-detail-hero .host-detail-bsky-link {
+  width: 2.5rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+}
+.host-detail-hero .host-detail-bsky-link .profile-action-icon {
+  width: 1.65rem;
+  height: 1.65rem;
+}
+/* The pill-row Bluesky button is mobile-only; on desktop the button sits below
+   the avatar instead (rendered separately in .profile-hero-secondary-actions). */
+@media (min-width: 601px) {
+  .host-detail-hero .host-detail-bsky-link {
+    display: none;
+  }
 }
 
 .host-detail-hero .profile-card-categories .host-card-conformance {
@@ -14739,6 +14789,8 @@ body {
   color: rgba(18, 26, 47, 0.72);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.76rem;
+  /* Wildcard patterns contain no whitespace; wrap them instead of overflowing. */
+  overflow-wrap: anywhere;
 }
 
 .host-source-records {
@@ -18133,6 +18185,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  min-height: 2.75rem;
   padding: 0.45rem 0.9rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.78);
@@ -19896,4 +19949,321 @@ body {
 .signin-form-input:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 1px;
+}
+
+/* ============================================================
+   Mobile UX sweep — app & host directory/detail refinements.
+   Phone-scoped and intentionally last in the file so these
+   overrides win the cascade over the base rules above.
+   ============================================================ */
+@media (max-width: 640px) {
+  /* App directory cards: drop "View" below the identity block and stack name
+     over handle, so the app name gets the full card width (up to two lines)
+     instead of being capped at 65% and racing the handle + View for a ~99px
+     sliver. The whole card is the link, so View is only a visual affordance. */
+  .app-card-identity-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+  }
+  .app-card-view {
+    align-self: flex-start;
+  }
+  .app-card .profile-card-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.05rem;
+    overflow: visible;
+  }
+  .app-card .profile-card-name {
+    max-width: 100%;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .app-card .profile-card-handle {
+    max-width: 100%;
+  }
+
+  /* Search + filter: stack so the field spans the full width (the
+     "Search account hosts…" placeholder no longer clips) and the filter
+     becomes a full-width, clearly labelled button. */
+  .hosts-search-form {
+    grid-template-columns: 1fr;
+  }
+  .hosts-filter-menu {
+    align-self: stretch;
+  }
+  .hosts-filter-trigger {
+    width: 100%;
+    height: auto;
+    min-height: 2.75rem;
+    gap: 0.5rem;
+    border-radius: 999px;
+  }
+  .hosts-filter-trigger-label {
+    display: inline;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+
+  /* Comfortable ≥44px touch targets for standalone controls. */
+  .text-link-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+  .hosts-pagination a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0 0.4rem;
+  }
+  .hosts-filter-field select,
+  .hosts-filter-apply,
+  .hosts-search-form .explore-search-submit {
+    min-height: 2.75rem;
+  }
+  .app-review-sort-link {
+    min-height: 2.75rem;
+  }
+  .app-detail-review-actions .explore-cta-primary,
+  .profile-form-button-secondary.app-like-button {
+    min-height: 2.75rem;
+  }
+
+  /* Reclaim dead space above the fold: the fixed nav is ~4.35rem, so 8.5rem
+     of section padding leaves a large empty band on a phone. */
+  .signin-page-section,
+  .account-home-section,
+  .hosts-section {
+    padding-top: 5.75rem;
+  }
+}
+
+/* ------------------------------------------------------------
+   Detail hero (mobile): put the name/handle beside the avatar and
+   let pills, description and actions span the full width below — so
+   the space to the right of and under the avatar is actually used,
+   and action buttons pack instead of each taking a full row.
+   ------------------------------------------------------------ */
+@media (max-width: 600px) {
+  .host-detail-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "media   identity"
+      "meta    meta"
+      "desc    desc"
+      "actions actions";
+    column-gap: 1rem;
+    row-gap: 0.8rem;
+    align-items: start;
+  }
+  .host-detail-hero .profile-hero-media {
+    grid-area: media;
+    align-self: start;
+  }
+  /* Smaller avatar on mobile leaves more room for the name/count and pills. */
+  .host-detail-hero .host-card-mark {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+  }
+  .host-detail-hero .host-card-mark-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+  /* Bluesky button lives in the pill row on mobile, not under the avatar. */
+  .host-detail-hero .profile-hero-secondary-actions {
+    display: none;
+  }
+  /* Flatten the body wrapper so its children join the hero grid directly. */
+  .host-detail-hero .profile-hero-body {
+    display: contents;
+  }
+  .host-detail-hero .profile-hero-identity {
+    grid-area: identity;
+    align-self: start;
+    min-width: 0;
+  }
+  /* Keep the name + compact count on one line beside the avatar; a long name
+     truncates rather than bumping the count to its own line. */
+  .host-detail-hero .profile-hero-name-row {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+  }
+  .host-detail-hero .profile-hero-name {
+    font-size: 1.5rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .host-detail-hero .profile-hero-meta {
+    grid-area: meta;
+    margin: 0;
+  }
+  .host-detail-hero .profile-card-categories .profile-card-category {
+    font-size: 0.72rem;
+    padding: 0.16rem 0.5rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* --- Coherent compact sizing for the rest of the host detail page --- */
+  /* Tighten the gap between handle and host domain. */
+  .host-detail-hero .profile-hero-handle {
+    margin: 0.1rem 0 0.05rem;
+    font-size: 0.92rem;
+  }
+  .host-detail-hero .host-detail-domain {
+    margin-top: 0;
+  }
+  /* Smaller "about" text to match the downsized hero. */
+  .host-detail-hero .profile-hero-description {
+    grid-area: desc;
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+  /* Slimmer action buttons so they read in proportion to the cards. */
+  .host-detail-hero .profile-hero-action {
+    padding-top: 0.58rem;
+    padding-bottom: 0.58rem;
+    font-size: 0.88rem;
+  }
+  .host-detail-hero .profile-hero-action .profile-hero-action-icon {
+    width: 1.6rem;
+    height: 1.6rem;
+  }
+  /* Smaller summary cards below the hero. */
+  .host-detail-choice-card {
+    padding: 0.9rem;
+    gap: 0.75rem;
+  }
+  .host-detail-choice-card h2 {
+    font-size: 0.98rem;
+  }
+  .host-detail-choice-card p:not(.text-eyebrow) {
+    font-size: 0.8rem;
+  }
+  .host-detail-choice-card .text-eyebrow {
+    font-size: 0.68rem;
+  }
+  .host-detail-choice-icon {
+    width: 2.3rem;
+    height: 2.3rem;
+  }
+  .host-detail-choice-icon svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .host-detail-hero .profile-hero-actions {
+    grid-area: actions;
+    width: auto;
+    margin: 0;
+    padding-top: 0.9rem;
+    border-top: 1px solid rgba(18, 26, 47, 0.12);
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0.6rem;
+  }
+  /* Buttons grow to fill the row: two share a row (≈half each) and a lone or
+     odd-one-out button takes the full width. */
+  .host-detail-hero .profile-hero-action {
+    flex: 1 1 40%;
+    justify-content: center;
+  }
+  /* Centre the label+icon instead of pinning the arrow to the far edge, so a
+     full-width button reads as a balanced CTA. */
+  .host-detail-hero .profile-hero-action-arrow {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-detail-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "media identity"
+      "actions actions"
+      "platforms platforms"
+      "desc desc";
+    column-gap: 1rem;
+    row-gap: 0.85rem;
+    align-items: center;
+  }
+  /* Flatten the nested wrappers so avatar, identity, actions, platforms and
+     description all become direct items of the hero grid. */
+  .app-detail-hero-summary,
+  .app-detail-hero-body,
+  .app-detail-hero-heading,
+  .app-detail-hero-title,
+  .app-detail-hero-side,
+  .app-detail-primary-actions {
+    display: contents;
+  }
+  .app-detail-hero .profile-hero-media {
+    grid-area: media;
+    align-self: start;
+  }
+  .app-detail-hero .profile-hero-avatar {
+    width: 96px;
+    height: 96px;
+    flex-basis: auto;
+  }
+  .app-detail-hero-identity {
+    grid-area: identity;
+    align-self: start;
+    min-height: 0;
+  }
+  .app-detail-hero .profile-hero-actions,
+  .app-detail-hero .profile-hero-actions.app-detail-action-columns {
+    grid-area: actions;
+    display: flex;
+    flex-flow: row wrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    width: auto;
+    min-width: 0;
+  }
+  /* Primary buttons grow to fill the row (two-up, lone one full width);
+     store / icon-only buttons keep their natural size. */
+  .app-detail-hero
+    .profile-hero-action:not(.profile-hero-action--icon-only):not(
+      .profile-hero-action--store-icon
+    ) {
+    flex: 1 1 40%;
+    width: auto;
+    justify-content: center;
+  }
+  .app-detail-hero
+    .profile-hero-action:not(.profile-hero-action--icon-only):not(
+      .profile-hero-action--store-icon
+    )
+    .profile-hero-action-arrow {
+    margin-left: 0;
+  }
+  .app-detail-hero .profile-hero-action--icon-only {
+    flex: 0 0 auto;
+  }
+  /* Keep store badges compact. Specificity (0,4,0) beats the base
+     `.app-detail-hero .profile-hero-action:not(--icon-only)` width:100% and the
+     ≤480 flex rule (both 0,3,0) so they pair up instead of stretching full. */
+  .app-detail-hero
+    .app-detail-store-actions
+    .profile-hero-action--store-icon:not(.profile-hero-action--icon-only) {
+    flex: 0 0 auto;
+    width: auto;
+  }
+  .app-detail-hero-platforms {
+    grid-area: platforms;
+  }
+  .app-detail-hero-description {
+    grid-area: desc;
+  }
 }
