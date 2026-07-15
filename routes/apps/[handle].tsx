@@ -61,10 +61,12 @@ import {
   getAppListingByIdentifier,
   getOwnAppFavorite,
   getOwnAppReview,
+  getResolvedHostLinkForApp,
   listAppAliasesForListing,
   listAppReviewsForListing,
   searchAppDirectory,
 } from "../../lib/app-directory.ts";
+import type { ResolvedDirectoryHostLink } from "../../lib/app-directory.ts";
 import {
   type DisplayAppReview,
   enrichAppMirroredReviews,
@@ -78,7 +80,6 @@ import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
-import { hostHrefForApp } from "../../lib/directory-identity-links.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -192,6 +193,15 @@ export const handler = define.handlers({
       legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
       enrichAppMirroredReviews(appReviews),
     ]);
+    const resolvedHostLink = appListing
+      ? await getResolvedHostLinkForApp(appListing).catch((err) => {
+        console.warn(
+          `[apps] host relationship lookup failed for ${appListing?.id}:`,
+          err,
+        );
+        return null;
+      })
+      : null;
     /**
      * Share URL intentionally ends in `/`. Bluesky's composer runs a
      * client-side `getLikelyType` over the pasted URL: it splits the path
@@ -281,6 +291,7 @@ export const handler = define.handlers({
       <ProfileDetailPage
         profile={profile}
         appListing={appListing}
+        resolvedHostLink={resolvedHostLink}
         relatedApps={relatedApps}
         appReviews={displayAppReviews}
         ownAppReview={ownAppReview}
@@ -309,6 +320,7 @@ export const handler = define.handlers({
 interface DetailProps {
   profile: ProfileRow | null;
   appListing: AppListing | null;
+  resolvedHostLink: ResolvedDirectoryHostLink | null;
   relatedApps: AppListing[];
   appReviews: DisplayAppReview[];
   ownAppReview: AppOwnReview | null;
@@ -334,6 +346,7 @@ function ProfileDetailPage(
   {
     profile,
     appListing,
+    resolvedHostLink,
     relatedApps,
     appReviews,
     ownAppReview,
@@ -359,6 +372,7 @@ function ProfileDetailPage(
     return (
       <AppListingDetailPage
         app={appListing}
+        resolvedHostLink={resolvedHostLink}
         relatedApps={relatedApps}
         reviews={appReviews}
         ownReview={ownAppReview}
@@ -379,6 +393,7 @@ function ProfileDetailPage(
       return (
         <AppListingDetailPage
           app={appListing}
+          resolvedHostLink={resolvedHostLink}
           relatedApps={relatedApps}
           reviews={appReviews}
           ownReview={ownAppReview}
@@ -450,7 +465,9 @@ function ProfileDetailPage(
               <ProfileHero
                 profile={profile}
                 microblogViewerClientId={microblogViewerClientId}
-                hostHref={appListing ? hostHrefForApp(appListing) : null}
+                hostHref={resolvedHostLink
+                  ? `/hosts/${encodeURIComponent(resolvedHostLink.host)}`
+                  : null}
               />
             </div>
             <ProfileScreenshots profile={profile} />
@@ -585,6 +602,7 @@ function ProfileDetailPage(
 
 interface AppListingDetailProps {
   app: AppListing;
+  resolvedHostLink: ResolvedDirectoryHostLink | null;
   relatedApps: AppListing[];
   reviews: DisplayAppReview[];
   ownReview: AppOwnReview | null;
@@ -602,6 +620,7 @@ interface AppListingDetailProps {
 function AppListingDetailPage(
   {
     app,
+    resolvedHostLink,
     relatedApps,
     reviews,
     ownReview,
@@ -671,6 +690,7 @@ function AppListingDetailPage(
 
             <AppListingHero
               app={app}
+              resolvedHostLink={resolvedHostLink}
               microblogViewerClientId={microblogViewerClientId}
             />
 
@@ -720,8 +740,9 @@ function AppListingDetailPage(
 }
 
 function AppListingHero(
-  { app, microblogViewerClientId }: {
+  { app, resolvedHostLink, microblogViewerClientId }: {
     app: AppListing;
+    resolvedHostLink: ResolvedDirectoryHostLink | null;
     microblogViewerClientId: string | null;
   },
 ) {
@@ -738,7 +759,9 @@ function AppListingHero(
     link.kind !== "ios" && link.kind !== "android"
   );
   const compactLinks = links.filter((link) => isCompactAppAction(link.kind));
-  const hostHref = hostHrefForApp(app);
+  const hostHref = resolvedHostLink
+    ? `/hosts/${encodeURIComponent(resolvedHostLink.host)}`
+    : null;
   const hasDestinationLinks = !!hostHref || destinationLinks.length > 0;
   const hasSplitActionColumns = storeLinks.length > 0 && hasDestinationLinks;
   const displayPlatforms = app.atstoreListingUri ? [] : app.platforms;
@@ -802,6 +825,13 @@ function AppListingHero(
                         <DirectoryIdentityLink
                           href={hostHref}
                           destination="host"
+                          label={resolvedHostLink?.relationship ===
+                              "same_operator"
+                            ? `${resolvedHostLink.name} host`
+                            : "Host"}
+                          accessibleLabel={resolvedHostLink
+                            ? `View the ${resolvedHostLink.name} host profile`
+                            : undefined}
                         />
                       )}
                       {destinationLinks.map(renderAppAction)}

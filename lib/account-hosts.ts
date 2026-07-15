@@ -93,6 +93,7 @@ export type AccountHostSort =
 
 export interface AccountHostDirectoryOptions {
   query?: string;
+  includeLinkedApps?: boolean;
   verificationStatus?: HostVerificationStatus | "all";
   signupStatus?: HostSignupStatus | "all";
   signupStatuses?: HostSignupStatus[];
@@ -107,10 +108,20 @@ export interface AccountHostDirectoryOptions {
 
 export interface AccountHostDirectoryResult {
   hosts: AccountHost[];
+  /** Explicit or inferred host-to-app matches keyed by account-host domain. */
+  linkedApps?: Record<string, AccountHostLinkedApp[]>;
+  /** Rolling-deploy compatibility with the original one-app projection. */
+  linkedAppSlugs?: Record<string, string>;
   total: number;
   page: number;
   pageSize: number;
   sort: AccountHostSort;
+}
+
+export interface AccountHostLinkedApp {
+  slug: string;
+  name: string;
+  relationship: "same_product" | "same_operator" | "inferred";
 }
 
 export interface AccountHostLookup {

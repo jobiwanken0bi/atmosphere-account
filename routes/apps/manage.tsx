@@ -606,6 +606,22 @@ function ManagePage(
                 remoteAtstoreListingUri={remoteAtstoreListingUri}
                 publicProfileHandle={publicProfileHandle}
               />
+              {initialPublished && (
+                <section class="glass directory-relationship-entry owner-app-relationship-entry">
+                  <div>
+                    <p class="text-eyebrow">Host identity</p>
+                    <h2>Connect this app to an account host</h2>
+                    <p>
+                      Define whether the host is part of this product or run by
+                      the same organization. A different host account must
+                      approve the connection before it appears publicly.
+                    </p>
+                  </div>
+                  <a class="directory-register-button" href="/apps/manage/host">
+                    Manage host connection
+                  </a>
+                </section>
+              )}
               {showAtstoreMigration && migrationFocus && (
                 <MigrationSection
                   atstoreListingUri={atstoreListingUri}

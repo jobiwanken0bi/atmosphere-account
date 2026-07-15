@@ -219,6 +219,7 @@ export default define.page(async function HostsPage(ctx) {
                     <HostCard
                       key={host.host}
                       host={host}
+                      linkedApps={result.linkedApps?.[host.host] ?? []}
                       copy={copy}
                       returnTo={directoryReturnTo}
                     />
@@ -264,6 +265,7 @@ interface HostDirectoryInput extends AccountHostDirectoryOptions {
 function readDirectoryInput(search: URLSearchParams): HostDirectoryInput {
   return {
     query: search.get("q")?.trim() ?? "",
+    includeLinkedApps: true,
     sort: readSort(search.get("sort")),
     signupStatus: readSignupStatus(search.get("signup")),
     verificationStatus: readVerificationStatus(search.get("verification")),
@@ -379,8 +381,9 @@ function DirectoryRegisterCta(
 type HostsDirectoryCopy = ReturnType<typeof getMessages>["hostsDirectory"];
 
 function HostCard(
-  { host, copy, returnTo }: {
+  { host, linkedApps, copy, returnTo }: {
     host: AccountHost;
+    linkedApps: NonNullable<AccountHostDirectoryResult["linkedApps"]>[string];
     copy: HostsDirectoryCopy;
     returnTo: string;
   },
@@ -410,7 +413,8 @@ function HostCard(
             </p>
           </div>
         </div>
-        {(accountCountLabel || temporarilyUnavailable) && (
+        {(accountCountLabel || linkedApps.length > 0 ||
+          temporarilyUnavailable) && (
           <div class="host-card-account-summary">
             {accountCountLabel && (
               <span
@@ -427,6 +431,20 @@ function HostCard(
                 >
                   {copy.compactAccountCount(host.observedAccountCount)}
                 </span>
+              </span>
+            )}
+            {linkedApps.length > 0 && (
+              <span
+                class="host-card-app"
+                title={linkedAppIndicatorLabel(linkedApps, copy)}
+                aria-label={linkedAppIndicatorLabel(linkedApps, copy)}
+              >
+                {linkedApps.length === 1 &&
+                    linkedApps[0].relationship === "same_operator"
+                  ? `${linkedApps[0].name} ${copy.appIndicator.toLowerCase()}`
+                  : linkedApps.length > 1
+                  ? `${linkedApps.length} ${copy.appsIndicator}`
+                  : copy.appIndicator}
               </span>
             )}
             {temporarilyUnavailable && (
@@ -452,6 +470,18 @@ function HostCard(
       </div>
     </a>
   );
+}
+
+function linkedAppIndicatorLabel(
+  apps: NonNullable<AccountHostDirectoryResult["linkedApps"]>[string],
+  copy: HostsDirectoryCopy,
+): string {
+  if (apps.length === 1 && apps[0].relationship === "same_operator") {
+    return copy.operatesApp(apps[0].name);
+  }
+  return apps.length > 1
+    ? copy.operatesApps(apps.length)
+    : copy.appIndicatorLabel;
 }
 
 function registerHostHref(): string {

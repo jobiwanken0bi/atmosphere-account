@@ -484,6 +484,26 @@ CREATE INDEX IF NOT EXISTS app_listing_public_trending ON app_listing(deleted_at
 CREATE INDEX IF NOT EXISTS app_listing_public_newest ON app_listing(deleted_at, published_at DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS app_listing_public_name ON app_listing(deleted_at, lower(name));
 
+CREATE TABLE IF NOT EXISTS directory_entity_link (
+  host text NOT NULL REFERENCES account_host(host) ON DELETE CASCADE,
+  app_listing_id text NOT NULL REFERENCES app_listing(id) ON DELETE CASCADE,
+  relationship text NOT NULL CHECK (relationship IN ('same_product', 'same_operator', 'host_only')),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified')),
+  source text NOT NULL DEFAULT 'claimed' CHECK (source IN ('claimed', 'seeded')),
+  host_owner_did text NOT NULL,
+  app_owner_did text NOT NULL,
+  host_approved_at bigint,
+  app_approved_at bigint,
+  created_at bigint NOT NULL,
+  updated_at bigint NOT NULL,
+  PRIMARY KEY (host, app_listing_id)
+);
+
+CREATE INDEX IF NOT EXISTS directory_entity_link_host_status
+  ON directory_entity_link(host, status, relationship);
+CREATE INDEX IF NOT EXISTS directory_entity_link_app_status
+  ON directory_entity_link(app_listing_id, status, relationship);
+
 CREATE TABLE IF NOT EXISTS app_alias (
   alias_key text PRIMARY KEY,
   listing_id text NOT NULL REFERENCES app_listing(id) ON DELETE CASCADE,

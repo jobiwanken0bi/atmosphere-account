@@ -1,16 +1,24 @@
 interface Props {
   href: string;
   destination: "app" | "host";
+  label?: string;
+  accessibleLabel?: string;
 }
 
 export default function DirectoryIdentityLink(
-  { href, destination }: Props,
+  {
+    href,
+    destination,
+    label: labelOverride,
+    accessibleLabel: accessibleLabelOverride,
+  }: Props,
 ) {
   const pointsBack = destination === "host";
-  const label = pointsBack ? "Host" : "App";
-  const accessibleLabel = pointsBack
-    ? "View this account's host profile"
-    : "View this account's app profile";
+  const label = labelOverride ?? (pointsBack ? "Host" : "App");
+  const accessibleLabel = accessibleLabelOverride ??
+    (pointsBack
+      ? "View this account's host profile"
+      : "View this account's app profile");
 
   return (
     <a

@@ -39,6 +39,12 @@ import type { ProfileRow } from "./registry.ts";
 import { searchProfiles } from "./registry.ts";
 import { findPdsEndpoint, resolveDidDocument } from "./identity.ts";
 import { getRecordPublic } from "./pds.ts";
+import { appHrefForHost } from "./directory-identity-links.ts";
+import type { AccountHostLinkedApp } from "./account-hosts.ts";
+import {
+  listVerifiedDirectoryEntityLinksForApp,
+  listVerifiedDirectoryEntityLinksForHosts,
+} from "./directory-entity-links.ts";
 
 export type AppDirectorySort = "trending" | "newest" | "az";
 export type AppReviewSort = "newest" | "highest" | "lowest";
@@ -1970,6 +1976,83 @@ export async function getAppListingByIdentifier(
   return listing ? await hydrateMigratedHeroFallback(listing) : null;
 }
 
+export async function getAppListingById(
+  id: string,
+): Promise<AppListing | null> {
+  const normalized = id.trim();
+  if (!normalized) return null;
+  const listing = await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `
+        SELECT ${listSelect("l")}
+        FROM app_listing l
+        WHERE l.id = ? AND l.deleted_at IS NULL
+        LIMIT 1
+      `,
+      args: [normalized],
+    });
+    return result.rows.length > 0 ? rowToAppListing(result.rows[0]) : null;
+  });
+  return listing ? await hydrateMigratedHeroFallback(listing) : null;
+}
+
+export interface ResolvedDirectoryAppLink {
+  slug: string;
+  name: string;
+  relationship: "same_product" | "same_operator" | "inferred";
+}
+
+export interface ResolvedDirectoryHostLink {
+  host: string;
+  name: string;
+  relationship: "same_product" | "same_operator" | "inferred";
+}
+
+export async function getResolvedAppLinksForHost(
+  host: { host: string; profileDid: string | null },
+): Promise<ResolvedDirectoryAppLink[]> {
+  const explicit = await listVerifiedDirectoryEntityLinksForHosts([host.host]);
+  if (Object.hasOwn(explicit, host.host)) {
+    return explicit[host.host].flatMap((link) =>
+      link.relationship === "host_only" ? [] : [{
+        slug: link.appSlug,
+        name: link.appName,
+        relationship: link.relationship,
+      }]
+    );
+  }
+  if (!host.profileDid) return [];
+  const inferred = await getVisibleAppListingByAccountDid(host.profileDid, {
+    syncLegacy: false,
+  });
+  return inferred && appHrefForHost(host, inferred)
+    ? [{ slug: inferred.slug, name: inferred.name, relationship: "inferred" }]
+    : [];
+}
+
+export async function getResolvedHostLinkForApp(
+  app: AppListing,
+): Promise<ResolvedDirectoryHostLink | null> {
+  const explicit = await listVerifiedDirectoryEntityLinksForApp(app.id);
+  if (explicit.length > 0) {
+    const positive = explicit.find((link) =>
+      link.relationship === "same_product" ||
+      link.relationship === "same_operator"
+    );
+    return positive
+      ? {
+        host: positive.host,
+        name: positive.hostDisplayName,
+        relationship: positive.relationship === "same_product"
+          ? "same_product"
+          : "same_operator",
+      }
+      : null;
+  }
+  const host = app.accountHost?.trim().toLowerCase();
+  return host ? { host, name: host, relationship: "inferred" } : null;
+}
+
 export async function getVisibleAppListingByAccountDid(
   did: string,
   options: { syncLegacy?: boolean } = {},
@@ -2002,4 +2085,116 @@ export async function getVisibleAppListingByAccountDid(
     });
     return result.rows.length > 0 ? rowToAppListing(result.rows[0]) : null;
   });
+}
+
+/**
+ * Resolve host-to-app links for a directory page in one query. A matching
+ * account-host domain is not enough: the host profile DID must also be one of
+ * the app's account DIDs, mirroring the host detail-page cross-link policy.
+ */
+export async function getVisibleAppsForAccountHosts(
+  hosts: Array<{ host: string; profileDid: string | null }>,
+): Promise<Record<string, AccountHostLinkedApp[]>> {
+  const explicit = await listVerifiedDirectoryEntityLinksForHosts(
+    hosts.map((host) => host.host),
+  );
+  const linkedApps: Record<string, AccountHostLinkedApp[]> = {};
+  const hostsWithExplicitPolicy = new Set(Object.keys(explicit));
+  for (const [host, links] of Object.entries(explicit)) {
+    const publicLinks = links.flatMap((link) =>
+      link.relationship === "host_only" ? [] : [{
+        slug: link.appSlug,
+        name: link.appName,
+        relationship: link.relationship,
+      }]
+    );
+    if (publicLinks.length > 0) linkedApps[host] = publicLinks;
+  }
+
+  const hostByDomain = new Map(
+    hosts
+      .filter((host) => !hostsWithExplicitPolicy.has(host.host))
+      .filter((host) => host.profileDid?.trim().startsWith("did:"))
+      .map((host) => [host.host.trim().toLowerCase(), host] as const),
+  );
+  if (hostByDomain.size === 0) return linkedApps;
+
+  const profileDids = [
+    ...new Set(
+      [...hostByDomain.values()].flatMap((host) =>
+        host.profileDid ? [host.profileDid.trim()] : []
+      ),
+    ),
+  ];
+  const placeholders = profileDids.map(() => "?").join(", ");
+  const rows = await withDb((c) =>
+    c.execute({
+      sql: `
+        SELECT
+          l.slug,
+          l.name,
+          l.product_did,
+          l.profile_did,
+          l.legacy_profile_did,
+          (SELECT h.host
+            FROM account_host h
+            WHERE h.profile_did IS NOT NULL
+              AND h.profile_did IN (
+                l.product_did,
+                l.profile_did,
+                l.legacy_profile_did
+              )
+            ORDER BY
+              CASE
+                WHEN h.verification_status IN ('verified', 'claimed') THEN 0
+                WHEN h.source = 'seeded' THEN 1
+                ELSE 2
+              END,
+              h.observed_account_count DESC,
+              h.host ASC
+            LIMIT 1
+          ) AS account_host
+        FROM app_listing l
+        LEFT JOIN app_moderation m ON m.listing_id = l.id
+        WHERE l.deleted_at IS NULL
+          AND COALESCE(m.status, 'visible') = 'visible'
+          AND (
+            l.product_did IN (${placeholders}) OR
+            l.profile_did IN (${placeholders}) OR
+            l.legacy_profile_did IN (${placeholders})
+          )
+        ORDER BY
+          CASE WHEN l.atstore_listing_uri IS NOT NULL THEN 0 ELSE 1 END,
+          l.updated_at DESC,
+          l.slug ASC
+      `,
+      args: [...profileDids, ...profileDids, ...profileDids],
+    })
+  );
+
+  for (const input of rows.rows) {
+    const row = input as Record<string, unknown>;
+    const accountHost = typeof row.account_host === "string"
+      ? row.account_host.trim().toLowerCase()
+      : "";
+    const host = hostByDomain.get(accountHost);
+    const slug = typeof row.slug === "string" ? row.slug : "";
+    if (!host || !slug || linkedApps[host.host]) continue;
+    const href = appHrefForHost(host, {
+      slug,
+      productDid: typeof row.product_did === "string" ? row.product_did : null,
+      profileDid: typeof row.profile_did === "string" ? row.profile_did : null,
+      legacyProfileDid: typeof row.legacy_profile_did === "string"
+        ? row.legacy_profile_did
+        : null,
+      accountHost,
+    });
+    const name = typeof row.name === "string" && row.name.trim()
+      ? row.name.trim()
+      : slug;
+    if (href) {
+      linkedApps[host.host] = [{ slug, name, relationship: "inferred" }];
+    }
+  }
+  return linkedApps;
 }

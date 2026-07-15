@@ -659,6 +659,23 @@ function ManageBody(
       {error && (
         <p class="profile-form-status profile-form-status--error">{error}</p>
       )}
+      <section class="host-manage-current directory-relationship-entry">
+        <div>
+          <p class="text-eyebrow">Apps and host identity</p>
+          <h2>Connect this host to its apps</h2>
+          <p class="text-body">
+            Confirm whether an app is this same product, operated by the same
+            organization, or only a host listing. Different app accounts must
+            approve the connection too.
+          </p>
+        </div>
+        <a
+          class="directory-register-button"
+          href={`/hosts/${encodeURIComponent(host.host)}/manage/apps`}
+        >
+          Manage app connections
+        </a>
+      </section>
       <section class="host-manage-current host-manage-profile-section">
         <div class="host-detail-dashboard-head">
           <div>

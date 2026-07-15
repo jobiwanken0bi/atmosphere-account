@@ -2552,6 +2552,158 @@ h1, h2, h3, h4 {
   }
 }
 
+/* ================================
+   Verified host/app relationships
+   ================================ */
+
+.directory-relationship-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.directory-relationship-entry h2 {
+  margin: 0.2rem 0 0.45rem;
+}
+
+.directory-relationship-entry .directory-register-button {
+  flex: 0 0 auto;
+}
+
+.owner-app-relationship-entry {
+  margin-top: 1rem;
+  padding: 1.25rem;
+}
+
+.relationship-manage-container,
+.relationship-confirm-container {
+  max-width: 760px;
+}
+
+.relationship-list,
+.relationship-create {
+  margin-top: 1.5rem;
+}
+
+.relationship-list h2,
+.relationship-create h2 {
+  margin-bottom: 0.8rem;
+}
+
+.relationship-row {
+  align-items: center;
+  border-top: 1px solid rgba(18, 26, 47, 0.12);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+
+.relationship-row p {
+  margin: 0.2rem 0 0.45rem;
+}
+
+.relationship-row-actions,
+.relationship-confirm-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.relationship-status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.28rem 0.55rem;
+}
+
+.relationship-status--verified {
+  background: rgba(52, 211, 153, 0.16);
+  color: var(--success-text, #087f5b);
+}
+
+.relationship-status--pending {
+  background: rgba(245, 158, 11, 0.16);
+  color: var(--warning-text, #9a5a00);
+}
+
+.relationship-proof-grid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1.5rem 0;
+}
+
+.relationship-proof {
+  align-items: center;
+  border: 1px solid rgba(18, 26, 47, 0.12);
+  border-radius: 16px;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.9rem;
+}
+
+.relationship-proof > span {
+  align-items: center;
+  border-radius: 50%;
+  display: inline-flex;
+  flex: 0 0 2rem;
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
+}
+
+.relationship-proof.is-approved > span {
+  background: rgba(52, 211, 153, 0.18);
+}
+
+.relationship-proof.is-pending > span {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.relationship-proof p {
+  font-size: 0.82rem;
+  margin: 0.15rem 0 0;
+}
+
+.relationship-confirm-next,
+.relationship-complete {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.relationship-switch-form button {
+  width: 100%;
+}
+
+.relationship-add-account {
+  justify-self: start;
+}
+
+@media (max-width: 640px) {
+  .directory-relationship-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .directory-relationship-entry .directory-register-button {
+    justify-content: center;
+  }
+
+  .relationship-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .relationship-proof-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Your account, your choice — three tiles in one row */
 .your-choice-grid {
   display: grid;
@@ -14126,6 +14278,21 @@ body {
   white-space: nowrap;
 }
 
+.host-card-app {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.55rem;
+  border: 1px solid rgba(105, 77, 173, 0.22);
+  border-radius: 999px;
+  padding: 0.12rem 0.48rem;
+  color: #594092;
+  background: rgba(121, 91, 190, 0.12);
+  font-size: 0.69rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .host-card-tags .host-card-conformance {
   background: rgba(23, 137, 91, 0.12);
   border-color: rgba(23, 137, 91, 0.24);
@@ -14986,6 +15153,12 @@ body {
   border-color: rgba(246, 186, 92, 0.25);
   background: rgba(246, 186, 92, 0.12);
   color: #ffd898;
+}
+
+.dark-phase .host-card-app {
+  border-color: rgba(202, 181, 255, 0.25);
+  background: rgba(171, 139, 247, 0.14);
+  color: #e0d2ff;
 }
 
 .dark-phase .host-card-domain {

@@ -24,8 +24,8 @@ import {
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { hostHasCurrentConformance } from "../../lib/host-conformance.ts";
 import { normalizeHostDirectoryReturnTo } from "../../lib/host-directory-navigation.ts";
-import { getVisibleAppListingByAccountDid } from "../../lib/app-directory.ts";
-import { appHrefForHost } from "../../lib/directory-identity-links.ts";
+import { getResolvedAppLinksForHost } from "../../lib/app-directory.ts";
+import type { ResolvedDirectoryAppLink } from "../../lib/app-directory.ts";
 import { getMessages, type Messages } from "../../i18n/mod.ts";
 
 export const handler = define.handlers({
@@ -51,7 +51,7 @@ export const handler = define.handlers({
         imageUrl: host.avatarUrl ?? undefined,
       };
     }
-    const [pdsDescription, linkedApp] = host
+    const [pdsDescription, linkedApps] = host
       ? await Promise.all([
         host.serviceEndpoint
           ? fetchPdsServerDescription(host.serviceEndpoint).catch((err) => {
@@ -59,16 +59,12 @@ export const handler = define.handlers({
             return null;
           })
           : null,
-        host.profileDid
-          ? getVisibleAppListingByAccountDid(host.profileDid, {
-            syncLegacy: false,
-          }).catch((err) => {
-            console.warn("[host] linked app lookup failed:", err);
-            return null;
-          })
-          : null,
+        getResolvedAppLinksForHost(host).catch((err) => {
+          console.warn("[host] linked app lookup failed:", err);
+          return [];
+        }),
       ])
-      : [null, null];
+      : [null, []];
     return ctx.render(
       <HostDetailPage
         host={host}
@@ -76,7 +72,7 @@ export const handler = define.handlers({
         pdsDescription={host
           ? pdsServerDescriptionForAccountHost(host.host, pdsDescription)
           : null}
-        linkedAppHref={host ? appHrefForHost(host, linkedApp) : null}
+        linkedApps={linkedApps}
         directoryCopy={getMessages(ctx.state.locale).hostsDirectory}
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}
@@ -95,7 +91,7 @@ function HostDetailPage(
     host,
     claim,
     pdsDescription,
-    linkedAppHref,
+    linkedApps,
     directoryCopy,
     claimed,
     managed,
@@ -105,7 +101,7 @@ function HostDetailPage(
     host: AccountHost | null;
     claim: AccountHostClaim | null;
     pdsDescription: PdsServerDescription | null;
-    linkedAppHref: string | null;
+    linkedApps: ResolvedDirectoryAppLink[];
     directoryCopy: Messages["hostsDirectory"];
     claimed: boolean;
     managed: boolean;
@@ -234,12 +230,17 @@ function HostDetailPage(
                 <p class="profile-hero-description">{friendly.summary}</p>
               </div>
               <div class="profile-hero-actions" aria-label="Host actions">
-                {linkedAppHref && (
+                {linkedApps.map((app) => (
                   <DirectoryIdentityLink
-                    href={linkedAppHref}
+                    key={app.slug}
+                    href={`/apps/${encodeURIComponent(app.slug)}`}
                     destination="app"
+                    label={app.relationship === "same_operator"
+                      ? `${app.name} app`
+                      : "App"}
+                    accessibleLabel={`View the ${app.name} app profile`}
                   />
-                )}
+                ))}
                 {host.homepageUrl && (
                   <HostVisitLink
                     href={host.homepageUrl}

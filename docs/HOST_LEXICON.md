@@ -172,6 +172,32 @@ Implementation notes:
 - Host detail pages expose indexed source records in the technical disclosure so
   operators can see which AT records shaped the listing.
 
+## Host and App Relationships
+
+Atmosphere keeps the existing DID-based host/app match as a fallback so imported
+ATStore listings do not become disconnected. Claimed host owners and verified
+app owners can override that inference from their management pages with one of
+three explicit relationships:
+
+- `same_product`: the host is part of the app product.
+- `same_operator`: the host and app are separate services run by the same
+  organization.
+- `host_only`: the matching listing represents only the host and the inferred
+  App indicator should be suppressed.
+
+When the host and app use different DIDs, `same_product` and `same_operator`
+remain pending until both authenticated accounts approve them. Approval is tied
+to the current host claim and one of the app listing's current identity DIDs; an
+arbitrary request parameter cannot assert ownership. Either verified owner can
+remove a relationship. A host claim change or app identity change makes a
+claimed relationship ineligible for public display until the new owners approve
+it. Curated relationships use the same stored model and pin the expected app
+owner DID.
+
+This relationship is currently appview control-plane state in
+`directory_entity_link`. It does not grant PDS access, transfer ownership, or
+change either account's AT Protocol identity.
+
 ## Account Management Boundary
 
 The reference PDS exposes account management at `/account` on the PDS itself

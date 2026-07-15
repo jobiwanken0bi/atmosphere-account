@@ -45,6 +45,7 @@ const apps = [
       "A familiar microblogging app where many people first use their Atmosphere account.",
     url: "https://bsky.app",
     profile: "https://bsky.app/profile/bsky.app",
+    productDid: "did:plc:z72i7hdynmk6r22z27h6tvur",
     heroAsset: "bluesky.jpg",
     collections: ["social"],
     tags: ["microblogging", "social"],
@@ -155,6 +156,18 @@ const apps = [
     collections: ["community"],
     tags: ["video", "spark"],
   },
+  {
+    slug: "mu",
+    name: "mu",
+    tagline: "A social app from the team behind Eurosky.",
+    description:
+      "A social Atmosphere app operated by the same organization as the Eurosky account host.",
+    url: "https://mu.social",
+    profile: "https://bsky.app/profile/mu.social",
+    productDid: "did:plc:fivmz34azxgjafrk6ogns7k5",
+    collections: ["social"],
+    tags: ["social", "community"],
+  },
 ] as const;
 
 const listingIds: string[] = [];
@@ -203,7 +216,7 @@ for (const app of apps) {
     lexiconsProduces: [],
     lexiconsConsumes: [],
     accountIndicators: [],
-    productDid: repoDid,
+    productDid: "productDid" in app ? app.productDid : repoDid,
     profileDid: repoDid,
     atstoreListingUri: sourceUri,
     createdAt: now - apps.indexOf(app) * 86_400_000,
@@ -285,6 +298,38 @@ await withDb(async (c) => {
       now,
     ],
   });
+
+  const muListingId = listingIds[apps.findIndex((app) => app.slug === "mu")];
+  if (muListingId) {
+    await c.execute({
+      sql: `
+        INSERT INTO directory_entity_link (
+          host, app_listing_id, relationship, status, source,
+          host_owner_did, app_owner_did, host_approved_at, app_approved_at,
+          created_at, updated_at
+        ) VALUES (?, ?, 'same_operator', 'verified', 'seeded', ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(host, app_listing_id) DO UPDATE SET
+          relationship = excluded.relationship,
+          status = excluded.status,
+          source = excluded.source,
+          host_owner_did = excluded.host_owner_did,
+          app_owner_did = excluded.app_owner_did,
+          host_approved_at = excluded.host_approved_at,
+          app_approved_at = excluded.app_approved_at,
+          updated_at = excluded.updated_at
+      `,
+      args: [
+        "eurosky.social",
+        muListingId,
+        "did:plc:ooensn4mr5mhznzypvxelfa3",
+        "did:plc:fivmz34azxgjafrk6ogns7k5",
+        now,
+        now,
+        now,
+        now,
+      ],
+    });
+  }
 
   const featured = listingIds.slice(0, 3);
   for (let index = 0; index < featured.length; index++) {

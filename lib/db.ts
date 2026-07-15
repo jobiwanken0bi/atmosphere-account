@@ -592,6 +592,28 @@ const SCHEMA_STATEMENTS: string[] = [
     indexed_at INTEGER NOT NULL,
     deleted_at INTEGER
   )`,
+  /**
+   * Owner-defined relationships between account hosts and app listings.
+   * Different controlling DIDs require approval from both sides before a
+   * relationship becomes public. `host_only` is a host-side override that
+   * suppresses the legacy DID-based app inference for that host.
+   */
+  `CREATE TABLE IF NOT EXISTS directory_entity_link (
+    host TEXT NOT NULL,
+    app_listing_id TEXT NOT NULL,
+    relationship TEXT NOT NULL CHECK(relationship IN ('same_product', 'same_operator', 'host_only')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'verified')),
+    source TEXT NOT NULL DEFAULT 'claimed' CHECK(source IN ('claimed', 'seeded')),
+    host_owner_did TEXT NOT NULL,
+    app_owner_did TEXT NOT NULL,
+    host_approved_at INTEGER,
+    app_approved_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(host, app_listing_id),
+    FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE,
+    FOREIGN KEY(app_listing_id) REFERENCES app_listing(id) ON DELETE CASCADE
+  )`,
   `CREATE TABLE IF NOT EXISTS app_alias (
     alias_key TEXT PRIMARY KEY,
     listing_id TEXT NOT NULL,
@@ -822,6 +844,8 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS app_listing_public_trending ON app_listing(deleted_at, trending_score DESC, updated_at DESC, published_at DESC)`,
   `CREATE INDEX IF NOT EXISTS app_listing_public_newest ON app_listing(deleted_at, published_at DESC, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS app_listing_public_name ON app_listing(deleted_at, name COLLATE NOCASE)`,
+  `CREATE INDEX IF NOT EXISTS directory_entity_link_host_status ON directory_entity_link(host, status, relationship)`,
+  `CREATE INDEX IF NOT EXISTS directory_entity_link_app_status ON directory_entity_link(app_listing_id, status, relationship)`,
   `CREATE INDEX IF NOT EXISTS app_review_listing ON app_review(listing_id, deleted_at, created_at)`,
   `CREATE INDEX IF NOT EXISTS app_review_subject ON app_review(listing_uri, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS app_favorite_listing ON app_favorite(listing_id, deleted_at, created_at)`,

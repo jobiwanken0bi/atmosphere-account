@@ -3,6 +3,7 @@ import {
   type AccountHostClaim,
   type AccountHostDirectoryOptions,
   type AccountHostDirectoryResult,
+  type AccountHostLinkedApp,
   DEFAULT_ACCOUNT_HOST_SORT,
   getAccountHost,
   getAccountHostClaim,
@@ -15,6 +16,7 @@ import {
 import {
   type AppDirectorySort,
   type AppSearchResult,
+  getVisibleAppsForAccountHosts,
   searchAppDirectory,
 } from "./app-directory.ts";
 import { define } from "../utils.ts";
@@ -249,6 +251,7 @@ export async function listHostsFromAppview(
   if (remote) {
     const params = new URLSearchParams();
     if (input.query) params.set("q", input.query);
+    if (input.includeLinkedApps) params.set("includeApps", "1");
     if (input.sort) params.set("sort", input.sort);
     if (input.signupStatus && input.signupStatus !== "all") {
       params.set("signup", input.signupStatus);
@@ -277,9 +280,35 @@ export async function listHostsFromAppview(
       );
     }
     const result = payload as AccountHostDirectoryResult;
+    const hosts = result.hosts.filter((host) =>
+      isAccountHostPubliclyListable(host)
+    );
+    const linkedApps: Record<string, AccountHostLinkedApp[]> | undefined =
+      result.linkedApps
+        ? Object.fromEntries(
+          hosts.flatMap((host) => {
+            const apps = result.linkedApps?.[host.host];
+            return apps?.length ? [[host.host, apps]] : [];
+          }),
+        )
+        : result.linkedAppSlugs
+        ? Object.fromEntries(
+          hosts.flatMap((host) => {
+            const slug = result.linkedAppSlugs?.[host.host];
+            return slug
+              ? [[host.host, [{
+                slug,
+                name: slug,
+                relationship: "inferred" as const,
+              }]]]
+              : [];
+          }),
+        )
+        : undefined;
     return {
       ...result,
-      hosts: result.hosts.filter((host) => isAccountHostPubliclyListable(host)),
+      hosts,
+      linkedApps,
     };
   }
   return await listPublicAccountHosts(publicInput);
@@ -494,7 +523,21 @@ export async function listPublicAccountHosts(
   visibleHosts = visibleHosts.filter((host) =>
     isAccountHostPubliclyListable(host, publicInput.now)
   );
-  return { ...result, hosts: visibleHosts };
+  const linkedApps: Record<string, AccountHostLinkedApp[]> | undefined =
+    publicInput.includeLinkedApps
+      ? await getVisibleAppsForAccountHosts(visibleHosts).catch((err) => {
+        console.warn("[appview] resolve host app links failed:", err);
+        return {} as Record<string, AccountHostLinkedApp[]>;
+      })
+      : undefined;
+  const linkedAppSlugs = linkedApps
+    ? Object.fromEntries(
+      Object.entries(linkedApps).flatMap(([host, apps]) =>
+        apps[0]?.slug ? [[host, apps[0].slug]] : []
+      ),
+    )
+    : undefined;
+  return { ...result, hosts: visibleHosts, linkedApps, linkedAppSlugs };
 }
 
 export function hostDirectoryResultForHosts(

@@ -35,6 +35,7 @@ function readDirectoryInput(search: URLSearchParams) {
     .filter((status): status is HostSignupStatus => status !== "all");
   return {
     query: search.get("q")?.trim() ?? "",
+    includeLinkedApps: search.get("includeApps") === "1",
     sort: readSort(search.get("sort")),
     signupStatus: signupStatuses.length <= 1
       ? (signupStatuses[0] ?? "all")
