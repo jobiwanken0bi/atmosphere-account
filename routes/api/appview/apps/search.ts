@@ -6,18 +6,20 @@ import {
 } from "../../../../lib/app-directory.ts";
 import { proxyAppviewResponse } from "../../../../lib/appview-client.ts";
 import { EdgeStaleCache } from "../../../../lib/edge-cache.ts";
+import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
 const appSearchCache = new EdgeStaleCache<AppSearchResult>({
   freshMs: 30_000,
   staleMs: 2 * 60_000,
-  maxEntries: 512,
+  maxEntries: 128,
 });
 
 export const handler = define.handlers({
-  async GET(ctx): Promise<Response> {
+  GET: withRateLimit(async (ctx): Promise<Response> => {
     const proxied = await proxyAppviewResponse(
       `${ctx.url.pathname}${ctx.url.search}`,
       ctx.url,
+      ctx.req.headers,
     );
     if (proxied) return proxied;
     const url = ctx.url;
@@ -42,7 +44,11 @@ export const handler = define.handlers({
         "cache-control": "public, max-age=30, stale-while-revalidate=120",
       },
     });
-  },
+  }, {
+    scope: "appview-app-search",
+    capacity: 60,
+    refillMs: 60_000,
+  }),
 });
 
 function readSort(value: string | null): AppDirectorySort {

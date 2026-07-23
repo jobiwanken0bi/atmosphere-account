@@ -14,7 +14,11 @@ const appsHomeCache = new EdgeStaleCache<AppSearchResult>({
 
 export const handler = define.handlers({
   async GET(ctx): Promise<Response> {
-    const proxied = await proxyAppviewResponse(ctx.url.pathname, ctx.url);
+    const proxied = await proxyAppviewResponse(
+      ctx.url.pathname,
+      ctx.url,
+      ctx.req.headers,
+    );
     if (proxied) return proxied;
     const result = await appsHomeCache.get("home", () =>
       searchAppDirectory({
