@@ -42,7 +42,13 @@ export const handler = define.handlers({
     const query = url.searchParams.get("q")?.trim() ?? "";
     const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
 
-    const result = await loadAppBrowseResult({ query, tags, sort, page })
+    const result = await loadAppBrowseResult({
+      query,
+      tags,
+      sort,
+      page,
+      requestHeaders: ctx.req.headers,
+    })
       .catch(() => emptyBrowseResult(page));
 
     const data: BrowseAppsData = {
@@ -65,6 +71,7 @@ async function loadAppBrowseResult(input: {
   tags: string[];
   sort: AppDirectorySort;
   page: number;
+  requestHeaders?: Headers;
 }): Promise<AppSearchResult> {
   const key = appBrowseCacheKey(input);
   return await appBrowseCache.get(key, () =>
@@ -73,7 +80,7 @@ async function loadAppBrowseResult(input: {
       tag: input.tags.length > 0 ? input.tags : undefined,
       sort: input.sort,
       page: input.page,
-    }));
+    }, input.requestHeaders));
 }
 
 function appBrowseCacheKey(input: {

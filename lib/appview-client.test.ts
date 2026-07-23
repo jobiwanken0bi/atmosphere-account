@@ -1,6 +1,7 @@
 import {
   appviewAssetSourceUrlForTest,
   appviewFetchTimeoutMs,
+  appviewJsonHeadersForTest,
   appviewProxyRequestBodyForTest,
   appviewRequestHeadersForTest,
   hostDirectoryResultForHosts,
@@ -12,6 +13,7 @@ import {
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
+import { readProxyClientKey } from "./proxy-client-key.ts";
 import {
   DEFAULT_ACCOUNT_HOST_SORT,
   listSeededAccountHostFallback,
@@ -474,6 +476,33 @@ Deno.test("appview request headers preserve browser CSRF context and overwrite p
   assertEquals(
     headers.get("x-atmosphere-public-origin"),
     "https://atmosphereaccount.com",
+  );
+});
+
+Deno.test("appview JSON requests carry a signed caller identity", async () => {
+  const source = new Headers({
+    "x-forwarded-for": "198.51.100.42",
+    "x-atmosphere-client-key": "attacker-controlled",
+  });
+  const headers = await appviewJsonHeadersForTest(source);
+  const request = new Request(
+    "https://appview.example/api/appview/apps/search",
+    {
+      headers,
+    },
+  );
+  const identity = await readProxyClientKey(request);
+
+  assertEquals(headers.get("accept"), "application/json");
+  assertEquals(
+    headers.get("x-atmosphere-client-key") === "attacker-controlled",
+    false,
+  );
+  assertEquals(typeof identity, "string");
+  assertEquals(identity?.length, 43);
+  assertEquals(
+    (await appviewJsonHeadersForTest()).has("x-atmosphere-client-key"),
+    false,
   );
 });
 
