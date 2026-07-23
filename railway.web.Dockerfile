@@ -15,6 +15,7 @@ ENV LD_PRELOAD=libjemalloc.so.2
 ENV MALLOC_CONF=background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000
 
 WORKDIR /app
+RUN chown deno:deno /app
 
 COPY --chown=deno:deno deno.json deno.lock ./
 COPY --chown=deno:deno . .
