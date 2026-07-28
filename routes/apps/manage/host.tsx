@@ -2,13 +2,13 @@ import { define } from "../../../utils.ts";
 import Nav from "../../../components/Nav.tsx";
 import Footer from "../../../components/Footer.tsx";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
-import { getEffectiveAccountType } from "../../../lib/account-types.ts";
-import { getAccountHost } from "../../../lib/account-hosts.ts";
+import {
+  getAccountHost,
+  getAccountHostClaim,
+} from "../../../lib/account-hosts.ts";
 import {
   type AppListing,
   getAppListingById,
-  getAppListingByIdentifier,
-  getVisibleAppListingByAccountDid,
 } from "../../../lib/app-directory.ts";
 import {
   defineDirectoryEntityLink,
@@ -20,6 +20,11 @@ import {
 import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../../lib/security.ts";
+import {
+  loadManagedAppPortfolio,
+  selectManagedApp,
+} from "../../../lib/managed-products.ts";
+import { loadSession } from "../../../lib/oauth.ts";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -30,8 +35,12 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
     return await renderForOwner(ctx, {
-      error: null,
-      success: ctx.url.searchParams.get("saved") === "1"
+      error: ctx.url.searchParams.get("linkError") === "1"
+        ? "The host was registered, but the app connection could not be completed. Connect it below."
+        : null,
+      success: ctx.url.searchParams.get("registered") === "1"
+        ? "Host registered and connected to this app."
+        : ctx.url.searchParams.get("saved") === "1"
         ? "Host connection saved."
         : null,
     });
@@ -51,8 +60,6 @@ export const handler = define.handlers({
     const large = rejectLargeRequest(ctx.req, MAX_RELATIONSHIP_FORM_BYTES);
     if (large) return large;
 
-    const app = await loadOwnedApp(ctx);
-    if (app instanceof Response) return app;
     const form = await ctx.req.formData().catch(() => null);
     if (!form) {
       return await renderForOwner(ctx, {
@@ -60,6 +67,12 @@ export const handler = define.handlers({
         success: null,
       });
     }
+    const selection = await loadOwnedApp(
+      ctx,
+      text(form.get("appListingId")),
+    );
+    if (selection instanceof Response) return selection;
+    const app = selection.app;
     const action = text(form.get("action"));
     if (action === "remove") {
       const target = await getAppListingById(text(form.get("appListingId")))
@@ -81,7 +94,7 @@ export const handler = define.handlers({
           success: null,
         });
       }
-      return redirect("/apps/manage/host?saved=1");
+      return redirect(appHostManageHref(app.id, { saved: "1" }));
     }
 
     const hostId = normalizeHost(text(form.get("host")));
@@ -102,6 +115,16 @@ export const handler = define.handlers({
         success: null,
       });
     }
+    const claim = await getAccountHostClaim(host.host).catch(() => null);
+    if (!claim) {
+      const next = new URLSearchParams({
+        app: app.id,
+        relationship,
+      });
+      return redirect(
+        `/hosts/${encodeURIComponent(host.host)}/claim?${next}`,
+      );
+    }
     const result = await defineDirectoryEntityLink({
       host: host.host,
       app,
@@ -117,7 +140,7 @@ export const handler = define.handlers({
     }
     return result.link.status === "pending"
       ? redirect(confirmHref(result.link.host, result.link.appListingId))
-      : redirect("/apps/manage/host?saved=1");
+      : redirect(appHostManageHref(app.id, { saved: "1" }));
   },
 });
 
@@ -126,12 +149,18 @@ async function renderForOwner(
   ctx: any,
   message: { error: string | null; success: string | null },
 ) {
-  const app = await loadOwnedApp(ctx);
-  if (app instanceof Response) return app;
-  const links = await listDirectoryEntityLinksForApp(app.id).catch(() => []);
+  const selection = await loadOwnedApp(
+    ctx,
+    ctx.url.searchParams.get("app"),
+  );
+  if (selection instanceof Response) return selection;
+  const links = await listDirectoryEntityLinksForApp(selection.app.id).catch(
+    () => [],
+  );
   return ctx.render(
     <AppHostRelationshipsPage
-      app={app}
+      app={selection.app}
+      apps={selection.apps}
       links={links}
       account={buildAccountMenuProps(ctx.state)}
       error={message.error}
@@ -143,38 +172,43 @@ async function renderForOwner(
 async function loadOwnedApp(
   // deno-lint-ignore no-explicit-any
   ctx: any,
-): Promise<AppListing | Response> {
+  identifier?: string | null,
+): Promise<{ app: AppListing; apps: AppListing[] } | Response> {
   const user = ctx.state.user;
   if (!user) return redirect(`/apps/create?intent=project`);
-  const accountType = await getEffectiveAccountType(user.did).catch(() => null);
-  if (accountType !== "project") return redirect("/account?upgrade=app");
-  const app =
-    await getVisibleAppListingByAccountDid(user.did, { syncLegacy: false })
-      .catch(() => null) ??
-      await getAppListingByIdentifier(user.handle, { syncLegacy: false }).catch(
-        () => null,
-      );
-  if (!app) {
+  const session = await loadSession(user.did).catch(() => null);
+  const portfolio = await loadManagedAppPortfolio({
+    did: user.did,
+    pdsUrl: session?.pdsUrl,
+  }).catch(() => ({
+    apps: [],
+    discoveredAtstoreCount: 0,
+    syncUnavailable: true,
+  }));
+  if (portfolio.apps.length === 0) {
     return new Response("Publish the app listing before connecting a host.", {
       status: 404,
     });
   }
+  const app = selectManagedApp(portfolio.apps, identifier);
+  if (!app) return new Response("App listing not found.", { status: 404 });
   if (!userControlsAppListing(app, user.did)) {
     return new Response("This account cannot manage that app listing.", {
       status: 403,
     });
   }
-  return app;
+  return { app, apps: portfolio.apps };
 }
 
 function AppHostRelationshipsPage(props: {
   app: AppListing;
+  apps: AppListing[];
   links: DirectoryEntityAppLink[];
   account: ReturnType<typeof buildAccountMenuProps>;
   error: string | null;
   success: string | null;
 }) {
-  const { app, links, account, error, success } = props;
+  const { app, apps, links, account, error, success } = props;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -192,6 +226,26 @@ function AppHostRelationshipsPage(props: {
                 same organization. Explicit, verified connections override
                 Atmosphere's DID-based fallback.
               </p>
+              {apps.length > 1 && (
+                <form method="GET" class="managed-app-switcher">
+                  <label class="profile-form-field">
+                    <span class="profile-form-label">Managing app</span>
+                    <select class="profile-form-input" name="app">
+                      {apps.map((candidate) => (
+                        <option
+                          value={candidate.id}
+                          selected={candidate.id === app.id}
+                        >
+                          {candidate.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button class="profile-form-button-secondary" type="submit">
+                    Switch app
+                  </button>
+                </form>
+              )}
               {error && (
                 <p class="profile-form-status profile-form-status--error">
                   {error}
@@ -240,6 +294,11 @@ function AppHostRelationshipsPage(props: {
                         )}
                         <form method="POST">
                           <input type="hidden" name="action" value="remove" />
+                          <input
+                            type="hidden"
+                            name="appListingId"
+                            value={app.id}
+                          />
                           <input type="hidden" name="host" value={link.host} />
                           <input
                             type="hidden"
@@ -260,9 +319,30 @@ function AppHostRelationshipsPage(props: {
               )}
 
               <section class="relationship-create">
-                <h2>Define a connection</h2>
+                <div class="relationship-create-heading">
+                  <div>
+                    <h2>Add account hosting</h2>
+                    <p>
+                      Connect an existing host below, or register a new host and
+                      return here with the relationship already verified.
+                    </p>
+                  </div>
+                  <a
+                    class="directory-register-button"
+                    href={`/hosts/register?app=${
+                      encodeURIComponent(app.id)
+                    }&relationship=same_product`}
+                  >
+                    Register a new host
+                  </a>
+                </div>
                 <form method="POST" class="host-manage-form">
                   <input type="hidden" name="action" value="define" />
+                  <input
+                    type="hidden"
+                    name="appListingId"
+                    value={app.id}
+                  />
                   <label class="profile-form-field">
                     <span class="profile-form-label">Host domain</span>
                     <input
@@ -308,6 +388,14 @@ function confirmHref(host: string, appListingId: string): string {
     host,
     app: appListingId,
   })}`;
+}
+
+function appHostManageHref(
+  appListingId: string,
+  params: Record<string, string> = {},
+): string {
+  const search = new URLSearchParams({ app: appListingId, ...params });
+  return `/apps/manage/host?${search}`;
 }
 
 function normalizeHost(host: string): string {

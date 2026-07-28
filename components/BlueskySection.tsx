@@ -118,9 +118,6 @@ export default function BlueskySection() {
         <div class="host-handle-explainer glass">
           <div class="host-handle-explainer-copy">
             <p class="text-eyebrow">{handleExplainer.eyebrow}</p>
-            <h3 class="host-handle-explainer-title font-mono">
-              {handleExplainer.title}
-            </h3>
             <p class="text-body-sm">{handleExplainer.body}</p>
           </div>
 

@@ -331,6 +331,11 @@ function enhanceFlow(flow) {
   const showManualButtons = Array.from(
     flow.querySelectorAll("[data-signin-show-manual]"),
   );
+  const showSavedButtons = Array.from(
+    flow.querySelectorAll("[data-signin-show-saved]"),
+  );
+  const savedView = flow.querySelector("[data-signin-saved-view]");
+  const manualView = flow.querySelector("[data-signin-manual-view]");
   const manualForm = flow.querySelector(
     'form.signin-form[data-signin-preview="true"]',
   );
@@ -346,6 +351,11 @@ function enhanceFlow(flow) {
     }
   }
 
+  function setSigninView(view) {
+    if (savedView) savedView.hidden = view !== "saved";
+    if (manualView) manualView.hidden = view !== "manual";
+  }
+
   for (const tab of tabs) {
     tab.addEventListener("click", () => {
       setMode(tab.getAttribute("data-signin-tab") || "signin");
@@ -355,17 +365,17 @@ function enhanceFlow(flow) {
   if (manualForm) {
     for (const showManual of showManualButtons) {
       showManual.addEventListener("click", () => {
-        manualForm.hidden = false;
+        setSigninView("manual");
         const input = manualForm.querySelector("[data-signin-preview-input]");
         if (input instanceof HTMLInputElement) input.focus();
       });
     }
+    for (const showSaved of showSavedButtons) {
+      showSaved.addEventListener("click", () => setSigninView("saved"));
+    }
   }
 
-  if (showManualButtons.length === 0 && manualForm?.hidden) {
-    manualForm.hidden = false;
-  }
-
+  setSigninView(flow.getAttribute("data-initial-signin-view") || "manual");
   setMode(flow.getAttribute("data-initial-mode") || "signin");
 }
 

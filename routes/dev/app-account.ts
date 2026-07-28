@@ -12,6 +12,7 @@ import { setAppUserType } from "../../lib/account-types.ts";
  *   - handle:  override the account handle (defaults to a random *.test)
  *   - name:    display name (defaults to "Local App Test")
  *   - next:    "host" → land on /hosts/register, otherwise /apps/manage
+ *   - fixture: "field-notes" → use the populated seeded app profile
  *
  * Gated behind IS_DEV + ATMOSPHERE_ENABLE_DEV_LOGIN=1, matching
  * routes/dev/host-account.ts.
@@ -23,12 +24,18 @@ export const handler = define.handlers({
     }
 
     const url = new URL(ctx.req.url);
+    const seededFixture = url.searchParams.get("fixture") === "field-notes";
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 10);
-    const handle = normalizeDevHandle(url.searchParams.get("handle")) ??
-      `local-app-${id}.test`;
-    const displayName = textValue(url.searchParams.get("name")) ||
-      "Local App Test";
-    const did = `did:plc:aalocalapp${id}`;
+    const handle = seededFixture
+      ? "field-notes.test"
+      : normalizeDevHandle(url.searchParams.get("handle")) ??
+        `local-app-${id}.test`;
+    const displayName = seededFixture
+      ? "Field Notes"
+      : textValue(url.searchParams.get("name")) || "Local App Test";
+    const did = seededFixture
+      ? "did:plc:localdevfieldnotesapp"
+      : `did:plc:aalocalapp${id}`;
     const cookieValue = await createSession({ did, handle });
 
     // Classify the DID as a project account so /apps/manage and the

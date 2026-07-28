@@ -1,5 +1,6 @@
 import { hmacSign, hmacVerify } from "./jose.ts";
 import { reportIpSecret, sessionSecret } from "./env.ts";
+import { isTrustedAtmosphereOrigin } from "./atmosphere-origins.ts";
 
 export const PROXY_CLIENT_KEY_HEADER = "x-atmosphere-client-key";
 
@@ -73,9 +74,23 @@ export async function callerRequestIdentity(
   options: ProxyClientKeyOptions = {},
 ): Promise<string> {
   const proxyKey = await readProxyClientKey(request, options);
-  return proxyKey
-    ? `edge:${proxyKey}`
-    : `network:${bestEffortCallerAddress(request.headers)}`;
+  if (proxyKey) return `edge:${proxyKey}`;
+
+  // Only public Atmosphere origins may use provider forwarding headers
+  // directly. A request sent to the appview service without an edge-signed
+  // key shares one deliberately coarse bucket, so attacker-controlled XFF
+  // values cannot manufacture unlimited durable-rate-limit identities.
+  let directOriginTrusted = false;
+  try {
+    directOriginTrusted = isTrustedAtmosphereOrigin(
+      new URL(request.url).origin,
+    );
+  } catch {
+    directOriginTrusted = false;
+  }
+  return directOriginTrusted
+    ? `network:${bestEffortCallerAddress(request.headers)}`
+    : "network:untrusted-direct";
 }
 
 export function bestEffortCallerAddress(headers: Headers): string {

@@ -3,10 +3,8 @@ import { useSignal } from "@preact/signals";
 import {
   type AccountIndicator,
   APP_SUBCATEGORIES,
-  type Category,
   type LexiconInterop,
   type LinkEntry,
-  PUBLIC_CATEGORIES,
 } from "../lib/lexicons.ts";
 import {
   type AtmosphereService,
@@ -19,6 +17,11 @@ import { useT } from "../i18n/mod.ts";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import BskyClientPickerModal from "./BskyClientPickerModal.tsx";
 import LinkUrlOverrideModal from "./LinkUrlOverrideModal.tsx";
+import {
+  collectionFallbackLabel,
+  isCollectionNsid,
+} from "../lib/collection-nsid.ts";
+import type { CollectionSuggestion } from "../lib/collection-catalog.ts";
 
 interface ExistingProfile {
   name: string;
@@ -49,53 +52,24 @@ interface ExistingProfile {
   /** Optional project banner image. Rendered at the top of the project
    *  page and used as the OG / share preview when the page is posted. */
   banner: { ref: string; mime: string; size?: number } | null;
-  /** Optional developer-facing SVG icon. */
+  /** Legacy developer-facing SVG icon. Kept invisibly on unrelated saves. */
   icon:
     | {
       ref: string;
       mime: string;
     }
     | null;
-  /** Optional black-and-white companion to `icon`. Same access gate. */
+  /** Legacy black-and-white companion to `icon`. */
   iconBw:
     | {
       ref: string;
       mime: string;
     }
     | null;
-  /**
-   * Per-project verification gate for the SVG icon uploader. Drives the
-   * locked / pending / denied / granted UX in the icon section.
-   *   - `null`      → never requested; show "Request Verification"
-   *   - `requested` → in admin queue; show pending state
-   *   - `granted`   → uploader unlocked
-   *   - `denied`    → admin denied; show appeal email; locked
-   */
+  /** Only granted legacy icons are preserved; revoked icons stay removed. */
   iconAccessStatus: "requested" | "granted" | "denied" | null;
   iconAccessEmail: string | null;
   iconAccessDeniedReason: string | null;
-}
-
-/**
- * Email address surfaced in the denial banner so users know how to
- * appeal. Centralised here because it appears in user-facing copy.
- */
-const APPEAL_EMAIL = "contact@atmosphereaccount.com";
-
-function iconPreviewRoute(
-  did: string,
-  variant: "color" | "bw",
-  ref: string,
-): string {
-  const path = variant === "bw" ? "icon-bw" : "icon";
-  return `/api/registry/${path}/${encodeURIComponent(did)}?v=${
-    encodeURIComponent(ref)
-  }`;
-}
-
-function developerResourcesIconHref(): string {
-  // Icon exports moved into the docs resources page.
-  return "/docs/resources#project-icons";
 }
 
 interface Props {
@@ -110,10 +84,18 @@ interface Props {
   /** Whether the registry currently has a published record for this user.
    *  Drives the live/inactive status pill at the top of the form. */
   initialPublished: boolean;
+  /** Searchable collections detected or declared across the directory. */
+  collectionSuggestions?: CollectionSuggestion[];
   /** Handle stored on the registry row (may differ from the live PDS
    *  handle if the user has changed it but not republished). Used to
    *  link to the public profile from the action row. */
   publicProfileHandle?: string | null;
+  /** Directory identifier used to continue directly into host registration. */
+  managedAppIdentifier?: string | null;
+  /** Publish a new ATStore record even when this DID already owns an app. */
+  createNewListing?: boolean;
+  /** Exact shared record managed by this form, used for targeted removal. */
+  atstoreListingUri?: string | null;
 }
 
 interface BlobRefShape {
@@ -134,6 +116,414 @@ interface ScreenshotDraft {
 const SCREENSHOT_MAX_COUNT = 4;
 const SCREENSHOT_MAX_BYTES = 5_000_000;
 const SCREENSHOT_ACCEPT = ["image/png", "image/jpeg", "image/webp"];
+const COLLECTION_MAX_COUNT = 64;
+const COLLECTION_VISIBLE_STEP = 20;
+
+type PublishedSearchStatus = "idle" | "loading" | "ready" | "unavailable";
+
+function canSearchPublishedCollections(value: string): boolean {
+  return value.length >= 2 && value.length <= 256 &&
+    /^[A-Za-z0-9.-]+$/.test(value);
+}
+
+function updateCollectionSelection(
+  current: string[],
+  id: string,
+  selected: boolean,
+): string[] {
+  if (!selected) return current.filter((value) => value !== id);
+  if (!isCollectionNsid(id)) return current;
+  if (current.includes(id) || current.length >= COLLECTION_MAX_COUNT) {
+    return current;
+  }
+  return [...current, id];
+}
+
+interface CollectionMatrixProps {
+  suggestions: CollectionSuggestion[];
+  writes: string[];
+  reads: string[];
+  onWritesChange: (next: string[]) => void;
+  onReadsChange: (next: string[]) => void;
+}
+
+function CollectionMatrix(props: CollectionMatrixProps) {
+  const query = useSignal("");
+  const remoteQuery = useSignal("");
+  const remoteSuggestions = useSignal<CollectionSuggestion[]>([]);
+  const rememberedPublished = useSignal<CollectionSuggestion[]>([]);
+  const remoteStatus = useSignal<PublishedSearchStatus>("idle");
+  const visibleLimit = useSignal(COLLECTION_VISIBLE_STEP);
+
+  useEffect(() => {
+    const value = query.value.trim();
+    visibleLimit.value = COLLECTION_VISIBLE_STEP;
+    remoteSuggestions.value = [];
+    if (!canSearchPublishedCollections(value)) {
+      remoteQuery.value = value;
+      remoteStatus.value = "idle";
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(async () => {
+      remoteQuery.value = value;
+      remoteStatus.value = "loading";
+      try {
+        const response = await fetch(
+          `/api/apps/collection-search?q=${encodeURIComponent(value)}`,
+          {
+            headers: { accept: "application/json" },
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = await response.json() as {
+          suggestions?: unknown;
+          unavailable?: unknown;
+        };
+        if (controller.signal.aborted) return;
+
+        const suggestions: CollectionSuggestion[] = [];
+        if (Array.isArray(body.suggestions)) {
+          for (const value of body.suggestions) {
+            if (!value || typeof value !== "object" || Array.isArray(value)) {
+              continue;
+            }
+            const row = value as Record<string, unknown>;
+            if (typeof row.id !== "string" || !isCollectionNsid(row.id)) {
+              continue;
+            }
+            suggestions.push({
+              id: row.id,
+              label: typeof row.label === "string" && row.label.trim()
+                ? row.label
+                : collectionFallbackLabel(row.id),
+              description: typeof row.description === "string"
+                ? row.description
+                : null,
+              common: false,
+              detected: false,
+              writesCount: 0,
+              readsCount: 0,
+              published: true,
+              ...(typeof row.catalogUrl === "string"
+                ? { catalogUrl: row.catalogUrl }
+                : {}),
+            });
+          }
+        }
+        remoteSuggestions.value = suggestions;
+        const remembered = new Map(
+          rememberedPublished.value.map((item) => [item.id, item]),
+        );
+        for (const item of suggestions) {
+          remembered.delete(item.id);
+          remembered.set(item.id, item);
+        }
+        const selected = new Set([...props.writes, ...props.reads]);
+        const rememberedRows = [...remembered.values()];
+        const selectedRows = rememberedRows.filter((item) =>
+          selected.has(item.id)
+        );
+        const unselectedCapacity = Math.max(0, 200 - selectedRows.length);
+        rememberedPublished.value = [
+          ...selectedRows,
+          ...rememberedRows.filter((item) => !selected.has(item.id)).slice(
+            -unselectedCapacity,
+          ),
+        ];
+        remoteStatus.value = body.unavailable === true
+          ? "unavailable"
+          : "ready";
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.warn("Published collection search failed:", error);
+        remoteSuggestions.value = [];
+        remoteStatus.value = "unavailable";
+      }
+    }, 275);
+
+    return () => {
+      globalThis.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query.value]);
+
+  const rawQuery = query.value.trim();
+  const currentRemoteSuggestions = remoteQuery.value === rawQuery
+    ? remoteSuggestions.value
+    : [];
+  const selectedIds = new Set([...props.writes, ...props.reads]);
+  const rows = new Map(props.suggestions.map((item) => [item.id, item]));
+  for (const item of rememberedPublished.value) {
+    if (!selectedIds.has(item.id)) continue;
+    const existing = rows.get(item.id);
+    rows.set(
+      item.id,
+      existing
+        ? {
+          ...item,
+          ...existing,
+          published: true,
+          catalogUrl: item.catalogUrl ?? existing.catalogUrl,
+        }
+        : item,
+    );
+  }
+  for (const item of currentRemoteSuggestions) {
+    const existing = rows.get(item.id);
+    rows.set(
+      item.id,
+      existing
+        ? {
+          ...item,
+          ...existing,
+          published: true,
+          catalogUrl: item.catalogUrl ?? existing.catalogUrl,
+        }
+        : item,
+    );
+  }
+  for (const id of [...props.writes, ...props.reads]) {
+    if (rows.has(id)) continue;
+    rows.set(id, {
+      id,
+      label: collectionFallbackLabel(id),
+      description: null,
+      common: false,
+      detected: false,
+      writesCount: 0,
+      readsCount: 0,
+    });
+  }
+
+  const normalizedQuery = rawQuery.toLowerCase();
+  const matched = [...rows.values()].filter((item) =>
+    !normalizedQuery || item.id.toLowerCase().includes(normalizedQuery) ||
+    item.label.toLowerCase().includes(normalizedQuery) ||
+    item.description?.toLowerCase().includes(normalizedQuery)
+  );
+  matched.sort((a, b) =>
+    Number(selectedIds.has(b.id)) - Number(selectedIds.has(a.id)) ||
+    Number(b.detected) - Number(a.detected) ||
+    (b.writesCount + b.readsCount) - (a.writesCount + a.readsCount) ||
+    Number(b.common) - Number(a.common) ||
+    a.id.localeCompare(b.id)
+  );
+  const customSuggestion: CollectionSuggestion | null =
+    isCollectionNsid(rawQuery) && !rows.has(rawQuery)
+      ? {
+        id: rawQuery,
+        label: "Custom collection",
+        description: "Use this exact collection NSID in your declaration.",
+        common: false,
+        detected: false,
+        writesCount: 0,
+        readsCount: 0,
+      }
+      : null;
+  const allVisibleRows = [
+    ...(customSuggestion ? [customSuggestion] : []),
+    ...matched,
+  ];
+  const visibleRows = allVisibleRows.slice(0, visibleLimit.value);
+  const remainingRows = Math.max(0, allVisibleRows.length - visibleRows.length);
+  const publishedSearchPending = canSearchPublishedCollections(rawQuery) &&
+    (remoteQuery.value !== rawQuery || remoteStatus.value === "loading");
+  const publishedSearchUnavailable = remoteQuery.value === rawQuery &&
+    remoteStatus.value === "unavailable";
+  const publishedSearchNeedsHelp = rawQuery.length >= 2 &&
+    !canSearchPublishedCollections(rawQuery);
+
+  const toggle = (role: "writes" | "reads", id: string) => {
+    const values = role === "writes" ? props.writes : props.reads;
+    const next = updateCollectionSelection(values, id, !values.includes(id));
+    if (role === "writes") props.onWritesChange(next);
+    else props.onReadsChange(next);
+  };
+
+  const selectAllShown = (role: "writes" | "reads") => {
+    let next = role === "writes" ? props.writes : props.reads;
+    for (const row of visibleRows) {
+      next = updateCollectionSelection(next, row.id, true);
+    }
+    if (role === "writes") props.onWritesChange(next);
+    else props.onReadsChange(next);
+  };
+
+  return (
+    <div class="collection-picker">
+      <div class="collection-picker-search-wrap">
+        <span class="collection-picker-search-icon" aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          class="profile-form-input collection-picker-search"
+          placeholder="Search one keyword or paste a collection NSID…"
+          value={query.value}
+          onInput={(event) =>
+            query.value = (event.currentTarget as HTMLInputElement).value}
+          aria-label="Search record collections"
+        />
+        {(props.writes.length > 0 || props.reads.length > 0) && (
+          <span class="collection-picker-counts">
+            {props.writes.length} writes · {props.reads.length} reads
+          </span>
+        )}
+      </div>
+
+      {(publishedSearchPending || publishedSearchUnavailable ||
+        publishedSearchNeedsHelp) && (
+        <div
+          class={`collection-picker-search-state ${
+            publishedSearchUnavailable ? "is-unavailable" : ""
+          } ${publishedSearchNeedsHelp ? "is-help" : ""}`}
+          role="status"
+        >
+          {publishedSearchNeedsHelp
+            ? "Search with one keyword or an NSID fragment, without spaces."
+            : publishedSearchUnavailable
+            ? "Published catalog search is unavailable. Local suggestions and direct NSID entry still work."
+            : "Searching published record collections…"}
+        </div>
+      )}
+
+      {(props.writes.length >= COLLECTION_MAX_COUNT ||
+        props.reads.length >= COLLECTION_MAX_COUNT) && (
+        <div class="collection-picker-search-state is-help" role="status">
+          {props.writes.length >= COLLECTION_MAX_COUNT
+            ? `Writes has reached the ${COLLECTION_MAX_COUNT}-collection limit.`
+            : ""}
+          {props.writes.length >= COLLECTION_MAX_COUNT &&
+              props.reads.length >= COLLECTION_MAX_COUNT
+            ? " "
+            : ""}
+          {props.reads.length >= COLLECTION_MAX_COUNT
+            ? `Reads has reached the ${COLLECTION_MAX_COUNT}-collection limit.`
+            : ""}
+        </div>
+      )}
+
+      <div class="collection-picker-table" role="group">
+        <div class="collection-picker-head" aria-hidden="true">
+          <span>Collection</span>
+          <span>Writes</span>
+          <span>Reads</span>
+        </div>
+        <div class="collection-picker-results">
+          {visibleRows.map((item) => {
+            const writes = props.writes.includes(item.id);
+            const reads = props.reads.includes(item.id);
+            const writesAtLimit = !writes &&
+              props.writes.length >= COLLECTION_MAX_COUNT;
+            const readsAtLimit = !reads &&
+              props.reads.length >= COLLECTION_MAX_COUNT;
+            const source = item.detected
+              ? "Detected on this account"
+              : item.writesCount + item.readsCount > 0
+              ? `${item.writesCount + item.readsCount} read/write declaration${
+                item.writesCount + item.readsCount === 1 ? "" : "s"
+              }`
+              : item.common
+              ? "Common collection"
+              : item.published
+              ? "Published record schema"
+              : "Custom collection";
+            return (
+              <div class="collection-picker-row" key={item.id}>
+                <div class="collection-picker-identity">
+                  <span class="collection-picker-name">{item.label}</span>
+                  <code>{item.id}</code>
+                  <span class="collection-picker-meta">
+                    {source}
+                    {item.description ? ` · ${item.description}` : ""}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class={`collection-role-toggle ${
+                    writes ? "is-selected" : ""
+                  }`}
+                  aria-pressed={writes}
+                  disabled={writesAtLimit}
+                  aria-label={`${writes ? "Remove" : "Add"} ${item.id} ${
+                    writes ? "from" : "to"
+                  } writes`}
+                  onClick={() => toggle("writes", item.id)}
+                >
+                  <span aria-hidden="true">{writes ? "✓" : "+"}</span>
+                </button>
+                <button
+                  type="button"
+                  class={`collection-role-toggle ${reads ? "is-selected" : ""}`}
+                  aria-pressed={reads}
+                  disabled={readsAtLimit}
+                  aria-label={`${reads ? "Remove" : "Add"} ${item.id} ${
+                    reads ? "from" : "to"
+                  } reads`}
+                  onClick={() => toggle("reads", item.id)}
+                >
+                  <span aria-hidden="true">{reads ? "✓" : "+"}</span>
+                </button>
+              </div>
+            );
+          })}
+          {visibleRows.length === 0 && !publishedSearchPending && (
+            <div class="collection-picker-empty">
+              {rawQuery
+                ? "No match. Enter a full collection NSID such as com.example.records.item to add it."
+                : "No collection suggestions are available yet."}
+            </div>
+          )}
+          {visibleRows.length === 0 && publishedSearchPending && (
+            <div class="collection-picker-empty">
+              Searching the published schema catalog…
+            </div>
+          )}
+        </div>
+      </div>
+
+      {remainingRows > 0 && (
+        <button
+          type="button"
+          class="collection-picker-show-more"
+          onClick={() => visibleLimit.value += COLLECTION_VISIBLE_STEP}
+        >
+          Show {Math.min(COLLECTION_VISIBLE_STEP, remainingRows)} more of{" "}
+          {allVisibleRows.length}
+        </button>
+      )}
+
+      {visibleRows.length > 1 && (
+        <div class="collection-picker-bulk-actions">
+          <button
+            type="button"
+            disabled={props.writes.length >= COLLECTION_MAX_COUNT}
+            onClick={() => selectAllShown("writes")}
+          >
+            Select all shown as writes
+          </button>
+          <button
+            type="button"
+            disabled={props.reads.length >= COLLECTION_MAX_COUNT}
+            onClick={() => selectAllShown("reads")}
+          >
+            Select all shown as reads
+          </button>
+        </div>
+      )}
+      <p class="profile-form-hint collection-picker-explainer">
+        Search by one keyword or an NSID fragment. Results include published
+        record schemas indexed by{" "}
+        <a href="https://lexicon.garden/" target="_blank" rel="noreferrer">
+          Lexicon Garden
+        </a>, plus collections detected or declared in Atmosphere. These are
+        suggestions: an app’s reads and writes cannot be inferred reliably, so
+        you stay in control of the declaration.
+      </p>
+    </div>
+  );
+}
 
 function screenshotMimeForFile(file: File): string | null {
   if (SCREENSHOT_ACCEPT.includes(file.type)) return file.type;
@@ -184,29 +574,12 @@ interface CustomLinkRow {
   url: string;
 }
 
-function linesFromStrings(values: string[] | undefined): string {
-  return (values ?? []).join("\n");
-}
-
 function linesFromAccountIndicators(
   values: AccountIndicator[] | undefined,
 ): string {
   return (values ?? []).map((value) =>
     value.rkey ? `${value.collection}/${value.rkey}` : value.collection
   ).join("\n");
-}
-
-function parseStringLines(value: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of value.split(/\r?\n/)) {
-    const item = raw.trim();
-    if (!item || seen.has(item)) continue;
-    seen.add(item);
-    out.push(item);
-    if (out.length >= 64) break;
-  }
-  return out;
 }
 
 function parseAccountIndicatorLines(value: string): AccountIndicator[] {
@@ -316,6 +689,10 @@ export default function CreateProfileForm(
     initialBannerUrl,
     initialPublished,
     publicProfileHandle,
+    managedAppIdentifier,
+    createNewListing = false,
+    atstoreListingUri = null,
+    collectionSuggestions = [],
   }: Props,
 ) {
   const t = useT();
@@ -348,12 +725,6 @@ export default function CreateProfileForm(
   const androidLink = useSignal<string>(
     initial?.androidLink ?? initialSplit.androidLink,
   );
-  const initialCategories = initial?.categories?.filter((c) =>
-    (PUBLIC_CATEGORIES as readonly string[]).includes(c)
-  );
-  const categories = useSignal<string[]>(
-    initialCategories?.length ? initialCategories : ["app"],
-  );
   const subcategories = useSignal<string[]>(initial?.subcategories ?? []);
 
   /* ---------------- Atmosphere link signals ----------------------------- */
@@ -376,19 +747,17 @@ export default function CreateProfileForm(
   const urlOverrideOpen = useSignal<"tangled" | "supper" | null>(null);
 
   const customLinks = useSignal<CustomLinkRow[]>(initialSplit.custom);
-  const lexiconsProduced = useSignal<string>(
-    linesFromStrings(initial?.lexicons?.produces),
+  const lexiconsProduced = useSignal<string[]>(
+    initial?.lexicons?.produces ?? [],
   );
-  const lexiconsConsumed = useSignal<string>(
-    linesFromStrings(initial?.lexicons?.consumes),
+  const lexiconsConsumed = useSignal<string[]>(
+    initial?.lexicons?.consumes ?? [],
   );
   const accountIndicators = useSignal<string>(
     linesFromAccountIndicators(initial?.accountIndicators),
   );
   const accountIndicatorsPlaceholder =
     "com.example.app.settings\ncom.example.app.profile/self";
-
-  const tIcon = tForm.icon;
 
   const initialAvatarBlob: BlobRefShape | null = initial?.avatar
     ? {
@@ -453,49 +822,29 @@ export default function CreateProfileForm(
   const screenshotMessage = useSignal<
     { kind: "ok" | "error"; text: string } | null
   >(null);
-
-  /* ---------------- Developer icon (SVG) signals ----------------------- */
-  /**
-   * SVG icons get a separate slot from the main avatar — the avatar is
-   * for the public profile, the icon is a vector mark exposed only via
-   * the developer API. The uploader is gated behind per-project
-   * verification (`iconAccessStatus === 'granted'`) — the gate is the
-   * source of truth client-side AND server-side; the API rejects
-   * uploads from unverified projects too.
-   */
-  const iconKeep = useSignal<BlobRefShape | null>(null);
-  const iconPreviewUrl = useSignal<string | null>(
-    initial?.icon ? iconPreviewRoute(did, "color", initial.icon.ref) : null,
-  );
-  const iconFile = useSignal<File | null>(null);
-  const iconRemoved = useSignal(false);
-
-  const iconBwKeep = useSignal<BlobRefShape | null>(null);
-  const iconBwPreviewUrl = useSignal<string | null>(
-    initial?.iconBw ? iconPreviewRoute(did, "bw", initial.iconBw.ref) : null,
-  );
-  const iconBwFile = useSignal<File | null>(null);
-  const iconBwRemoved = useSignal(false);
+  const screenshotDragActive = useSignal(false);
 
   /**
-   * Live access status. Starts from the value the server rendered, then
-   * flips to `requested` when the user submits the request modal so the
-   * UI updates without a page reload.
+   * Developer SVG controls were retired from this dashboard. Preserve old
+   * verified references invisibly so changing an unrelated field does not
+   * silently delete an existing external developer asset.
    */
-  const iconAccessStatus = useSignal<
-    "requested" | "granted" | "denied" | null
-  >(initial?.iconAccessStatus ?? null);
-  const iconAccessEmail = useSignal<string | null>(
-    initial?.iconAccessEmail ?? null,
-  );
-  const iconAccessDeniedReason = initial?.iconAccessDeniedReason ?? null;
-  const iconUploadUnlocked = iconAccessStatus.value === "granted";
-
-  /* ---------------- Verification request modal signals ----------------- */
-  const requestModalOpen = useSignal(false);
-  const requestEmail = useSignal("");
-  const requestSubmitting = useSignal(false);
-  const requestError = useSignal<string | null>(null);
+  const legacyIcon = initial?.iconAccessStatus === "granted" && initial.icon
+    ? {
+      $type: "blob" as const,
+      ref: { $link: initial.icon.ref },
+      mimeType: initial.icon.mime,
+      size: 0,
+    }
+    : null;
+  const legacyIconBw = initial?.iconAccessStatus === "granted" && initial.iconBw
+    ? {
+      $type: "blob" as const,
+      ref: { $link: initial.iconBw.ref },
+      mimeType: initial.iconBw.mime,
+      size: 0,
+    }
+    : null;
 
   const submitting = useSignal(false);
   const deleting = useSignal(false);
@@ -508,6 +857,13 @@ export default function CreateProfileForm(
       ? `/apps/${encodeURIComponent(publicProfileHandle)}`
       : null,
   );
+  const hostAppIdentifier = useSignal<string | null>(
+    managedAppIdentifier ?? publicProfileHandle ?? null,
+  );
+  const currentAtstoreListingUri = useSignal<string | null>(
+    atstoreListingUri,
+  );
+  const createNewListingPending = useSignal(createNewListing);
 
   useEffect(() => {
     hydrated.value = true;
@@ -523,26 +879,6 @@ export default function CreateProfileForm(
     };
   }, []);
 
-  useEffect(() => {
-    if (!initial?.icon) return;
-    iconKeep.value = {
-      $type: "blob",
-      ref: { $link: initial.icon.ref },
-      mimeType: initial.icon.mime,
-      size: 0,
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!initial?.iconBw) return;
-    iconBwKeep.value = {
-      $type: "blob",
-      ref: { $link: initial.iconBw.ref },
-      mimeType: initial.iconBw.mime,
-      size: 0,
-    };
-  }, []);
-
   const toggleSub = (key: string) => {
     const current = subcategories.value;
     if (current.includes(key)) {
@@ -552,19 +888,6 @@ export default function CreateProfileForm(
       subcategories.value = [...current, key];
     }
   };
-
-  const toggleCategory = (key: string) => {
-    const current = categories.value;
-    if (current.includes(key)) {
-      if (current.length <= 1) return;
-      categories.value = current.filter((k) => k !== key);
-    } else {
-      if (current.length >= 4) return;
-      categories.value = [...current, key];
-    }
-  };
-
-  const showSubcategories = categories.value.includes("app");
 
   /* ---------------- Custom link helpers --------------------------------- */
   const addCustomLink = () => {
@@ -637,9 +960,7 @@ export default function CreateProfileForm(
     bannerPreview.value = null;
   };
 
-  const onScreenshotsChange = (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
+  const addScreenshotFiles = (files: File[]) => {
     if (files.length === 0) return;
     const available = SCREENSHOT_MAX_COUNT - screenshots.value.length;
     if (available <= 0) {
@@ -647,7 +968,6 @@ export default function CreateProfileForm(
         kind: "error",
         text: tScreenshots.maxReached,
       };
-      input.value = "";
       return;
     }
     const next: ScreenshotDraft[] = [];
@@ -685,99 +1005,23 @@ export default function CreateProfileForm(
         text: tScreenshots.noneAdded,
       };
     }
+  };
+
+  const onScreenshotsChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    addScreenshotFiles(Array.from(input.files ?? []));
     input.value = "";
+  };
+
+  const onScreenshotsDrop = (event: DragEvent) => {
+    event.preventDefault();
+    screenshotDragActive.value = false;
+    addScreenshotFiles(Array.from(event.dataTransfer?.files ?? []));
   };
 
   const removeScreenshot = (id: string) => {
     screenshots.value = screenshots.value.filter((s) => s.id !== id);
     screenshotMessage.value = null;
-  };
-
-  const onIconChange = (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    if (file.type !== "image/svg+xml") {
-      message.value = { kind: "error", text: tIcon.invalidType };
-      input.value = "";
-      return;
-    }
-    if (file.size > 200_000) {
-      message.value = { kind: "error", text: tIcon.tooLarge };
-      input.value = "";
-      return;
-    }
-    iconFile.value = file;
-    iconRemoved.value = false;
-    iconPreviewUrl.value = URL.createObjectURL(file);
-  };
-
-  const removeIcon = () => {
-    iconFile.value = null;
-    iconKeep.value = null;
-    iconRemoved.value = true;
-    iconPreviewUrl.value = null;
-  };
-
-  const onIconBwChange = (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    if (file.type !== "image/svg+xml") {
-      message.value = { kind: "error", text: tIcon.invalidType };
-      input.value = "";
-      return;
-    }
-    if (file.size > 200_000) {
-      message.value = { kind: "error", text: tIcon.tooLarge };
-      input.value = "";
-      return;
-    }
-    iconBwFile.value = file;
-    iconBwRemoved.value = false;
-    iconBwPreviewUrl.value = URL.createObjectURL(file);
-  };
-
-  const removeIconBw = () => {
-    iconBwFile.value = null;
-    iconBwKeep.value = null;
-    iconBwRemoved.value = true;
-    iconBwPreviewUrl.value = null;
-  };
-
-  /**
-   * Submit the verification request to the server. We optimistically
-   * update `iconAccessStatus` to `requested` so the gate UI flips
-   * immediately on success without a reload.
-   */
-  const submitVerificationRequest = async (event: Event) => {
-    event.preventDefault();
-    if (requestSubmitting.value) return;
-    const email = requestEmail.value.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      requestError.value = tIcon.requestModal.invalidEmail;
-      return;
-    }
-    requestSubmitting.value = true;
-    requestError.value = null;
-    try {
-      const r = await fetch("/api/registry/icon-access/request", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(text || `HTTP ${r.status}`);
-      }
-      iconAccessStatus.value = "requested";
-      iconAccessEmail.value = email;
-      requestModalOpen.value = false;
-    } catch (err) {
-      requestError.value = err instanceof Error ? err.message : String(err);
-    } finally {
-      requestSubmitting.value = false;
-    }
   };
 
   /**
@@ -819,16 +1063,11 @@ export default function CreateProfileForm(
   const onSubmit = async (event: Event) => {
     event.preventDefault();
     if (submitting.value) return;
-    if (categories.value.length === 0) {
-      message.value = { kind: "error", text: tForm.categoryRequired };
-      return;
-    }
     const trimmedMainLink = mainLink.value.trim();
     const trimmedIosLink = iosLink.value.trim();
     const trimmedAndroidLink = androidLink.value.trim();
-    const appSelected = categories.value.includes("app");
     const hasAppIcon = !!avatarFile.value || !!avatarKeep.value;
-    if (appSelected && !hasAppIcon) {
+    if (!hasAppIcon) {
       message.value = { kind: "error", text: tForm.avatarRequiredForAtstore };
       return;
     }
@@ -872,8 +1111,6 @@ export default function CreateProfileForm(
 
     try {
       const cleanedLinks = buildLinksPayload();
-      const produces = parseStringLines(lexiconsProduced.value);
-      const consumes = parseStringLines(lexiconsConsumed.value);
       const indicators = parseAccountIndicatorLines(accountIndicators.value);
 
       const payload: Record<string, unknown> = {
@@ -882,11 +1119,16 @@ export default function CreateProfileForm(
         mainLink: trimmedMainLink,
         iosLink: trimmedIosLink || null,
         androidLink: trimmedAndroidLink || null,
-        categories: categories.value,
-        subcategories: showSubcategories ? subcategories.value : [],
+        categories: ["app"],
+        subcategories: subcategories.value,
         links: cleanedLinks,
-        lexicons: { produces, consumes },
+        lexicons: {
+          produces: lexiconsProduced.value,
+          consumes: lexiconsConsumed.value,
+        },
         accountIndicators: indicators,
+        createNewListing: createNewListingPending.value,
+        atstoreListingUri: currentAtstoreListingUri.value,
       };
       if (avatarFile.value) {
         payload.avatarUpload = {
@@ -910,27 +1152,8 @@ export default function CreateProfileForm(
         payload.banner = null;
       }
 
-      if (iconFile.value) {
-        payload.iconUpload = {
-          dataBase64: await readFileAsBase64(iconFile.value),
-          mimeType: iconFile.value.type,
-        };
-      } else if (!iconRemoved.value && iconKeep.value) {
-        payload.icon = iconKeep.value;
-      } else {
-        payload.icon = null;
-      }
-
-      if (iconBwFile.value) {
-        payload.iconBwUpload = {
-          dataBase64: await readFileAsBase64(iconBwFile.value),
-          mimeType: iconBwFile.value.type,
-        };
-      } else if (!iconBwRemoved.value && iconBwKeep.value) {
-        payload.iconBw = iconBwKeep.value;
-      } else {
-        payload.iconBw = null;
-      }
+      if (legacyIcon) payload.icon = legacyIcon;
+      if (legacyIconBw) payload.iconBw = legacyIconBw;
 
       payload.screenshots = screenshots.value
         .filter((s) => s.blob)
@@ -954,28 +1177,20 @@ export default function CreateProfileForm(
         throw new Error(text || `HTTP ${res.status}`);
       }
       const saved = await res.json() as {
-        icon?: BlobRefShape | null;
-        iconBw?: BlobRefShape | null;
         publicPath?: string | null;
         slug?: string | null;
+        atstoreListingUri?: string | null;
         writeTarget?: "atstore_listing" | "legacy_profile";
       };
-      iconKeep.value = saved.icon ?? null;
-      iconPreviewUrl.value = saved.icon
-        ? iconPreviewRoute(did, "color", saved.icon.ref.$link)
-        : null;
-      iconFile.value = null;
-      iconRemoved.value = false;
-      iconBwKeep.value = saved.iconBw ?? null;
-      iconBwPreviewUrl.value = saved.iconBw
-        ? iconPreviewRoute(did, "bw", saved.iconBw.ref.$link)
-        : null;
-      iconBwFile.value = null;
-      iconBwRemoved.value = false;
       published.value = true;
       publicPath.value = saved.publicPath ??
         (saved.slug ? `/apps/${encodeURIComponent(saved.slug)}` : null) ??
         publicPath.value;
+      hostAppIdentifier.value = saved.atstoreListingUri ?? saved.slug ??
+        hostAppIdentifier.value;
+      currentAtstoreListingUri.value = saved.atstoreListingUri ??
+        currentAtstoreListingUri.value;
+      createNewListingPending.value = false;
       message.value = {
         kind: "ok",
         text: saved.writeTarget === "atstore_listing"
@@ -997,7 +1212,12 @@ export default function CreateProfileForm(
     deleting.value = true;
     message.value = null;
     try {
-      const res = await fetch("/api/registry/profile", { method: "DELETE" });
+      const target = currentAtstoreListingUri.value
+        ? `?listing=${encodeURIComponent(currentAtstoreListingUri.value)}`
+        : "";
+      const res = await fetch(`/api/registry/profile${target}`, {
+        method: "DELETE",
+      });
       if (!res.ok) throw new Error(await responseErrorText(res));
       published.value = false;
       publicPath.value = null;
@@ -1140,9 +1360,7 @@ export default function CreateProfileForm(
             </button>
           )}
           <p class="profile-form-hint">
-            {categories.value.includes("app")
-              ? tForm.avatarAtstoreHint
-              : tForm.avatarHint}
+            {tForm.avatarAtstoreHint}
           </p>
         </div>
 
@@ -1217,52 +1435,25 @@ export default function CreateProfileForm(
       }
       <div class="profile-form-stack">
         <fieldset class="profile-form-field">
-          <legend class="profile-form-label">{tForm.categoryLabel}</legend>
-          <div class="profile-form-chips" role="group">
-            {PUBLIC_CATEGORIES.map((c: Category) => {
-              const selected = categories.value.includes(c);
-              return (
-                <label
-                  key={c}
-                  class={`profile-form-chip ${selected ? "is-selected" : ""}`}
-                >
-                  <input
-                    type="checkbox"
-                    name="categories"
-                    value={c}
-                    checked={selected}
-                    onChange={() => toggleCategory(c)}
-                  />
-                  <span>{t.categories[c]}</span>
-                </label>
-              );
-            })}
+          <legend class="profile-form-label">
+            {tForm.subcategoriesLabel}
+          </legend>
+          <div class="profile-form-chips">
+            {APP_SUBCATEGORIES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                class={`profile-form-chip ${
+                  subcategories.value.includes(s) ? "is-selected" : ""
+                }`}
+                onClick={() => toggleSub(s)}
+              >
+                {t.subcategories[s]}
+              </button>
+            ))}
           </div>
-          <p class="profile-form-hint">{tForm.categoryHint}</p>
+          <p class="profile-form-hint">{tForm.subcategoriesHint}</p>
         </fieldset>
-
-        {showSubcategories && (
-          <fieldset class="profile-form-field">
-            <legend class="profile-form-label">
-              {tForm.subcategoriesLabel}
-            </legend>
-            <div class="profile-form-chips">
-              {APP_SUBCATEGORIES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  class={`profile-form-chip ${
-                    subcategories.value.includes(s) ? "is-selected" : ""
-                  }`}
-                  onClick={() => toggleSub(s)}
-                >
-                  {t.subcategories[s]}
-                </button>
-              ))}
-            </div>
-            <p class="profile-form-hint">{tForm.subcategoriesHint}</p>
-          </fieldset>
-        )}
 
         {/* ---------------- Main Link ----------------------------- */}
         {
@@ -1273,10 +1464,7 @@ export default function CreateProfileForm(
           */
         }
         <label class="profile-form-field">
-          <span class="profile-form-label">
-            {tMainLink.sectionLabel}
-            <em class="profile-form-required">*</em>
-          </span>
+          <span class="profile-form-label">{tMainLink.sectionLabel}</span>
           <input
             type="url"
             class="profile-form-input"
@@ -1285,6 +1473,7 @@ export default function CreateProfileForm(
             onInput={(e) =>
               mainLink.value = (e.currentTarget as HTMLInputElement).value}
           />
+          <p class="profile-form-hint">{tMainLink.groupHint}</p>
         </label>
 
         {/* ---------------- Mobile app links (optional) ---------- */}
@@ -1316,14 +1505,38 @@ export default function CreateProfileForm(
         </div>
 
         {/* ---------------- Screenshots --------------------------- */}
-        <div class="profile-form-field profile-screenshots-field">
+        <div
+          id="app-screenshots"
+          class={`profile-form-field profile-screenshots-field ${
+            screenshotDragActive.value ? "is-dragging" : ""
+          }`}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            screenshotDragActive.value = true;
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            screenshotDragActive.value = true;
+          }}
+          onDragLeave={(event) => {
+            const nextTarget = event.relatedTarget as Node | null;
+            if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+              screenshotDragActive.value = false;
+            }
+          }}
+          onDrop={onScreenshotsDrop}
+        >
           <div class="profile-form-section-heading">
-            <span class="profile-form-label">{tScreenshots.sectionLabel}</span>
+            <div>
+              <span class="profile-form-label">
+                {tScreenshots.sectionLabel}
+              </span>
+              <p class="profile-form-hint">{tScreenshots.hint}</p>
+            </div>
             <span class="profile-form-count">
               {screenshots.value.length}/{SCREENSHOT_MAX_COUNT}
             </span>
           </div>
-          <p class="profile-form-hint">{tScreenshots.hint}</p>
           {screenshotMessage.value && (
             <p
               class={`profile-screenshot-status profile-form-status profile-form-status--${screenshotMessage.value.kind}`}
@@ -1333,44 +1546,76 @@ export default function CreateProfileForm(
             </p>
           )}
 
-          {screenshots.value.length > 0 && (
-            <div class="profile-screenshot-grid">
-              {screenshots.value.map((shot, i) => (
-                <div class="profile-screenshot-edit" key={shot.id}>
-                  <img
-                    src={shot.previewUrl}
-                    alt=""
-                    class="profile-screenshot-edit-img"
-                  />
-                  <button
-                    type="button"
-                    class="profile-screenshot-remove"
-                    aria-label={tScreenshots.removeAriaLabel(i + 1)}
-                    onClick={() =>
-                      removeScreenshot(shot.id)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <label class="profile-form-field profile-screenshot-native-picker">
-            <span class="profile-form-label">
-              {screenshots.value.length > 0
-                ? tScreenshots.addMore
-                : tScreenshots.upload}
-            </span>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-              multiple
-              disabled={screenshots.value.length >= SCREENSHOT_MAX_COUNT}
-              onChange={onScreenshotsChange}
-              class="profile-form-input profile-screenshot-file-input"
-            />
-          </label>
+          {screenshots.value.length > 0
+            ? (
+              <div class="profile-screenshot-grid">
+                {screenshots.value.map((shot, i) => (
+                  <div class="profile-screenshot-edit" key={shot.id}>
+                    <img
+                      src={shot.previewUrl}
+                      alt=""
+                      class="profile-screenshot-edit-img"
+                    />
+                    <span class="profile-screenshot-number">
+                      Screenshot {i + 1}
+                    </span>
+                    <button
+                      type="button"
+                      class="profile-screenshot-remove"
+                      aria-label={tScreenshots.removeAriaLabel(i + 1)}
+                      onClick={() =>
+                        removeScreenshot(shot.id)}
+                    >
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </div>
+                ))}
+                {screenshots.value.length < SCREENSHOT_MAX_COUNT && (
+                  <label class="profile-screenshot-add-tile">
+                    <span
+                      class="profile-screenshot-add-icon"
+                      aria-hidden="true"
+                    >
+                      +
+                    </span>
+                    <strong>{tScreenshots.addMore}</strong>
+                    <span>
+                      {SCREENSHOT_MAX_COUNT - screenshots.value.length}{" "}
+                      slot{SCREENSHOT_MAX_COUNT - screenshots.value.length === 1
+                        ? ""
+                        : "s"} left
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                      multiple
+                      hidden
+                      onChange={onScreenshotsChange}
+                    />
+                  </label>
+                )}
+              </div>
+            )
+            : (
+              <label class="profile-screenshot-dropzone">
+                <span
+                  class="profile-screenshot-dropzone-icon"
+                  aria-hidden="true"
+                >
+                  ⊞
+                </span>
+                <strong>{tScreenshots.upload}</strong>
+                <span>Choose images or drag and drop</span>
+                <small>PNG, JPEG, or WebP · 5MB each · up to 4</small>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                  multiple
+                  hidden
+                  onChange={onScreenshotsChange}
+                />
+              </label>
+            )}
         </div>
 
         {/* ---------------- Atmosphere links ----------------------- */}
@@ -1444,44 +1689,27 @@ export default function CreateProfileForm(
         </div>
 
         {/* ---------------- Interoperability metadata ---------------- */}
-        <fieldset class="profile-form-field profile-form-interop">
+        <fieldset
+          id="app-interoperability"
+          class="profile-form-field profile-form-interop"
+        >
           <legend class="profile-form-label">Interoperability</legend>
           <p class="profile-form-hint">
-            Optional AT Protocol metadata for app directories and future
-            community lexicon tooling. Use one collection per line.
+            Optional AT Protocol metadata for app directories and compatible
+            clients. Search the catalog, then mark each collection as read,
+            written, or both.
           </p>
-          <div class="profile-form-row-2">
-            <label class="profile-form-field">
-              <span class="profile-form-label">Writes records</span>
-              <textarea
-                class="profile-form-input profile-form-interop-textarea"
-                rows={3}
-                spellcheck={false}
-                placeholder="com.example.app.record"
-                value={lexiconsProduced.value}
-                onInput={(e) =>
-                  lexiconsProduced.value =
-                    (e.currentTarget as HTMLTextAreaElement).value}
-              >
-              </textarea>
-            </label>
-            <label class="profile-form-field">
-              <span class="profile-form-label">Reads records</span>
-              <textarea
-                class="profile-form-input profile-form-interop-textarea"
-                rows={3}
-                spellcheck={false}
-                placeholder="app.bsky.feed.post"
-                value={lexiconsConsumed.value}
-                onInput={(e) =>
-                  lexiconsConsumed.value =
-                    (e.currentTarget as HTMLTextAreaElement).value}
-              >
-              </textarea>
-            </label>
-          </div>
+          <CollectionMatrix
+            suggestions={collectionSuggestions}
+            writes={lexiconsProduced.value}
+            reads={lexiconsConsumed.value}
+            onWritesChange={(next) => (lexiconsProduced.value = next)}
+            onReadsChange={(next) => (lexiconsConsumed.value = next)}
+          />
           <label class="profile-form-field">
-            <span class="profile-form-label">Account indicators</span>
+            <span class="profile-form-label">
+              Account indicators (advanced)
+            </span>
             <textarea
               class="profile-form-input profile-form-interop-textarea"
               rows={3}
@@ -1499,133 +1727,6 @@ export default function CreateProfileForm(
             </span>
           </label>
         </fieldset>
-
-        {/* ---------------- Developer SVG icon -------------------- */}
-        {
-          /*
-            Vector mark exposed only via /api/registry/icon/:did, for
-            developers building badges and app showcases. Not shown on
-            the public Explore profile. Uploads are gated behind
-            per-project verification — admin-granted only.
-           */
-        }
-        <div
-          class={`profile-form-field icon-section icon-section--${
-            iconAccessStatus.value ?? "locked"
-          }`}
-        >
-          <span class="profile-form-label">{tIcon.sectionLabel}</span>
-
-          {/* ---- Gate banners (one of these renders per state) ---- */}
-          {iconAccessStatus.value === null && (
-            <div class="icon-gate-banner icon-gate-banner--locked">
-              <strong class="icon-gate-banner-title">
-                {tIcon.gate.lockedTitle}
-              </strong>
-              <span class="icon-gate-banner-body">
-                {tIcon.gate.lockedBody}
-              </span>
-              <button
-                type="button"
-                class="profile-form-button-secondary icon-gate-button"
-                onClick={() => {
-                  requestError.value = null;
-                  requestEmail.value = "";
-                  requestModalOpen.value = true;
-                }}
-                disabled={!published.value}
-                title={published.value
-                  ? undefined
-                  : tIcon.gate.requestDisabledHint}
-              >
-                {tIcon.gate.requestButton}
-              </button>
-              {!published.value && (
-                <span class="icon-gate-banner-hint">
-                  {tIcon.gate.requestDisabledHint}
-                </span>
-              )}
-            </div>
-          )}
-          {iconAccessStatus.value === "requested" && (
-            <div class="icon-gate-banner icon-gate-banner--pending">
-              <strong class="icon-gate-banner-title">
-                {tIcon.gate.pendingTitle}
-              </strong>
-              <span class="icon-gate-banner-body">
-                {tIcon.gate.pendingBody(
-                  iconAccessEmail.value ?? APPEAL_EMAIL,
-                )}
-              </span>
-            </div>
-          )}
-          {iconAccessStatus.value === "denied" && (
-            <div class="icon-gate-banner icon-gate-banner--denied">
-              <strong class="icon-gate-banner-title">
-                {tIcon.gate.deniedTitle}
-              </strong>
-              <span class="icon-gate-banner-body">
-                {tIcon.gate.deniedBody(APPEAL_EMAIL, iconAccessDeniedReason)}
-              </span>
-            </div>
-          )}
-          {iconAccessStatus.value === "granted" && (
-            <p class="profile-form-hint icon-gate-granted-hint">
-              {tIcon.gate.grantedHint}
-            </p>
-          )}
-
-          {/* ---- Two slots: color + optional B/W companion ---- */}
-          {
-            /*
-              Color and B/W share the same access gate, sanitiser, and
-              200KB cap — we just persist them to parallel `icon_*` /
-              `icon_bw_*` columns and surface both on the developer
-              downloads UI.
-             */
-          }
-          <div class="profile-form-icon-grid">
-            <IconUploadSlot
-              label={tIcon.colorLabel}
-              hint={tIcon.colorHint}
-              previewClass="profile-form-icon-preview"
-              placeholderText="SVG"
-              previewUrl={iconPreviewUrl.value}
-              onClearPreview={() => (iconPreviewUrl.value = null)}
-              uploadLabel={iconPreviewUrl.value ? tIcon.replace : tIcon.upload}
-              removeLabel={tIcon.remove}
-              unlocked={iconUploadUnlocked}
-              onChange={onIconChange}
-              onRemove={removeIcon}
-            />
-            <IconUploadSlot
-              label={tIcon.bwLabel}
-              hint={tIcon.bwHint}
-              previewClass="profile-form-icon-preview profile-form-icon-preview--bw"
-              placeholderText="B/W"
-              previewUrl={iconBwPreviewUrl.value}
-              onClearPreview={() => (iconBwPreviewUrl.value = null)}
-              uploadLabel={iconBwPreviewUrl.value
-                ? tIcon.bwReplace
-                : tIcon.bwUpload}
-              removeLabel={tIcon.bwRemove}
-              unlocked={iconUploadUnlocked}
-              onChange={onIconBwChange}
-              onRemove={removeIconBw}
-            />
-          </div>
-          <p class="profile-form-hint">{tIcon.hint}</p>
-          {(iconKeep.value || iconBwKeep.value) && (
-            <div class="profile-form-icon-resource-actions">
-              <a
-                href={developerResourcesIconHref()}
-                class="profile-form-button-secondary profile-form-icon-resource-link"
-              >
-                {tIcon.viewOnDeveloperResources}
-              </a>
-            </div>
-          )}
-        </div>
       </div>
 
       <div class="profile-form-actions">
@@ -1659,6 +1760,16 @@ export default function CreateProfileForm(
             {tManage.viewPublicProfile}
           </a>
         )}
+        {published.value && hostAppIdentifier.value && (
+          <a
+            href={`/hosts/register?app=${
+              encodeURIComponent(hostAppIdentifier.value)
+            }&relationship=same_product`}
+            class="profile-form-button-secondary profile-form-button-secondary--lg"
+          >
+            Add account hosting
+          </a>
+        )}
         {published.value && (
           <button
             type="button"
@@ -1682,72 +1793,6 @@ export default function CreateProfileForm(
         <p class="profile-form-hydration-note">
           Loading editor controls…
         </p>
-      )}
-
-      {/* ---------------- Verification request modal ---------------- */}
-      {requestModalOpen.value && (
-        <div
-          class="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="icon-access-request-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              requestModalOpen.value = false;
-            }
-          }}
-        >
-          <div class="modal-card glass icon-access-modal">
-            <h2 id="icon-access-request-title" class="text-card">
-              {tIcon.requestModal.title}
-            </h2>
-            <p class="text-body mt-2">{tIcon.requestModal.body}</p>
-            <form onSubmit={submitVerificationRequest} class="mt-4">
-              <label class="profile-form-field">
-                <span class="profile-form-label">
-                  {tIcon.requestModal.emailLabel}{" "}
-                  <span class="profile-form-required">*</span>
-                </span>
-                <input
-                  type="email"
-                  required
-                  autoFocus
-                  maxLength={320}
-                  placeholder={tIcon.requestModal.emailPlaceholder}
-                  value={requestEmail.value}
-                  onInput={(e) =>
-                    requestEmail.value =
-                      (e.currentTarget as HTMLInputElement).value}
-                  class="profile-form-input"
-                />
-              </label>
-              {requestError.value && (
-                <p class="profile-form-status profile-form-status--error mt-3">
-                  {tIcon.requestModal.errorPrefix}: {requestError.value}
-                </p>
-              )}
-              <div class="modal-actions mt-4">
-                <button
-                  type="submit"
-                  class="profile-form-button-primary"
-                  disabled={requestSubmitting.value}
-                >
-                  {requestSubmitting.value
-                    ? tIcon.requestModal.submitting
-                    : tIcon.requestModal.submit}
-                </button>
-                <button
-                  type="button"
-                  class="profile-form-button-link"
-                  onClick={() => (requestModalOpen.value = false)}
-                  disabled={requestSubmitting.value}
-                >
-                  {tIcon.requestModal.cancel}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
 
       <BskyClientPickerModal
@@ -1783,81 +1828,6 @@ export default function CreateProfileForm(
         );
       })()}
     </form>
-  );
-}
-
-/* ----------------------- Developer icon slot ---------------------------- */
-
-interface IconUploadSlotProps {
-  label: string;
-  hint: string;
-  previewClass: string;
-  placeholderText: string;
-  previewUrl: string | null;
-  onClearPreview: () => void;
-  uploadLabel: string;
-  removeLabel: string;
-  unlocked: boolean;
-  onChange: (e: Event) => void;
-  onRemove: () => void;
-}
-
-function IconUploadSlot(props: IconUploadSlotProps) {
-  return (
-    <div class="profile-form-icon-slot">
-      <div class="profile-form-icon-slot-heading">
-        <span class="profile-form-label">{props.label}</span>
-        <span class="profile-form-hint profile-form-icon-slot-hint">
-          {props.hint}
-        </span>
-      </div>
-      <div
-        class={`profile-form-icon-row ${props.unlocked ? "" : "is-locked"}`}
-      >
-        <div class={props.previewClass} aria-hidden="true">
-          {props.previewUrl
-            ? (
-              <img
-                src={props.previewUrl}
-                alt=""
-                class="profile-form-icon-preview-img"
-                onError={props.onClearPreview}
-              />
-            )
-            : (
-              <span class="profile-form-icon-placeholder">
-                {props.placeholderText}
-              </span>
-            )}
-        </div>
-        <div class="profile-form-icon-actions">
-          <label
-            class={`profile-form-button-secondary ${
-              props.unlocked ? "" : "is-disabled"
-            }`}
-            aria-disabled={!props.unlocked}
-          >
-            {props.uploadLabel}
-            <input
-              type="file"
-              accept="image/svg+xml"
-              hidden
-              disabled={!props.unlocked}
-              onChange={props.onChange}
-            />
-          </label>
-          {props.previewUrl && props.unlocked && (
-            <button
-              type="button"
-              class="profile-form-button-link"
-              onClick={props.onRemove}
-            >
-              {props.removeLabel}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
 

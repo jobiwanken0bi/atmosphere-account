@@ -152,9 +152,9 @@ export default function UserProfileEditForm(
         </div>
         <label class="account-profile-edit-toggle-row">
           <span class="account-profile-edit-toggle-copy">
-            <strong>Show Bluesky profile</strong>
+            <strong>Show microblog profile</strong>
             <small>
-              The viewer is chosen from the button beside Account home.
+              Choose its viewer from the button beside Account home.
             </small>
           </span>
           <span class="account-profile-edit-switch">

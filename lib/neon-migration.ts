@@ -6,6 +6,9 @@ export const NEON_APP_TABLES = [
   "oauth_session",
   "oauth_key",
   "app_session",
+  "passkey_account",
+  "passkey_credential",
+  "passkey_ceremony",
   "app_user",
   "report",
   "review",
@@ -54,6 +57,7 @@ export const NEON_TABLES_WITH_FOREIGN_KEYS: readonly NeonAppTable[] = [
   "app_featured",
   "app_moderation",
   "login_app_connection",
+  "passkey_credential",
 ] as const;
 
 export function quoteIdent(identifier: string): string {

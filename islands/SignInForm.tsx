@@ -36,12 +36,14 @@ export default function SignInForm(
   const hasRememberedAccounts = rememberedAccounts.length > 0;
   const manualInitiallyVisible = !hasRememberedAccounts || !!initialHandle;
   const enhanceFlow = rich || hasRememberedAccounts;
+  const initialSigninView = manualInitiallyVisible ? "manual" : "saved";
 
   return (
     <div
       class={`signin-flow ${rich ? "signin-flow--rich" : ""}`}
       data-signin-flow={enhanceFlow ? "true" : undefined}
       data-initial-mode="signin"
+      data-initial-signin-view={initialSigninView}
       data-remembered-count={String(rememberedAccounts.length)}
     >
       {rich && (
@@ -68,140 +70,170 @@ export default function SignInForm(
       )}
 
       <section data-signin-panel="signin">
-        {rich && (
-          <div class="signin-rich-header">
-            <h2>Connect your Atmosphere account</h2>
-            <p>
-              Use the handle you already have from Bluesky, Blacksky, Tangled,
-              or any other account host.
-            </p>
-          </div>
-        )}
-
         {hasRememberedAccounts && (
-          <div class="signin-account-list" aria-label="Saved accounts">
-            <p class="signin-account-list-label">Saved accounts</p>
-            {rememberedAccounts.map((account) => (
-              <form
-                key={account.did}
-                method="POST"
-                action="/oauth/switch"
-                class="signin-account-switch-form"
-              >
-                <input type="hidden" name="did" value={account.did} />
-                {returnTo && (
-                  <input type="hidden" name="next" value={returnTo} />
-                )}
-                <button type="submit" class="signin-account-row">
-                  <span class="signin-account-avatar" aria-hidden="true">
-                    <span class="signin-account-avatar-fallback">
-                      {account.handle.slice(0, 1).toUpperCase()}
-                    </span>
-                    <img
-                      src={`/api/registry/avatar/${
-                        encodeURIComponent(account.did)
-                      }`}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      onError={(event) => {
-                        event.currentTarget.remove();
-                      }}
-                    />
-                  </span>
-                  <span class="signin-account-copy">
-                    <strong>
-                      <AtmosphereHandle handle={account.handle} />
-                    </strong>
-                    <span>Saved on this device</span>
-                  </span>
-                  <span class="signin-account-status">Continue</span>
-                </button>
-              </form>
-            ))}
-            <button
-              type="button"
-              class="signin-account-row signin-account-row--other"
-              data-signin-show-manual="true"
-            >
-              <span
-                class="signin-account-avatar signin-account-avatar--plus"
-                aria-hidden="true"
-              >
-                +
-              </span>
-              <span class="signin-account-copy">
-                <strong>Other account</strong>
-                <span>Use a different Atmosphere account</span>
-              </span>
-              <span class="signin-account-status">Type handle</span>
-            </button>
-          </div>
-        )}
-
-        <form
-          method="POST"
-          action="/oauth/login"
-          class="signin-form"
-          data-signin-preview="true"
-          data-preview-loading={t.explore.create.previewLoading}
-          data-preview-not-found={t.explore.create.previewNotFound}
-          data-submit-label={rich ? "Continue" : t.explore.create.signIn}
-          data-submitting-label="Redirecting…"
-          hidden={rich && !manualInitiallyVisible}
-        >
-          {returnTo && <input type="hidden" name="next" value={returnTo} />}
-          {intent && <input type="hidden" name="intent" value={intent} />}
-          <div class="signin-form-preview-wrap">
-            <label class="signin-form-label" for="signin-handle">
-              {rich
-                ? "Sign in with another account"
-                : t.explore.create.signInLabel}
-            </label>
-            <div class="signin-form-row">
-              <div class="signin-handle-field">
-                <span class="signin-handle-prefix" aria-hidden="true">
-                  <img src="/union.svg" alt="" />
-                </span>
-                <input
-                  id="signin-handle"
-                  name="handle"
-                  type="text"
-                  inputMode="email"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellcheck={false}
-                  autoComplete="off"
-                  required
-                  value={initialHandle ?? ""}
-                  placeholder={rich
-                    ? "search by handle…"
-                    : t.explore.create.handlePlaceholder}
-                  class="signin-form-input"
-                  aria-autocomplete="list"
-                  aria-expanded="false"
-                  aria-controls="signin-handle-preview"
-                  data-signin-preview-input="true"
-                />
-                <div
-                  class="signin-selected"
-                  data-signin-selected="true"
-                  hidden
-                />
+          <div
+            class="signin-subview signin-saved-view"
+            data-signin-saved-view="true"
+            hidden={manualInitiallyVisible}
+          >
+            {rich && (
+              <div class="signin-rich-header">
+                <h2>Connect your Atmosphere account</h2>
+                <p>
+                  Choose an account saved on this device, or add another
+                  Atmosphere account.
+                </p>
               </div>
-              <button type="submit" class="signin-form-submit">
-                {rich ? "Continue" : t.explore.create.signIn}
+            )}
+            <div class="signin-account-list" aria-label="Saved accounts">
+              <p class="signin-account-list-label">Saved accounts</p>
+              {rememberedAccounts.map((account) => (
+                <form
+                  key={account.did}
+                  method="POST"
+                  action="/oauth/switch"
+                  class="signin-account-switch-form"
+                >
+                  <input type="hidden" name="did" value={account.did} />
+                  {returnTo && (
+                    <input type="hidden" name="next" value={returnTo} />
+                  )}
+                  <button type="submit" class="signin-account-row">
+                    <span class="signin-account-avatar" aria-hidden="true">
+                      <span class="signin-account-avatar-fallback">
+                        {account.handle.slice(0, 1).toUpperCase()}
+                      </span>
+                      <img
+                        src={`/api/registry/avatar/${
+                          encodeURIComponent(account.did)
+                        }`}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(event) => {
+                          event.currentTarget.remove();
+                        }}
+                      />
+                    </span>
+                    <span class="signin-account-copy">
+                      <strong>
+                        <AtmosphereHandle handle={account.handle} />
+                      </strong>
+                      <span>Saved on this device</span>
+                    </span>
+                    <span class="signin-account-status">Continue</span>
+                  </button>
+                </form>
+              ))}
+              <button
+                type="button"
+                class="signin-account-row signin-account-row--other"
+                data-signin-show-manual="true"
+              >
+                <span
+                  class="signin-account-avatar signin-account-avatar--plus"
+                  aria-hidden="true"
+                >
+                  +
+                </span>
+                <span class="signin-account-copy">
+                  <strong>Other account</strong>
+                  <span>Add a different Atmosphere account</span>
+                </span>
+                <span class="signin-account-status">Add account</span>
               </button>
             </div>
           </div>
-        </form>
-
-        {rich && (
-          <p class="signin-info-line">
-            New to the Atmosphere? Create an account with a host, then come back
-            and sign in with your handle.
-          </p>
         )}
+
+        <div
+          class="signin-subview signin-manual-view"
+          data-signin-manual-view="true"
+          hidden={!manualInitiallyVisible}
+        >
+          {hasRememberedAccounts && (
+            <button
+              type="button"
+              class="signin-manual-back"
+              data-signin-show-saved="true"
+            >
+              <span aria-hidden="true">←</span> Saved accounts
+            </button>
+          )}
+          {rich && (
+            <div class="signin-rich-header">
+              <h2>
+                {hasRememberedAccounts
+                  ? "Sign in with another account"
+                  : "Connect your Atmosphere account"}
+              </h2>
+              <p>
+                Enter the handle you use with Bluesky, Blacksky, Tangled, or any
+                other account host.
+              </p>
+            </div>
+          )}
+          <form
+            method="POST"
+            action="/oauth/login"
+            class="signin-form"
+            data-signin-preview="true"
+            data-preview-loading={t.explore.create.previewLoading}
+            data-preview-not-found={t.explore.create.previewNotFound}
+            data-submit-label={rich ? "Continue" : t.explore.create.signIn}
+            data-submitting-label="Redirecting…"
+          >
+            {returnTo && <input type="hidden" name="next" value={returnTo} />}
+            {intent && <input type="hidden" name="intent" value={intent} />}
+            <div class="signin-form-preview-wrap">
+              <label class="signin-form-label" for="signin-handle">
+                {rich ? "Atmosphere handle" : t.explore.create.signInLabel}
+              </label>
+              <div class="signin-form-row">
+                <div class="signin-handle-field">
+                  <span class="signin-handle-prefix" aria-hidden="true">
+                    <img src="/union.svg" alt="" />
+                  </span>
+                  <input
+                    id="signin-handle"
+                    name="handle"
+                    type="text"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellcheck={false}
+                    autoComplete="off"
+                    required
+                    value={initialHandle ?? ""}
+                    placeholder={rich
+                      ? "your-handle.example"
+                      : t.explore.create.handlePlaceholder}
+                    class="signin-form-input"
+                    aria-autocomplete="list"
+                    aria-expanded="false"
+                    aria-controls="signin-handle-preview"
+                    data-signin-preview-input="true"
+                  />
+                  <div
+                    class="signin-selected"
+                    data-signin-selected="true"
+                    hidden
+                  />
+                </div>
+                <button type="submit" class="signin-form-submit">
+                  {rich ? "Continue" : t.explore.create.signIn}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          {rich && (
+            <p class="signin-info-line">
+              New to the Atmosphere? Create with a supported host and continue
+              straight back here.
+            </p>
+          )}
+        </div>
       </section>
 
       {rich && (
@@ -209,13 +241,15 @@ export default function SignInForm(
           <div class="signin-rich-header">
             <h2>Create an Atmosphere account</h2>
             <p>
-              Choose a host for your account. You can use that same account
-              across Atmosphere apps.
+              Choose a host with direct account creation. You’ll return to the
+              app automatically when your account is ready.
             </p>
           </div>
           <CreateAccountHostChooser
             initialHosts={createAccountHosts}
             endpoint={createAccountHostsEndpoint}
+            returnTo={returnTo}
+            intent={intent}
           />
         </section>
       )}
@@ -224,18 +258,44 @@ export default function SignInForm(
 }
 
 function CreateAccountHostChooser(
-  { initialHosts, endpoint }: {
+  { initialHosts, endpoint, returnTo, intent }: {
     initialHosts: CreateAccountHostOption[];
     endpoint?: string;
+    returnTo?: string;
+    intent?: "user" | "project";
   },
 ) {
+  type SignupFilter = "all" | "open" | "invite_required";
+
   const [query, setQuery] = useState("");
-  const [includeOpen, setIncludeOpen] = useState(true);
-  const [includeInvite, setIncludeInvite] = useState(true);
+  const [signupFilter, setSignupFilter] = useState<SignupFilter>("all");
+  const [draftSignupFilter, setDraftSignupFilter] = useState<SignupFilter>(
+    "all",
+  );
   const [hosts, setHosts] = useState(initialHosts);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const firstHostSearch = useRef(true);
+  const filterMenuRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const menu = filterMenuRef.current;
+    if (!menu) return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menu.contains(event.target)) {
+        menu.open = false;
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") menu.open = false;
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
 
   useEffect(() => {
     if (firstHostSearch.current) {
@@ -245,8 +305,9 @@ function CreateAccountHostChooser(
     if (!endpoint) {
       const needle = query.trim().toLowerCase();
       setHosts(initialHosts.filter((host) => {
-        if (host.signupStatus === "open" && !includeOpen) return false;
-        if (host.signupStatus === "invite_required" && !includeInvite) {
+        if (
+          signupFilter !== "all" && host.signupStatus !== signupFilter
+        ) {
           return false;
         }
         return !needle || [
@@ -266,8 +327,16 @@ function CreateAccountHostChooser(
       try {
         const url = new URL(endpoint, globalThis.location?.origin);
         if (query.trim()) url.searchParams.set("q", query.trim());
-        url.searchParams.set("open", includeOpen ? "1" : "0");
-        url.searchParams.set("invite", includeInvite ? "1" : "0");
+        url.searchParams.set(
+          "open",
+          signupFilter === "all" || signupFilter === "open" ? "1" : "0",
+        );
+        url.searchParams.set(
+          "invite",
+          signupFilter === "all" || signupFilter === "invite_required"
+            ? "1"
+            : "0",
+        );
         const response = await fetch(url, {
           headers: { accept: "application/json" },
           signal: controller.signal,
@@ -291,40 +360,85 @@ function CreateAccountHostChooser(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [endpoint, query, includeOpen, includeInvite, initialHosts]);
+  }, [endpoint, query, signupFilter, initialHosts]);
 
   return (
     <div class="signin-host-chooser">
-      <label class="signin-host-search">
-        <span class="sr-only">Search account hosts</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m21 21-4.35-4.35m2.35-5.15A7.5 7.5 0 1 1 4 11.5a7.5 7.5 0 0 1 15 0Z" />
-        </svg>
-        <input
-          type="search"
-          value={query}
-          onInput={(event) => setQuery(event.currentTarget.value)}
-          placeholder="Search name, domain, description, or location…"
-          autocomplete="off"
-        />
-      </label>
-      <div class="signin-host-filters" aria-label="Signup options">
-        <label>
+      <div class="signin-host-toolbar">
+        <label class="signin-host-search">
+          <span class="sr-only">Search account hosts</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m21 21-4.35-4.35m2.35-5.15A7.5 7.5 0 1 1 4 11.5a7.5 7.5 0 0 1 15 0Z" />
+          </svg>
           <input
-            type="checkbox"
-            checked={includeOpen}
-            onChange={(event) => setIncludeOpen(event.currentTarget.checked)}
+            type="search"
+            value={query}
+            onInput={(event) => setQuery(event.currentTarget.value)}
+            placeholder="Search name, domain, description, or location…"
+            autocomplete="off"
           />
-          <span>Open signup</span>
         </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={includeInvite}
-            onChange={(event) => setIncludeInvite(event.currentTarget.checked)}
-          />
-          <span>Invite accepted</span>
-        </label>
+        <details
+          class="hosts-filter-menu signin-host-filter-menu"
+          ref={filterMenuRef}
+          onToggle={(event) => {
+            if (event.currentTarget.open) {
+              setDraftSignupFilter(signupFilter);
+            }
+          }}
+        >
+          <summary
+            class="hosts-filter-trigger"
+            aria-label={signupFilter === "all" ? "Filters" : "1 active filter"}
+            title="Filters"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+            >
+              <path
+                d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M10 14v6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+            {signupFilter !== "all" && (
+              <span class="hosts-filter-count" aria-label="1 active filter">
+                1
+              </span>
+            )}
+          </summary>
+          <div class="hosts-filter-popover signin-host-filter-popover">
+            <label class="hosts-filter-field">
+              <span>Signup</span>
+              <select
+                value={draftSignupFilter}
+                onChange={(event) =>
+                  setDraftSignupFilter(
+                    event.currentTarget.value as SignupFilter,
+                  )}
+              >
+                <option value="all">All signup options</option>
+                <option value="open">Open signup</option>
+                <option value="invite_required">Invite required</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              class="hosts-filter-apply"
+              onClick={() => {
+                setSignupFilter(draftSignupFilter);
+                filterMenuRef.current?.removeAttribute("open");
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        </details>
       </div>
       <div class="signin-host-results-status" aria-live="polite">
         {loading
@@ -339,65 +453,69 @@ function CreateAccountHostChooser(
             No account hosts match those filters.
           </div>
         )}
-        {hosts.map((host) => (
-          <a
-            key={host.host}
-            class={`signin-host-row${
-              host.recommended ? " is-recommended" : ""
-            }`}
-            href={host.href}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span class="signin-host-mark" aria-hidden="true">
-              {host.name.slice(0, 1)}
-              {host.avatarUrl && (
-                <img
-                  src={host.avatarUrl}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  referrerpolicy="no-referrer"
-                  onError={(event) => event.currentTarget.remove()}
-                />
-              )}
-            </span>
-            <span class="signin-host-copy">
-              <strong>
-                <span class="signin-host-name">{host.name}</span>
-                <span class="signin-host-domain">{host.host}</span>
-              </strong>
-              {host.recommendationLabel && (
-                <span class="signin-host-recommendation">
-                  {host.recommendationLabel}
-                </span>
-              )}
-              <em>
-                {host.description}
-                {host.location ? ` · ${host.location}` : ""}
-              </em>
-            </span>
-            <span class="signin-account-status">{host.statusLabel}</span>
-          </a>
-        ))}
-        <a
-          class="signin-host-row signin-host-row--all"
-          href="/hosts"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <span class="signin-host-mark" aria-hidden="true">+</span>
-          <span class="signin-host-copy">
-            <strong>Explore all hosts</strong>
-            <em>Compare the complete account-host directory.</em>
-          </span>
-          <span class="signin-account-status">Hosts</span>
-        </a>
+        {hosts.map((host) => {
+          const href = createAccountHostHref(host, returnTo, intent);
+          return (
+            <a
+              key={host.host}
+              class={`signin-host-row${
+                host.recommended ? " is-recommended" : ""
+              }${host.oauthAccountCreation ? " is-direct" : ""}`}
+              href={href}
+              target={host.oauthAccountCreation ? undefined : "_blank"}
+              rel={host.oauthAccountCreation
+                ? "nofollow"
+                : "noopener noreferrer"}
+            >
+              <span class="signin-host-mark" aria-hidden="true">
+                {host.name.slice(0, 1)}
+                {host.avatarUrl && (
+                  <img
+                    src={host.avatarUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    referrerpolicy="no-referrer"
+                    onError={(event) => event.currentTarget.remove()}
+                  />
+                )}
+              </span>
+              <span class="signin-host-copy">
+                <strong>
+                  <span class="signin-host-name">{host.name}</span>
+                  <span class="signin-host-domain">{host.host}</span>
+                </strong>
+                {host.recommendationLabel && (
+                  <span class="signin-host-recommendation">
+                    {host.recommendationLabel}
+                  </span>
+                )}
+                <em>
+                  {host.description}
+                  {host.location ? ` · ${host.location}` : ""}
+                </em>
+              </span>
+              <span class="signin-account-status">{host.statusLabel}</span>
+            </a>
+          );
+        })}
       </div>
       <p class="signin-host-privacy-note">
-        Signup opens on the host’s site. Atmosphere never receives invite codes.
-        Return here and sign in with your new handle.
+        Only hosts that enable direct OAuth account creation appear here.
+        Atmosphere never receives passwords or invite codes.
       </p>
     </div>
   );
+}
+
+export function createAccountHostHref(
+  host: CreateAccountHostOption,
+  returnTo?: string,
+  intent?: "user" | "project",
+): string {
+  if (!host.oauthAccountCreation) return host.href;
+  const params = new URLSearchParams({ host: host.host });
+  if (returnTo) params.set("next", returnTo);
+  if (intent) params.set("intent", intent);
+  return `/oauth/create?${params.toString()}`;
 }

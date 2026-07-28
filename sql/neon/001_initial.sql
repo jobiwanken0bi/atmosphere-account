@@ -122,6 +122,45 @@ CREATE TABLE IF NOT EXISTS app_session (
   expires_at bigint NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS passkey_account (
+  did text PRIMARY KEY,
+  user_handle text NOT NULL UNIQUE,
+  created_at bigint NOT NULL,
+  updated_at bigint NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS passkey_credential (
+  credential_id text PRIMARY KEY,
+  did text NOT NULL REFERENCES passkey_account(did) ON DELETE CASCADE,
+  public_key text NOT NULL,
+  counter bigint NOT NULL DEFAULT 0,
+  device_type text NOT NULL,
+  backed_up integer NOT NULL DEFAULT 0,
+  transports text NOT NULL DEFAULT '[]',
+  name text,
+  created_at bigint NOT NULL,
+  updated_at bigint NOT NULL,
+  last_used_at bigint,
+  revoked_at bigint
+);
+
+CREATE INDEX IF NOT EXISTS passkey_credential_did ON passkey_credential(did, revoked_at);
+
+CREATE TABLE IF NOT EXISTS passkey_ceremony (
+  code_hash text PRIMARY KEY,
+  kind text NOT NULL,
+  challenge text NOT NULL,
+  did text,
+  rp_id text NOT NULL,
+  origin text NOT NULL,
+  login_request_json text,
+  created_at bigint NOT NULL,
+  expires_at bigint NOT NULL,
+  consumed_at bigint
+);
+
+CREATE INDEX IF NOT EXISTS passkey_ceremony_expires ON passkey_ceremony(expires_at);
+
 CREATE TABLE IF NOT EXISTS app_user (
   did text PRIMARY KEY,
   handle text NOT NULL,

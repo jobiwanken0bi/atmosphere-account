@@ -18,6 +18,7 @@ import {
   removeRememberedAccountCookies,
 } from "../../lib/remembered-accounts.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
+import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 
 const MAX_FORGET_BODY_BYTES = 8_192;
 
@@ -57,6 +58,7 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   await deleteSession(did).catch(() => {});
 
   const headers = new Headers({ location: "/account" });
+  headers.append("set-cookie", clearPasskeyManagementCookie());
   for (const cookie of await removeRememberedAccountCookies(remembered, did)) {
     headers.append("set-cookie", cookie);
   }

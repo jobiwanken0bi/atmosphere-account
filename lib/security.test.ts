@@ -5,8 +5,10 @@ import {
   isPrivateNetworkUrl,
   isSafeRelativePath,
   isSameOriginUnsafeRequest,
+  readJsonRequestWithLimit,
   readResponseTextWithLimit,
   requestBodyTooLarge,
+  RequestBodyTooLargeError,
 } from "./security.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -123,12 +125,36 @@ Deno.test("bounded response reader rejects oversized responses", async () => {
   assertEquals(tooLarge.ok, false);
 });
 
+Deno.test("bounded JSON reader rejects oversized streamed requests", async () => {
+  const request = new Request("https://atmosphereaccount.com/api/passkeys", {
+    method: "POST",
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"value":"'));
+        controller.enqueue(new TextEncoder().encode("too-large"));
+        controller.enqueue(new TextEncoder().encode('"}'));
+        controller.close();
+      },
+    }),
+  });
+  let tooLarge = false;
+  try {
+    await readJsonRequestWithLimit(request, 8);
+  } catch (error) {
+    tooLarge = error instanceof RequestBodyTooLargeError;
+  }
+  assertEquals(tooLarge, true);
+});
+
 Deno.test("token-bearing Atmosphere Login pages force private browser headers", () => {
   for (
     const pathname of [
       "/login/select",
       "/api/login/selection",
       "/examples/atmosphere-login/callback",
+      "/passkeys",
+      "/api/passkeys/authentication/options",
+      "/api/login/passkeys/options",
     ]
   ) {
     const headers = applySecurityHeadersForTest(pathname);
@@ -136,6 +162,13 @@ Deno.test("token-bearing Atmosphere Login pages force private browser headers", 
     assertEquals(headers.get("cache-control"), "no-store");
     assertEquals(headers.get("x-robots-tag"), "noindex, nofollow");
   }
+});
+
+Deno.test("security policy confines passkey ceremonies to the same origin", () => {
+  const headers = applySecurityHeadersForTest("/passkeys");
+  const policy = headers.get("permissions-policy") ?? "";
+  assertEquals(policy.includes("publickey-credentials-create=(self)"), true);
+  assertEquals(policy.includes("publickey-credentials-get=(self)"), true);
 });
 
 Deno.test("ordinary pages keep the default referrer policy", () => {

@@ -23,6 +23,15 @@ import { getBskyProfile, uploadBlob } from "../../lib/pds.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
+import {
+  type AppListing,
+  getAppListingById,
+  getAppListingByIdentifier,
+} from "../../lib/app-directory.ts";
+import {
+  defineDirectoryEntityLink,
+  userControlsAppListing,
+} from "../../lib/directory-entity-links.ts";
 
 interface RegisterValues {
   host: string;
@@ -50,6 +59,12 @@ interface RegisterPageProps {
   values: RegisterValues;
   hasOAuthSession: boolean;
   error: string | null;
+  linkContext: HostRegistrationLinkContext | null;
+}
+
+interface HostRegistrationLinkContext {
+  app: AppListing;
+  relationship: "same_product" | "same_operator";
 }
 
 interface RegisterRenderContext {
@@ -76,13 +91,23 @@ export const handler = define.handlers({
     if (proxied) return proxied;
 
     if (!ctx.state.user) return redirectToSignin(ctx.url);
-    const prefill = await buildRegisterPrefill(ctx.state.user, ctx.url);
+    const linkContext = await loadLinkContext(
+      ctx.state.user,
+      ctx.url.searchParams.get("app"),
+      ctx.url.searchParams.get("relationship"),
+    );
+    const prefill = await buildRegisterPrefill(
+      ctx.state.user,
+      ctx.url,
+      linkContext?.app ?? null,
+    );
     return ctx.render(
       <RegisterHostPage
         account={buildAccountMenuProps(ctx.state)}
         values={prefill.values}
         hasOAuthSession={prefill.hasOAuthSession}
         error={null}
+        linkContext={linkContext}
       />,
     );
   },
@@ -104,6 +129,19 @@ export const handler = define.handlers({
     if (large) return large;
     const form = await ctx.req.formData().catch(() => null);
     const values = valuesFromForm(form);
+    const requestedLinkAppId = textValue(form?.get("linkAppId"));
+    const linkContext = await loadLinkContext(
+      ctx.state.user,
+      requestedLinkAppId,
+      textValue(form?.get("relationship")),
+    );
+    if (requestedLinkAppId && !linkContext) {
+      return await renderRegisterError(
+        ctx,
+        values,
+        "That app is not managed by this account.",
+      );
+    }
     if (textValue(form?.get("action")) === "infer_location") {
       const inferred = await inferHostNetworkLocation({
         host: values.host,
@@ -116,7 +154,13 @@ export const handler = define.handlers({
         values.inferenceState = "error";
         values.inferenceMessage = inferred.message;
       }
-      return await renderRegisterError(ctx, values, "", { status: 200 });
+      return await renderRegisterError(
+        ctx,
+        values,
+        "",
+        { status: 200 },
+        linkContext,
+      );
     }
     await refreshSubmittedInference(values);
     const registrationInput = registrationInputFromValues(
@@ -128,7 +172,13 @@ export const handler = define.handlers({
       ctx.state.user,
     );
     if (!validation.ok) {
-      return await renderRegisterError(ctx, values, validation.message);
+      return await renderRegisterError(
+        ctx,
+        values,
+        validation.message,
+        {},
+        linkContext,
+      );
     }
     const profilePublication = await publishHostProfileFromForm(
       ctx.state.user,
@@ -136,7 +186,13 @@ export const handler = define.handlers({
       form,
     );
     if (!profilePublication.ok) {
-      return await renderRegisterError(ctx, values, profilePublication.message);
+      return await renderRegisterError(
+        ctx,
+        values,
+        profilePublication.message,
+        {},
+        linkContext,
+      );
     }
     const result = await registerAccountHost(
       {
@@ -148,6 +204,21 @@ export const handler = define.handlers({
       ctx.state.user,
     );
     if (result.ok) {
+      if (linkContext) {
+        const linked = await defineDirectoryEntityLink({
+          host: result.host.host,
+          app: linkContext.app,
+          relationship: linkContext.relationship,
+          approvedBy: "app",
+          currentDid: ctx.state.user.did,
+        }).catch(() => ({ ok: false as const }));
+        const search = new URLSearchParams({ app: linkContext.app.id });
+        search.set(linked.ok ? "registered" : "linkError", "1");
+        return new Response(null, {
+          status: 303,
+          headers: { location: `/apps/manage/host?${search}` },
+        });
+      }
       return new Response(null, {
         status: 303,
         headers: {
@@ -155,7 +226,7 @@ export const handler = define.handlers({
         },
       });
     }
-    return await renderRegisterResultError(ctx, values, result);
+    return await renderRegisterResultError(ctx, values, result, linkContext);
   },
 });
 
@@ -172,7 +243,7 @@ function appviewUnavailable(scope: string, err: unknown): Response {
 
 function redirectToSignin(url: URL): Response {
   const signin = new URL("/signin", url.origin);
-  signin.searchParams.set("next", "/hosts/register");
+  signin.searchParams.set("next", `${url.pathname}${url.search}`);
   return new Response(null, {
     status: 303,
     headers: { location: `${signin.pathname}${signin.search}` },
@@ -327,6 +398,7 @@ function formHasValue(
 async function buildRegisterPrefill(
   user: { did: string; handle: string },
   url: URL,
+  linkedApp: AppListing | null = null,
 ): Promise<{ values: RegisterValues; hasOAuthSession: boolean }> {
   const values = valuesFromUrl(url);
   const session = await loadSession(user.did).catch(() => null);
@@ -343,13 +415,15 @@ async function buildRegisterPrefill(
 
   if (!values.host) values.host = user.handle;
   if (!values.displayName) {
-    values.displayName = appProfile?.name || bsky?.displayName || "";
+    values.displayName = linkedApp?.name || appProfile?.name ||
+      bsky?.displayName || "";
   }
   if (!values.description) {
-    values.description = appProfile?.description || bsky?.description || "";
+    values.description = linkedApp?.description || appProfile?.description ||
+      bsky?.description || "";
   }
-  if (!values.homepageUrl && appProfile?.mainLink) {
-    values.homepageUrl = appProfile.mainLink;
+  if (!values.homepageUrl && (linkedApp?.primaryUrl || appProfile?.mainLink)) {
+    values.homepageUrl = linkedApp?.primaryUrl || appProfile?.mainLink || "";
   }
   if (!values.serviceEndpoint && session?.pdsUrl) {
     values.serviceEndpoint = session.pdsUrl;
@@ -358,7 +432,9 @@ async function buildRegisterPrefill(
     values.serviceEndpoint = originFromUrl(values.homepageUrl);
   }
   if (!values.avatarUrl) {
-    if (appProfile?.avatarCid) {
+    if (linkedApp?.iconUrl) {
+      values.avatarUrl = linkedApp.iconUrl;
+    } else if (appProfile?.avatarCid) {
       values.avatarUrl = `/api/registry/avatar/${encodeURIComponent(user.did)}`;
     } else if (bsky?.avatar?.ref?.$link) {
       values.avatarUrl = bskyCdnAvatarUrl(user.did, bsky.avatar.ref.$link);
@@ -413,10 +489,11 @@ async function renderRegisterResultError(
   ctx: RegisterRenderContext,
   values: RegisterValues,
   result: Extract<AccountHostRegistrationResult, { ok: false }>,
+  linkContext: HostRegistrationLinkContext | null,
 ): Promise<Response> {
   return await renderRegisterError(ctx, values, result.message, {
     status: result.reason === "already_claimed" ? 409 : 422,
-  });
+  }, linkContext);
 }
 
 async function renderRegisterError(
@@ -424,6 +501,7 @@ async function renderRegisterError(
   values: RegisterValues,
   error: string,
   options: { status?: number } = {},
+  linkContext: HostRegistrationLinkContext | null = null,
 ): Promise<Response> {
   const session = ctx.state.user
     ? await loadSession(ctx.state.user.did).catch(() => null)
@@ -434,6 +512,7 @@ async function renderRegisterError(
       values={values}
       hasOAuthSession={!!session}
       error={error}
+      linkContext={linkContext}
     />,
     { status: options.status ?? 422 },
   );
@@ -539,7 +618,7 @@ function fileFromForm(
 }
 
 function RegisterHostPage(
-  { account, values, hasOAuthSession, error }: RegisterPageProps,
+  { account, values, hasOAuthSession, error, linkContext }: RegisterPageProps,
 ) {
   const user = account.user;
   return (
@@ -548,16 +627,29 @@ function RegisterHostPage(
         <Nav account={account} active="hosts" />
         <section class="signin-page-section host-register-section">
           <div class="container signin-page-container">
-            <a href="/hosts" class="text-link-button">
-              Back to hosts
+            <a
+              href={linkContext
+                ? `/apps/manage/host?app=${
+                  encodeURIComponent(linkContext.app.id)
+                }`
+                : "/hosts"}
+              class="text-link-button"
+            >
+              {linkContext ? "Back to app hosting" : "Back to hosts"}
             </a>
             <div class="glass signin-page-card host-register-card">
-              <p class="text-eyebrow">Register account host</p>
-              <h1 class="host-claim-title">List your account host</h1>
+              <p class="text-eyebrow">
+                {linkContext ? "Add account hosting" : "Register account host"}
+              </p>
+              <h1 class="host-claim-title">
+                {linkContext
+                  ? `Register a host for ${linkContext.app.name}`
+                  : "List your account host"}
+              </h1>
               <p class="text-body host-claim-copy">
-                Register with the Atmosphere account that represents the host.
-                If the account handle is different from the host domain, add the
-                host proof file to the host website first.
+                {linkContext
+                  ? "Create the operational host profile now. Atmosphere will connect it to the app automatically after the host proof succeeds."
+                  : "Register with the Atmosphere account that represents the host. If the account handle is different from the host domain, add the host proof file to the host website first."}
               </p>
               {user && (
                 <div class="host-claim-panel host-claim-panel-ok">
@@ -579,6 +671,13 @@ function RegisterHostPage(
               <HostRegisterForm
                 values={values}
                 hasOAuthSession={hasOAuthSession}
+                linkingApp={linkContext
+                  ? {
+                    id: linkContext.app.id,
+                    name: linkContext.app.name,
+                    relationship: linkContext.relationship,
+                  }
+                  : null}
               />
             </div>
           </div>
@@ -587,4 +686,22 @@ function RegisterHostPage(
       </div>
     </div>
   );
+}
+
+async function loadLinkContext(
+  user: { did: string },
+  appListingId: string | null,
+  relationshipValue: string | null,
+): Promise<HostRegistrationLinkContext | null> {
+  const id = appListingId?.trim();
+  if (!id) return null;
+  const app = await getAppListingById(id).catch(() => null) ??
+    await getAppListingByIdentifier(id, { syncLegacy: false }).catch(() =>
+      null
+    );
+  if (!app || !userControlsAppListing(app, user.did)) return null;
+  const relationship = relationshipValue === "same_operator"
+    ? "same_operator"
+    : "same_product";
+  return { app, relationship };
 }

@@ -14,8 +14,11 @@ import {
   DEFAULT_BSKY_CLIENT_ID,
   isProfileMicroblogViewerId,
 } from "../../../lib/bsky-clients.ts";
+import { devPickerAccountForDid } from "../../../lib/dev-picker-demo.ts";
+import { IS_DEV } from "../../../lib/env.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import {
+  getBskyProfile,
   getProfileRecord,
   putProfileRecord,
   uploadBlob,
@@ -78,9 +81,11 @@ export const handler = define.handlers({
       getAppUser(user.did),
       getProfileByDid(user.did, { profileType: "user" }).catch(() => null),
     ]);
-    if (!session || !appUser) {
+    const devAccount = IS_DEV ? devPickerAccountForDid(user.did) : null;
+    if (!appUser || (!session && !devAccount)) {
       return new Response("session not found", { status: 401 });
     }
+    const profilePdsUrl = session?.pdsUrl ?? devAccount!.pdsUrl!;
     const clientId = typeof rawClient === "string"
       ? rawClient
       : appUser.bskyClientId;
@@ -115,18 +120,30 @@ export const handler = define.handlers({
     }
     const publicWebsiteUrl = websiteVisible ? safeWebsiteUrl : null;
 
-    const existingRecord = await getProfileRecord(user.did, session.pdsUrl)
-      .catch((err) => {
+    const existingRecord = session
+      ? await getProfileRecord(user.did, session.pdsUrl).catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         return new Response(`getRecord failed: ${message}`, { status: 502 });
-      });
+      })
+      : null;
     if (existingRecord instanceof Response) return existingRecord;
     const createdAt = existingRecord?.createdAt ??
       (existingProfile
         ? new Date(existingProfile.createdAt).toISOString()
         : new Date().toISOString());
     let avatar = existingRecord?.avatar;
+    if (session && !existingRecord && !avatarFile) {
+      const microblogProfile = await getBskyProfile(session.pdsUrl, user.did)
+        .catch(() => null);
+      avatar = microblogProfile?.avatar;
+    }
     if (avatarFile) {
+      if (!session) {
+        return new Response(
+          "avatar uploads require a real account in the local preview",
+          { status: 400 },
+        );
+      }
       try {
         const bytes = new Uint8Array(await avatarFile.arrayBuffer());
         avatar = await uploadBlob(
@@ -157,15 +174,16 @@ export const handler = define.handlers({
       });
     }
 
-    const put = await putProfileRecord(
-      user.did,
-      session.pdsUrl,
-      validation.value,
-    )
-      .catch((err) => {
+    const put = session
+      ? await putProfileRecord(
+        user.did,
+        session.pdsUrl,
+        validation.value,
+      ).catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         return new Response(`putRecord failed: ${message}`, { status: 502 });
-      });
+      })
+      : { cid: `dev-profile-${Date.now()}`, commit: undefined };
     if (put instanceof Response) return put;
 
     await Promise.all([
@@ -199,7 +217,7 @@ export const handler = define.handlers({
         iconMime: null,
         iconBwCid: null,
         iconBwMime: null,
-        pdsUrl: session.pdsUrl,
+        pdsUrl: profilePdsUrl,
         recordCid: put.cid,
         recordRev: put.commit?.rev ?? put.cid,
         createdAt: Date.parse(validation.value.createdAt) || Date.now(),

@@ -191,17 +191,17 @@ export async function updateAppUserProfile(input: {
       sql: `
         UPDATE app_user SET
           handle = ?,
-          display_name = COALESCE(?, display_name),
-          bio = COALESCE(?, bio),
-          avatar_cid = COALESCE(?, avatar_cid),
-          avatar_mime = COALESCE(?, avatar_mime),
+          display_name = ?,
+          bio = ?,
+          avatar_cid = ?,
+          avatar_mime = ?,
           updated_at = ?
         WHERE did = ?
       `,
       args: [
         input.handle,
         input.displayName?.trim() || null,
-        input.bio?.trim() || null,
+        input.bio == null ? null : input.bio.trim(),
         input.avatarCid ?? null,
         input.avatarMime ?? null,
         Date.now(),
@@ -274,11 +274,7 @@ export async function updateAppUserSettings(input: {
   });
 }
 
-/**
- * Existing published registry profiles predate account types. Treat those
- * DIDs as projects so old project accounts do not get forced through the
- * new chooser on their next sign-in.
- */
+/** Resolve the local account role, falling back to a published profile type. */
 export async function getEffectiveAccountType(
   did: string,
 ): Promise<AccountType | null> {

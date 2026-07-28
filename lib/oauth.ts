@@ -56,6 +56,8 @@ export interface OAuthClientOptions {
   redirectUri?: string;
   scope?: string;
   persistSession?: boolean;
+  continuation?: "login_selection";
+  reauthenticate?: boolean;
 }
 
 interface OAuthClientConfig {
@@ -150,9 +152,11 @@ interface FlowState {
   scope?: string;
   persistSession?: boolean;
   asMeta: AuthServerMetadata;
-  did: string;
-  handle: string;
+  did?: string;
+  handle?: string;
   pdsUrl: string;
+  prompt?: "create" | "login";
+  continuation?: "login_selection";
   returnTo?: string;
   intent?: SignInIntent;
   asNonce?: string;
@@ -317,6 +321,11 @@ export async function startLogin(
   ensureConfigured(options);
   const id = await resolveIdentity(handleOrDid);
   const asMeta = await discoverAuthServer(id.pdsUrl);
+  const prompt = oauthReauthenticationPrompt(
+    asMeta.prompt_values_supported,
+    options?.reauthenticate === true,
+    new URL(asMeta.issuer).hostname,
+  );
   const clientId = oauthClientId(config);
 
   const dpop = await generateEs256KeyPair();
@@ -336,6 +345,8 @@ export async function startLogin(
     did: id.did,
     handle: id.handle,
     pdsUrl: id.pdsUrl,
+    prompt,
+    continuation: options?.continuation,
     returnTo: returnTo ?? undefined,
     intent: intent ?? undefined,
   };
@@ -346,6 +357,91 @@ export async function startLogin(
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("request_uri", parRes.requestUri);
 
+  return { redirectUrl: authUrl.toString() };
+}
+
+export class OAuthReauthenticationUnsupportedError extends Error {
+  constructor(host: string) {
+    super(
+      `${host} does not advertise the OAuth login prompt required for passkey changes`,
+    );
+    this.name = "OAuthReauthenticationUnsupportedError";
+  }
+}
+
+function oauthReauthenticationPrompt(
+  supported: readonly string[] | undefined,
+  required: boolean,
+  host: string,
+): "login" | undefined {
+  if (!required) return undefined;
+  if (!supported?.includes("login")) {
+    throw new OAuthReauthenticationUnsupportedError(host);
+  }
+  return "login";
+}
+
+export function oauthReauthenticationPromptForTest(
+  supported: readonly string[] | undefined,
+  required: boolean,
+): "login" | undefined {
+  return oauthReauthenticationPrompt(supported, required, "host.example");
+}
+
+export class OAuthAccountCreationUnsupportedError extends Error {
+  constructor(host: string) {
+    super(`${host} does not advertise OAuth account creation`);
+    this.name = "OAuthAccountCreationUnsupportedError";
+  }
+}
+
+/**
+ * Start OAuth from a host rather than an existing handle. Hosts that advertise
+ * the optional OAuth `prompt=create` capability can create the account inside
+ * their authorization interface and finish the same redirect flow.
+ */
+export async function startHostAccountCreation(
+  serviceEndpoint: string,
+  returnTo?: string | null,
+  intent?: SignInIntent | null,
+  options: OAuthClientOptions | null = null,
+  continuation?: "login_selection" | null,
+): Promise<{ redirectUrl: string }> {
+  const config = oauthClientConfig(options);
+  ensureConfigured(options);
+  const pdsUrl = normalizeServiceEndpoint(serviceEndpoint);
+  const asMeta = await discoverAuthServer(pdsUrl);
+  if (!asMeta.prompt_values_supported?.includes("create")) {
+    throw new OAuthAccountCreationUnsupportedError(
+      new URL(pdsUrl).hostname,
+    );
+  }
+  const clientId = oauthClientId(config);
+  const dpop = await generateEs256KeyPair();
+  const state = randomB64u(24);
+  const pkceVerifier = randomB64u(48);
+  const flow: FlowState = {
+    state,
+    pkceVerifier,
+    dpopPrivateJwk: dpop.privateJwk,
+    dpopPublicJwk: dpop.publicJwk,
+    oauthClientId: clientId,
+    redirectUri: config.redirectUri,
+    scope: config.scope,
+    persistSession: options?.persistSession !== false,
+    asMeta,
+    pdsUrl,
+    prompt: "create",
+    continuation: continuation ?? undefined,
+    returnTo: returnTo ?? undefined,
+    intent: intent ?? undefined,
+  };
+  await saveFlowState(flow);
+
+  const parRes = await pushParRequest(flow);
+  const authUrl = new URL(asMeta.authorization_endpoint);
+  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("request_uri", parRes.requestUri);
   return { redirectUrl: authUrl.toString() };
 }
 
@@ -369,8 +465,9 @@ async function pushParRequest(
     state: flow.state,
     code_challenge: await sha256B64u(flow.pkceVerifier),
     code_challenge_method: "S256",
-    login_hint: flow.handle,
   });
+  if (flow.handle) body.set("login_hint", flow.handle);
+  if (flow.prompt) body.set("prompt", flow.prompt);
   if (!isPublicLocalhostOAuthClientId(clientId)) {
     body.set(
       "client_assertion_type",
@@ -429,6 +526,8 @@ export interface CallbackResult {
   pdsUrl: string;
   returnTo?: string;
   intent?: SignInIntent;
+  continuation?: "login_selection";
+  reauthenticated: boolean;
 }
 
 export async function completeCallback(params: {
@@ -462,10 +561,26 @@ export async function completeCallback(params: {
     code_verifier: flow.pkceVerifier,
   });
 
-  if (tokenRes.sub !== flow.did) {
+  if (flow.did && tokenRes.sub !== flow.did) {
     throw new Error(
       `sub mismatch: token sub=${tokenRes.sub} flow did=${flow.did}`,
     );
+  }
+
+  let did = flow.did;
+  let handle = flow.handle;
+  let pdsUrl = flow.pdsUrl;
+  if (!did || !handle) {
+    const identity = await resolveIdentity(tokenRes.sub);
+    const identityAuthServer = await discoverAuthServer(identity.pdsUrl);
+    if (identityAuthServer.issuer !== flow.asMeta.issuer) {
+      throw new Error(
+        "created account is not authoritative for the selected host",
+      );
+    }
+    did = identity.did;
+    handle = identity.handle;
+    pdsUrl = identity.pdsUrl;
   }
 
   if (flow.persistSession !== false) {
@@ -473,9 +588,9 @@ export async function completeCallback(params: {
       throw new Error("token response missing refresh_token");
     }
     const session: SessionData = {
-      did: flow.did,
-      handle: flow.handle,
-      pdsUrl: flow.pdsUrl,
+      did,
+      handle,
+      pdsUrl,
       asIssuer: flow.asMeta.issuer,
       accessToken: tokenRes.access_token,
       refreshToken: tokenRes.refresh_token,
@@ -490,11 +605,13 @@ export async function completeCallback(params: {
   await deleteFlowState(params.state);
 
   return {
-    did: flow.did,
-    handle: flow.handle,
-    pdsUrl: flow.pdsUrl,
+    did,
+    handle,
+    pdsUrl,
     returnTo: flow.returnTo,
     intent: flow.intent,
+    continuation: flow.continuation,
+    reauthenticated: flow.prompt === "login",
   };
 }
 

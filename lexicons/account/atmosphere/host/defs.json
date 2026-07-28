@@ -143,6 +143,7 @@
           "maxLength": 80,
           "knownValues": [
             "account.atmosphere.host.defs#capabilityDashboard",
+            "account.atmosphere.host.defs#capabilityOAuthAccountCreation",
             "account.atmosphere.host.defs#capabilityOAuthGrantManagement",
             "account.atmosphere.host.defs#capabilityActiveSessions",
             "account.atmosphere.host.defs#capabilityAppPasswords",

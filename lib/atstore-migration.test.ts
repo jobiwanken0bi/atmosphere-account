@@ -172,6 +172,19 @@ Deno.test("buildAtstoreListingFromProfileRecord emits a direct ATStore listing",
   );
 });
 
+Deno.test("additional ATStore apps can use a distinct public slug", () => {
+  const p = profile();
+  const listing = buildAtstoreListingFromProfileRecord({
+    did: p.did,
+    handle: p.handle,
+    record: record(),
+    slugOverride: "reader-notes-3lyextra",
+  });
+
+  assertEquals(listing.slug, "reader-notes-3lyextra");
+  assertEquals(listing.productAccountDid, p.did);
+});
+
 Deno.test("buildCommunityAppProfileFromProfileRecord emits a parseable canonical app profile", () => {
   const p = profile();
   const communityProfile = buildCommunityAppProfileFromProfileRecord({

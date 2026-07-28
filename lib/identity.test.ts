@@ -1,4 +1,9 @@
-import { isHandle, resolveHandle, resolveIdentity } from "./identity.ts";
+import {
+  discoverAuthServer,
+  isHandle,
+  resolveHandle,
+  resolveIdentity,
+} from "./identity.ts";
 
 Deno.test("isHandle enforces ATProto-style DNS handle syntax", () => {
   const accepted = [
@@ -122,6 +127,41 @@ Deno.test("resolveIdentity falls back to DID when alsoKnownAs is stale", async (
     const identity = await resolveIdentity("did:plc:owner");
     if (identity.handle !== "did:plc:owner") {
       throw new Error(`unexpected handle: ${identity.handle}`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("OAuth discovery preserves advertised create prompts", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = ((input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "https://pds.example/.well-known/oauth-protected-resource") {
+        return Promise.resolve(Response.json({
+          authorization_servers: ["https://auth.example"],
+        }));
+      }
+      if (
+        url ===
+          "https://auth.example/.well-known/oauth-authorization-server"
+      ) {
+        return Promise.resolve(Response.json({
+          issuer: "https://auth.example",
+          authorization_endpoint: "https://auth.example/oauth/authorize",
+          token_endpoint: "https://auth.example/oauth/token",
+          pushed_authorization_request_endpoint:
+            "https://auth.example/oauth/par",
+          prompt_values_supported: ["login", "create"],
+        }));
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    const metadata = await discoverAuthServer("https://pds.example");
+    if (!metadata.prompt_values_supported?.includes("create")) {
+      throw new Error("expected OAuth create prompt capability");
     }
   } finally {
     globalThis.fetch = originalFetch;

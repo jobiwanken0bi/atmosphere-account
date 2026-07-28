@@ -9,15 +9,32 @@ export const handler = define.handlers({
     }
 
     const url = new URL(ctx.req.url);
+    const seededFixture = url.searchParams.get("fixture") === "harbor-host";
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 10);
-    const handle = normalizeDevHandle(url.searchParams.get("handle")) ??
-      `local-host-${id}.test`;
-    const displayName = textValue(url.searchParams.get("name")) ||
-      "Local Host Test";
+    const handle = seededFixture
+      ? "harbor-host.test"
+      : normalizeDevHandle(url.searchParams.get("handle")) ??
+        `local-host-${id}.test`;
+    const displayName = seededFixture
+      ? "Harbor Host"
+      : textValue(url.searchParams.get("name")) || "Local Host Test";
     const description = textValue(url.searchParams.get("description")) ||
       "A temporary local host account for visual registration testing.";
-    const did = `did:plc:aalocal${id}`;
+    const did = seededFixture
+      ? "did:plc:localdevharborhost"
+      : `did:plc:aalocal${id}`;
     const cookieValue = await createSession({ did, handle });
+
+    if (seededFixture) {
+      return new Response(null, {
+        status: 303,
+        headers: {
+          "cache-control": "no-store",
+          "location": "/hosts/harbor-host.test/manage",
+          "set-cookie": buildSessionCookie(cookieValue),
+        },
+      });
+    }
 
     const next = new URL("/hosts/register", url.origin);
     next.searchParams.set("host", handle);

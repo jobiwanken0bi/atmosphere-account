@@ -35,8 +35,10 @@ Deno.test("early appview proxy covers DB-backed app surfaces before session hydr
       "/admin/app-directory",
       "/users/joebasser.com",
       "/login/select",
+      "/passkeys",
       "/oauth/add-account",
       "/oauth/callback",
+      "/oauth/create",
       "/oauth/forget",
       "/oauth/login",
       "/oauth/logout",
@@ -61,6 +63,7 @@ Deno.test("early appview proxy keeps only public OAuth documents on the Deno edg
     const path of [
       "/oauth/add-account",
       "/oauth/callback",
+      "/oauth/create",
       "/oauth/forget",
       "/oauth/login",
       "/oauth/logout",
@@ -181,8 +184,12 @@ Deno.test("create-account host discovery requires trusted signup URLs", () => {
     hosts,
   );
 
-  assertEquals(result.hosts.length, 2);
+  assertEquals(result.hosts.length, 3);
   assertEquals(result.hosts.some((host) => host.host === "bsky.network"), true);
+  assertEquals(
+    result.hosts.some((host) => host.host === "selfhosted.social"),
+    true,
+  );
   assertEquals(result.hosts.some((host) => host.host === "tangled.org"), true);
 });
 
@@ -250,6 +257,8 @@ Deno.test("early appview proxy covers DB-backed APIs before session hydration", 
       "/api/admin/app-directory/rescore",
       "/api/login/selection",
       "/api/login/account-hosts",
+      "/api/login/passkeys/options",
+      "/api/passkeys/authentication/options",
       "/api/registry/profile",
       "/api/appview/apps/home",
       "/api/atproto/blob",

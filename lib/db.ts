@@ -272,10 +272,51 @@ const SCHEMA_STATEMENTS: string[] = [
     expires_at INTEGER NOT NULL
   )`,
   /**
-   * App-level account type. OAuth identities can use the registry as
-   * plain users (reviews only) or as projects (can publish registry
-   * profiles). This is separate from the public `profile` table so
-   * regular users never need to create a registry profile.
+   * WebAuthn user handles are stable, opaque RP-local identifiers. Keeping the
+   * handle separate from credentials lets one account enroll multiple
+   * passkeys without putting the account DID into authenticator storage.
+   */
+  `CREATE TABLE IF NOT EXISTS passkey_account (
+    did TEXT PRIMARY KEY,
+    user_handle TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS passkey_credential (
+    credential_id TEXT PRIMARY KEY,
+    did TEXT NOT NULL REFERENCES passkey_account(did) ON DELETE CASCADE,
+    public_key TEXT NOT NULL,
+    counter INTEGER NOT NULL DEFAULT 0,
+    device_type TEXT NOT NULL,
+    backed_up INTEGER NOT NULL DEFAULT 0,
+    transports TEXT NOT NULL DEFAULT '[]',
+    name TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER
+  )`,
+  /**
+   * Short-lived, one-use WebAuthn ceremonies. Only the hash of the opaque
+   * browser token is persisted. Authentication ceremonies may carry a
+   * previously validated Atmosphere Login request for the final handoff.
+   */
+  `CREATE TABLE IF NOT EXISTS passkey_ceremony (
+    code_hash TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    challenge TEXT NOT NULL,
+    did TEXT,
+    rp_id TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    login_request_json TEXT,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    consumed_at INTEGER
+  )`,
+  /**
+   * App-level account type and the cached identity fallback imported at
+   * sign-in. Users may publish an Atmosphere profile, but they do not need
+   * one before using reviews or connected apps.
    */
   `CREATE TABLE IF NOT EXISTS app_user (
     did TEXT PRIMARY KEY,
@@ -868,6 +909,8 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS oauth_state_expires ON oauth_state(expires_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_session_expires ON oauth_session(expires_at)`,
   `CREATE INDEX IF NOT EXISTS app_session_expires ON app_session(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS passkey_credential_did ON passkey_credential(did, revoked_at)`,
+  `CREATE INDEX IF NOT EXISTS passkey_ceremony_expires ON passkey_ceremony(expires_at)`,
   `CREATE INDEX IF NOT EXISTS worker_lease_expires ON worker_lease(expires_at)`,
 ];
 

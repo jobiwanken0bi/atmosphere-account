@@ -136,6 +136,7 @@ export function buildAtstoreListingFromProfileRecord(
     record: ProfileRecord;
     createdAt?: string | null;
     now?: Date;
+    slugOverride?: string | null;
   },
 ): AtstoreListingRecord {
   const now = input.now ?? new Date();
@@ -160,7 +161,8 @@ export function buildAtstoreListingFromProfileRecord(
 
   return {
     $type: ATSTORE_LISTING_NSID,
-    slug: slugForHandleNameOrDid(input.handle, input.record.name, input.did),
+    slug: input.slugOverride ??
+      slugForHandleNameOrDid(input.handle, input.record.name, input.did),
     name: input.record.name.trim().slice(0, 640),
     tagline: taglineForText(input.record.description, input.record.name),
     ...(input.record.description.trim()
@@ -188,8 +190,30 @@ export async function findExistingAtstoreListingForProfile(
   profileDid: string,
   pdsUrl: string,
 ): Promise<AtstoreMigrationRecordRef | null> {
+  const records = await findExistingAtstoreListingsForProfile(
+    profileDid,
+    pdsUrl,
+    { maxListings: 1 },
+  );
+  return records[0] ?? null;
+}
+
+/**
+ * Discover every ATStore listing the signed-in repository identifies as one
+ * of its products. The previous single-result helper remains for legacy write
+ * paths, while owner dashboards use this bounded collection form.
+ */
+export async function findExistingAtstoreListingsForProfile(
+  profileDid: string,
+  pdsUrl: string,
+  options: { maxListings?: number } = {},
+): Promise<AtstoreMigrationRecordRef[]> {
   const sourceAtUri = atmosphereProfileAtUri(profileDid);
+  const maxListings = Math.max(1, Math.min(options.maxListings ?? 200, 500));
+  const records: AtstoreMigrationRecordRef[] = [];
+  const seen = new Set<string>();
   let cursor: string | undefined;
+  let pages = 0;
   do {
     const page = await listRecordsPublic(
       pdsUrl,
@@ -203,17 +227,21 @@ export async function findExistingAtstoreListingForProfile(
         value?.migratedFromAtUri === sourceAtUri ||
         value?.productAccountDid === profileDid
       ) {
-        return {
+        if (seen.has(record.uri)) continue;
+        seen.add(record.uri);
+        records.push({
           uri: record.uri,
           cid: record.cid,
           rkey: record.uri.split("/").at(-1) ?? "",
           value: record.value,
-        };
+        });
+        if (records.length >= maxListings) return records;
       }
     }
     cursor = page.cursor;
-  } while (cursor);
-  return null;
+    pages += 1;
+  } while (cursor && pages < 20);
+  return records;
 }
 
 export async function indexAtstoreListingMigrationRecord(
@@ -277,9 +305,11 @@ export async function publishAtstoreListingFromProfileRecord(
     pdsUrl: string;
     record: ProfileRecord;
     existingRecord?: AtstoreMigrationRecordRef | null;
+    createDistinctListing?: boolean;
   },
 ): Promise<AtstoreMigrationPublishResult> {
   const existing = asRecord(input.existingRecord?.value);
+  const rkey = input.existingRecord?.rkey || createAtstoreListingRkey();
   const record = buildAtstoreListingFromProfileRecord({
     did: input.did,
     handle: input.handle,
@@ -287,8 +317,10 @@ export async function publishAtstoreListingFromProfileRecord(
     createdAt: typeof existing?.createdAt === "string"
       ? existing.createdAt
       : null,
+    slugOverride: input.createDistinctListing
+      ? distinctAppSlug(input.record.name, rkey)
+      : null,
   });
-  const rkey = input.existingRecord?.rkey || createAtstoreListingRkey();
   const result = await putRecord(
     input.did,
     input.pdsUrl,
@@ -307,6 +339,16 @@ export async function publishAtstoreListingFromProfileRecord(
     );
   }
   return indexed;
+}
+
+function distinctAppSlug(name: string, rkey: string): string {
+  const suffix = rkey.toLowerCase().replaceAll(/[^a-z0-9]+/g, "").slice(-10) ||
+    "app";
+  const base = slugForHandleNameOrDid("", name, rkey).slice(
+    0,
+    Math.max(1, 500 - suffix.length),
+  );
+  return `${base}-${suffix}`;
 }
 
 export function createAtstoreListingRkey(): string {

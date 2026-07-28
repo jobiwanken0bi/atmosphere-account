@@ -27,6 +27,11 @@ interface RegisterValues {
 interface Props {
   values: RegisterValues;
   hasOAuthSession: boolean;
+  linkingApp?: {
+    id: string;
+    name: string;
+    relationship: "same_product" | "same_operator";
+  } | null;
 }
 
 const SIGNUP_STATUSES: Array<{
@@ -39,7 +44,9 @@ const SIGNUP_STATUSES: Array<{
   { value: "unknown", label: "Not sure yet" },
 ];
 
-export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
+export default function HostRegisterForm(
+  { values, hasOAuthSession, linkingApp = null }: Props,
+) {
   const avatarPreview = useSignal<string | null>(values.avatarUrl);
   const host = useSignal(values.host);
   const displayName = useSignal(values.displayName);
@@ -64,6 +71,9 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
   );
   const inferenceMessage = useSignal(values.inferenceMessage);
   const bskyProfileVisible = useSignal(values.bskyProfileVisible);
+  const relationship = useSignal<"same_product" | "same_operator">(
+    linkingApp?.relationship ?? "same_product",
+  );
 
   function onAvatarChange(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -83,6 +93,39 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
 
   return (
     <form method="POST" encType="multipart/form-data" class="host-manage-form">
+      {linkingApp && (
+        <section class="host-register-form-section host-register-link-section">
+          <header class="host-register-section-head">
+            <p class="text-eyebrow">Connected product</p>
+            <h2>{linkingApp.name}</h2>
+            <p class="text-body">
+              The new host will be linked as soon as registration succeeds.
+            </p>
+          </header>
+          <input type="hidden" name="linkAppId" value={linkingApp.id} />
+          <label class="profile-form-field">
+            <span class="profile-form-label">Relationship</span>
+            <select
+              class="profile-form-input"
+              name="relationship"
+              value={relationship.value}
+              onChange={(event) =>
+                relationship.value =
+                  (event.currentTarget as HTMLSelectElement).value ===
+                      "same_operator"
+                    ? "same_operator"
+                    : "same_product"}
+            >
+              <option value="same_product">
+                Same product — this host is part of the app
+              </option>
+              <option value="same_operator">
+                Same operator — this is a separate service we also run
+              </option>
+            </select>
+          </label>
+        </section>
+      )}
       <section class="host-register-form-section host-register-profile-section">
         <header class="host-register-section-head">
           <p class="text-eyebrow">Atmosphere profile</p>
@@ -120,7 +163,9 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
               />
             </label>
             <p class="profile-form-hint host-register-avatar-hint">
-              {values.avatarUrl
+              {linkingApp
+                ? "Prefilled from the connected app profile."
+                : values.avatarUrl
                 ? "Prefilled from the signed-in account's Bluesky profile."
                 : "Use the host logo, icon, or account avatar."}
             </p>
@@ -404,23 +449,25 @@ export default function HostRegisterForm({ values, hasOAuthSession }: Props) {
         </div>
       </section>
 
-      <section class="host-register-form-section host-register-app-section">
-        <div>
-          <p class="text-eyebrow">Also an app?</p>
-          <h2>List the app separately</h2>
-          <p class="text-body">
-            A host can also be an Atmosphere app. Host records describe where
-            accounts live; app records describe software people can open,
-            review, and save.
-          </p>
-        </div>
-        <a
-          class="profile-form-button-secondary profile-form-button-secondary--lg"
-          href="/apps/create"
-        >
-          Register an app
-        </a>
-      </section>
+      {!linkingApp && (
+        <section class="host-register-form-section host-register-app-section">
+          <div>
+            <p class="text-eyebrow">Apps and hosts</p>
+            <h2>Connect products without merging them</h2>
+            <p class="text-body">
+              Host records describe where accounts live. Your owner workspace
+              can connect this host to one or more separately managed app
+              profiles after registration.
+            </p>
+          </div>
+          <a
+            class="profile-form-button-secondary profile-form-button-secondary--lg"
+            href="/account/products"
+          >
+            View managed products
+          </a>
+        </section>
+      )}
 
       <div class="host-manage-actions">
         <button

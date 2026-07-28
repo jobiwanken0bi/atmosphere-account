@@ -55,6 +55,52 @@ export function rejectLargeRequest(
     : null;
 }
 
+export class RequestBodyTooLargeError extends Error {
+  constructor() {
+    super("request body too large");
+    this.name = "RequestBodyTooLargeError";
+  }
+}
+
+export async function readJsonRequestWithLimit(
+  req: Request,
+  maxBytes: number,
+): Promise<unknown> {
+  if (requestBodyTooLarge(req, maxBytes)) {
+    throw new RequestBodyTooLargeError();
+  }
+  if (!req.body) return null;
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new RequestBodyTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
 export async function readResponseTextWithLimit(
   response: Response,
   maxBytes: number,
@@ -215,7 +261,7 @@ function applySecurityHeaders(headers: Headers, pathname: string): void {
   setDefault(
     headers,
     "permissions-policy",
-    "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-create=(self), publickey-credentials-get=(self)",
   );
   setDefault(headers, "cross-origin-opener-policy", "same-origin");
   setDefault(headers, "content-security-policy", IS_DEV ? DEV_CSP : PROD_CSP);
@@ -227,6 +273,14 @@ function applySecurityHeaders(headers: Headers, pathname: string): void {
     );
   }
   if (isTokenBearingLoginRoute(pathname)) {
+    headers.set("referrer-policy", "no-referrer");
+    headers.set("cache-control", "no-store");
+    headers.set("x-robots-tag", "noindex, nofollow");
+  }
+  if (
+    pathname === "/passkeys" || pathname.startsWith("/api/passkeys") ||
+    pathname.startsWith("/api/login/passkeys")
+  ) {
     headers.set("referrer-policy", "no-referrer");
     headers.set("cache-control", "no-store");
     headers.set("x-robots-tag", "noindex, nofollow");

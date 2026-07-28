@@ -83,6 +83,7 @@ export const IS_DEV = !IS_HOSTED_RUNTIME &&
 export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");
 export const OAUTH_PUBLIC_JWK = safeGet("OAUTH_PUBLIC_JWK");
 export const OAUTH_KID = safeGet("OAUTH_KID");
+export const PASSKEY_RP_ID = safeGet("PASSKEY_RP_ID");
 
 function hostedSecret(key: string, devFallback: string): string {
   const value = safeGet(key);

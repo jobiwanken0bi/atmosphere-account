@@ -10,6 +10,13 @@ import {
   resolveVerifiedPreferredAccountHost,
 } from "./atmosphere-login.ts";
 
+export const HOST_CAPABILITY_OAUTH_ACCOUNT_CREATION =
+  "account.atmosphere.host.defs#capabilityOAuthAccountCreation";
+const HOST_CAPABILITY_SUPPORTED =
+  "account.atmosphere.host.defs#capabilitySupported";
+const HOST_CAPABILITY_EXTERNAL =
+  "account.atmosphere.host.defs#capabilityExternal";
+
 export interface CreateAccountHostOption {
   name: string;
   host: string;
@@ -18,6 +25,7 @@ export interface CreateAccountHostOption {
   location: string | null;
   avatarUrl: string | null;
   signupStatus: "open" | "invite_required";
+  oauthAccountCreation: boolean;
   statusLabel: string;
   recommended: boolean;
   recommendationLabel: string | null;
@@ -64,11 +72,12 @@ export async function listCreateAccountHostOptions(
   const seen = new Set<string>();
   return source.flatMap((host) => {
     const signupUrl = normalizeAccountHostPublicHttpsUrl(host.signupUrl);
+    const oauthAccountCreation = supportsOAuthAccountCreation(host);
     if (
       seen.has(host.host) || !signupUrl ||
       (host.signupStatus !== "open" &&
         host.signupStatus !== "invite_required") ||
-      !isCreateAccountHostEligible(host)
+      !oauthAccountCreation || !isCreateAccountHostEligible(host)
     ) {
       return [];
     }
@@ -83,7 +92,12 @@ export async function listCreateAccountHostOptions(
         location: host.dataLocation ?? host.inferredLocation,
         avatarUrl: host.avatarUrl,
         signupStatus: host.signupStatus,
-        statusLabel: host.signupStatus === "open" ? "Open" : "Invite accepted",
+        oauthAccountCreation,
+        statusLabel: oauthAccountCreation
+          ? "Direct"
+          : host.signupStatus === "open"
+          ? "Open"
+          : "Invite accepted",
         recommended,
         recommendationLabel: recommended && options.app
           ? `Recommended by ${options.app.appName}`
@@ -91,6 +105,25 @@ export async function listCreateAccountHostOptions(
       } satisfies CreateAccountHostOption,
     ];
   });
+}
+
+export function supportsOAuthAccountCreation(host: AccountHost): boolean {
+  if (!host.serviceEndpoint || !host.capabilitiesJson) return false;
+  try {
+    const capabilities = JSON.parse(host.capabilitiesJson);
+    if (!Array.isArray(capabilities)) return false;
+    return capabilities.some((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return false;
+      }
+      const capability = value as Record<string, unknown>;
+      return capability.id === HOST_CAPABILITY_OAUTH_ACCOUNT_CREATION &&
+        (capability.status === HOST_CAPABILITY_SUPPORTED ||
+          capability.status === HOST_CAPABILITY_EXTERNAL);
+    });
+  } catch {
+    return false;
+  }
 }
 
 export function isCreateAccountHostEligible(
@@ -101,7 +134,7 @@ export function isCreateAccountHostEligible(
     host.verificationStatus === "verified" || host.source === "seeded";
   const joinable = host.signupStatus === "open" ||
     host.signupStatus === "invite_required";
-  return trusted && joinable &&
+  return trusted && joinable && supportsOAuthAccountCreation(host) &&
     normalizeAccountHostPublicHttpsUrl(host.signupUrl) !== null &&
     isAccountHostPubliclyListable(host, at);
 }

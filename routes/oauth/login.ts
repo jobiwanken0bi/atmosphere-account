@@ -16,6 +16,7 @@ import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
+import { isPasskeyManagementReturnTo } from "../../lib/passkey-management.ts";
 
 const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
 
@@ -31,28 +32,46 @@ interface LoginInput {
   handle: string | null;
   next: string | null;
   intent: SignInIntent | null;
+  continuation: "login_selection" | null;
+}
+
+function safeContinuation(
+  raw: string | null | undefined,
+): "login_selection" | null {
+  return raw === "login_selection" ? raw : null;
 }
 
 async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
   const fromQs = url.searchParams.get("handle");
   const nextFromQs = safeNext(url.searchParams.get("next"));
   const intentFromQs = safeIntent(url.searchParams.get("intent"));
+  const continuationFromQs = safeContinuation(
+    url.searchParams.get("continuation"),
+  );
   if (fromQs) {
     return {
       handle: fromQs.trim(),
       next: nextFromQs,
       intent: intentFromQs,
+      continuation: continuationFromQs,
     };
   }
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => null) as
-      | { handle?: string; next?: string; intent?: string }
+      | {
+        handle?: string;
+        next?: string;
+        intent?: string;
+        continuation?: string;
+      }
       | null;
     return {
       handle: body?.handle?.trim() ?? null,
       next: safeNext(body?.next ?? null) ?? nextFromQs,
       intent: safeIntent(body?.intent) ?? intentFromQs,
+      continuation: safeContinuation(body?.continuation) ??
+        continuationFromQs,
     };
   }
   if (
@@ -61,19 +80,33 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
   ) {
     const form = await req.formData().catch(() => null);
     if (!form) {
-      return { handle: null, next: nextFromQs, intent: intentFromQs };
+      return {
+        handle: null,
+        next: nextFromQs,
+        intent: intentFromQs,
+        continuation: continuationFromQs,
+      };
     }
     const v = form.get("handle");
     const next = form.get("next");
     const intent = form.get("intent");
+    const continuation = form.get("continuation");
     return {
       handle: typeof v === "string" ? v.trim() : null,
       next: safeNext(typeof next === "string" ? next : null) ?? nextFromQs,
       intent: safeIntent(typeof intent === "string" ? intent : null) ??
         intentFromQs,
+      continuation: safeContinuation(
+        typeof continuation === "string" ? continuation : null,
+      ) ?? continuationFromQs,
     };
   }
-  return { handle: null, next: nextFromQs, intent: intentFromQs };
+  return {
+    handle: null,
+    next: nextFromQs,
+    intent: intentFromQs,
+    continuation: continuationFromQs,
+  };
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
@@ -107,10 +140,12 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       status: 503,
     });
   }
-  const { handle: handleStr, next: returnTo, intent } = await getLoginInput(
-    ctx.req,
-    ctx.url,
-  );
+  const {
+    handle: handleStr,
+    next: returnTo,
+    intent,
+    continuation,
+  } = await getLoginInput(ctx.req, ctx.url);
   if (!handleStr) {
     return wantsJson
       ? jsonError("missing handle", 400)
@@ -121,7 +156,11 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       handleStr,
       returnTo,
       intent,
-      oauthOptions,
+      {
+        ...oauthOptions,
+        continuation: continuation ?? undefined,
+        reauthenticate: isPasskeyManagementReturnTo(returnTo),
+      },
     );
     if (wantsJson) {
       return new Response(JSON.stringify({ redirectUrl }), {

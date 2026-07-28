@@ -2,7 +2,7 @@
  * Avatar for the currently signed-in user, used by the explore-page
  * AccountMenu. Resolution order:
  *
- *   1. Registry profile avatar redirected to the Bluesky CDN.
+ *   1. The account type's Atmosphere profile avatar, redirected to the CDN.
  *   2. Bluesky `app.bsky.actor.profile` avatar redirected to the same CDN —
  *      covers the case where the user has signed in but hasn't published a
  *      registry profile yet.
@@ -35,7 +35,9 @@ export const handler = define.handlers({
 
     /** Prefer the registry avatar. This route stays per-session for cache
      *  busting, but the image bytes come from Bluesky's CDN. */
-    const profile = await getProfileByDid(user.did).catch(() => null);
+    const profile = await getProfileByDid(user.did, {
+      profileType: ctx.state.accountType === "project" ? "project" : "user",
+    }).catch(() => null);
     if (profile?.avatarCid) {
       return new Response(null, {
         status: 302,

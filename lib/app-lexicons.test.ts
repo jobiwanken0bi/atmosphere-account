@@ -202,7 +202,7 @@ Deno.test("atmosphereProfileToDraft preserves community interop metadata", () =>
   ]);
 });
 
-Deno.test("aliasesForDraft dedupes by DID, canonical URL, source URI, and ATStore URI", () => {
+Deno.test("ATStore listing aliases use record identity rather than owner DID", () => {
   const draft = parseAtstoreListing({
     uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/3lx`,
     cid: "bafyrecord",
@@ -221,11 +221,50 @@ Deno.test("aliasesForDraft dedupes by DID, canonical URL, source URI, and ATStor
   assert(draft, "expected a listing draft");
   const aliases = aliasesForDraft(draft);
   assert(aliases.includes(`uri:${draft.sourceUri}`));
-  assert(aliases.includes("did:plc:leaflet"));
+  assert(!aliases.includes("did:plc:leaflet"));
   assert(aliases.includes(`atstore:${draft.sourceUri}`));
   assert(aliases.includes("url:https://www.leaflet.pub"));
   assert(!aliases.includes("slug:leaflet"));
   assertEquals(new Set(aliases).size, aliases.length);
+});
+
+Deno.test("separate ATStore apps can share one owner account", () => {
+  const first = parseAtstoreListing({
+    uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/notes`,
+    cid: "bafynotes",
+    repoDid: "did:plc:store",
+    rkey: "notes",
+    value: {
+      name: "Field Notes",
+      tagline: "A shared notebook",
+      externalUrl: "https://field-notes.example",
+      productAccountDid: "did:plc:fieldnotes",
+      icon: { ref: { $link: "bafyicon1" }, mimeType: "image/png" },
+    },
+  });
+  const second = parseAtstoreListing({
+    uri: `at://did:plc:store/${ATSTORE_LISTING_NSID}/capture`,
+    cid: "bafycapture",
+    repoDid: "did:plc:store",
+    rkey: "capture",
+    value: {
+      name: "Field Notes Capture",
+      tagline: "Capture ideas quickly",
+      externalUrl: "https://capture.field-notes.example",
+      productAccountDid: "did:plc:fieldnotes",
+      icon: { ref: { $link: "bafyicon2" }, mimeType: "image/png" },
+    },
+  });
+
+  assert(first && second, "expected both listing drafts");
+  const firstAliases = aliasesForDraft(first);
+  const secondAliases = aliasesForDraft(second);
+  assert(!firstAliases.includes("did:plc:fieldnotes"));
+  assert(!secondAliases.includes("did:plc:fieldnotes"));
+  assertEquals(
+    firstAliases.filter((alias) => secondAliases.includes(alias)),
+    [],
+  );
 });
 
 Deno.test("real shared records outrank local dev app fixtures", () => {

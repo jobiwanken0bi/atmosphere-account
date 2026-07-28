@@ -116,6 +116,7 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/admin" || pathname.startsWith("/admin/") ||
     pathname === "/users" || pathname.startsWith("/users/") ||
     pathname === "/login/select" ||
+    pathname === "/passkeys" ||
     pathname === "/oauth" || pathname.startsWith("/oauth/") ||
     pathname === "/api/apps" || pathname.startsWith("/api/apps/") ||
     pathname === "/api/hosts" || pathname.startsWith("/api/hosts/") ||
@@ -123,6 +124,8 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/admin" || pathname.startsWith("/api/admin/") ||
     pathname === "/api/login/selection" ||
     pathname === "/api/login/account-hosts" ||
+    pathname.startsWith("/api/login/passkeys/") ||
+    pathname === "/api/passkeys" || pathname.startsWith("/api/passkeys/") ||
     pathname === "/api/registry" || pathname.startsWith("/api/registry/") ||
     pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
     pathname === "/api/atproto/blob" ||

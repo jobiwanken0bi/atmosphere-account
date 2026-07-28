@@ -57,17 +57,33 @@ export const handler = define.handlers({
 
     const session = await loadSession(user.did).catch(() => null);
 
-    const bskyProfile = session
-      ? await getBskyProfile(session.pdsUrl, user.did).catch(() => null)
-      : null;
+    const [bskyProfile, atmosphereProfile] = await Promise.all([
+      session
+        ? getBskyProfile(session.pdsUrl, user.did).catch(() => null)
+        : Promise.resolve(null),
+      getProfileByDid(user.did, {
+        includeTakenDown: true,
+        profileType: "user",
+      }).catch(() => null),
+    ]);
+    const identityProfile = accountType === "user" && atmosphereProfile
+      ? {
+        displayName: atmosphereProfile.name,
+        bio: atmosphereProfile.description,
+        avatarCid: atmosphereProfile.avatarCid,
+        avatarMime: atmosphereProfile.avatarMime,
+      }
+      : {
+        displayName: bskyProfile?.displayName ?? null,
+        bio: bskyProfile?.description ?? null,
+        avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
+        avatarMime: bskyProfile?.avatar?.mimeType ?? null,
+      };
 
     await setAppUserType({
       did: user.did,
       handle: user.handle,
-      displayName: bskyProfile?.displayName ?? null,
-      bio: bskyProfile?.description ?? null,
-      avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
-      avatarMime: bskyProfile?.avatar?.mimeType ?? null,
+      ...identityProfile,
       accountType,
     });
 

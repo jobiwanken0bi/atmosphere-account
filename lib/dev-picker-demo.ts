@@ -32,7 +32,12 @@ export const DEV_PICKER_ACCOUNTS: DevPickerAccount[] = [
   },
 ];
 
+export function devPickerAccountForDid(
+  did: string,
+): DevPickerAccount | null {
+  return DEV_PICKER_ACCOUNTS.find((account) => account.did === did) ?? null;
+}
+
 export function devPickerAvatarUrl(did: string): string | null {
-  return DEV_PICKER_ACCOUNTS.find((account) => account.did === did)
-    ?.avatarUrl ?? null;
+  return devPickerAccountForDid(did)?.avatarUrl ?? null;
 }

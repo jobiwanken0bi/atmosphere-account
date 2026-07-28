@@ -68,7 +68,7 @@ export default function AccountMenu(
     return (
       <a
         href="/signin"
-        class="nav-btn nav-btn-ghost account-menu-signin"
+        class="nav-btn nav-btn-primary account-menu-signin"
       >
         {t.signIn}
       </a>
@@ -132,9 +132,7 @@ function SignedOutMenu(
           open.value = !open.value;
         }}
       >
-        <span class="account-menu-avatar" aria-hidden="true">
-          <span class="account-menu-avatar-initial">?</span>
-        </span>
+        <span class="account-menu-trigger-label">{t.signIn}</span>
         <span class="account-menu-chevron" aria-hidden="true">▾</span>
       </button>
 

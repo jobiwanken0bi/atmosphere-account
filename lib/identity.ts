@@ -276,6 +276,7 @@ export interface AuthServerMetadata {
   pushed_authorization_request_endpoint: string;
   scopes_supported?: string[];
   dpop_signing_alg_values_supported?: string[];
+  prompt_values_supported?: string[];
 }
 
 function jsonRecord(value: unknown, label: string): Record<string, unknown> {
@@ -368,6 +369,11 @@ function parseAuthServerMetadata(
         record.dpop_signing_alg_values_supported,
       )
       ? record.dpop_signing_alg_values_supported.filter((v): v is string =>
+        typeof v === "string"
+      )
+      : undefined,
+    prompt_values_supported: Array.isArray(record.prompt_values_supported)
+      ? record.prompt_values_supported.filter((v): v is string =>
         typeof v === "string"
       )
       : undefined,

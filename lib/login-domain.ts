@@ -9,6 +9,8 @@ import { IS_DEV, loginOrigin, siteOrigin } from "./env.ts";
 const LOGIN_HOST_PATHS = [
   "/login/select",
   "/signin",
+  "/passkeys",
+  "/oauth/create",
   "/oauth/login",
   "/oauth/callback",
   "/oauth/client-metadata.json",
@@ -34,6 +36,9 @@ function isAllowedLoginHostPath(pathname: string): boolean {
   }
   return pathname.startsWith("/_fresh/") ||
     pathname.startsWith("/assets/") ||
+    pathname.startsWith("/api/login/passkeys/") ||
+    pathname === "/api/passkeys" ||
+    pathname.startsWith("/api/passkeys/") ||
     pathname.startsWith("/api/registry/avatar/");
 }
 

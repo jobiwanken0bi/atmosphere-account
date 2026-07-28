@@ -15,6 +15,7 @@ import { loadSession } from "../../../lib/oauth.ts";
 import {
   deleteProfileRecord,
   deleteRecord,
+  getRecordPublic,
   putProfileRecord,
   uploadBlob,
 } from "../../../lib/pds.ts";
@@ -184,6 +185,10 @@ interface ProfileFormPayload {
   /** Existing screenshots to keep plus new uploads to append. */
   screenshots?: ScreenshotEntry[];
   screenshotUploads?: { dataBase64: string; mimeType: string }[];
+  /** Create a distinct ATStore listing instead of updating the first one. */
+  createNewListing?: boolean;
+  /** Existing ATStore record to update when this DID owns several apps. */
+  atstoreListingUri?: string | null;
 }
 
 function trimOrNull(s: unknown): string | undefined {
@@ -704,15 +709,43 @@ export const handler = define.handlers({
       });
     }
 
-    const existingAtstore = await findExistingAtstoreListingForProfile(
-      user.did,
-      session.pdsUrl,
-    ).catch(() => null);
-    const writeTarget = resolveAppListingWriteTarget({
-      hasLegacyProfile: !!existing,
-      hasAtstoreListing: !!existingAtstore,
-      categories: validation.value.categories,
-    });
+    const requestedAtstoreTarget = body.atstoreListingUri
+      ? ownedAtstoreTarget(body.atstoreListingUri, user.did)
+      : null;
+    if (body.atstoreListingUri && !requestedAtstoreTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    const targetedAtstore = requestedAtstoreTarget
+      ? await getRecordPublic(
+        session.pdsUrl,
+        user.did,
+        ATSTORE_LISTING_NSID,
+        requestedAtstoreTarget.rkey,
+      ).then((record) =>
+        record
+          ? {
+            ...record,
+            rkey: requestedAtstoreTarget.rkey,
+          }
+          : null
+      ).catch(() => null)
+      : null;
+    if (requestedAtstoreTarget && !targetedAtstore) {
+      return new Response("app listing target not found", { status: 404 });
+    }
+    const existingAtstore = body.createNewListing === true
+      ? null
+      : targetedAtstore ?? await findExistingAtstoreListingForProfile(
+        user.did,
+        session.pdsUrl,
+      ).catch(() => null);
+    const writeTarget = body.createNewListing === true
+      ? "atstore_listing" as const
+      : resolveAppListingWriteTarget({
+        hasLegacyProfile: !!existing,
+        hasAtstoreListing: !!existingAtstore,
+        categories: validation.value.categories,
+      });
     if (writeTarget === "atstore_listing") {
       try {
         const atstoreResult = await publishAtstoreListingFromProfileRecord({
@@ -721,13 +754,16 @@ export const handler = define.handlers({
           pdsUrl: session.pdsUrl,
           record: validation.value,
           existingRecord: existingAtstore,
+          createDistinctListing: body.createNewListing === true,
         });
-        const communityResult = await tryPublishCommunityProfile({
-          did: user.did,
-          handle: user.handle,
-          pdsUrl: session.pdsUrl,
-          record: validation.value,
-        });
+        const communityResult = body.createNewListing === true
+          ? null
+          : await tryPublishCommunityProfile({
+            did: user.did,
+            handle: user.handle,
+            pdsUrl: session.pdsUrl,
+            record: validation.value,
+          });
         return new Response(
           JSON.stringify({
             ok: true,
@@ -863,6 +899,32 @@ export const handler = define.handlers({
     const session = await loadSession(user.did);
     if (!session) return new Response("OAuth session expired", { status: 401 });
 
+    const requestedListing = ctx.url.searchParams.get("listing");
+    if (requestedListing) {
+      const target = ownedAtstoreTarget(requestedListing, user.did);
+      if (!target) {
+        return new Response("invalid app listing target", { status: 400 });
+      }
+      try {
+        await deleteRecord(
+          user.did,
+          session.pdsUrl,
+          ATSTORE_LISTING_NSID,
+          target.rkey,
+        );
+        await deleteAppRecord(target.uri);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return new Response(`ATStore listing delete failed: ${message}`, {
+          status: 502,
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     try {
       await deleteProfileRecord(user.did, session.pdsUrl);
     } catch (err) {
@@ -919,6 +981,17 @@ export const handler = define.handlers({
     });
   },
 });
+
+function ownedAtstoreTarget(
+  value: string,
+  did: string,
+): { uri: string; rkey: string } | null {
+  const prefix = `at://${did}/${ATSTORE_LISTING_NSID}/`;
+  if (!value.startsWith(prefix)) return null;
+  const rkey = value.slice(prefix.length);
+  if (!rkey || rkey.includes("/") || rkey.length > 512) return null;
+  return { uri: `${prefix}${rkey}`, rkey };
+}
 
 function appviewProxyError(err: unknown): Response {
   console.warn("[api/registry/profile] appview proxy failed:", err);

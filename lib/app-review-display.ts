@@ -24,7 +24,9 @@ export async function enrichAppMirroredReviews(
   const authorDids = uniqueDids(reviews.map((review) => review.authorDid));
   const [appUsers, profiles] = await Promise.all([
     listAppUsersByDids(authorDids).catch(() => new Map()),
-    listProfilesByDids(authorDids).catch(() => new Map()),
+    listProfilesByDids(authorDids, { profileType: "user" }).catch(() =>
+      new Map()
+    ),
   ]);
   const unresolvedDids = authorDids.filter((did) =>
     !appUsers.has(did) && !profiles.has(did)
@@ -44,18 +46,20 @@ export async function enrichAppMirroredReviews(
     const profile = profiles.get(review.authorDid) ?? null;
     const authorHandle = appUser?.handle ?? profile?.handle ??
       resolvedHandles.get(review.authorDid) ?? null;
-    const authorName = appUser?.displayName ?? profile?.name ?? null;
-    const authorAvatarUrl = appUser?.avatarCid && appUser.avatarMime
-      ? bskyCdnAvatarUrl(review.authorDid, appUser.avatarCid)
-      : profile?.avatarCid
+    const authorName = profile?.name ?? appUser?.displayName ?? null;
+    const authorAvatarUrl = profile?.avatarCid
       ? bskyCdnAvatarUrl(review.authorDid, profile.avatarCid)
+      : appUser?.avatarCid && appUser.avatarMime
+      ? bskyCdnAvatarUrl(review.authorDid, appUser.avatarCid)
       : null;
     return {
       ...review,
       authorHandle,
       authorName,
       authorAvatarUrl,
-      authorHref: microblogProfileHref(authorHandle),
+      authorHref: profile
+        ? `/users/${encodeURIComponent(profile.handle)}`
+        : microblogProfileHref(authorHandle),
     };
   });
 }

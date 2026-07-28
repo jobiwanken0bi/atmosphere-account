@@ -84,8 +84,8 @@ function SignInPageContent(
             <p class="text-eyebrow">Atmosphere Account</p>
             <h1 class="text-section">Use your account anywhere.</h1>
             <p class="text-body mt-2">
-              Continue with a saved account, search by handle, or choose a host
-              to create a new account.
+              Continue with a saved account, add another by handle, or choose a
+              host to create a new account.
             </p>
             <div class="glass signin-page-card">
               {isOAuthConfigured()

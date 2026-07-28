@@ -10,6 +10,8 @@ interface Props {
    * "Register an app" CTA while already signed in as a user.
    */
   initiallyOpen?: boolean;
+  /** Hide the standalone trigger when the modal is only a redirect target. */
+  showTrigger?: boolean;
   copy: {
     button: string;
     modalTitle: string;
@@ -24,7 +26,7 @@ interface Props {
 }
 
 export default function UpgradeToProjectModal(
-  { initiallyOpen = false, copy }: Props,
+  { initiallyOpen = false, showTrigger = true, copy }: Props,
 ) {
   /**
    * `open` always starts false so SSR never tries to evaluate
@@ -88,15 +90,17 @@ export default function UpgradeToProjectModal(
 
   return (
     <>
-      <button
-        type="button"
-        class="profile-form-button-secondary user-profile-upgrade-button"
-        onClick={() => {
-          open.value = true;
-        }}
-      >
-        {copy.button}
-      </button>
+      {showTrigger && (
+        <button
+          type="button"
+          class="profile-form-button-secondary user-profile-upgrade-button"
+          onClick={() => {
+            open.value = true;
+          }}
+        >
+          {copy.button}
+        </button>
+      )}
 
       {open.value && createPortal(
         <div

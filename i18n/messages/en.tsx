@@ -194,7 +194,6 @@ const en = {
       "No matter which account host you choose, your account works everywhere and you can move to a different host at any time — no data lost.",
     handleExplainer: {
       eyebrow: "Your handle travels with you",
-      title: "Your host can show up right in your handle.",
       body:
         "By default, your handle ends with your account host, like @you.bsky.social or @you.sprk.so. If you have your own domain, you can use that instead, like @you.com.",
       demoButton: "Continue with Atmosphere",
@@ -687,11 +686,8 @@ const en = {
       namePlaceholder: "e.g. Bluesky",
       descriptionLabel: "Short description",
       descriptionPlaceholder: "What does it do? Who’s it for?",
-      categoryLabel: "Category",
-      categoryHint:
-        "Choose App, Account Host, or both. Selected categories are shown as primary badges.",
-      subcategoriesLabel: "Subcategories (optional)",
-      subcategoriesHint: "For apps. Pick up to a few.",
+      subcategoriesLabel: "App categories (optional)",
+      subcategoriesHint: "Pick up to a few to help people discover your app.",
       avatarLabel: "App icon",
       avatarHint: "PNG, JPEG, or WebP. 1MB max. Square works best.",
       avatarAtstoreHint:
@@ -702,7 +698,7 @@ const en = {
         "Add an app icon before publishing. Shared ATStore app listings require one.",
       bannerLabel: "Add banner image",
       bannerHint:
-        "Shown at the top of your project page and used as the share preview when your link is posted (Bluesky, Twitter, etc.). Recommended 1200×630, PNG/JPEG/WebP, 3MB max.",
+        "Optional. Used on your app page and link previews. Recommended 1200×630; PNG, JPEG, or WebP; 3MB max.",
       bannerReplace: "Replace banner",
       bannerRemove: "Remove banner",
       bannerInvalidType: "Banner must be PNG, JPEG, or WebP.",
@@ -710,7 +706,6 @@ const en = {
       requiredHint: "Required",
       avatarTooLarge: "Avatar must be 1MB or smaller.",
       confirmDelete: "Remove this app listing from Apps?",
-      categoryRequired: "Pick at least one category.",
       atmosphereLinks: {
         sectionLabel: "Atmosphere links",
         sectionHint: (handle: string): VNode => (
@@ -747,8 +742,9 @@ const en = {
         cancel: "Cancel",
       },
       mainLink: {
-        sectionLabel: "Web link",
+        sectionLabel: "Web link (optional)",
         placeholder: "https://yourapp.com",
+        groupHint: "Add at least one destination: Web, iOS, or Android.",
         required: "Add at least one Web, iOS, or Android link.",
         invalid: "Web link must be a valid http(s) URL.",
       },
@@ -789,64 +785,6 @@ const en = {
         urlPlaceholder: "https://…",
         urlInvalid: "Custom link URLs must be valid http(s) URLs.",
         removeAriaLabel: "Remove link",
-      },
-      icon: {
-        sectionLabel: "Developer icon (SVG, optional)",
-        hint:
-          "Vector marks for developers — sign-in badges, app showcases, programmatic listings. Not shown on your project page. SVG only, 200KB max per variant. Both variants are optional and can be uploaded independently.",
-        upload: "Upload SVG",
-        replace: "Replace SVG",
-        remove: "Remove SVG",
-        colorLabel: "Color",
-        colorHint: "Your primary mark, used by default in badges and listings.",
-        bwLabel: "Black & white",
-        bwHint:
-          "Optional monochrome companion for light/dark badges, sign-in chrome, and print.",
-        bwUpload: "Upload B/W SVG",
-        bwReplace: "Replace B/W SVG",
-        bwRemove: "Remove B/W SVG",
-        viewOnDeveloperResources: "View project icons in docs",
-        invalidType: "Icon must be an SVG (image/svg+xml).",
-        tooLarge: "Icon must be 200KB or smaller.",
-        gate: {
-          /** Gate state when the project hasn’t requested verification yet. */
-          lockedTitle: "Verification required",
-          lockedBody:
-            "Verified projects get a checkmark on their listing and unlock SVG icon uploads for the developer API. Submit a request and an admin will review your project.",
-          requestButton: "Request Verification",
-          /** Disabled-button text shown before the user has published their profile. */
-          requestDisabledHint:
-            "Publish your app listing first, then come back here to request verification.",
-          /** Gate state while a request is sitting in the admin queue. */
-          pendingTitle: "Verification request pending",
-          pendingBody: (email: string): string =>
-            `An admin will review your request and reply to ${email}.`,
-          /** Gate state after admin denial. */
-          deniedTitle: "Verification denied",
-          deniedBody: (appealEmail: string, reason: string | null): string =>
-            reason
-              ? `An admin denied your verification request. Reason: ${reason}. To appeal, email ${appealEmail}.`
-              : `An admin denied your verification request. To appeal, email ${appealEmail}.`,
-          /** Gate state after admin grant — uploader unlocked. */
-          grantedHint:
-            "Your project is verified — a checkmark appears on your listing and SVG uploads are unlocked. Files are still sanitised on upload.",
-        },
-        /** Modal that collects a contact email for the verification request. */
-        requestModal: {
-          title: "Request verification",
-          body:
-            "An admin will review your project and reply by email. Verified projects get a checkmark on their listing and can upload an SVG icon for the developer API.",
-          emailLabel: "Contact email",
-          emailPlaceholder: "you@example.com",
-          submit: "Submit request",
-          cancel: "Cancel",
-          submitting: "Submitting…",
-          successTitle: "Request submitted",
-          successBody: "An admin will review your project and reply by email.",
-          invalidEmail: "Enter a valid email address.",
-          /** Generic failure surface — server text appended after. */
-          errorPrefix: "Couldn’t submit request",
-        },
       },
       profileUpdates: {
         eyebrow: "What’s New",

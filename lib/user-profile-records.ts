@@ -8,9 +8,9 @@ import { getRecordPublic, putProfileRecord } from "./pds.ts";
 import { upsertProfile } from "./registry.ts";
 
 /**
- * Legacy user-profile publisher. Ordinary reviewer sign-in no longer calls
- * this; normal review identity comes from ATProto/Bluesky profile data and
- * ATStore-compatible review records.
+ * On-demand Atmosphere user-profile publisher. Sign-in does not create this
+ * record automatically; microblog details remain the initial fallback until
+ * the account owner chooses to save an Atmosphere profile.
  */
 interface EnsureUserProfileRecordInput {
   did: string;

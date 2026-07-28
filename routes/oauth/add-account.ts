@@ -19,6 +19,7 @@ import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { clearSessionCookie, destroySession } from "../../lib/session.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
+import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 
 const MAX_ADD_ACCOUNT_BODY_BYTES = 8_192;
 
@@ -59,12 +60,14 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   }
   const signin = next ? `/signin?next=${encodeURIComponent(next)}` : "/signin";
   await destroySession(ctx.req).catch(() => {});
+  const headers = new Headers({
+    location: intent === "project" ? "/apps/create?intent=project" : signin,
+  });
+  headers.append("set-cookie", clearSessionCookie());
+  headers.append("set-cookie", clearPasskeyManagementCookie());
   return new Response(null, {
     status: 303,
-    headers: {
-      location: intent === "project" ? "/apps/create?intent=project" : signin,
-      "set-cookie": clearSessionCookie(),
-    },
+    headers,
   });
 }
 

@@ -257,6 +257,32 @@ export async function uploadBlob(
   return json.blob;
 }
 
+/**
+ * Publicly describe the collections currently present in a repository.
+ * This is useful for suggestions, but it is not proof of an app's complete
+ * read/write behavior: apps often write to their users' repositories and
+ * public reads leave no repository artifact at all.
+ */
+export async function describeRepoCollectionsPublic(
+  pdsUrl: string,
+  did: string,
+): Promise<string[]> {
+  const url = new URL(
+    `${normalizeServiceEndpoint(pdsUrl)}/xrpc/com.atproto.repo.describeRepo`,
+  );
+  url.searchParams.set("repo", did);
+  const res = await fetchWithTimeout(url.toString());
+  if (!res.ok) {
+    throw new Error(`describeRepo failed: HTTP ${res.status}`);
+  }
+  const body = await res.json() as { collections?: unknown };
+  return Array.isArray(body.collections)
+    ? body.collections.filter((item): item is string =>
+      typeof item === "string" && item.trim().length > 0
+    )
+    : [];
+}
+
 /** Fetch a record from any PDS without auth (records are public). */
 export async function getRecordPublic(
   pdsUrl: string,

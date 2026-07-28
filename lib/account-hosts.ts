@@ -409,6 +409,14 @@ const SEEDED_HOSTS: SeedHost[] = [
     description:
       "An independent account host for people who want a community-run home for their Atmosphere account.",
     homepageUrl: "https://selfhosted.social",
+    signupUrl: "https://selfhosted.social/signup",
+    serviceEndpoint: "https://selfhosted.social",
+    capabilitiesJson: JSON.stringify([{
+      id: "account.atmosphere.host.defs#capabilityOAuthAccountCreation",
+      status: "account.atmosphere.host.defs#capabilitySupported",
+      url: "https://selfhosted.social/signup",
+      note: "Supports OAuth prompt=create account creation.",
+    }]),
     profileHandle: "selfhosted.social",
     claimHandle: "selfhosted.social",
     signupStatus: "open",

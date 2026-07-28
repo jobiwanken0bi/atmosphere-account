@@ -25,6 +25,8 @@ import { appHrefForHost } from "../../../../lib/directory-identity-links.ts";
 import { proxyAppviewPageResponse } from "../../../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../../../lib/security.ts";
+import { loadManagedAppPortfolio } from "../../../../lib/managed-products.ts";
+import { loadSession } from "../../../../lib/oauth.ts";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -143,18 +145,28 @@ async function renderForOwner(
 ) {
   const host = await loadOwnedHost(ctx);
   if (host instanceof Response) return host;
-  const [links, inferredApp] = await Promise.all([
+  const session = await loadSession(ctx.state.user!.did).catch(() => null);
+  const [links, inferredApp, portfolio] = await Promise.all([
     listDirectoryEntityLinksForHost(host.host).catch(() => []),
     host.profileDid
       ? getVisibleAppListingByAccountDid(host.profileDid, { syncLegacy: false })
         .catch(() => null)
       : Promise.resolve(null),
+    loadManagedAppPortfolio({
+      did: ctx.state.user!.did,
+      pdsUrl: session?.pdsUrl,
+    }).catch(() => ({
+      apps: [],
+      discoveredAtstoreCount: 0,
+      syncUnavailable: true,
+    })),
   ]);
   return ctx.render(
     <HostAppRelationshipsPage
       host={host}
       links={links}
       inferredApp={inferredApp}
+      ownedApps={portfolio.apps}
       account={buildAccountMenuProps(ctx.state)}
       error={message.error}
       success={message.success}
@@ -187,11 +199,13 @@ function HostAppRelationshipsPage(props: {
   host: AccountHost;
   links: DirectoryEntityAppLink[];
   inferredApp: AppListing | null;
+  ownedApps: AppListing[];
   account: ReturnType<typeof buildAccountMenuProps>;
   error: string | null;
   success: string | null;
 }) {
-  const { host, links, inferredApp, account, error, success } = props;
+  const { host, links, inferredApp, ownedApps, account, error, success } =
+    props;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -289,11 +303,25 @@ function HostAppRelationshipsPage(props: {
                     <input
                       class="profile-form-input"
                       name="appIdentifier"
-                      value={inferredApp?.slug ?? ""}
+                      value={inferredApp?.slug ?? ownedApps[0]?.slug ?? ""}
+                      list="managed-app-options"
                       placeholder="App name, handle, or URL"
                       autoComplete="off"
                       required
                     />
+                    {ownedApps.length > 0 && (
+                      <datalist id="managed-app-options">
+                        {ownedApps.map((app) => (
+                          <option value={app.slug}>{app.name}</option>
+                        ))}
+                      </datalist>
+                    )}
+                    {ownedApps.length > 0 && (
+                      <span class="profile-form-hint">
+                        Your managed apps are suggested first. You can still
+                        enter an app controlled by another account.
+                      </span>
+                    )}
                   </label>
                   <label class="profile-form-field">
                     <span class="profile-form-label">Relationship</span>

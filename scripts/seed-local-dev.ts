@@ -8,13 +8,32 @@ Deno.env.delete("NEON_DIRECT_DATABASE_URL");
 
 const { ATSTORE_LISTING_NSID } = await import("../lib/app-lexicons.ts");
 const {
+  deleteAppRecord,
   rescoreAppDirectoryTrending,
   upsertAppRecordFromDraft,
 } = await import("../lib/app-directory.ts");
-const { listAccountHosts } = await import("../lib/account-hosts.ts");
+const { listAccountHosts, registerAccountHost } = await import(
+  "../lib/account-hosts.ts"
+);
+const { setAppUserType } = await import("../lib/account-types.ts");
 const { withDb } = await import("../lib/db.ts");
+const { HOST_SERVICE_NSID } = await import("../lib/lexicons.ts");
+const { upsertProfile } = await import("../lib/registry.ts");
 
 const now = Date.now();
+
+const comparisonAccounts = {
+  app: {
+    did: "did:plc:localdevfieldnotesapp",
+    handle: "field-notes.test",
+    displayName: "Field Notes",
+  },
+  host: {
+    did: "did:plc:localdevharborhost",
+    handle: "harbor-host.test",
+    displayName: "Harbor Host",
+  },
+} as const;
 
 // Representative UI fixtures only; these are intentionally not production
 // inventory figures. The spread makes count formatting, sorting, and card
@@ -34,6 +53,7 @@ const hostAccountCounts = [
   ["pckt.cafe", 1_275],
   ["margin.cafe", 2_340],
   ["npmx.social", 915],
+  [comparisonAccounts.host.handle, 128],
 ] as const;
 
 const apps = [
@@ -168,11 +188,101 @@ const apps = [
     collections: ["social"],
     tags: ["social", "community"],
   },
+  {
+    slug: comparisonAccounts.app.handle,
+    name: comparisonAccounts.app.displayName,
+    tagline: "A calm, collaborative notebook for the Atmosphere.",
+    description:
+      "Capture notes, publish shared notebooks, and keep your work attached to the same account across the open network.",
+    url: "https://field-notes.test",
+    profile: `https://bsky.app/profile/${comparisonAccounts.app.handle}`,
+    productDid: comparisonAccounts.app.did,
+    collections: ["work", "creative"],
+    tags: ["notes", "collaboration"],
+  },
+  {
+    slug: "field-notes-capture.test",
+    name: "Field Notes Capture",
+    tagline: "A focused capture companion for Field Notes.",
+    description:
+      "A second ATStore app owned by the Field Notes account, included locally to exercise multi-app management and shared host relationships.",
+    url: "https://capture.field-notes.test",
+    profile: "https://bsky.app/profile/field-notes.test",
+    productDid: comparisonAccounts.app.did,
+    collections: ["work"],
+    tags: ["notes", "capture"],
+  },
 ] as const;
 
 const listingIds: string[] = [];
 
 await listAccountHosts();
+
+await Promise.all([
+  setAppUserType({
+    ...comparisonAccounts.app,
+    bio:
+      "The app account for Field Notes. It publishes the product profile shown in the app directory.",
+    accountType: "project",
+  }),
+  setAppUserType({
+    ...comparisonAccounts.host,
+    bio:
+      "The operator account for Harbor Host. It manages an account-host profile rather than an app listing.",
+    accountType: "user",
+  }),
+  upsertProfile({
+    did: comparisonAccounts.app.did,
+    handle: comparisonAccounts.app.handle,
+    profileType: "project",
+    name: comparisonAccounts.app.displayName,
+    description:
+      "Capture notes, publish shared notebooks, and keep your work attached to the same account across the open network.",
+    mainLink: "https://field-notes.test",
+    iosLink: null,
+    androidLink: null,
+    categories: ["app"],
+    subcategories: ["productivity", "community"],
+    links: [
+      { kind: "bsky", clientId: "bsky" },
+      {
+        kind: "custom",
+        label: "Field Notes website",
+        url: "https://field-notes.test",
+      },
+    ],
+    lexicons: { produces: [], consumes: [] },
+    accountIndicators: [],
+    screenshots: [],
+    pdsUrl: "https://field-notes.test",
+    recordCid: "local-field-notes-profile",
+    recordRev: "local-field-notes-profile",
+    createdAt: now,
+  }),
+]);
+
+const comparisonHost = await registerAccountHost({
+  host: comparisonAccounts.host.handle,
+  displayName: comparisonAccounts.host.displayName,
+  description:
+    "An independent account host that keeps identities and data online for people using Atmosphere apps.",
+  dataLocation: "United States",
+  homepageUrl: "https://harbor-host.test",
+  signupUrl: "https://harbor-host.test/join",
+  accountManagementUrl: "https://harbor-host.test/account",
+  supportUrl: "https://harbor-host.test/support",
+  signupStatus: "open",
+  profileHandle: comparisonAccounts.host.handle,
+  bskyProfileVisible: false,
+  serviceRecordUri:
+    `at://${comparisonAccounts.host.did}/${HOST_SERVICE_NSID}/${comparisonAccounts.host.handle}`,
+  serviceRecordCid: "local-harbor-host-service",
+}, comparisonAccounts.host);
+if (!comparisonHost.ok) {
+  throw new Error(
+    `[dev:seed] could not seed comparison host: ${comparisonHost.message}`,
+  );
+}
 
 for (const app of apps) {
   const repoDid = `did:plc:localdev${app.slug.replace(/[^a-z0-9]/g, "")}`;
@@ -222,6 +332,12 @@ for (const app of apps) {
     createdAt: now - apps.indexOf(app) * 86_400_000,
     updatedAt: now - apps.indexOf(app) * 43_200_000,
   };
+  // This fixture intentionally shares an owner with Field Notes. Clear its
+  // prior local index row so older dev databases that used DID identity can
+  // be split cleanly into two app listings.
+  if (app.slug === "field-notes-capture.test") {
+    await deleteAppRecord(sourceUri);
+  }
   const listingId = await upsertAppRecordFromDraft({
     draft,
     rawRecord: {
@@ -349,5 +465,5 @@ await withDb(async (c) => {
 await rescoreAppDirectoryTrending();
 
 console.log(
-  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), one detected unclaimed host, and refreshed seeded hosts in local.db`,
+  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), one app/host profile comparison pair, one detected unclaimed host, and refreshed seeded hosts in local.db`,
 );

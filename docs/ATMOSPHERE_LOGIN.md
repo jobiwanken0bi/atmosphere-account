@@ -67,10 +67,12 @@ open the picker.
 “Add another account” expands the full sign-in flow inside the picker, so the
 requesting app and return path remain in place. Its Create Account tab searches
 the grouped account-host directory by host name, domain, description, or
-location. Open-signup and invite-accepting hosts are included by default and can
-be filtered independently. Atmosphere never asks for an invite code: signup and
-invite-code entry happen on the selected host's own page in a new browser tab,
-and the user returns to the preserved picker to select the new account. Picker
+location. Only hosts that explicitly advertise direct OAuth account creation are
+offered. Atmosphere starts OAuth from that host with `prompt=create`; the host
+owns signup, invite-code entry, credentials, and recovery, then returns the new
+account to the picker. The picker immediately hands the account back to the
+requesting app, which starts its own AT Protocol OAuth flow. Atmosphere requests
+only the authentication-level `atproto` scope for this picker leg. Picker
 results must also be recently active or directly reachable, claimed, verified,
 or seeded, and backed by a safe public HTTPS signup URL. Raw relay-observed
 personal PDSes are never offered as account-creation providers.
@@ -85,6 +87,30 @@ host.
 For local visual testing, `GET /dev/login-picker` seeds four fictional saved
 accounts with profile portraits and opens the redirect picker. The route and its
 avatar mapping are disabled in hosted production environments.
+
+## Passkey-assisted selection
+
+Atmosphere may offer a passkey as a faster way to authenticate a saved account
+and confirm its selection in the picker. A passkey is enrolled only after an AT
+Protocol OAuth login that capability-gates and sends `prompt=login`, and is
+bound to the account's immutable DID. Hosts that do not advertise that prompt
+cannot issue the short-lived passkey-management proof. Production credentials
+are scoped strictly to RP ID `login.atmosphereaccount.com` and origin
+`https://login.atmosphereaccount.com`.
+
+The passkey authenticates the user to **Atmosphere Login**, not to the
+destination app or the account's PDS. After a successful Face ID, Touch ID,
+device-PIN, or security-key assertion, Atmosphere returns the same short-lived
+selection token described below. The destination app must verify it and still
+start its own AT Protocol OAuth flow. The passkey neither transfers Atmosphere's
+PDS grant nor approves the app's requested PDS permissions.
+
+Enrollment is explicit, never silent. Credentials are discoverable, require user
+verification, and request no attestation. Existing OAuth selection remains the
+fallback for unsupported browsers, cancelled ceremonies, recovery, expired
+links, and revoked credentials. See
+[Passkeys in Atmosphere Login](./PASSKEYS.md) for the full architecture, threat
+model, recovery policy, and official sources.
 
 ## Selection Token
 
@@ -162,10 +188,13 @@ const result = await verifyAtmosphereSelectionToken({
 Atmosphere Login is an account picker and signed handoff. It is not:
 
 - an OAuth token exchange service,
+- a passkey-based substitute for an app-owned PDS OAuth grant or consent,
 - a grant revocation authority,
 - a device or session manager,
 - a password, recovery, or account deletion surface,
 - a key backup service,
 - a PDS migration proxy.
 
-Those operations belong to the user's account host.
+An Atmosphere passkey can authenticate and confirm account selection at the
+picker. OAuth authorization, PDS tokens, app sessions, account-host credentials,
+and host-owned recovery remain outside that passkey's authority.

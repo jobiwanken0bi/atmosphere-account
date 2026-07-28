@@ -20,6 +20,14 @@ import {
   verifyHostClaimDomainProof,
 } from "../../../lib/host-claim-proof.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import {
+  type AppListing,
+  getAppListingById,
+} from "../../../lib/app-directory.ts";
+import {
+  defineDirectoryEntityLink,
+  userControlsAppListing,
+} from "../../../lib/directory-entity-links.ts";
 
 type ClaimState =
   | "ready"
@@ -37,6 +45,12 @@ interface ClaimPageProps {
   activeHandle: string | null;
   error: string | null;
   account: ReturnType<typeof buildAccountMenuProps>;
+  linkContext: HostClaimLinkContext | null;
+}
+
+interface HostClaimLinkContext {
+  app: AppListing;
+  relationship: "same_product" | "same_operator";
 }
 
 export const handler = define.handlers({
@@ -65,6 +79,7 @@ export const handler = define.handlers({
           activeHandle={ctx.state.user?.handle ?? null}
           error="Host not found."
           account={buildAccountMenuProps(ctx.state)}
+          linkContext={null}
         />,
         { status: 404 },
       );
@@ -72,10 +87,12 @@ export const handler = define.handlers({
     if (!ctx.state.user) {
       return redirectToSignin(host.host, ctx.url);
     }
+    const linkContext = await loadLinkContext(ctx.state.user, ctx.url);
     const page = await buildClaimPageProps(
       host,
       ctx.state.user,
       buildAccountMenuProps(ctx.state),
+      linkContext,
     );
     return ctx.render(<HostClaimPage {...page} />);
   },
@@ -94,8 +111,24 @@ export const handler = define.handlers({
     if (!ctx.state.user) {
       return redirectToSignin(host.host, ctx.url);
     }
+    const linkContext = await loadLinkContext(ctx.state.user, ctx.url);
     const result = await claimAccountHost(host.host, ctx.state.user);
     if (result.ok) {
+      if (linkContext) {
+        const linked = await defineDirectoryEntityLink({
+          host: result.host.host,
+          app: linkContext.app,
+          relationship: linkContext.relationship,
+          approvedBy: "app",
+          currentDid: ctx.state.user.did,
+        }).catch(() => ({ ok: false as const }));
+        const search = new URLSearchParams({ app: linkContext.app.id });
+        search.set(linked.ok ? "saved" : "linkError", "1");
+        return new Response(null, {
+          status: 303,
+          headers: { location: `/apps/manage/host?${search}` },
+        });
+      }
       return new Response(null, {
         status: 303,
         headers: {
@@ -107,6 +140,7 @@ export const handler = define.handlers({
       result.host ?? host,
       ctx.state.user,
       buildAccountMenuProps(ctx.state),
+      linkContext,
       result.reason === "already_claimed"
         ? "This host has already been claimed."
         : result.reason === "not_authorized"
@@ -132,6 +166,7 @@ async function buildClaimPageProps(
   host: AccountHost,
   user: { did: string; handle: string },
   account: ReturnType<typeof buildAccountMenuProps>,
+  linkContext: HostClaimLinkContext | null,
   error: string | null = null,
 ): Promise<ClaimPageProps> {
   const [claim, authority] = await Promise.all([
@@ -159,11 +194,12 @@ async function buildClaimPageProps(
     activeHandle: user.handle,
     error,
     account,
+    linkContext,
   };
 }
 
 function redirectToSignin(host: string, url: URL): Response {
-  const next = `/hosts/${encodeURIComponent(host)}/claim`;
+  const next = `/hosts/${encodeURIComponent(host)}/claim${url.search}`;
   const signin = new URL("/signin", url.origin);
   signin.searchParams.set("next", next);
   return new Response(null, {
@@ -173,7 +209,16 @@ function redirectToSignin(host: string, url: URL): Response {
 }
 
 function HostClaimPage(props: ClaimPageProps) {
-  const { host, claim, authority, state, activeHandle, error, account } = props;
+  const {
+    host,
+    claim,
+    authority,
+    state,
+    activeHandle,
+    error,
+    account,
+    linkContext,
+  } = props;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -203,9 +248,9 @@ function HostClaimPage(props: ClaimPageProps) {
                       </div>
                     </div>
                     <p class="text-body host-claim-copy">
-                      Claiming a host proves control of the ATProto account tied
-                      to this listing. Once claimed, that account can manage the
-                      host details here.
+                      {linkContext
+                        ? `Claiming this host proves control and connects it to ${linkContext.app.name} in the same flow.`
+                        : "Claiming a host proves control of the ATProto account tied to this listing. Once claimed, that account can manage the host details here."}
                     </p>
                     <ClaimBody
                       host={host}
@@ -214,6 +259,7 @@ function HostClaimPage(props: ClaimPageProps) {
                       state={state}
                       activeHandle={activeHandle}
                       error={error}
+                      linkContext={linkContext}
                     />
                   </>
                 )
@@ -236,13 +282,14 @@ function HostClaimPage(props: ClaimPageProps) {
 }
 
 function ClaimBody(
-  { host, claim, authority, state, activeHandle, error }: {
+  { host, claim, authority, state, activeHandle, error, linkContext }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
     authority: AccountHostClaimAuthority | null;
     state: ClaimState;
     activeHandle: string | null;
     error: string | null;
+    linkContext: HostClaimLinkContext | null;
   },
 ) {
   if (state === "claimed-by-you") {
@@ -254,6 +301,13 @@ function ClaimBody(
         <p class="text-body">
           This account is already managing {host.displayName}.
         </p>
+        {linkContext && (
+          <form method="POST">
+            <button type="submit" class="directory-register-button">
+              Connect to {linkContext.app.name}
+            </button>
+          </form>
+        )}
       </div>
     );
   }
@@ -288,7 +342,9 @@ function ClaimBody(
           <span class="directory-register-button-icon" aria-hidden="true">
             +
           </span>
-          <span>Claim this host</span>
+          <span>
+            {linkContext ? "Claim and connect host" : "Claim this host"}
+          </span>
         </button>
       </form>
     );
@@ -310,7 +366,7 @@ function ClaimBody(
         <a
           class="directory-register-button host-claim-secondary-action"
           href={`/oauth/add-account?next=${
-            encodeURIComponent(`/hosts/${encodeURIComponent(host.host)}/claim`)
+            encodeURIComponent(claimPathForContext(host.host, linkContext))
           }`}
         >
           <span class="directory-register-button-icon" aria-hidden="true">
@@ -341,4 +397,33 @@ function ClaimBody(
       </a>
     </div>
   );
+}
+
+function claimPathForContext(
+  host: string,
+  linkContext: HostClaimLinkContext | null,
+): string {
+  const path = `/hosts/${encodeURIComponent(host)}/claim`;
+  if (!linkContext) return path;
+  const search = new URLSearchParams({
+    app: linkContext.app.id,
+    relationship: linkContext.relationship,
+  });
+  return `${path}?${search}`;
+}
+
+async function loadLinkContext(
+  user: { did: string },
+  url: URL,
+): Promise<HostClaimLinkContext | null> {
+  const id = url.searchParams.get("app")?.trim();
+  if (!id) return null;
+  const app = await getAppListingById(id).catch(() => null);
+  if (!app || !userControlsAppListing(app, user.did)) return null;
+  return {
+    app,
+    relationship: url.searchParams.get("relationship") === "same_operator"
+      ? "same_operator"
+      : "same_product",
+  };
 }

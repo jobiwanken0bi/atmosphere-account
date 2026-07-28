@@ -2,16 +2,19 @@ import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import CreateProfileForm from "../../islands/CreateProfileForm.tsx";
-import ProfileUpdateEditor from "../../islands/ProfileUpdateEditor.tsx";
 import AtstoreMigrationButton from "../../islands/AtstoreMigrationButton.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { loadSession } from "../../lib/oauth.ts";
-import { getBskyProfile } from "../../lib/pds.ts";
+import {
+  describeRepoCollectionsPublic,
+  getBskyProfile,
+  getProfileRecord,
+  getRecordPublic,
+} from "../../lib/pds.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
-import { listProfileUpdates } from "../../lib/profile-updates.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import ShareButton from "../../islands/ShareButton.tsx";
 import {
@@ -21,10 +24,18 @@ import {
   getAtstoreMigrationReadiness,
 } from "../../lib/atstore-migration.ts";
 import { findExistingCommunityAppProfile } from "../../lib/community-app-profile.ts";
-import { getAppListingByIdentifier } from "../../lib/app-directory.ts";
-import { getProfileRecord } from "../../lib/pds.ts";
+import {
+  getAppListingById,
+  getAppListingByIdentifier,
+} from "../../lib/app-directory.ts";
+import { ATSTORE_LISTING_NSID } from "../../lib/app-lexicons.ts";
 import type { AccountIndicator, LexiconInterop } from "../../lib/lexicons.ts";
 import type { BlobRef, LinkEntry } from "../../lib/lexicons.ts";
+import {
+  type CollectionSuggestion,
+  listCollectionSuggestions,
+} from "../../lib/collection-catalog.ts";
+import { userControlsAppListing } from "../../lib/directory-entity-links.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -56,6 +67,7 @@ export const handler = define.handlers({
         headers: { location: "/account?upgrade=app" },
       });
     }
+    const creatingAdditionalApp = ctx.url.searchParams.get("new") === "1";
 
     const t = getMessages(ctx.state.locale);
 
@@ -70,6 +82,8 @@ export const handler = define.handlers({
     let remoteAtstoreListingUri: string | null = null;
     let atstoreMigrationIssues: string[] = [];
     let atstoreMigrationPreview: AtstoreMigrationPreview | null = null;
+    let selectedManagedApp: Awaited<ReturnType<typeof getAppListingById>> =
+      null;
     /** Owner-aware lookup: include taken-down rows so the form can
      *  surface a "Your profile has been taken down" banner with the
      *  admin reason instead of pretending no profile exists. */
@@ -205,20 +219,60 @@ export const handler = define.handlers({
       }
     }
 
+    const requestedAppId = ctx.url.searchParams.get("app")?.trim();
+    if (requestedAppId && session) {
+      const candidate = await getAppListingById(requestedAppId).catch(() =>
+        null
+      );
+      const ownedRecordPrefix = `at://${user.did}/`;
+      if (
+        candidate && userControlsAppListing(candidate, user.did) &&
+        candidate.atstoreListingUri?.startsWith(ownedRecordPrefix)
+      ) {
+        const rkey = candidate.atstoreListingUri.split("/").at(-1) ?? "";
+        const record = rkey
+          ? await getRecordPublic(
+            session.pdsUrl,
+            user.did,
+            ATSTORE_LISTING_NSID,
+            rkey,
+          ).catch(() => null)
+          : null;
+        const selectedInitial = record
+          ? initialFromAtstoreRecord(record.value, user.did)
+          : null;
+        if (selectedInitial) {
+          selectedManagedApp = candidate;
+          initial = selectedInitial.initial;
+          initialAvatarUrl = selectedInitial.initialAvatarUrl;
+          initialBannerUrl = selectedInitial.initialBannerUrl;
+          hasAtstoreListing = true;
+          atstoreListingUri = candidate.atstoreListingUri;
+          remoteAtstoreListingUri = null;
+          atstoreMigrationIssues = [];
+          atstoreMigrationPreview = null;
+        }
+      }
+    }
+
     /** Surface profile-level takedowns to the owner so they understand
      *  why edits won't publish. The PUT endpoint also returns 403 in
      *  this state, but a banner is much friendlier than a thrown
      *  error after Publish. */
-    const takedown = existing?.takedownStatus === "taken_down"
+    const takedown = !selectedManagedApp &&
+        existing?.takedownStatus === "taken_down"
       ? {
         reason: existing.takedownReason ?? "",
         at: existing.takedownAt,
       }
       : null;
 
-    const publicProfileHandle = takedown
+    const publicProfileHandle = creatingAdditionalApp
       ? null
-      : existing?.handle ?? (hasAtstoreListing ? user.handle : null);
+      : takedown
+      ? null
+      : selectedManagedApp?.slug ?? existing?.handle ??
+        (hasAtstoreListing ? user.handle : null);
     /**
      * Trailing slash is intentional — see the long comment in
      * routes/apps/[handle].tsx. Bluesky's composer otherwise treats
@@ -234,36 +288,43 @@ export const handler = define.handlers({
       initial?.name?.trim() ||
       publicProfileHandle ||
       user.handle).trim();
-    const updates = existing
-      ? await listProfileUpdates(user.did, { limit: 8 }).catch(() => [])
+    const detectedCollections = session
+      ? await describeRepoCollectionsPublic(session.pdsUrl, user.did).catch(
+        () => [],
+      )
       : [];
+    const collectionSuggestions = await listCollectionSuggestions(
+      detectedCollections,
+    );
+    const managedAppListing = creatingAdditionalApp
+      ? null
+      : selectedManagedApp ?? await getAppListingByIdentifier(user.did, {
+        syncLegacy: false,
+      }).catch(() => null);
     return ctx.render(
       <ManagePage
         user={user}
         account={buildAccountMenuProps(ctx.state, publicProfileHandle)}
-        initial={initial}
-        initialAvatarUrl={initialAvatarUrl}
-        initialBannerUrl={initialBannerUrl}
-        initialPublished={!!(existing || hasAtstoreListing) && !takedown}
+        initial={creatingAdditionalApp ? null : initial}
+        initialAvatarUrl={creatingAdditionalApp ? null : initialAvatarUrl}
+        initialBannerUrl={creatingAdditionalApp ? null : initialBannerUrl}
+        initialPublished={creatingAdditionalApp
+          ? false
+          : !!(existing || hasAtstoreListing) && !takedown}
+        collectionSuggestions={collectionSuggestions}
         publicProfileHandle={publicProfileHandle}
         shareUrl={shareUrl}
         shareTitleName={shareTitleName}
-        updates={updates.map((update) => ({
-          rkey: update.rkey,
-          title: update.title,
-          body: update.body,
-          version: update.version,
-          tangledCommitUrl: update.tangledCommitUrl,
-          createdAt: update.createdAt,
-        }))}
-        showUpdates={!!existing}
-        atstoreListingUri={atstoreListingUri}
+        atstoreListingUri={creatingAdditionalApp ? null : atstoreListingUri}
         remoteAtstoreListingUri={remoteAtstoreListingUri}
         atstoreMigrationIssues={atstoreMigrationIssues}
         atstoreMigrationPreview={atstoreMigrationPreview}
-        showAtstoreMigration={!!existing && !takedown}
+        showAtstoreMigration={!creatingAdditionalApp && !selectedManagedApp &&
+          !!existing && !takedown}
         migrationFocus={ctx.url.searchParams.get("migrate") ===
           "shared-records"}
+        managedAppListingId={managedAppListing?.id ?? null}
+        createNewListing={creatingAdditionalApp}
         takedown={takedown}
         t={t}
       />,
@@ -515,19 +576,20 @@ interface ManagePageProps {
   initialAvatarUrl: string | null;
   initialBannerUrl: string | null;
   initialPublished: boolean;
+  collectionSuggestions: CollectionSuggestion[];
   publicProfileHandle: string | null;
   /** Absolute project page URL when published; null if no live listing yet. */
   shareUrl: string | null;
   /** Display name for native share / clipboard context. */
   shareTitleName: string;
-  updates: Parameters<typeof ProfileUpdateEditor>[0]["initialUpdates"];
-  showUpdates: boolean;
   atstoreListingUri: string | null;
   remoteAtstoreListingUri: string | null;
   atstoreMigrationIssues: string[];
   atstoreMigrationPreview: AtstoreMigrationPreview | null;
   showAtstoreMigration: boolean;
   migrationFocus: boolean;
+  managedAppListingId: string | null;
+  createNewListing: boolean;
   takedown: { reason: string; at: number | null } | null;
   // deno-lint-ignore no-explicit-any
   t: any;
@@ -541,17 +603,18 @@ function ManagePage(
     initialAvatarUrl,
     initialBannerUrl,
     initialPublished,
+    collectionSuggestions,
     publicProfileHandle,
     shareUrl,
     shareTitleName,
-    updates,
-    showUpdates,
     atstoreListingUri,
     remoteAtstoreListingUri,
     atstoreMigrationIssues,
     atstoreMigrationPreview,
     showAtstoreMigration,
     migrationFocus,
+    managedAppListingId,
+    createNewListing,
     takedown,
     t,
   }: ManagePageProps,
@@ -567,8 +630,16 @@ function ManagePage(
           <div class="container" style={{ maxWidth: "920px" }}>
             <div class="manage-header">
               <div>
-                <h1 class="text-section">{explore.manage.headline}</h1>
-                <p class="text-body mt-2">{explore.manage.subhead}</p>
+                <h1 class="text-section">
+                  {createNewListing
+                    ? "Register another app"
+                    : explore.manage.headline}
+                </h1>
+                <p class="text-body mt-2">
+                  {createNewListing
+                    ? "Create a separate ATStore app record under this owner account. After publishing, you can register or connect its account host in the same flow."
+                    : explore.manage.subhead}
+                </p>
               </div>
               {shareUrl && (
                 <ShareButton
@@ -606,20 +677,44 @@ function ManagePage(
                 remoteAtstoreListingUri={remoteAtstoreListingUri}
                 publicProfileHandle={publicProfileHandle}
               />
-              {initialPublished && (
+              {!createNewListing && (
                 <section class="glass directory-relationship-entry owner-app-relationship-entry">
                   <div>
-                    <p class="text-eyebrow">Host identity</p>
-                    <h2>Connect this app to an account host</h2>
+                    <p class="text-eyebrow">Account hosting</p>
+                    <h2>Add account hosting</h2>
                     <p>
-                      Define whether the host is part of this product or run by
-                      the same organization. A different host account must
-                      approve the connection before it appears publicly.
+                      The app and host keep separate public profiles, while the
+                      owner workspace connects them as the same product or as
+                      services run by the same organization.
                     </p>
                   </div>
-                  <a class="directory-register-button" href="/apps/manage/host">
-                    Manage host connection
-                  </a>
+                  <div class="owner-app-relationship-actions">
+                    <a
+                      class="directory-register-button"
+                      href={managedAppListingId
+                        ? `/hosts/register?app=${
+                          encodeURIComponent(managedAppListingId)
+                        }&relationship=same_product`
+                        : "/hosts/register"}
+                    >
+                      Register a new host
+                    </a>
+                    {initialPublished && (
+                      <a
+                        class="directory-register-button"
+                        href={managedAppListingId
+                          ? `/apps/manage/host?app=${
+                            encodeURIComponent(managedAppListingId)
+                          }`
+                          : "/apps/manage/host"}
+                      >
+                        Connect existing host
+                      </a>
+                    )}
+                    <a class="text-link-button" href="/account/products">
+                      View all managed products
+                    </a>
+                  </div>
                 </section>
               )}
               {showAtstoreMigration && migrationFocus && (
@@ -637,27 +732,13 @@ function ManagePage(
                 initialAvatarUrl={initialAvatarUrl}
                 initialBannerUrl={initialBannerUrl}
                 initialPublished={initialPublished}
+                collectionSuggestions={collectionSuggestions}
                 publicProfileHandle={publicProfileHandle}
+                managedAppIdentifier={managedAppListingId}
+                createNewListing={createNewListing}
+                atstoreListingUri={atstoreListingUri}
               />
             </div>
-
-            {showAtstoreMigration && !migrationFocus && (
-              <MigrationSection
-                atstoreListingUri={atstoreListingUri}
-                remoteAtstoreListingUri={remoteAtstoreListingUri}
-                atstoreMigrationIssues={atstoreMigrationIssues}
-                atstoreMigrationPreview={atstoreMigrationPreview}
-              />
-            )}
-
-            {showUpdates && (
-              <div style={{ marginTop: "1.25rem" }}>
-                <ProfileUpdateEditor
-                  initialUpdates={updates}
-                  disabled={!initialPublished || !!takedown}
-                />
-              </div>
-            )}
           </div>
         </section>
         <Footer variant="compact" />
@@ -769,7 +850,9 @@ function OwnerAppSummary(
             hasDestination ? "is-ready" : "needs-work"
           }`}
         >
-          {hasDestination ? "Destination link ready" : "Needs Web/iOS/Android"}
+          {hasDestination
+            ? "Destination link ready"
+            : "Add one destination link"}
         </span>
         {publicProfileHandle && (
           <a

@@ -34,6 +34,9 @@ import {
   browserHandoffResponse,
   wantsBrowserHandoffJson,
 } from "../../lib/browser-handoff.ts";
+import { devPickerAccountForDid } from "../../lib/dev-picker-demo.ts";
+import { IS_DEV } from "../../lib/env.ts";
+import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 
 const SWITCH_SESSION_TIMEOUT_MS = 5_000;
 const MAX_SWITCH_BODY_BYTES = 8_192;
@@ -95,9 +98,19 @@ function redirectToReauth(
   handle: string,
   next: string | null,
 ): Response {
+  const headers = new Headers();
+  headers.append("set-cookie", clearPasskeyManagementCookie());
   return browserHandoffResponse(buildSwitchReauthLocation(handle, next), {
     json: wantsBrowserHandoffJson(req),
+    headers,
   });
+}
+
+function switchedSessionHeaders(sessionCookie: string): Headers {
+  const headers = new Headers();
+  headers.append("set-cookie", sessionCookie);
+  headers.append("set-cookie", clearPasskeyManagementCookie());
+  return headers;
 }
 
 async function withTimeout<T>(
@@ -149,6 +162,29 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     );
   }
 
+  /**
+   * The local picker demo deliberately uses synthetic handles and DIDs. They
+   * have no public DNS record or OAuth refresh session, so sending them
+   * through the normal re-auth fallback can only end in handle-resolution
+   * failure. The remembered-account cookie is signed, and this shortcut is
+   * disabled outside local development.
+   */
+  const devAccount = IS_DEV ? devPickerAccountForDid(target.did) : null;
+  if (
+    devAccount &&
+    devAccount.handle.toLowerCase() === target.handle.toLowerCase()
+  ) {
+    await destroySession(ctx.req).catch(() => {});
+    const cookieValue = await createSession({
+      did: devAccount.did,
+      handle: devAccount.handle,
+    });
+    return browserHandoffResponse(next ?? "/account", {
+      json: wantsJson,
+      headers: switchedSessionHeaders(buildSessionCookie(cookieValue)),
+    });
+  }
+
   /** Try refreshing the OAuth tokens for this DID. If anything goes
    *  wrong (revoked refresh token, server-side row evicted, PDS
    *  unreachable) bounce to /oauth/login with a login_hint so the
@@ -182,7 +218,7 @@ async function handle(ctx: { req: Request }): Promise<Response> {
         : "/account/type"),
     {
       json: wantsJson,
-      headers: { "set-cookie": buildSessionCookie(cookieValue) },
+      headers: switchedSessionHeaders(buildSessionCookie(cookieValue)),
     },
   );
 }

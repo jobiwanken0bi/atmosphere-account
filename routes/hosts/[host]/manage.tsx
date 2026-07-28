@@ -564,9 +564,11 @@ function HostManagePage(props: HostManagePageProps) {
                       </div>
                     </div>
                     <p class="text-body host-claim-copy">
-                      Edit the public host profile and account-page routing.
-                      Atmosphere shows the friendly listing; the host remains
-                      the authority for account controls.
+                      Atmosphere is a router, not an account manager. You
+                      control three things: where new people sign up with you,
+                      where Atmosphere sends your users to manage their account,
+                      and how your listing looks. The controls themselves stay
+                      on your own host.
                     </p>
                     <ManageBody
                       host={host}
@@ -654,11 +656,113 @@ function ManageBody(
     );
   }
 
+  const signupEligible = Boolean(
+    values.signupUrl &&
+      (values.signupStatus === "open" ||
+        values.signupStatus === "invite_required"),
+  );
+  const signupCtaLabel = values.signupStatus === "invite_required"
+    ? "Request invite"
+    : "Create account";
+  const accountRouteUrl = dashboard?.accountManagementUrl ?? null;
+
   return (
     <>
       {error && (
         <p class="profile-form-status profile-form-status--error">{error}</p>
       )}
+      <section class="host-manage-current host-manage-signup-section">
+        <div class="host-detail-dashboard-head">
+          <div>
+            <p class="text-eyebrow">Sign-up</p>
+            <h2>Where new people sign up with you</h2>
+            <p class="text-body">
+              This is the lever that decides whether you appear as a place to
+              create an account in the “Continue with Atmosphere” picker.
+              Sign-up always happens on your own site — Atmosphere only links
+              out and never sees invite codes.
+            </p>
+          </div>
+        </div>
+        <div
+          class={`host-claim-panel ${
+            signupEligible ? "host-claim-panel-ok" : ""
+          }`}
+        >
+          <p class="host-claim-panel-title">
+            {signupEligible
+              ? "You appear in the account picker"
+              : "Not shown in the account picker yet"}
+          </p>
+          {signupEligible
+            ? (
+              <>
+                <p class="text-body">
+                  People creating a new account see a row like this:
+                </p>
+                <div class="host-signup-preview" aria-hidden="true">
+                  <HostMark host={host} />
+                  <span class="host-signup-preview-name">
+                    {values.displayName || host.displayName}
+                  </span>
+                  <span class="directory-register-button host-signup-preview-cta">
+                    {signupCtaLabel}
+                  </span>
+                </div>
+              </>
+            )
+            : (
+              <p class="text-body">
+                Choose <strong>Open signup</strong> or{" "}
+                <strong>Invite required</strong>{" "}
+                and add a signup URL to show up.
+              </p>
+            )}
+        </div>
+        <form method="POST" class="host-manage-form">
+          <label class="profile-form-field">
+            <span class="profile-form-label">Signup status</span>
+            <select
+              class="profile-form-input"
+              name="signupStatus"
+              value={values.signupStatus}
+            >
+              {SIGNUP_STATUSES.map((status) => (
+                <option
+                  value={status.value}
+                  selected={values.signupStatus === status.value}
+                >
+                  {status.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label class="profile-form-field">
+            <span class="profile-form-label">Signup URL</span>
+            <input
+              class="profile-form-input"
+              type="url"
+              name="signupUrl"
+              value={values.signupUrl}
+              placeholder="https://pckt.cafe/signup"
+            />
+            <span class="profile-form-hint">
+              The direct create-account or invite-request flow. This can be
+              different from your public website.
+            </span>
+          </label>
+          <div class="host-manage-actions">
+            <button
+              class="directory-register-button host-manage-save"
+              type="submit"
+              name="action"
+              value="save_profile"
+            >
+              <span>Save sign-up</span>
+            </button>
+          </div>
+        </form>
+      </section>
       <section class="host-manage-current directory-relationship-entry">
         <div>
           <p class="text-eyebrow">Apps and host identity</p>
@@ -679,11 +783,11 @@ function ManageBody(
       <section class="host-manage-current host-manage-profile-section">
         <div class="host-detail-dashboard-head">
           <div>
-            <p class="text-eyebrow">Public host profile</p>
-            <h2>What people see on Atmosphere</h2>
+            <p class="text-eyebrow">Public profile</p>
+            <h2>What people see on your listing</h2>
             <p class="text-body">
-              Edit the friendly name, description, signup state, and public
-              profile link used on host cards and the host detail page.
+              The friendly name, avatar, description, and profile link shown on
+              host cards and the host detail page.
             </p>
           </div>
         </div>
@@ -732,20 +836,6 @@ function ManageBody(
                 />
               </label>
               <label class="profile-form-field">
-                <span class="profile-form-label">Signup URL</span>
-                <input
-                  class="profile-form-input"
-                  type="url"
-                  name="signupUrl"
-                  value={values.signupUrl}
-                  placeholder="https://pckt.cafe/signup"
-                />
-                <span class="profile-form-hint">
-                  The direct create-account or invite-request flow. This can be
-                  different from the public website.
-                </span>
-              </label>
-              <label class="profile-form-field">
                 <span class="profile-form-label">Data location</span>
                 <input
                   class="profile-form-input"
@@ -775,23 +865,6 @@ function ManageBody(
                   Used for the host avatar, public handle, and optional Bluesky
                   profile button.
                 </span>
-              </label>
-              <label class="profile-form-field">
-                <span class="profile-form-label">Signup status</span>
-                <select
-                  class="profile-form-input"
-                  name="signupStatus"
-                  value={values.signupStatus}
-                >
-                  {SIGNUP_STATUSES.map((status) => (
-                    <option
-                      value={status.value}
-                      selected={values.signupStatus === status.value}
-                    >
-                      {status.label}
-                    </option>
-                  ))}
-                </select>
               </label>
               <label class="profile-form-field">
                 <span class="profile-form-label">Description</span>
@@ -851,14 +924,43 @@ function ManageBody(
       <section class="host-manage-current">
         <div class="host-detail-dashboard-head">
           <div>
-            <p class="text-eyebrow">Host account page</p>
-            <h2>PDS-owned account controls</h2>
+            <p class="text-eyebrow">Account management</p>
+            <h2>Where Atmosphere sends your users</h2>
             <p class="text-body">
-              Save where users should go to manage passwords, sessions, OAuth
-              grants, backups, recovery, and other host-owned controls.
+              You already run account controls — passwords, sessions, OAuth
+              grants, exports, migration. Atmosphere doesn’t replace them; it
+              deep-links your users back to them from their Atmosphere account
+              page.
             </p>
           </div>
         </div>
+        {accountRouteUrl
+          ? (
+            <div class="host-claim-panel host-claim-panel-ok">
+              <p class="host-claim-panel-title">Deep-link target</p>
+              <p class="text-body">
+                “Manage account at host” sends people to{" "}
+                <a
+                  href={accountRouteUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  class="text-link-button host-manage-route-link"
+                >
+                  {accountRouteUrl} ↗
+                </a>
+              </p>
+            </div>
+          )
+          : (
+            <div class="host-claim-panel">
+              <p class="host-claim-panel-title">No account page yet</p>
+              <p class="text-body">
+                Add your PDS service endpoint below. Atmosphere then routes
+                users to the /account path on that origin unless you set an
+                override.
+              </p>
+            </div>
+          )}
         <form method="POST" class="host-manage-form">
           <label class="profile-form-field">
             <span class="profile-form-label">PDS service endpoint</span>
@@ -890,20 +992,26 @@ function ManageBody(
               default. Add an override only when this host uses another URL.
             </span>
           </label>
-          <label class="profile-form-field">
-            <span class="profile-form-label">Optional manifest URL</span>
-            <input
-              class="profile-form-input"
-              type="url"
-              name="manifest_url"
-              value={values.manifestUrl}
-              placeholder={`https://${host.host}/.well-known/atmosphere-host-dashboard.json`}
-            />
-            <span class="profile-form-hint">
-              Optional compatibility manifest for hosts that want to declare
-              deeper host-owned account-control capabilities.
-            </span>
-          </label>
+          <details class="host-manage-advanced">
+            <summary class="host-manage-advanced-summary">
+              Advanced: declare a capability manifest
+            </summary>
+            <label class="profile-form-field">
+              <span class="profile-form-label">Manifest URL</span>
+              <input
+                class="profile-form-input"
+                type="url"
+                name="manifest_url"
+                value={values.manifestUrl}
+                placeholder={`https://${host.host}/.well-known/atmosphere-host-dashboard.json`}
+              />
+              <span class="profile-form-hint">
+                Optional. Fills in the capability self-report below for the host
+                directory and conformance checks. It does not change what people
+                signing in experience.
+              </span>
+            </label>
+          </details>
           <label class="profile-form-field">
             <span class="profile-form-label">Support URL</span>
             <input
@@ -944,22 +1052,28 @@ function ManageBody(
         <section class="host-manage-current">
           <div class="host-detail-dashboard-head">
             <div>
-              <p class="text-eyebrow">Current compatibility</p>
-              <h2>Saved host account controls</h2>
+              <p class="text-eyebrow">Advanced</p>
+              <h2>Capability self-report</h2>
               <p class="text-body">
-                This is what users currently see on the host page and account
-                router.
+                Declared for the host directory and conformance checks. People
+                signing in don’t see this grid, and it doesn’t change your
+                sign-up or account routing.
               </p>
             </div>
           </div>
-          <div class="host-detail-capability-grid">
-            {dashboard.capabilities.map((capability) => (
-              <HostCapabilitySummary
-                key={capability.key}
-                capability={capability}
-              />
-            ))}
-          </div>
+          <details class="host-manage-advanced">
+            <summary class="host-manage-advanced-summary">
+              Show declared capabilities
+            </summary>
+            <div class="host-detail-capability-grid">
+              {dashboard.capabilities.map((capability) => (
+                <HostCapabilitySummary
+                  key={capability.key}
+                  capability={capability}
+                />
+              ))}
+            </div>
+          </details>
         </section>
       )}
     </>

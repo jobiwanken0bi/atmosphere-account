@@ -1182,24 +1182,28 @@ async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
   const reviewerDids = uniqueDids(reviews.map((review) => review.reviewerDid));
   const [appUsers, profiles] = await Promise.all([
     listAppUsersByDids(reviewerDids).catch(() => new Map()),
-    listProfilesByDids(reviewerDids).catch(() => new Map()),
+    listProfilesByDids(reviewerDids, { profileType: "user" }).catch(() =>
+      new Map()
+    ),
   ]);
   return reviews.map((review) => {
     const appUser = appUsers.get(review.reviewerDid) ?? null;
     const profile = profiles.get(review.reviewerDid) ?? null;
-    const reviewerName = appUser?.displayName ?? profile?.name ?? null;
+    const reviewerName = profile?.name ?? appUser?.displayName ?? null;
     const reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
-    const reviewerAvatarUrl = appUser?.avatarCid && appUser.avatarMime
-      ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
-      : profile?.avatarCid
+    const reviewerAvatarUrl = profile?.avatarCid
       ? bskyCdnAvatarUrl(review.reviewerDid, profile.avatarCid)
+      : appUser?.avatarCid && appUser.avatarMime
+      ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
       : null;
     return {
       ...review,
       reviewerName,
       reviewerHandle,
       reviewerAvatarUrl,
-      reviewerProfileHref: microblogProfileHref(reviewerHandle),
+      reviewerProfileHref: profile
+        ? `/users/${encodeURIComponent(profile.handle)}`
+        : microblogProfileHref(reviewerHandle),
     };
   });
 }

@@ -374,12 +374,20 @@ function atUri(repoDid: string, collection: string, rkey: string): string {
 }
 
 export function aliasesForDraft(draft: AppListingDraft): string[] {
+  // An ATStore listing is an app entity in its own right. A single account can
+  // publish several listing records, so its owner/profile DIDs describe
+  // control, not identity. Older Atmosphere profiles still use DID aliases to
+  // converge legacy sources, while migrated ATStore records converge through
+  // their explicit migrated-from URI below.
+  const usesDidIdentity = draft.sourceType !== "atstore_listing";
   const aliases = [
     `uri:${draft.sourceUri}`,
-    didAlias(draft.productDid),
-    didAlias(draft.profileDid),
-    didAlias(draft.legacyProfileDid),
-    draft.legacyProfileDid ? `legacy:${draft.legacyProfileDid}` : null,
+    usesDidIdentity ? didAlias(draft.productDid) : null,
+    usesDidIdentity ? didAlias(draft.profileDid) : null,
+    usesDidIdentity ? didAlias(draft.legacyProfileDid) : null,
+    usesDidIdentity && draft.legacyProfileDid
+      ? `legacy:${draft.legacyProfileDid}`
+      : null,
     urlAlias(draft.primaryUrl),
     draft.atstoreListingUri ? `atstore:${draft.atstoreListingUri}` : null,
     draft.migratedFromAtUri ? `uri:${draft.migratedFromAtUri}` : null,
@@ -955,6 +963,10 @@ export async function deleteAppRecord(uri: string): Promise<void> {
         sql:
           `UPDATE app_record SET deleted_at = ?, indexed_at = ? WHERE uri = ?`,
         args: [Date.now(), Date.now(), uri],
+      });
+      await c.execute({
+        sql: `DELETE FROM app_alias WHERE source_uri = ?`,
+        args: [uri],
       });
       if (typeof listingId === "string" && listingId) {
         await recomputeListing(c, listingId);
@@ -2057,11 +2069,24 @@ export async function getVisibleAppListingByAccountDid(
   did: string,
   options: { syncLegacy?: boolean } = {},
 ): Promise<AppListing | null> {
+  const listings = await listVisibleAppListingsByAccountDid(did, options);
+  return listings[0] ?? null;
+}
+
+/**
+ * Return every visible app controlled by an account DID. A single AT Protocol
+ * repository may publish multiple ATStore listings, so owner-facing tools must
+ * not collapse this relationship to the first matching row.
+ */
+export async function listVisibleAppListingsByAccountDid(
+  did: string,
+  options: { syncLegacy?: boolean } = {},
+): Promise<AppListing[]> {
   if (options.syncLegacy !== false) {
     await syncLegacyAppProfilesToDirectory().catch(() => {});
   }
   const normalized = did.trim();
-  if (!normalized.startsWith("did:")) return null;
+  if (!normalized.startsWith("did:")) return [];
   return await withDb(async (c) => {
     const result = await c.execute({
       sql: `
@@ -2079,11 +2104,10 @@ export async function getVisibleAppListingByAccountDid(
           CASE WHEN l.atstore_listing_uri IS NOT NULL THEN 0 ELSE 1 END,
           l.updated_at DESC,
           l.slug ASC
-        LIMIT 1
       `,
       args: [normalized, normalized, normalized],
     });
-    return result.rows.length > 0 ? rowToAppListing(result.rows[0]) : null;
+    return result.rows.map(rowToAppListing);
   });
 }
 
