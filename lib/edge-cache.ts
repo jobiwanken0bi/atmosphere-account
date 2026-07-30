@@ -28,6 +28,7 @@ export class EdgeStaleCache<Value> {
       entry?.hasValue &&
       now - entry.refreshedAt < this.options.freshMs
     ) {
+      this.touch(key, entry);
       return Promise.resolve(entry.value as Value);
     }
 
@@ -82,6 +83,7 @@ export class EdgeStaleCache<Value> {
   }
 
   private setEntry(key: string, entry: EdgeStaleCacheEntry<Value>) {
+    this.pruneExpired();
     const maxEntries = this.options.maxEntries;
     if (
       maxEntries &&
@@ -91,6 +93,27 @@ export class EdgeStaleCache<Value> {
       const oldestKey = this.entries.keys().next().value;
       if (oldestKey) this.entries.delete(oldestKey);
     }
+    // Map iteration order is the eviction order, so replace existing entries
+    // to make recently loaded/refreshed keys the most recently used.
+    if (this.entries.has(key)) this.entries.delete(key);
     this.entries.set(key, entry);
+  }
+
+  private touch(key: string, entry: EdgeStaleCacheEntry<Value>) {
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+  }
+
+  private pruneExpired() {
+    const now = this.now();
+    for (const [key, entry] of this.entries) {
+      if (
+        entry.hasValue &&
+        !entry.refreshPromise &&
+        now - entry.refreshedAt >= this.options.staleMs
+      ) {
+        this.entries.delete(key);
+      }
+    }
   }
 }

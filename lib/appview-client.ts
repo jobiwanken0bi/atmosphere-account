@@ -202,12 +202,15 @@ export function appviewBaseUrl(): string | null {
   return APPVIEW_BASE_URL ? APPVIEW_BASE_URL.replace(/\/+$/, "") : null;
 }
 
-export async function loadAppsHomeFromAppview(): Promise<AppSearchResult> {
+export async function loadAppsHomeFromAppview(
+  requestHeaders?: Headers,
+): Promise<AppSearchResult> {
   const remote = appviewBaseUrl();
   if (remote) {
     return await fetchAppviewJson<AppSearchResult>(
       remote,
       "/api/appview/apps/home",
+      requestHeaders,
     );
   }
   return await searchAppDirectory({
@@ -223,7 +226,7 @@ export async function searchAppsFromAppview(input: {
   tag?: string[];
   sort: AppDirectorySort;
   page: number;
-}): Promise<AppSearchResult> {
+}, requestHeaders?: Headers): Promise<AppSearchResult> {
   const remote = appviewBaseUrl();
   if (remote) {
     const params = new URLSearchParams();
@@ -234,6 +237,7 @@ export async function searchAppsFromAppview(input: {
     return await fetchAppviewJson<AppSearchResult>(
       remote,
       `/api/appview/apps/search?${params.toString()}`,
+      requestHeaders,
     );
   }
   return await searchAppDirectory({
@@ -336,13 +340,14 @@ export async function getHostDetailFromAppview(
 export async function proxyAppviewResponse(
   pathWithSearch: string,
   currentUrl?: URL,
+  requestHeaders?: Headers,
 ): Promise<Response | null> {
   const remote = appviewBaseUrl();
   if (!remote) return null;
   const url = new URL(pathWithSearch, remote);
   if (currentUrl && url.origin === currentUrl.origin) return null;
   const res = await fetch(url, {
-    headers: { accept: "application/json" },
+    headers: await appviewJsonHeaders(requestHeaders),
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
   const headers = proxiedHeaders(res.headers, { page: false });
@@ -784,14 +789,34 @@ function appviewBaseUrlForRewrite(remote: string): string {
 async function fetchAppviewJson<T>(
   baseUrl: string,
   path: string,
+  requestHeaders?: Headers,
 ): Promise<T> {
   const url = new URL(path, baseUrl);
   const res = await fetch(url, {
-    headers: { accept: "application/json" },
+    headers: await appviewJsonHeaders(requestHeaders),
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`appview request failed: HTTP ${res.status}`);
   }
   return await res.json() as T;
+}
+
+async function appviewJsonHeaders(
+  requestHeaders?: Headers,
+): Promise<Headers> {
+  const headers = new Headers({ accept: "application/json" });
+  if (requestHeaders) {
+    headers.set(
+      PROXY_CLIENT_KEY_HEADER,
+      await createProxyClientKey(requestHeaders),
+    );
+  }
+  return headers;
+}
+
+export async function appviewJsonHeadersForTest(
+  requestHeaders?: Headers,
+): Promise<Headers> {
+  return await appviewJsonHeaders(requestHeaders);
 }

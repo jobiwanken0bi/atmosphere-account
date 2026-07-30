@@ -103,6 +103,7 @@ export default function AppBrowseControls(
               stroke-linecap="round"
             />
           </svg>
+          <span class="hosts-filter-trigger-label">Sort &amp; filter</span>
           {activeFilterCount > 0 && (
             <span class="hosts-filter-count" aria-label={filterLabel}>
               {activeFilterCount}

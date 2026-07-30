@@ -15,6 +15,7 @@ export const handler = define.handlers({
     const proxied = await proxyAppviewResponse(
       `${ctx.url.pathname}${ctx.url.search}`,
       ctx.url,
+      ctx.req.headers,
     );
     if (proxied) return proxied;
     const input = readDirectoryInput(ctx.url.searchParams);

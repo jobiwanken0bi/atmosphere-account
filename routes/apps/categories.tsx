@@ -23,7 +23,7 @@ const appCategoriesCache = new EdgeStaleCache<AppTagSummary[]>({
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const tags = await loadAppCategories().catch(() => []);
+    const tags = await loadAppCategories(ctx.req.headers).catch(() => []);
 
     const data: AppCategoriesData = {
       tags,
@@ -34,10 +34,15 @@ export const handler = define.handlers({
   },
 });
 
-async function loadAppCategories(): Promise<AppTagSummary[]> {
+async function loadAppCategories(
+  requestHeaders: Headers,
+): Promise<AppTagSummary[]> {
   return await appCategoriesCache.get(
     "categories",
-    () => loadAppsHomeFromAppview().then((result) => result.tagSummaries),
+    () =>
+      loadAppsHomeFromAppview(requestHeaders).then(
+        (result) => result.tagSummaries,
+      ),
   );
 }
 

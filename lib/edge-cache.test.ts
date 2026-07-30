@@ -76,3 +76,19 @@ Deno.test("EdgeStaleCache keeps stale value when refresh fails", async () => {
     1,
   );
 });
+
+Deno.test("EdgeStaleCache evicts the least recently used bounded entry", async () => {
+  let loads = 0;
+  const cache = new EdgeStaleCache<number>({
+    freshMs: 1_000,
+    staleMs: 10_000,
+    maxEntries: 2,
+  });
+  const load = () => Promise.resolve(++loads);
+
+  assertEquals(await cache.get("a", load), 1);
+  assertEquals(await cache.get("b", load), 2);
+  assertEquals(await cache.get("a", load), 1);
+  assertEquals(await cache.get("c", load), 3);
+  assertEquals(await cache.get("b", load), 4);
+});

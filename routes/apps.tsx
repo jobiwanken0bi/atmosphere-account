@@ -36,7 +36,7 @@ export const handler = define.handlers({
       return redirectBrowseAllUrl(url);
     }
 
-    const result = await loadAppsHomeResult().catch(() =>
+    const result = await loadAppsHomeResult(ctx.req.headers).catch(() =>
       emptyAppsHomeResult()
     );
 
@@ -48,8 +48,13 @@ export const handler = define.handlers({
   },
 });
 
-async function loadAppsHomeResult(): Promise<AppSearchResult> {
-  return await appsHomeCache.get("home", () => loadAppsHomeFromAppview());
+async function loadAppsHomeResult(
+  requestHeaders: Headers,
+): Promise<AppSearchResult> {
+  return await appsHomeCache.get(
+    "home",
+    () => loadAppsHomeFromAppview(requestHeaders),
+  );
 }
 
 function emptyAppsHomeResult(): AppSearchResult {
