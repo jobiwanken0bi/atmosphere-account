@@ -216,7 +216,10 @@ async function stampDenoDeploy(
       console.log(`  deno ${updateArgs.join(" ")}`);
       continue;
     }
-    const updated = await run(["deno", ...updateArgs], { allowFailure: true });
+    const updated = await run(["deno", ...updateArgs], {
+      allowFailure: true,
+      interactive: true,
+    });
     if (updated.success) {
       console.log(`  updated ${key}`);
       continue;
@@ -233,7 +236,10 @@ async function stampDenoDeploy(
       options.denoApp,
       "--quiet",
     ];
-    const added = await run(["deno", ...addArgs], { allowFailure: true });
+    const added = await run(["deno", ...addArgs], {
+      allowFailure: true,
+      interactive: true,
+    });
     if (!added.success) {
       throw new Error(
         `failed to update or add ${key} on Deno Deploy:\n${updated.stderr}\n${added.stderr}`,
@@ -273,13 +279,20 @@ async function stampRailway(
 
 async function run(
   args: string[],
-  options: { allowFailure?: boolean } = {},
+  options: { allowFailure?: boolean; interactive?: boolean } = {},
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
+  const stdio = releaseCommandStdio(options.interactive ?? false);
   const command = new Deno.Command(args[0], {
     args: args.slice(1),
-    stdout: "piped",
-    stderr: "piped",
+    ...stdio,
   });
+  if (options.interactive) {
+    const status = await command.spawn().status;
+    if (!status.success && !options.allowFailure) {
+      throw new Error(`${args[0]} ${args.slice(1).join(" ")} failed`);
+    }
+    return { success: status.success, stdout: "", stderr: "" };
+  }
   const output = await command.output();
   const stdout = new TextDecoder().decode(output.stdout).trim();
   const stderr = new TextDecoder().decode(output.stderr).trim();
@@ -287,6 +300,16 @@ async function run(
     throw new Error(`${args[0]} ${args.slice(1).join(" ")} failed:\n${stderr}`);
   }
   return { success: output.success, stdout, stderr };
+}
+
+export function releaseCommandStdio(interactive: boolean): {
+  stdin: "inherit" | "null";
+  stdout: "inherit" | "piped";
+  stderr: "inherit" | "piped";
+} {
+  return interactive
+    ? { stdin: "inherit", stdout: "inherit", stderr: "inherit" }
+    : { stdin: "null", stdout: "piped", stderr: "piped" };
 }
 
 async function git(args: string[]): Promise<string> {

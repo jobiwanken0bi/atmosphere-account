@@ -381,16 +381,58 @@ export function createComailHostContactEmailDelivery(
         }),
         signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
       });
-      if (response.ok) return;
       const body = await readResponseTextWithLimit(
         response,
         DELIVERY_RESPONSE_MAX_BYTES,
       );
+      if (response.ok) {
+        if (!body.ok) {
+          throw new Error(
+            `Comail returned an unreadable success response: ${body.error}`,
+          );
+        }
+        const result = parseComailDeliveryResult(body.text);
+        if (
+          result &&
+          result.rejected.length === 0 &&
+          result.accepted.some((recipient) =>
+            recipient.toLowerCase() === input.to.toLowerCase()
+          )
+        ) return;
+        throw new Error(
+          "Comail returned success without accepting the intended recipient",
+        );
+      }
       throw new Error(
         `Comail returned ${response.status}${body.ok ? `: ${body.text}` : ""}`,
       );
     },
   };
+}
+
+function parseComailDeliveryResult(
+  body: string,
+): { accepted: string[]; rejected: unknown[] } | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const result = value as Record<string, unknown>;
+  if (!Array.isArray(result.accepted) || !Array.isArray(result.rejected)) {
+    return null;
+  }
+  const accepted = result.accepted.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return null;
+    }
+    const recipient = (entry as Record<string, unknown>).recipient;
+    return typeof recipient === "string" ? recipient : null;
+  });
+  if (accepted.some((recipient) => recipient === null)) return null;
+  return { accepted: accepted as string[], rejected: result.rejected };
 }
 
 function emailText(input: {

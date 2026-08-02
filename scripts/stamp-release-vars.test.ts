@@ -1,6 +1,7 @@
 import {
   assertCleanWorktreeForRelease,
   assertPushedUpstreamForRelease,
+  releaseCommandStdio,
 } from "./stamp-release-vars.ts";
 
 function assertThrows(fn: () => void, expected: string): void {
@@ -78,6 +79,25 @@ Deno.test("release stamp rejects malformed upstream status", () => {
     () => assertPushedUpstreamForRelease("origin/main", "not-a-count"),
     "could not read git upstream status",
   );
+});
+
+Deno.test("release stamp gives Deno authentication commands a real terminal", () => {
+  const interactive = releaseCommandStdio(true);
+  if (
+    interactive.stdin !== "inherit" || interactive.stdout !== "inherit" ||
+    interactive.stderr !== "inherit"
+  ) {
+    throw new Error(
+      `Expected inherited stdio, got ${JSON.stringify(interactive)}`,
+    );
+  }
+  const captured = releaseCommandStdio(false);
+  if (
+    captured.stdin !== "null" || captured.stdout !== "piped" ||
+    captured.stderr !== "piped"
+  ) {
+    throw new Error(`Expected captured stdio, got ${JSON.stringify(captured)}`);
+  }
 });
 
 Deno.test("release stamp dry-run ignores release metadata environment defaults", async () => {

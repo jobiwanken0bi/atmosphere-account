@@ -23,6 +23,22 @@ function assertEquals(actual: unknown, expected: unknown): void {
   if (a !== e) throw new Error(`Expected ${e}, got ${a}`);
 }
 
+async function assertRejects(
+  fn: () => Promise<unknown>,
+  expected: string,
+): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes(expected)) {
+      throw new Error(`Expected error including ${expected}, got ${message}`);
+    }
+    return;
+  }
+  throw new Error("Expected promise to reject");
+}
+
 function memoryStore(): HostContactEmailChallengeStore & {
   records: Map<string, HostContactEmailChallengeRecord>;
 } {
@@ -252,4 +268,82 @@ Deno.test("Comail delivery uses DID authentication and verification semantics", 
   assertEquals(body.category, "verification");
   assert(String(body.text).includes("expires in 20 minutes"));
   assert(String(body.html).includes("Verify this request"));
+});
+
+Deno.test("Comail delivery rejects a 200 response that did not accept the intended recipient", async () => {
+  for (
+    const responseBody of [
+      {
+        accepted: [{ recipient: "different@example.social", messageId: 1 }],
+        rejected: [],
+      },
+      {
+        accepted: [],
+        rejected: [{ recipient: "ops@example.social", reason: "suppressed" }],
+      },
+      { accepted: [{ recipient: "ops@example.social", messageId: 1 }] },
+    ]
+  ) {
+    const delivery = createComailHostContactEmailDelivery({
+      apiKey: "atmos_test_key",
+      senderDid: "did:plc:atmosphere",
+      from: "claims@atmosphere.example",
+      fetchImpl: (() =>
+        Promise.resolve(
+          new Response(JSON.stringify(responseBody), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        )) as typeof fetch,
+    });
+
+    await assertRejects(
+      () =>
+        delivery.send({
+          to: "ops@example.social",
+          host: "pds.example.social",
+          displayName: "Example Social",
+          claimantHandle: "operator.example",
+          verificationUrl: "https://atmosphere.example/verify?token=secret",
+        }),
+      "without accepting the intended recipient",
+    );
+  }
+});
+
+Deno.test("Comail delivery rejects malformed and oversized 200 responses", async () => {
+  for (
+    const { response, expected } of [
+      {
+        response: new Response("not json", { status: 200 }),
+        expected: "without accepting the intended recipient",
+      },
+      {
+        response: new Response("{}", {
+          status: 200,
+          headers: { "content-length": "16001" },
+        }),
+        expected: "unreadable success response: response too large",
+      },
+    ]
+  ) {
+    const delivery = createComailHostContactEmailDelivery({
+      apiKey: "atmos_test_key",
+      senderDid: "did:plc:atmosphere",
+      from: "claims@atmosphere.example",
+      fetchImpl: (() => Promise.resolve(response)) as typeof fetch,
+    });
+
+    await assertRejects(
+      () =>
+        delivery.send({
+          to: "ops@example.social",
+          host: "pds.example.social",
+          displayName: "Example Social",
+          claimantHandle: "operator.example",
+          verificationUrl: "https://atmosphere.example/verify?token=secret",
+        }),
+      expected,
+    );
+  }
 });
