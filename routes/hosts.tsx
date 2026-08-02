@@ -241,6 +241,7 @@ export default define.page(async function HostsPage(ctx) {
               href={registerHostHref()}
               label={copy.register}
             />
+            <DirectoryHiddenHostCta copy={copy} />
           </div>
         </section>
         <Footer variant="compact" />
@@ -378,6 +379,21 @@ function DirectoryRegisterCta(
         <span>{label}</span>
       </a>
     </div>
+  );
+}
+
+function DirectoryHiddenHostCta({ copy }: { copy: HostsDirectoryCopy }) {
+  return (
+    <aside class="directory-hidden-host-cta">
+      <div>
+        <h2>{copy.missingHostTitle}</h2>
+        <p>{copy.missingHostCopy}</p>
+      </div>
+      <a href="/hosts/claim" class="directory-register-button">
+        <span>{copy.claimDetectedHost}</span>
+        <span aria-hidden="true">→</span>
+      </a>
+    </aside>
   );
 }
 

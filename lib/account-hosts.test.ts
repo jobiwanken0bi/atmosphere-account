@@ -234,6 +234,20 @@ Deno.test("claimed hosts receive a short inactivity grace period", () => {
     }, now),
     true,
   );
+  assertEquals(
+    isAccountHostPubliclyListable({
+      ...base,
+      operatorListingOptIn: false,
+    }, now),
+    false,
+  );
+  assertEquals(
+    isAccountHostPubliclyListable({
+      ...base,
+      operatorListingOptIn: true,
+    }, now),
+    true,
+  );
 });
 
 Deno.test("host availability distinguishes directory baseline from grace exceptions", () => {

@@ -464,13 +464,14 @@ Atmosphere host service record can enrich stored profile data, but does not by
 itself establish domain authority or directory eligibility. The scheduled
 inventory job also enriches a bounded batch of stale, active multi-account PDSes
 through the standard `describeServer` endpoint. Open registration is an
-independent public-intent signal; invite-based registration also requires
-published operator contact and policy metadata. These detected providers can
-appear before they are claimed, while claiming remains the way an operator
-customizes and controls the profile. One-user and observed-only PDSes remain
-private. Detection is refreshed daily, expires from public eligibility after
-seven days without a successful check, and can be skipped or bounded with
-`--skip-enrichment` and `--enrichment-limit=N`.
+independent public-intent signal. Invite-based registration requires either
+published operator contact and policy metadata or an explicit same-origin signup
+link on the PDS landing page, such as Tranquil's “Join This Server” action.
+These detected providers can appear before they are claimed, while claiming
+remains the way an operator customizes and controls the profile. One-user and
+observed-only PDSes remain private. Detection is refreshed daily, expires from
+public eligibility after seven days without a successful check, and can be
+skipped or bounded with `--skip-enrichment` and `--enrichment-limit=N`.
 
 Claimed and verified hosts retain a 72-hour grace period after their last active
 relay observation so a temporary outage does not make their directory page flap.
@@ -535,6 +536,12 @@ Hosted environments must set:
 - `TURSO_AUTH_TOKEN` for remote Turso URLs
 - `SESSION_SECRET`
 - OAuth keys when sign-in/write flows are enabled
+
+Production PDS contact-email claims use Comail. Enroll the sending domain under
+the sender's ATProto DID, publish Comail's DKIM and SPF records, and set
+`COMAIL_API_KEY`, `COMAIL_SENDER_DID`, and `HOST_CLAIM_EMAIL_FROM`. Ownership
+messages are sent with Comail's `verification` category; local development keeps
+using the private on-page preview when these values are absent.
 
 The app intentionally refuses local DB and weak session-secret fallbacks in
 hosted runtimes.

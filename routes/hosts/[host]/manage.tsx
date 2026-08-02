@@ -13,6 +13,7 @@ import {
   getAccountHostClaim,
   type HostSignupStatus,
   updateAccountHostDashboardSettings,
+  updateAccountHostDirectoryListing,
   updateAccountHostProfileSettings,
 } from "../../../lib/account-hosts.ts";
 import {
@@ -189,6 +190,36 @@ export const handler = define.handlers({
     const form = await ctx.req.formData().catch(() => null);
     const values = valuesFromForm(form, host);
     const action = textValue(form?.get("action"));
+    if (action === "save_listing") {
+      const listed = form?.get("directory_listing") === "1";
+      const updated = await updateAccountHostDirectoryListing(
+        host.host,
+        ctx.state.user.did,
+        listed,
+      );
+      if (!updated) {
+        return ctx.render(
+          <HostManagePage
+            host={host}
+            claim={claim}
+            state="ready"
+            account={account}
+            values={valuesFromHost(host)}
+            validation={null}
+            error="Directory visibility could not be updated. Try again."
+          />,
+          { status: 409 },
+        );
+      }
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: `/hosts/${
+            encodeURIComponent(host.host)
+          }/manage?listing=saved`,
+        },
+      });
+    }
     if (action === "save_profile") {
       const publication = await publishManagedHostProfile(
         ctx.state.user,
@@ -542,7 +573,9 @@ function HostManagePage(props: HostManagePageProps) {
         <section class="signin-page-section host-manage-section">
           <div class="container signin-page-container">
             <a
-              href={host ? `/hosts/${encodeURIComponent(host.host)}` : "/hosts"}
+              href={host && host.operatorListingOptIn !== false
+                ? `/hosts/${encodeURIComponent(host.host)}`
+                : "/hosts"}
               class="text-link-button"
             >
               Back to host
@@ -671,6 +704,48 @@ function ManageBody(
       {error && (
         <p class="profile-form-status profile-form-status--error">{error}</p>
       )}
+      <section class="host-manage-current host-manage-listing-section">
+        <div class="host-detail-dashboard-head">
+          <div>
+            <p class="text-eyebrow">Public directory</p>
+            <h2>Choose whether this PDS is listed</h2>
+            <p class="text-body">
+              Automatic filtering keeps likely personal PDSes private. As the
+              verified operator, you can explicitly include or remove this PDS
+              from the public Hosts directory without changing the relay data.
+            </p>
+          </div>
+        </div>
+        <form method="POST" class="host-manage-form">
+          <label class="profile-form-toggle">
+            <input
+              type="checkbox"
+              name="directory_listing"
+              value="1"
+              checked={host.operatorListingOptIn !== false}
+            />
+            <span class="profile-form-toggle-body">
+              <span class="profile-form-toggle-label">
+                Show this PDS in the public directory
+              </span>
+              <span class="profile-form-toggle-hint">
+                Turning this off hides the host page and directory card. You can
+                turn it back on at any time.
+              </span>
+            </span>
+          </label>
+          <div class="host-manage-actions">
+            <button
+              class="directory-register-button host-manage-save"
+              type="submit"
+              name="action"
+              value="save_listing"
+            >
+              Save directory visibility
+            </button>
+          </div>
+        </form>
+      </section>
       <section class="host-manage-current host-manage-signup-section">
         <div class="host-detail-dashboard-head">
           <div>

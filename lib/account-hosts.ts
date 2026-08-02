@@ -8,10 +8,12 @@
  */
 import { type DbClient, withDb } from "./db.ts";
 import {
+  hasPreboundHostAuthority,
   hostClaimProofMessage,
   hostServiceRecordMatchesUser,
   verifyHostClaimDomainProof,
 } from "./host-claim-proof.ts";
+import { verifyHostContactEmailChallenge } from "./host-claim-email.ts";
 import { isPrivateNetworkUrl } from "./security.ts";
 
 export type HostSignupStatus =
@@ -66,6 +68,12 @@ export interface AccountHost {
   publicIntentCheckedAt: number | null;
   publicIntentAttemptedAt: number | null;
   publicIntentEvidenceJson: string | null;
+  /**
+   * Explicit operator choice for the public directory. `null` preserves the
+   * legacy behaviour for claims created before this setting existed.
+   */
+  operatorListingOptIn?: boolean | null;
+  operatorListingOptedAt?: number | null;
   profileCheckedAt: number | null;
   observedAccountCount: number;
   observedActiveAccountCount: number;
@@ -164,7 +172,7 @@ export interface AccountHostClaim {
   host: string;
   claimantDid: string;
   claimantHandle: string;
-  method: "oauth_atproto_account";
+  method: "oauth_atproto_account" | "pds_contact_email";
   claimedAt: number;
   verifiedAt: number;
   updatedAt: number;
@@ -237,6 +245,10 @@ export type AccountHostClaimResult =
     authority?: AccountHostClaimAuthority | null;
     claim?: AccountHostClaim | null;
   };
+
+export interface AccountHostClaimOptions {
+  operatorListingOptIn?: boolean;
+}
 
 export type AccountHostRegistrationResult =
   | { ok: true; host: AccountHost; claim: AccountHostClaim }
@@ -751,6 +763,12 @@ function parseHostRow(row: Record<string, unknown>): AccountHost {
     publicIntentEvidenceJson: row.public_intent_evidence_json
       ? String(row.public_intent_evidence_json)
       : null,
+    operatorListingOptIn: row.operator_listing_opt_in == null
+      ? null
+      : Number(row.operator_listing_opt_in) !== 0,
+    operatorListingOptedAt: row.operator_listing_opted_at == null
+      ? null
+      : Number(row.operator_listing_opted_at),
     profileCheckedAt: row.profile_checked_at == null
       ? null
       : Number(row.profile_checked_at),
@@ -990,11 +1008,14 @@ function claimHandleForHost(host: AccountHost): string | null {
 }
 
 function parseHostClaimRow(row: Record<string, unknown>): AccountHostClaim {
+  const method = row.method === "pds_contact_email"
+    ? "pds_contact_email"
+    : "oauth_atproto_account";
   return {
     host: String(row.host),
     claimantDid: String(row.claimant_did),
     claimantHandle: String(row.claimant_handle),
-    method: "oauth_atproto_account",
+    method,
     claimedAt: Number(row.claimed_at),
     verifiedAt: Number(row.verified_at),
     updatedAt: Number(row.updated_at),
@@ -1397,13 +1418,11 @@ export function accountHostClaimAuthorityMatchesUser(
 export async function claimAccountHost(
   host: string,
   user: { did: string; handle: string },
+  options: AccountHostClaimOptions = {},
 ): Promise<AccountHostClaimResult> {
   const row = await getAccountHost(host);
   if (!row) return { ok: false, reason: "host_not_found" };
   const authority = await resolveAccountHostClaimAuthority(row);
-  if (!authority) {
-    return { ok: false, reason: "not_claimable", host: row, authority };
-  }
   const existingClaim = await getAccountHostClaim(row.host);
   if (existingClaim && existingClaim.claimantDid !== user.did) {
     return {
@@ -1414,18 +1433,15 @@ export async function claimAccountHost(
       claim: existingClaim,
     };
   }
-  if (!accountHostClaimAuthorityMatchesUser(authority, user)) {
-    return {
-      ok: false,
-      reason: "not_authorized",
-      host: row,
-      authority,
-      claim: existingClaim,
-    };
-  }
   if (!existingClaim) {
-    const proof = await verifyHostClaimDomainProof(row, user);
-    if (!proof.ok) {
+    const verifiedMethod = await verifyHostClaimDomainProof(row, user);
+    const authorityMatches = authority
+      ? accountHostClaimAuthorityMatchesUser(authority, user)
+      : false;
+    if (
+      !verifiedMethod.ok ||
+      (verifiedMethod.method === "prebound" && !authorityMatches)
+    ) {
       return {
         ok: false,
         reason: "not_authorized",
@@ -1440,23 +1456,181 @@ export async function claimAccountHost(
     host: row.host,
     claimantDid: user.did,
     claimantHandle: user.handle,
-    method: "oauth_atproto_account",
+    method: existingClaim?.method ?? "oauth_atproto_account",
     claimedAt: existingClaim?.claimedAt ?? ts,
     verifiedAt: ts,
     updatedAt: ts,
   };
-  await withDb(async (c) => {
+  const saved = await withDb(async (c) => {
+    const claimWrite = existingClaim
+      ? await c.execute({
+        sql: `UPDATE account_host_claim
+          SET claimant_handle = ?, method = ?, verified_at = ?, updated_at = ?
+          WHERE host = ? AND claimant_did = ?`,
+        args: [
+          claim.claimantHandle,
+          claim.method,
+          claim.verifiedAt,
+          claim.updatedAt,
+          claim.host,
+          claim.claimantDid,
+        ],
+      })
+      : await c.execute({
+        sql: `INSERT INTO account_host_claim (
+            host, claimant_did, claimant_handle, method,
+            claimed_at, verified_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(host) DO NOTHING`,
+        args: [
+          claim.host,
+          claim.claimantDid,
+          claim.claimantHandle,
+          claim.method,
+          claim.claimedAt,
+          claim.verifiedAt,
+          claim.updatedAt,
+        ],
+      });
+    if (Number(claimWrite.rowsAffected ?? 0) !== 1) return false;
     await c.execute({
+      sql: `UPDATE account_host
+        SET claim_handle = ?,
+            claim_did = ?,
+            verification_status = CASE
+              WHEN verification_status = 'verified' THEN 'verified'
+              ELSE 'claimed'
+            END,
+            operator_listing_opt_in = CASE
+              WHEN ? IS NULL THEN operator_listing_opt_in
+              ELSE ?
+            END,
+            operator_listing_opted_at = CASE
+              WHEN ? IS NULL THEN operator_listing_opted_at
+              ELSE ?
+            END,
+            updated_at = ?
+        WHERE host = ?`,
+      args: [
+        authority?.handle ?? user.handle,
+        authority?.did ?? user.did,
+        listingFlag(options.operatorListingOptIn),
+        listingFlag(options.operatorListingOptIn),
+        listingFlag(options.operatorListingOptIn),
+        ts,
+        ts,
+        row.host,
+      ],
+    });
+    return true;
+  });
+  if (!saved) {
+    const conflictingClaim = await getAccountHostClaim(row.host);
+    return {
+      ok: false,
+      reason: conflictingClaim?.claimantDid === user.did
+        ? "not_authorized"
+        : "already_claimed",
+      host: row,
+      authority,
+      claim: conflictingClaim,
+    };
+  }
+  const updatedHost = await getAccountHost(row.host) ?? row;
+  return { ok: true, host: updatedHost, claim };
+}
+
+/**
+ * Complete a claim after the exact PDS endpoint has verified the signed-in
+ * management DID through its live, announced contact email.
+ */
+export async function claimAccountHostWithContactEmail(
+  host: string,
+  user: { did: string; handle: string },
+  token: string,
+  options: AccountHostClaimOptions = {},
+): Promise<AccountHostClaimResult> {
+  const row = await getAccountHost(host);
+  if (!row) return { ok: false, reason: "host_not_found" };
+  const authority = await resolveAccountHostClaimAuthority(row).catch(() =>
+    null
+  );
+  const existingClaim = await getAccountHostClaim(row.host);
+  if (existingClaim && existingClaim.claimantDid !== user.did) {
+    return {
+      ok: false,
+      reason: "already_claimed",
+      host: row,
+      authority,
+      claim: existingClaim,
+    };
+  }
+  // Explicit curated mappings remain stronger than a general support inbox.
+  if (
+    hasPreboundHostAuthority(row) && authority &&
+    !accountHostClaimAuthorityMatchesUser(authority, user)
+  ) {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      host: row,
+      authority,
+      claim: existingClaim,
+    };
+  }
+
+  const verified = await verifyHostContactEmailChallenge(
+    {
+      host: row.host,
+      displayName: row.displayName,
+      serviceEndpoint: row.serviceEndpoint,
+    },
+    user,
+    token,
+  );
+  if (!verified.ok) {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      host: row,
+      authority,
+      claim: existingClaim,
+    };
+  }
+
+  const ts = now();
+  const claim: AccountHostClaim = {
+    host: row.host,
+    claimantDid: user.did,
+    claimantHandle: user.handle,
+    method: "pds_contact_email",
+    claimedAt: existingClaim?.claimedAt ?? ts,
+    verifiedAt: ts,
+    updatedAt: ts,
+  };
+  const inserted = await withDb(async (c) => {
+    if (existingClaim) {
+      const result = await c.execute({
+        sql: `UPDATE account_host_claim
+          SET claimant_handle = ?, method = ?, verified_at = ?, updated_at = ?
+          WHERE host = ? AND claimant_did = ?`,
+        args: [
+          claim.claimantHandle,
+          claim.method,
+          claim.verifiedAt,
+          claim.updatedAt,
+          claim.host,
+          claim.claimantDid,
+        ],
+      });
+      return Number(result.rowsAffected ?? 0) === 1;
+    }
+    const result = await c.execute({
       sql: `INSERT INTO account_host_claim (
-          host, claimant_did, claimant_handle, method,
-          claimed_at, verified_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(host) DO UPDATE SET
-          claimant_did = excluded.claimant_did,
-          claimant_handle = excluded.claimant_handle,
-          method = excluded.method,
-          verified_at = excluded.verified_at,
-          updated_at = excluded.updated_at`,
+        host, claimant_did, claimant_handle, method,
+        claimed_at, verified_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(host) DO NOTHING`,
       args: [
         claim.host,
         claim.claimantDid,
@@ -1467,17 +1641,49 @@ export async function claimAccountHost(
         claim.updatedAt,
       ],
     });
+    return Number(result.rowsAffected ?? 0) === 1;
+  });
+  if (!inserted) {
+    const conflictingClaim = await getAccountHostClaim(row.host);
+    return {
+      ok: false,
+      reason: conflictingClaim?.claimantDid === user.did
+        ? "not_authorized"
+        : "already_claimed",
+      host: row,
+      authority,
+      claim: conflictingClaim,
+    };
+  }
+
+  await withDb(async (c) => {
     await c.execute({
       sql: `UPDATE account_host
-        SET claim_handle = ?,
-            claim_did = ?,
+        SET claim_handle = ?, claim_did = ?,
             verification_status = CASE
               WHEN verification_status = 'verified' THEN 'verified'
               ELSE 'claimed'
             END,
+            operator_listing_opt_in = CASE
+              WHEN ? IS NULL THEN operator_listing_opt_in
+              ELSE ?
+            END,
+            operator_listing_opted_at = CASE
+              WHEN ? IS NULL THEN operator_listing_opted_at
+              ELSE ?
+            END,
             updated_at = ?
         WHERE host = ?`,
-      args: [authority.handle, authority.did ?? user.did, ts, row.host],
+      args: [
+        user.handle,
+        user.did,
+        listingFlag(options.operatorListingOptIn),
+        listingFlag(options.operatorListingOptIn),
+        listingFlag(options.operatorListingOptIn),
+        ts,
+        ts,
+        row.host,
+      ],
     });
   });
   const updatedHost = await getAccountHost(row.host) ?? row;
@@ -1868,7 +2074,9 @@ export async function registerAccountHost(
     });
   });
 
-  const claimResult = await claimAccountHost(host, user);
+  const claimResult = await claimAccountHost(host, user, {
+    operatorListingOptIn: true,
+  });
   if (!claimResult.ok) {
     return {
       ok: false,
@@ -2053,6 +2261,39 @@ export async function updateAccountHostDashboardSettings(
     });
   });
   return await getAccountHost(normalized);
+}
+
+/**
+ * Change public-directory visibility only when the signed-in DID owns the
+ * verified claim. The relay's inferred classification remains untouched.
+ */
+export async function updateAccountHostDirectoryListing(
+  host: string,
+  claimantDid: string,
+  listed: boolean,
+): Promise<AccountHost | null> {
+  const normalized = host.trim().toLowerCase();
+  const did = claimantDid.trim();
+  if (!normalized || !did) return null;
+  const ts = now();
+  const updated = await withDb(async (c) => {
+    await ensureSeededHosts(c);
+    const result = await c.execute({
+      sql: `UPDATE account_host
+        SET operator_listing_opt_in = ?,
+            operator_listing_opted_at = ?,
+            updated_at = ?
+        WHERE host = ?
+          AND EXISTS (
+            SELECT 1 FROM account_host_claim
+            WHERE account_host_claim.host = account_host.host
+              AND account_host_claim.claimant_did = ?
+          )`,
+      args: [listed ? 1 : 0, ts, ts, normalized, did],
+    });
+    return Number(result.rowsAffected ?? 0) === 1;
+  });
+  return updated ? await getAccountHost(normalized) : null;
 }
 
 export function accountHostName(pdsUrl: string | null | undefined): string {
@@ -2401,6 +2642,7 @@ export function isAccountHostPubliclyListable(
   host: AccountHost,
   at = now(),
 ): boolean {
+  if (host.operatorListingOptIn === false) return false;
   // Host records are self-asserted metadata. Until the operator claims the
   // host, they must not establish domain authority or directory visibility.
   const hasPublicIntent = host.verificationStatus === "claimed" ||
@@ -2454,6 +2696,8 @@ function publicAccountHostVisibilitySql(): string {
   // Deliberately keep service_record_uri out of this projection: the record is
   // useful profile data, but is not proof that its author controls the host.
   return `(
+    COALESCE(account_host.operator_listing_opt_in, 1) <> 0
+    AND
     (
       (
         account_host.observed_active_account_count > 0
@@ -2480,6 +2724,10 @@ function publicAccountHostVisibilitySql(): string {
       )
     )
   )`;
+}
+
+function listingFlag(value: boolean | undefined): number | null {
+  return value == null ? null : value ? 1 : 0;
 }
 
 function claimedHostRank(host: AccountHost): number {

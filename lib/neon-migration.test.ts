@@ -59,6 +59,22 @@ Deno.test("Postgres baseline adds durable public host intent evidence", async ()
   }
 });
 
+Deno.test("Postgres baseline adds explicit operator directory visibility", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  for (
+    const column of [
+      "operator_listing_opt_in integer",
+      "operator_listing_opted_at bigint",
+    ]
+  ) {
+    if (!schema.includes(`ADD COLUMN IF NOT EXISTS ${column}`)) {
+      throw new Error(
+        `Expected the account_host ${column} migration to be additive`,
+      );
+    }
+  }
+});
+
 function assertStringArrayEquals(actual: string[], expected: string[]): void {
   if (actual.length === expected.length) {
     const mismatch = actual.find((value, index) => value !== expected[index]);

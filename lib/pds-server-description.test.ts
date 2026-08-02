@@ -102,3 +102,25 @@ Deno.test("fetchPdsServerDescription reads describeServer from a normalized PDS 
   assertEquals(result?.availableUserDomains, ["pds.example"]);
   assertEquals(result?.inviteCodeRequired, true);
 });
+
+Deno.test("a zero cache TTL forces a live describeServer security check", async () => {
+  let email = "old@example.social";
+  const fetchImpl =
+    ((_input: URL | Request | string, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify({ contact: { email } })),
+      )) as typeof fetch;
+
+  const first = await fetchPdsServerDescription(
+    "https://live-check.example",
+    { fetchImpl, checkedAt: 1_000, cacheTtlMs: 60_000 },
+  );
+  email = "new@example.social";
+  const live = await fetchPdsServerDescription(
+    "https://live-check.example",
+    { fetchImpl, checkedAt: 1_001, cacheTtlMs: 0 },
+  );
+
+  assertEquals(first?.contactEmail, "old@example.social");
+  assertEquals(live?.contactEmail, "new@example.social");
+});

@@ -7,11 +7,19 @@ import {
   fetchPdsServerDescription,
   type PdsServerDescription,
 } from "./pds-server-description.ts";
+import { readResponseTextWithLimit } from "./security.ts";
 
 export const PUBLIC_HOST_ENRICHMENT_MIN_ACCOUNTS = 2;
 export const PUBLIC_HOST_ENRICHMENT_RECHECK_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_PUBLIC_HOST_ENRICHMENT_LIMIT = 200;
 const DEFAULT_PUBLIC_HOST_ENRICHMENT_CONCURRENCY = 12;
+const PUBLIC_SIGNUP_PAGE_TIMEOUT_MS = 2500;
+const PUBLIC_SIGNUP_PAGE_MAX_BYTES = 96_000;
+
+export interface PublicSignupPageEvidence {
+  signupUrl: string;
+  label: string;
+}
 
 interface PublicHostEnrichmentCandidate {
   host: string;
@@ -45,13 +53,14 @@ export interface PublicHostEnrichmentOptions {
  * A reachable PDS is not automatically a public provider. Treat its standard
  * describeServer response as public intent only when it advertises account
  * domains and either open registration, or managed invite registration with
- * public operator/policy metadata. The relay count guard keeps one-user PDSes
- * out of this automated path; they can still publish a host record or claim a
- * profile explicitly.
+ * public operator/policy metadata or an explicit same-origin signup CTA. The
+ * relay count guard keeps one-user PDSes out of this automated path; they can
+ * still publish a host record or claim a profile explicitly.
  */
 export function detectPdsPublicIntent(
   description: PdsServerDescription,
   observedAccountCount: number,
+  publicSignupPage: PublicSignupPageEvidence | null = null,
 ): DetectedPdsPublicIntent | null {
   if (
     observedAccountCount < PUBLIC_HOST_ENRICHMENT_MIN_ACCOUNTS ||
@@ -67,9 +76,10 @@ export function detectPdsPublicIntent(
     signupStatus = "open";
   } else if (
     description.inviteCodeRequired === true &&
-    description.contactEmail != null &&
-    (description.privacyPolicyUrl != null ||
-      description.termsOfServiceUrl != null)
+    (publicSignupPage != null ||
+      (description.contactEmail != null &&
+        (description.privacyPolicyUrl != null ||
+          description.termsOfServiceUrl != null)))
   ) {
     source = "pds_managed_invites";
     signupStatus = "invite_required";
@@ -86,8 +96,98 @@ export function detectPdsPublicIntent(
       hasContact: description.contactEmail != null,
       hasPrivacyPolicy: description.privacyPolicyUrl != null,
       hasTermsOfService: description.termsOfServiceUrl != null,
+      publicSignupUrl: publicSignupPage?.signupUrl ?? null,
+      publicSignupLabel: publicSignupPage?.label ?? null,
     }),
   };
+}
+
+/**
+ * Some PDS implementations expose an intentional public registration route on
+ * their landing page without copying that URL into describeServer. Accept an
+ * explicit, same-origin signup CTA as public intent while keeping the relay
+ * account-count guard and invite status from describeServer.
+ */
+export async function fetchPdsPublicSignupPage(
+  serviceEndpoint: string,
+  options: {
+    fetchImpl?: typeof fetch;
+    timeoutMs?: number;
+  } = {},
+): Promise<PublicSignupPageEvidence | null> {
+  const endpoint = normalizeAccountHostPublicServiceEndpoint(serviceEndpoint);
+  if (!endpoint) return null;
+  const root = new URL("/", endpoint);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  try {
+    const response = await fetchImpl(root, {
+      headers: { accept: "text/html,application/xhtml+xml" },
+      signal: AbortSignal.timeout(
+        Math.max(500, options.timeoutMs ?? PUBLIC_SIGNUP_PAGE_TIMEOUT_MS),
+      ),
+    });
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type")?.toLowerCase() ??
+      "";
+    if (!contentType.includes("text/html")) return null;
+    if (response.url && new URL(response.url).origin !== root.origin) {
+      return null;
+    }
+    const body = await readResponseTextWithLimit(
+      response,
+      PUBLIC_SIGNUP_PAGE_MAX_BYTES,
+    );
+    if (!body.ok) return null;
+    return findSameOriginSignupLink(body.text, root);
+  } catch {
+    return null;
+  }
+}
+
+function findSameOriginSignupLink(
+  html: string,
+  root: URL,
+): PublicSignupPageEvidence | null {
+  const anchors = html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi);
+  for (const match of anchors) {
+    const attributes = match[1] ?? "";
+    const hrefMatch = attributes.match(
+      /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i,
+    );
+    const href = hrefMatch?.[1] ?? hrefMatch?.[2] ?? hrefMatch?.[3];
+    if (!href) continue;
+    const label = signupLinkLabel(match[2] ?? "");
+    if (!label || !isPublicSignupLabel(label)) continue;
+    let signupUrl: URL;
+    try {
+      signupUrl = new URL(href, root);
+    } catch {
+      continue;
+    }
+    if (
+      signupUrl.protocol !== "https:" || signupUrl.origin !== root.origin ||
+      signupUrl.username || signupUrl.password
+    ) {
+      continue;
+    }
+    signupUrl.hash = "";
+    return { signupUrl: signupUrl.href, label };
+  }
+  return null;
+}
+
+function signupLinkLabel(html: string): string {
+  return html.replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function isPublicSignupLabel(label: string): boolean {
+  return /\b(?:join\s+(?:this\s+)?server|create\s+(?:an?\s+)?account|sign\s*up|register)\b/i
+    .test(label);
 }
 
 export async function enrichObservedAccountHostPublicIntent(
@@ -132,17 +232,34 @@ export async function enrichObservedAccountHostPublicIntentForClient(
       const endpoint = normalizeAccountHostPublicServiceEndpoint(
         candidate.serviceEndpoint,
       );
-      if (!endpoint) return { candidate, description: null };
+      if (!endpoint) {
+        return { candidate, description: null, publicSignupPage: null };
+      }
       const description = await fetchPdsServerDescription(endpoint, {
         fetchImpl: options.fetchImpl,
         timeoutMs: options.timeoutMs,
         cacheTtlMs: 0,
         checkedAt,
       });
-      return { candidate, description };
+      const standardIntent = description
+        ? detectPdsPublicIntent(
+          description,
+          candidate.observedAccountCount,
+        )
+        : null;
+      const shouldCheckLandingPage = description != null &&
+        standardIntent == null && description.inviteCodeRequired === true &&
+        description.availableUserDomains.length > 0;
+      const publicSignupPage = shouldCheckLandingPage
+        ? await fetchPdsPublicSignupPage(endpoint, {
+          fetchImpl: options.fetchImpl,
+          timeoutMs: options.timeoutMs,
+        })
+        : null;
+      return { candidate, description, publicSignupPage };
     }));
 
-    for (const { candidate, description } of results) {
+    for (const { candidate, description, publicSignupPage } of results) {
       if (!description) {
         summary.unavailable++;
         await client.execute({
@@ -158,6 +275,7 @@ export async function enrichObservedAccountHostPublicIntentForClient(
       const detected = detectPdsPublicIntent(
         description,
         candidate.observedAccountCount,
+        publicSignupPage,
       );
       if (detected) summary.detected++;
       else summary.notDetected++;

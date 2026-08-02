@@ -92,12 +92,11 @@ Host records are self-asserted. They should not automatically make a host
 Atmosphere should derive trust from:
 
 - OAuth claim flow from the expected admin account.
-- Host handle/domain alignment.
+- Exact, bidirectionally verified host handle/domain alignment as a shortcut.
 - PDS service endpoint reachability.
-- Optional `.well-known` proof when the host account handle is different from
-  the host domain.
+- A one-time challenge sent only to the contact email announced by the PDS.
 - Local moderation state.
-- Future third-party attestations if needed.
+- A future standardized PDS operator declaration when AT Protocol provides one.
 
 This means a host card can show the publishing account, while "verified" remains
 an Atmosphere-local or conformance-test result. A self-published record alone
@@ -115,25 +114,19 @@ Atmosphere accepts these claim paths:
 - Pre-bound seeded authority, such as `blacksky.community` claimed by
   `blackskyweb.xyz`.
 - Signed-in account handle exactly matches the host domain.
-- `/.well-known/atmosphere-host.json` on the host domain names the signed-in DID
-  or handle.
+- A short-lived, single-use email link sent to `contact.email` from the PDS's
+  live `com.atproto.server.describeServer` response. The link is bound to the
+  signed-in account DID, and Atmosphere rechecks the announced address before
+  completing the claim.
 - Local `.test` hosts in development only, for visual testing.
 
 Host registration also needs to publish
 `account.atmosphere.host.service/{normalized-host}` from the signed-in account.
-The DB-only fallback is only for local `.test` visual fixtures.
-
-Example `/.well-known/atmosphere-host.json`:
-
-```json
-{
-  "host": "pds.example.com",
-  "owner": {
-    "did": "did:plc:examplehost",
-    "handle": "example.com"
-  }
-}
-```
+The DB-only fallback is only for local `.test` visual fixtures. Atmosphere does
+not ask operators to publish a product-specific HTTPS well-known file. A PDS
+without an announced contact address or exact handle match cannot self-claim;
+exceptional providers need an explicit curated mapping until a standard operator
+declaration exists.
 
 ## Hosts Page Read Model
 

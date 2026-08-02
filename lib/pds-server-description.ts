@@ -145,7 +145,7 @@ export async function fetchPdsServerDescription(
     options.cacheTtlMs ?? DESCRIBE_SERVER_CACHE_TTL_MS,
   );
   const cached = cache.get(normalized);
-  if (cached && cached.expiresAt > ts) return cached.value;
+  if (cacheTtlMs > 0 && cached && cached.expiresAt > ts) return cached.value;
 
   const url = new URL(DESCRIBE_SERVER_PATH, normalized);
   const fetchImpl = options.fetchImpl ?? fetch;

@@ -301,6 +301,8 @@ CREATE TABLE IF NOT EXISTS account_host (
   public_intent_checked_at bigint,
   public_intent_attempted_at bigint,
   public_intent_evidence_json text,
+  operator_listing_opt_in integer,
+  operator_listing_opted_at bigint,
   profile_checked_at bigint,
   observed_account_count integer NOT NULL DEFAULT 0,
   observed_active_account_count integer NOT NULL DEFAULT 0,
@@ -333,6 +335,8 @@ ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_source text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_checked_at bigint;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_attempted_at bigint;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS public_intent_evidence_json text;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS operator_listing_opt_in integer;
+ALTER TABLE account_host ADD COLUMN IF NOT EXISTS operator_listing_opted_at bigint;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS bsky_profile_visible integer NOT NULL DEFAULT 1;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_account_count integer NOT NULL DEFAULT 0;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS observed_active_account_count integer NOT NULL DEFAULT 0;
@@ -350,6 +354,24 @@ CREATE TABLE IF NOT EXISTS account_host_claim (
 );
 
 CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did);
+
+CREATE TABLE IF NOT EXISTS account_host_claim_challenge (
+  token_hash text PRIMARY KEY,
+  host text NOT NULL REFERENCES account_host(host) ON DELETE CASCADE,
+  claimant_did text NOT NULL,
+  claimant_handle text NOT NULL,
+  email_fingerprint text NOT NULL,
+  created_at bigint NOT NULL,
+  expires_at bigint NOT NULL,
+  consumed_at bigint
+);
+
+CREATE INDEX IF NOT EXISTS account_host_claim_challenge_host
+  ON account_host_claim_challenge(host, created_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_challenge_did
+  ON account_host_claim_challenge(claimant_did, created_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_challenge_expires
+  ON account_host_claim_challenge(expires_at);
 
 CREATE TABLE IF NOT EXISTS host_conformance (
   host text PRIMARY KEY REFERENCES account_host(host) ON DELETE CASCADE,

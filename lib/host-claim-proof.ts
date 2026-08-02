@@ -19,7 +19,6 @@ export interface HostClaimProofUser {
 export type HostClaimProofMethod =
   | "prebound"
   | "handle-domain"
-  | "well-known"
   | "local-dev";
 
 export type HostClaimProofResult =
@@ -108,6 +107,7 @@ export function wellKnownHostClaimMatchesUser(
     (!!claimHandle && claimHandle === normalizeHost(user.handle));
 }
 
+/** @deprecated Retained temporarily to recognize historical proof files. */
 export async function fetchWellKnownHostClaimProof(
   host: string,
   user: HostClaimProofUser,
@@ -140,10 +140,10 @@ export async function fetchWellKnownHostClaimProof(
   }
 }
 
-export async function verifyHostClaimDomainProof(
+export function verifyHostClaimDomainProof(
   host: HostClaimProofHost,
   user: HostClaimProofUser,
-): Promise<HostClaimProofResult> {
+): HostClaimProofResult {
   if (hasPreboundHostAuthority(host)) {
     return { ok: true, method: "prebound" };
   }
@@ -153,12 +153,9 @@ export async function verifyHostClaimDomainProof(
   if (isLocalDevHostClaim(host.host)) {
     return { ok: true, method: "local-dev" };
   }
-  if (await fetchWellKnownHostClaimProof(host.host, user)) {
-    return { ok: true, method: "well-known" };
-  }
   return { ok: false, reason: "missing_domain_proof" };
 }
 
 export function hostClaimProofMessage(): string {
-  return "To claim a new host, sign in with the account whose handle matches the host domain, or add /.well-known/atmosphere-host.json to the host domain.";
+  return "Claim this host from its directory page and verify the contact email announced by its PDS. An exact, bidirectionally verified handle match can be used as a shortcut.";
 }

@@ -472,6 +472,8 @@ const SCHEMA_STATEMENTS: string[] = [
     public_intent_checked_at INTEGER,
     public_intent_attempted_at INTEGER,
     public_intent_evidence_json TEXT,
+    operator_listing_opt_in INTEGER,
+    operator_listing_opted_at INTEGER,
     profile_checked_at INTEGER,
     observed_account_count INTEGER NOT NULL DEFAULT 0,
     observed_active_account_count INTEGER NOT NULL DEFAULT 0,
@@ -490,6 +492,17 @@ const SCHEMA_STATEMENTS: string[] = [
     claimed_at INTEGER NOT NULL,
     verified_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS account_host_claim_challenge (
+    token_hash TEXT PRIMARY KEY,
+    host TEXT NOT NULL,
+    claimant_did TEXT NOT NULL,
+    claimant_handle TEXT NOT NULL,
+    email_fingerprint TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    consumed_at INTEGER,
+    FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS host_conformance (
     host TEXT PRIMARY KEY,
@@ -863,6 +876,9 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS account_host_source ON account_host(source)`,
   `CREATE INDEX IF NOT EXISTS account_host_profile_did ON account_host(profile_did)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_host ON account_host_claim_challenge(host, created_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_did ON account_host_claim_challenge(claimant_did, created_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_expires ON account_host_claim_challenge(expires_at)`,
   `CREATE INDEX IF NOT EXISTS host_conformance_status ON host_conformance(status, expires_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at)`,
@@ -1288,6 +1304,18 @@ async function applyAdditiveMigrations(
         column: "public_intent_evidence_json",
         ddl:
           "ALTER TABLE account_host ADD COLUMN public_intent_evidence_json TEXT",
+      },
+      {
+        table: "account_host",
+        column: "operator_listing_opt_in",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN operator_listing_opt_in INTEGER",
+      },
+      {
+        table: "account_host",
+        column: "operator_listing_opted_at",
+        ddl:
+          "ALTER TABLE account_host ADD COLUMN operator_listing_opted_at INTEGER",
       },
       {
         table: "account_host",

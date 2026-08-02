@@ -2,6 +2,7 @@ import { createClient } from "@libsql/client";
 import {
   detectPdsPublicIntent,
   enrichObservedAccountHostPublicIntentForClient,
+  fetchPdsPublicSignupPage,
 } from "./account-host-public-intent.ts";
 import type { DbClient } from "./db.ts";
 import type { PdsServerDescription } from "./pds-server-description.ts";
@@ -59,6 +60,35 @@ Deno.test("PDS public intent distinguishes open providers from personal and unma
     )?.signupStatus,
     "invite_required",
   );
+  assertEquals(
+    detectPdsPublicIntent(
+      description({ inviteCodeRequired: true }),
+      20,
+      {
+        signupUrl: "https://host.example/app/register",
+        label: "Join This Server",
+      },
+    )?.signupStatus,
+    "invite_required",
+  );
+});
+
+Deno.test("PDS public intent accepts explicit same-origin signup CTAs", async () => {
+  const result = await fetchPdsPublicSignupPage("https://host.example", {
+    fetchImpl: (() =>
+      Promise.resolve(
+        new Response(
+          `<a href="https://elsewhere.example/register">Register</a>
+           <a class="primary" href="/app/register"><span>Join This Server</span></a>`,
+          { headers: { "content-type": "text/html; charset=utf-8" } },
+        ),
+      )) as typeof fetch,
+  });
+
+  assertEquals(result, {
+    signupUrl: "https://host.example/app/register",
+    label: "Join This Server",
+  });
 });
 
 Deno.test("public-host enrichment persists unclaimed provider evidence without listing one-user PDSes", async () => {
@@ -86,6 +116,7 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
         ["open.example", 10, "observed"],
         ["managed-invites.example", 8, "observed"],
         ["private-invites.example", 5, "observed"],
+        ["tranquil.example", 13, "observed"],
         ["personal.example", 1, "observed"],
         ["claimed.example", 10, "claimed"],
       ] as const
@@ -117,26 +148,43 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
       {
         checkedAt: 1_000_000,
         fetchImpl: ((input: URL | Request | string) => {
-          const host = new URL(String(input)).hostname;
+          const url = new URL(String(input));
+          const host = url.hostname;
+          if (url.pathname === "/") {
+            const html = host === "tranquil.example"
+              ? `<a href="/app/register">Join This Server</a>`
+              : `<a href="/app/login">Log in</a>`;
+            return Promise.resolve(
+              new Response(html, {
+                headers: { "content-type": "text/html; charset=utf-8" },
+              }),
+            );
+          }
           const managed = host === "managed-invites.example";
           const privateInvites = host === "private-invites.example";
+          const tranquil = host === "tranquil.example";
           return Promise.resolve(
-            new Response(JSON.stringify({
-              did: `did:web:${host}`,
-              availableUserDomains: [host],
-              inviteCodeRequired: managed || privateInvites,
-              links: managed ? { termsOfService: `https://${host}/terms` } : {},
-              contact: managed ? { email: `support@${host}` } : {},
-            })),
+            new Response(
+              JSON.stringify({
+                did: `did:web:${host}`,
+                availableUserDomains: [host],
+                inviteCodeRequired: managed || privateInvites || tranquil,
+                links: managed
+                  ? { termsOfService: `https://${host}/terms` }
+                  : {},
+                contact: managed ? { email: `support@${host}` } : {},
+              }),
+              { headers: { "content-type": "application/json" } },
+            ),
           );
         }) as typeof fetch,
       },
     );
 
     assertEquals(summary, {
-      candidates: 4,
-      checked: 4,
-      detected: 3,
+      candidates: 5,
+      checked: 5,
+      detected: 4,
       notDetected: 1,
       unavailable: 0,
     });
@@ -186,6 +234,13 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
         signup_status: "open",
         public_intent_status: "detected",
         public_intent_source: "pds_open_signup",
+        public_intent_checked_at: 1_000_000,
+      },
+      {
+        host: "tranquil.example",
+        signup_status: "invite_required",
+        public_intent_status: "detected",
+        public_intent_source: "pds_managed_invites",
         public_intent_checked_at: 1_000_000,
       },
     ]);
