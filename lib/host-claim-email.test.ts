@@ -281,7 +281,10 @@ Deno.test("Comail delivery rejects a 200 response that did not accept the intend
         accepted: [],
         rejected: [{ recipient: "ops@example.social", reason: "suppressed" }],
       },
-      { accepted: [{ recipient: "ops@example.social", messageId: 1 }] },
+      {
+        accepted: [{ recipient: "ops@example.social", messageId: 1 }],
+        rejected: "invalid",
+      },
     ]
   ) {
     const delivery = createComailHostContactEmailDelivery({
@@ -309,6 +312,34 @@ Deno.test("Comail delivery rejects a 200 response that did not accept the intend
       "without accepting the intended recipient",
     );
   }
+});
+
+Deno.test("Comail delivery accepts the live success shape with omitted rejections", async () => {
+  const delivery = createComailHostContactEmailDelivery({
+    apiKey: "atmos_test_key",
+    senderDid: "did:plc:atmosphere",
+    from: "claims@atmosphere.example",
+    fetchImpl: (() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            accepted: [{
+              recipient: "ops@example.social",
+              messageId: 448,
+            }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )) as typeof fetch,
+  });
+
+  await delivery.send({
+    to: "ops@example.social",
+    host: "pds.example.social",
+    displayName: "Example Social",
+    claimantHandle: "operator.example",
+    verificationUrl: "https://atmosphere.example/verify?token=secret",
+  });
 });
 
 Deno.test("Comail delivery rejects malformed and oversized 200 responses", async () => {

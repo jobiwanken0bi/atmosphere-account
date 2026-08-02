@@ -394,7 +394,7 @@ export function createComailHostContactEmailDelivery(
         const result = parseComailDeliveryResult(body.text);
         if (
           result &&
-          result.rejected.length === 0 &&
+          (result.rejected === null || result.rejected.length === 0) &&
           result.accepted.some((recipient) =>
             recipient.toLowerCase() === input.to.toLowerCase()
           )
@@ -412,7 +412,7 @@ export function createComailHostContactEmailDelivery(
 
 function parseComailDeliveryResult(
   body: string,
-): { accepted: string[]; rejected: unknown[] } | null {
+): { accepted: string[]; rejected: unknown[] | null } | null {
   let value: unknown;
   try {
     value = JSON.parse(body);
@@ -421,9 +421,15 @@ function parseComailDeliveryResult(
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const result = value as Record<string, unknown>;
-  if (!Array.isArray(result.accepted) || !Array.isArray(result.rejected)) {
+  if (!Array.isArray(result.accepted)) {
     return null;
   }
+  const rejected = result.rejected == null
+    ? null
+    : Array.isArray(result.rejected)
+    ? result.rejected
+    : undefined;
+  if (rejected === undefined) return null;
   const accepted = result.accepted.map((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       return null;
@@ -432,7 +438,7 @@ function parseComailDeliveryResult(
     return typeof recipient === "string" ? recipient : null;
   });
   if (accepted.some((recipient) => recipient === null)) return null;
-  return { accepted: accepted as string[], rejected: result.rejected };
+  return { accepted: accepted as string[], rejected };
 }
 
 function emailText(input: {
