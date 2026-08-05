@@ -21,34 +21,148 @@ export function postgresDatabaseUrl(): string {
 export function createPostgresExecuteClient(
   connectionString = postgresDatabaseUrl(),
 ): DbExecuteClient {
-  const pool = new Pool({
-    connectionString,
-    max: Number(Deno.env.get("POSTGRES_POOL_MAX") ?? 5),
-    ssl: sslConfigForConnectionString(connectionString),
-  });
+  const pool = new Pool(postgresPoolOptions(connectionString));
+  attachPostgresPoolErrorHandler(pool);
 
   const client = {
-    async execute(
-      query: string | { sql: string; args?: unknown[] },
-      positionalArgs?: unknown[],
-    ) {
-      const statement = typeof query === "string" ? query : query.sql;
-      const args = typeof query === "string"
-        ? positionalArgs ?? []
-        : query.args ?? [];
-      const converted = convertQuestionParameters(statement);
-      const result = await pool.query(
-        converted,
-        args.map(valueForPostgres),
-      );
-      return {
-        rows: result.rows as Record<string, unknown>[],
-        rowsAffected: result.rowCount ?? 0,
-      };
-    },
+    execute: (query: DbQuery, positionalArgs?: unknown[]) =>
+      executePostgresQuery(pool, query, positionalArgs),
+    withTransaction: <T>(fn: (transaction: DbExecuteClient) => Promise<T>) =>
+      runPostgresTransaction(pool, fn),
     end: () => pool.end(),
   };
   return client as DbExecuteClient;
+}
+
+type DbQuery = string | { sql: string; args?: unknown[] };
+
+interface PostgresQueryExecutor {
+  query(
+    statement: string,
+    args?: Array<DbValue | Buffer>,
+  ): Promise<{ rows: unknown[]; rowCount: number | null }>;
+}
+
+interface PostgresTransactionConnection extends PostgresQueryExecutor {
+  release(error?: Error): void;
+}
+
+interface PostgresTransactionPool {
+  connect(): Promise<PostgresTransactionConnection>;
+}
+
+async function executePostgresQuery(
+  executor: PostgresQueryExecutor,
+  query: DbQuery,
+  positionalArgs?: unknown[],
+) {
+  const statement = typeof query === "string" ? query : query.sql;
+  const args = typeof query === "string"
+    ? positionalArgs ?? []
+    : query.args ?? [];
+  const result = await executor.query(
+    convertQuestionParameters(statement),
+    args.map(valueForPostgres),
+  );
+  return {
+    rows: result.rows as Record<string, unknown>[],
+    rowsAffected: result.rowCount ?? 0,
+  };
+}
+
+async function runPostgresTransaction<T>(
+  pool: PostgresTransactionPool,
+  fn: (transaction: DbExecuteClient) => Promise<T>,
+): Promise<T> {
+  const connection = await pool.connect();
+  let releaseError: Error | undefined;
+  try {
+    await connection.query("BEGIN");
+    const transaction: DbExecuteClient = {
+      execute: (query, positionalArgs) =>
+        executePostgresQuery(connection, query, positionalArgs),
+    };
+    const result = await fn(transaction);
+    await connection.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await connection.query("ROLLBACK");
+    } catch (rollbackError) {
+      releaseError = errorValue(rollbackError);
+      console.error(
+        `[postgres] transaction rollback failed error=${
+          errorName(rollbackError)
+        }`,
+      );
+    }
+    throw error;
+  } finally {
+    connection.release(releaseError);
+  }
+}
+
+export async function runPostgresTransactionForTest<T>(
+  pool: PostgresTransactionPool,
+  fn: (transaction: DbExecuteClient) => Promise<T>,
+): Promise<T> {
+  return await runPostgresTransaction(pool, fn);
+}
+
+const DEFAULT_POSTGRES_POOL_MAX = 5;
+
+interface PostgresPoolErrorEmitter {
+  on(event: "error", listener: (error: Error) => void): unknown;
+}
+
+/**
+ * node-postgres removes a failed idle client before emitting this event. The
+ * listener prevents EventEmitter's default unhandled-error crash; the next
+ * checkout creates a replacement connection on demand.
+ */
+export function attachPostgresPoolErrorHandler(
+  pool: PostgresPoolErrorEmitter,
+): void {
+  pool.on("error", (error) => {
+    console.info(
+      `[postgres] idle pooled connection dropped; reconnecting on demand error=${error.name}`,
+    );
+  });
+}
+
+function errorName(value: unknown): string {
+  return value instanceof Error ? value.name : typeof value;
+}
+
+function errorValue(value: unknown): Error {
+  return value instanceof Error
+    ? value
+    : new Error("transaction rollback failed");
+}
+
+/**
+ * Keep the small runtime pool alive instead of accepting node-postgres' 10s
+ * idle timeout. Deno's Node socket compatibility layer retains closed socket
+ * state under repeated pg connection churn, so a quiet/bursty service grows
+ * its JavaScript heap every time the default idle timer retires the pool.
+ *
+ * Failed connections are still removed by node-postgres and `max` remains a
+ * hard bound. At most five idle connections are retained by default.
+ */
+export function postgresPoolOptions(
+  connectionString: string,
+  rawPoolMax = Deno.env.get("POSTGRES_POOL_MAX"),
+) {
+  const parsedMax = Number(rawPoolMax ?? DEFAULT_POSTGRES_POOL_MAX);
+  const max = Number.isSafeInteger(parsedMax) && parsedMax > 0
+    ? parsedMax
+    : DEFAULT_POSTGRES_POOL_MAX;
+  return {
+    connectionString,
+    max,
+    idleTimeoutMillis: 0,
+    ssl: sslConfigForConnectionString(connectionString),
+  };
 }
 
 export async function closePostgresExecuteClient(

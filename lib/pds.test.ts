@@ -1,4 +1,8 @@
-import { isPdsScopeMissingError, PdsRecordWriteError } from "./pds.ts";
+import {
+  isPdsScopeMissingError,
+  PdsRecordWriteError,
+  readPdsErrorBodyForTest,
+} from "./pds.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -27,4 +31,11 @@ Deno.test("PDS scope failures are distinguishable from other write errors", () =
     ),
     false,
   );
+});
+
+Deno.test("PDS error bodies are bounded before custom errors retain them", async () => {
+  const oversized = await readPdsErrorBodyForTest(
+    new Response("x".repeat(9 * 1024)),
+  );
+  assertEquals(oversized, "response too large");
 });

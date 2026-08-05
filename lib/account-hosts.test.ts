@@ -1,5 +1,6 @@
 import {
   accountHostAvailability,
+  accountHostClaimUpdateQueryForTest,
   DEFAULT_ACCOUNT_HOST_SORT,
   isAccountHostPubliclyListable,
   listSeededAccountHostFallback,
@@ -10,6 +11,7 @@ import {
   sortAccountHostsForDirectory,
   validateAccountHostRegistrationInput,
 } from "./account-hosts.ts";
+import { convertQuestionParameters } from "./neon.ts";
 
 function assert(condition: unknown, message = "Assertion failed"): void {
   if (!condition) throw new Error(message);
@@ -20,6 +22,56 @@ function assertEquals(actual: unknown, expected: unknown): void {
   const e = JSON.stringify(expected);
   if (a !== e) throw new Error(`Expected ${e}, got ${a}`);
 }
+
+Deno.test("OAuth host claims preserve an omitted directory preference on Postgres", () => {
+  const query = accountHostClaimUpdateQueryForTest({
+    host: "pds.example",
+    claimHandle: "operator.example",
+    claimDid: "did:plc:operator",
+    timestamp: 1_800_000_000_000,
+  });
+  const postgresSql = convertQuestionParameters(query.sql);
+
+  assert(!postgresSql.includes("operator_listing_opt_in"));
+  assert(!postgresSql.includes("IS NULL"));
+  assertEquals(
+    postgresSql.match(/\$\d+/g),
+    ["$1", "$2", "$3", "$4"],
+  );
+  assertEquals(query.args, [
+    "operator.example",
+    "did:plc:operator",
+    1_800_000_000_000,
+    "pds.example",
+  ]);
+});
+
+Deno.test("contact-email host claims write an explicit directory preference on Postgres", () => {
+  const query = accountHostClaimUpdateQueryForTest({
+    host: "tranquil.example",
+    claimHandle: "owner.example",
+    claimDid: "did:plc:owner",
+    operatorListingOptIn: false,
+    timestamp: 1_800_000_000_000,
+  });
+  const postgresSql = convertQuestionParameters(query.sql);
+
+  assert(postgresSql.includes("operator_listing_opt_in = $3"));
+  assert(postgresSql.includes("operator_listing_opted_at = $4"));
+  assert(!postgresSql.includes("IS NULL"));
+  assertEquals(
+    postgresSql.match(/\$\d+/g),
+    ["$1", "$2", "$3", "$4", "$5", "$6"],
+  );
+  assertEquals(query.args, [
+    "owner.example",
+    "did:plc:owner",
+    0,
+    1_800_000_000_000,
+    1_800_000_000_000,
+    "tranquil.example",
+  ]);
+});
 
 Deno.test("seeded account host fallback includes known public hosts", () => {
   const hosts = listSeededAccountHostFallback();

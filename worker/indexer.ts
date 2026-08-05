@@ -78,8 +78,11 @@ import {
   upsertHostProtocolRecord,
 } from "../lib/host-record-indexing.ts";
 import {
+  jetstreamDisconnectReason,
   nextReconnectFailureCount,
   reconnectDelayMs,
+  reconnectLogDecision,
+  type ReconnectLogLevel,
 } from "../lib/reconnect-backoff.ts";
 
 interface JetstreamCommit {
@@ -604,7 +607,7 @@ function buildJetstreamUrl(cursor: number | null): string {
   return url.toString();
 }
 
-async function runOnce(): Promise<never> {
+async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   const acquired = await tryAcquireWorkerLease(
     LEASE_NAME,
     workerId,
@@ -614,7 +617,9 @@ async function runOnce(): Promise<never> {
 
   const cursor = await getJetstreamCursor();
   const url = buildJetstreamUrl(cursor);
-  console.log(`[indexer] connecting as ${workerId} to ${url}`);
+  if (logConnectionLifecycle) {
+    console.log(`[indexer] connecting as ${workerId} to ${url}`);
+  }
 
   const ws = new WebSocket(url);
   activeSocket = ws;
@@ -647,7 +652,7 @@ async function runOnce(): Promise<never> {
 
       ws.addEventListener("open", () => {
         connectedAt = Date.now();
-        console.log("[indexer] connected");
+        if (logConnectionLifecycle) console.log("[indexer] connected");
       });
       ws.addEventListener("message", (msg) => {
         if (stopped) return;
@@ -700,10 +705,13 @@ async function runOnce(): Promise<never> {
 
 async function main(): Promise<void> {
   let consecutiveFailures = 0;
+  let lastReconnectLoggedAt: number | null = null;
+  let lastReconnectLogLevel: ReconnectLogLevel | null = null;
+  let suppressedReconnects = 0;
   while (!shuttingDown) {
     let retryDelayMs = reconnectDelayMs(Math.max(1, consecutiveFailures));
     try {
-      await runOnce();
+      await runOnce(consecutiveFailures === 0);
     } catch (err) {
       if (shuttingDown) break;
       if (err instanceof LeaseUnavailableError) {
@@ -715,9 +723,26 @@ async function main(): Promise<void> {
           connectedForMs: err.connectedForMs,
         });
         retryDelayMs = reconnectDelayMs(consecutiveFailures);
-        console.warn(
-          `[indexer] ${err.message}; reconnecting in ${retryDelayMs}ms`,
-        );
+        const now = Date.now();
+        const decision = reconnectLogDecision({
+          consecutiveFailures,
+          connectedForMs: err.connectedForMs,
+          now,
+          lastLoggedAt: lastReconnectLoggedAt,
+          lastLevel: lastReconnectLogLevel,
+        });
+        if (decision.shouldLog) {
+          const message = `[indexer] Jetstream disconnected reason=${
+            jetstreamDisconnectReason(err.message)
+          } connection_ms=${err.connectedForMs} consecutive_failures=${consecutiveFailures} reconnect_delay_ms=${retryDelayMs} suppressed_reconnects=${suppressedReconnects}`;
+          if (decision.level === "error") console.error(message);
+          else console.info(message);
+          lastReconnectLoggedAt = now;
+          suppressedReconnects = 0;
+        } else {
+          suppressedReconnects += 1;
+        }
+        lastReconnectLogLevel = decision.level;
       } else {
         consecutiveFailures = Math.min(11, consecutiveFailures + 1);
         retryDelayMs = reconnectDelayMs(consecutiveFailures);

@@ -7,7 +7,7 @@ import {
 } from "./passkey-management.ts";
 
 Deno.test("passkey management ticket is signed, DID-bound, and expires", async () => {
-  const now = 1_750_000_000_000;
+  const now = Date.now();
   const did = "did:plc:passkeyaccount";
   const cookie = await buildPasskeyManagementCookie(did, now);
   const request = new Request("https://login.atmosphereaccount.com/passkeys", {
@@ -23,8 +23,11 @@ Deno.test("passkey management ticket is signed, DID-bound, and expires", async (
   );
 
   const value = cookie.split(";")[0];
-  const last = value.slice(-1);
-  const tampered = `${value.slice(0, -1)}${last === "A" ? "B" : "A"}`;
+  const signatureStart = value.lastIndexOf(".") + 1;
+  const firstSignatureCharacter = value[signatureStart];
+  const tampered = `${value.slice(0, signatureStart)}${
+    firstSignatureCharacter === "A" ? "B" : "A"
+  }${value.slice(signatureStart + 1)}`;
   assertEquals(
     await readPasskeyManagementTicket(
       new Request(request.url, { headers: { cookie: tampered } }),

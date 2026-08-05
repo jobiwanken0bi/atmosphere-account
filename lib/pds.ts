@@ -5,6 +5,7 @@
 import { authedFetch } from "./oauth.ts";
 import { normalizeServiceEndpoint } from "./identity.ts";
 import { ATPROTO_FETCH_TIMEOUT_MS } from "./env.ts";
+import { readResponseTextWithLimit } from "./security.ts";
 import {
   type BlobRef,
   PROFILE_NSID,
@@ -20,6 +21,22 @@ export interface PutRecordResult {
   cid: string;
   commit?: { cid: string; rev: string };
   validationStatus?: string;
+}
+
+const PDS_ERROR_BODY_MAX_BYTES = 8 * 1024;
+
+async function readPdsErrorBody(response: Response): Promise<string> {
+  const bounded = await readResponseTextWithLimit(
+    response,
+    PDS_ERROR_BODY_MAX_BYTES,
+  );
+  return bounded.ok ? bounded.text : bounded.error;
+}
+
+export async function readPdsErrorBodyForTest(
+  response: Response,
+): Promise<string> {
+  return await readPdsErrorBody(response);
 }
 
 function fetchWithTimeout(
@@ -51,6 +68,7 @@ export class PdsRecordWriteError extends Error {
     readonly operation: "putRecord" | "deleteRecord",
     readonly status: number,
     readonly body: string,
+    readonly retryAfter: string | null = null,
   ) {
     super(
       `${operation} failed: HTTP ${status}${
@@ -58,6 +76,36 @@ export class PdsRecordWriteError extends Error {
       }`,
     );
     this.name = "PdsRecordWriteError";
+  }
+}
+
+export class PdsRecordReadError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+    readonly retryAfter: string | null = null,
+  ) {
+    super(
+      `getRecord failed: HTTP ${status}${
+        body.trim() ? `: ${body.trim().slice(0, 240)}` : ""
+      }`,
+    );
+    this.name = "PdsRecordReadError";
+  }
+}
+
+export class PdsBlobUploadError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+    readonly retryAfter: string | null = null,
+  ) {
+    super(
+      `uploadBlob failed: HTTP ${status}${
+        body.trim() ? `: ${body.trim().slice(0, 240)}` : ""
+      }`,
+    );
+    this.name = "PdsBlobUploadError";
   }
 }
 
@@ -94,8 +142,13 @@ export async function putProfileRecord(
     }),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new PdsRecordWriteError("putRecord", res.status, text);
+    const text = await readPdsErrorBody(res);
+    throw new PdsRecordWriteError(
+      "putRecord",
+      res.status,
+      text,
+      res.headers.get("retry-after"),
+    );
   }
   return await res.json() as PutRecordResult;
 }
@@ -113,8 +166,12 @@ export async function getProfileRecord(
   const res = await authedFetch(did, url.toString());
   if (res.status === 404) return null;
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`getRecord failed: HTTP ${res.status}: ${text}`);
+    const text = await readPdsErrorBody(res);
+    throw new PdsRecordReadError(
+      res.status,
+      text,
+      res.headers.get("retry-after"),
+    );
   }
   const json = await res.json() as { value?: unknown };
   return json.value && typeof json.value === "object"
@@ -177,7 +234,7 @@ export async function putRecord(
     }),
   });
   if (!res.ok) {
-    const text = await res.text();
+    const text = await readPdsErrorBody(res);
     throw new Error(`putRecord failed: HTTP ${res.status}: ${text}`);
   }
   return await res.json() as PutRecordResult;
@@ -228,8 +285,13 @@ export async function deleteRecord(
   });
   if (res.status === 404) return;
   if (!res.ok) {
-    const text = await res.text();
-    throw new PdsRecordWriteError("deleteRecord", res.status, text);
+    const text = await readPdsErrorBody(res);
+    throw new PdsRecordWriteError(
+      "deleteRecord",
+      res.status,
+      text,
+      res.headers.get("retry-after"),
+    );
   }
 }
 
@@ -250,8 +312,12 @@ export async function uploadBlob(
     body: buf,
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`uploadBlob failed: HTTP ${res.status}: ${text}`);
+    const text = await readPdsErrorBody(res);
+    throw new PdsBlobUploadError(
+      res.status,
+      text,
+      res.headers.get("retry-after"),
+    );
   }
   const json = await res.json() as { blob: BlobRef };
   return json.blob;
@@ -299,7 +365,10 @@ export async function getRecordPublic(
   const res = await fetchWithTimeout(url.toString());
   if (res.status === 404) return null;
   if (!res.ok) {
-    throw new PublicRecordFetchError(res.status, await res.text());
+    throw new PublicRecordFetchError(
+      res.status,
+      await readPdsErrorBody(res),
+    );
   }
   return await res.json() as { uri: string; cid: string; value: unknown };
 }

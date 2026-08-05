@@ -20,6 +20,9 @@ export interface DbExecuteClient {
     query: string | { sql: string; args?: unknown[] },
     args?: unknown[],
   ): Promise<DbExecuteResult>;
+  withTransaction?<T>(
+    fn: (client: DbExecuteClient) => Promise<T>,
+  ): Promise<T>;
 }
 
 export function neonDatabaseUrl(): string {

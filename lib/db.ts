@@ -1452,6 +1452,53 @@ export async function withDb<T>(fn: (c: DbClient) => Promise<T>): Promise<T> {
   return fn(c);
 }
 
+interface LibsqlTransactionClient extends DbClient {
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
+interface LibsqlTransactionFactory {
+  transaction(mode: "write"): Promise<LibsqlTransactionClient>;
+}
+
+/**
+ * Run a multi-statement invariant on one database connection. Postgres uses a
+ * checked-out pool client; libSQL uses its native write transaction. Neon HTTP
+ * does not support interactive transactions, so fail closed rather than leave
+ * partially-applied ownership state.
+ */
+export async function withDbTransaction<T>(
+  fn: (c: DbClient) => Promise<T>,
+): Promise<T> {
+  if (shouldRunRequestMigrations()) await migrate();
+  const c = await getClient();
+  if (c.withTransaction) return await c.withTransaction(fn);
+  if (dbBackend() === "neon") {
+    throw new Error(
+      "This operation requires an atomic database transaction, which is unavailable on the Neon HTTP backend.",
+    );
+  }
+
+  const factory = c as unknown as LibsqlTransactionFactory;
+  const transaction = await factory.transaction("write");
+  try {
+    const result = await fn(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch((rollbackError) => {
+      console.error(
+        `[db] transaction rollback failed error=${
+          rollbackError instanceof Error
+            ? rollbackError.name
+            : typeof rollbackError
+        }`,
+      );
+    });
+    throw error;
+  }
+}
+
 export async function checkDbHealth(): Promise<
   {
     ok: true;

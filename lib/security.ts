@@ -109,6 +109,7 @@ export async function readResponseTextWithLimit(
   if (rawLength) {
     const contentLength = Number(rawLength);
     if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      await response.body?.cancel().catch(() => {});
       return { ok: false, error: "response too large" };
     }
   }

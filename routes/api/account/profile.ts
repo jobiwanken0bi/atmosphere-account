@@ -23,6 +23,10 @@ import {
   putProfileRecord,
   uploadBlob,
 } from "../../../lib/pds.ts";
+import {
+  profilePdsFailureResponse,
+  retryTransientProfileRead,
+} from "../../../lib/profile-pds-resilience.ts";
 import { type ProfileRecord, validateProfile } from "../../../lib/lexicons.ts";
 import { getProfileByDid, upsertProfile } from "../../../lib/registry.ts";
 import { normalizeProfileWebsiteUrl } from "../../../lib/user-profile-links.ts";
@@ -121,10 +125,9 @@ export const handler = define.handlers({
     const publicWebsiteUrl = websiteVisible ? safeWebsiteUrl : null;
 
     const existingRecord = session
-      ? await getProfileRecord(user.did, session.pdsUrl).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        return new Response(`getRecord failed: ${message}`, { status: 502 });
-      })
+      ? await retryTransientProfileRead(() =>
+        getProfileRecord(user.did, session.pdsUrl)
+      ).catch((err) => profilePdsFailureResponse("read", err))
       : null;
     if (existingRecord instanceof Response) return existingRecord;
     const createdAt = existingRecord?.createdAt ??
@@ -153,10 +156,7 @@ export const handler = define.handlers({
           avatarFile.type,
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return new Response(`avatar upload failed: ${message}`, {
-          status: 502,
-        });
+        return profilePdsFailureResponse("avatar", err);
       }
     }
     const draft: ProfileRecord = {
@@ -179,15 +179,12 @@ export const handler = define.handlers({
         user.did,
         session.pdsUrl,
         validation.value,
-      ).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        return new Response(`putRecord failed: ${message}`, { status: 502 });
-      })
+      ).catch((err) => profilePdsFailureResponse("write", err))
       : { cid: `dev-profile-${Date.now()}`, commit: undefined };
     if (put instanceof Response) return put;
 
-    await Promise.all([
-      updateAppUserSettings({
+    try {
+      await updateAppUserSettings({
         did: user.did,
         displayName,
         bio,
@@ -197,32 +194,58 @@ export const handler = define.handlers({
         websiteVisible: Boolean(publicWebsiteUrl),
         avatarCid: validation.value.avatar?.ref.$link,
         avatarMime: validation.value.avatar?.mimeType,
-      }),
-      upsertProfile({
-        did: user.did,
-        handle: user.handle,
-        profileType: validation.value.profileType,
-        name: validation.value.name,
-        description: validation.value.description,
-        mainLink: validation.value.mainLink ?? null,
-        iosLink: null,
-        androidLink: null,
-        categories: [],
-        subcategories: [],
-        links: [],
-        screenshots: [],
-        avatarCid: validation.value.avatar?.ref.$link ?? null,
-        avatarMime: validation.value.avatar?.mimeType ?? null,
-        iconCid: null,
-        iconMime: null,
-        iconBwCid: null,
-        iconBwMime: null,
-        pdsUrl: profilePdsUrl,
-        recordCid: put.cid,
-        recordRev: put.commit?.rev ?? put.cid,
-        createdAt: Date.parse(validation.value.createdAt) || Date.now(),
-      }),
-    ]);
+      });
+    } catch (err) {
+      console.error(
+        "[profile] PDS record saved but local display settings failed:",
+        err,
+      );
+      return new Response(
+        "Your profile was saved to your account host, but its display settings were not confirmed. Retry the save.",
+        {
+          status: 503,
+          headers: {
+            "cache-control": "no-store",
+            "content-type": "text/plain; charset=utf-8",
+            "x-atmosphere-error-code": "local_settings_incomplete",
+          },
+        },
+      );
+    }
+
+    // This table is a local projection of the canonical PDS record. A failed
+    // immediate upsert must not turn a successful PDS write into a false save
+    // failure: Jetstream will reconcile the projection from the saved record.
+    await upsertProfile({
+      did: user.did,
+      handle: user.handle,
+      profileType: validation.value.profileType,
+      name: validation.value.name,
+      description: validation.value.description,
+      mainLink: validation.value.mainLink ?? null,
+      iosLink: null,
+      androidLink: null,
+      categories: [],
+      subcategories: [],
+      links: [],
+      screenshots: [],
+      avatarCid: validation.value.avatar?.ref.$link ?? null,
+      avatarMime: validation.value.avatar?.mimeType ?? null,
+      iconCid: null,
+      iconMime: null,
+      iconBwCid: null,
+      iconBwMime: null,
+      pdsUrl: profilePdsUrl,
+      recordCid: put.cid,
+      recordRev: put.commit?.rev ?? put.cid,
+      createdAt: Date.parse(validation.value.createdAt) || Date.now(),
+    }).catch((err) => {
+      if (!session) throw err;
+      console.warn(
+        "[profile] immediate projection failed; awaiting Jetstream reconciliation:",
+        err,
+      );
+    });
 
     return new Response(null, {
       status: 303,

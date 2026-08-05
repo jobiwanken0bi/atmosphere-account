@@ -15,7 +15,7 @@ itself, a backup.
 
 ## Current production policy
 
-Verified 2026-07-13 in the Railway production environment:
+Verified 2026-08-05 in the Railway production environment:
 
 - daily and weekly volume backup schedules are active;
 - PITR is enabled for the source `Postgres` service and writes to the dedicated
@@ -67,5 +67,29 @@ A read-only transaction against the recovered service verified:
 The recovered database reported `pg_is_in_recovery() = false`, which is expected
 for a writable standalone copy; validation was nevertheless performed inside
 `BEGIN READ ONLY` and rolled back. The disposable restored service and its
-volume were deleted after verification. The next drill is due by 2026-10-13 or
-earlier after any Postgres image or backup-policy change.
+volume were deleted after verification.
+
+The 2026-08-05 drill restored the source database to `2026-08-05T18:48:00Z`,
+several minutes behind the live source, as the isolated service
+`Postgres-restored-20260805-1848` (`a7b83c53-77a9-44b7-b645-e64621339130`). The
+source `Postgres` service and the production readiness endpoint remained healthy
+throughout.
+
+A read-only transaction against the recovered service verified:
+
+- `profile`: 111 rows;
+- `account_host`: 5,707 rows;
+- `app_listing`: 441 rows;
+- `login_app`: 2 rows;
+- `worker_lease`: 1 row;
+- `jetstream_cursor.cursor`: `1785955677732960`, updated three seconds before
+  the selected recovery point;
+- latest complete `pds_inventory_scan`: 5,793 instances across six pages;
+- representative login-app, host, and app-listing records.
+
+The source comparison recorded 111 profiles, 5,707 account hosts, 441 app
+listings, two login apps, one worker lease, and cursor `1785956001560510`. The
+recovered database again reported `pg_is_in_recovery() = false`, as expected for
+the promoted standalone copy. Validation was rolled back, and the disposable
+restored service and `postgres-restored` volume were deleted. The next drill is
+due by 2026-11-05 or earlier after any Postgres image or backup-policy change.

@@ -6,7 +6,7 @@
  * host records for the Hosts page; the seed list keeps known umbrella hosts
  * recognizable even before an observation row exists.
  */
-import { type DbClient, withDb } from "./db.ts";
+import { type DbClient, withDb, withDbTransaction } from "./db.ts";
 import {
   hasPreboundHostAuthority,
   hostClaimProofMessage,
@@ -1415,6 +1415,52 @@ export function accountHostClaimAuthorityMatchesUser(
   return normalizeHandle(authority.handle) === normalizeHandle(user.handle);
 }
 
+interface AccountHostClaimUpdateQueryInput {
+  host: string;
+  claimHandle: string;
+  claimDid: string;
+  operatorListingOptIn?: boolean;
+  timestamp: number;
+}
+
+function accountHostClaimUpdateQuery(
+  input: AccountHostClaimUpdateQueryInput,
+): { sql: string; args: Array<string | number | null> } {
+  const listingWasSelected = input.operatorListingOptIn != null;
+  return {
+    sql: `UPDATE account_host
+      SET claim_handle = ?,
+          claim_did = ?,
+          verification_status = CASE
+            WHEN verification_status = 'verified' THEN 'verified'
+            ELSE 'claimed'
+          END,
+          ${
+      listingWasSelected
+        ? `operator_listing_opt_in = ?,
+          operator_listing_opted_at = ?,`
+        : ""
+    }
+          updated_at = ?
+      WHERE host = ?`,
+    args: [
+      input.claimHandle,
+      input.claimDid,
+      ...(listingWasSelected
+        ? [listingFlag(input.operatorListingOptIn), input.timestamp]
+        : []),
+      input.timestamp,
+      input.host,
+    ],
+  };
+}
+
+export function accountHostClaimUpdateQueryForTest(
+  input: AccountHostClaimUpdateQueryInput,
+): { sql: string; args: Array<string | number | null> } {
+  return accountHostClaimUpdateQuery(input);
+}
+
 export async function claimAccountHost(
   host: string,
   user: { did: string; handle: string },
@@ -1461,7 +1507,7 @@ export async function claimAccountHost(
     verifiedAt: ts,
     updatedAt: ts,
   };
-  const saved = await withDb(async (c) => {
+  const saved = await withDbTransaction(async (c) => {
     const claimWrite = existingClaim
       ? await c.execute({
         sql: `UPDATE account_host_claim
@@ -1493,35 +1539,16 @@ export async function claimAccountHost(
         ],
       });
     if (Number(claimWrite.rowsAffected ?? 0) !== 1) return false;
-    await c.execute({
-      sql: `UPDATE account_host
-        SET claim_handle = ?,
-            claim_did = ?,
-            verification_status = CASE
-              WHEN verification_status = 'verified' THEN 'verified'
-              ELSE 'claimed'
-            END,
-            operator_listing_opt_in = CASE
-              WHEN ? IS NULL THEN operator_listing_opt_in
-              ELSE ?
-            END,
-            operator_listing_opted_at = CASE
-              WHEN ? IS NULL THEN operator_listing_opted_at
-              ELSE ?
-            END,
-            updated_at = ?
-        WHERE host = ?`,
-      args: [
-        authority?.handle ?? user.handle,
-        authority?.did ?? user.did,
-        listingFlag(options.operatorListingOptIn),
-        listingFlag(options.operatorListingOptIn),
-        listingFlag(options.operatorListingOptIn),
-        ts,
-        ts,
-        row.host,
-      ],
-    });
+    const hostWrite = await c.execute(accountHostClaimUpdateQuery({
+      host: row.host,
+      claimHandle: authority?.handle ?? user.handle,
+      claimDid: authority?.did ?? user.did,
+      operatorListingOptIn: options.operatorListingOptIn,
+      timestamp: ts,
+    }));
+    if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
+      throw new Error("claimed account host disappeared during registration");
+    }
     return true;
   });
   if (!saved) {
@@ -1608,9 +1635,10 @@ export async function claimAccountHostWithContactEmail(
     verifiedAt: ts,
     updatedAt: ts,
   };
-  const inserted = await withDb(async (c) => {
+  const inserted = await withDbTransaction(async (c) => {
+    let claimWrite;
     if (existingClaim) {
-      const result = await c.execute({
+      claimWrite = await c.execute({
         sql: `UPDATE account_host_claim
           SET claimant_handle = ?, method = ?, verified_at = ?, updated_at = ?
           WHERE host = ? AND claimant_did = ?`,
@@ -1623,25 +1651,36 @@ export async function claimAccountHostWithContactEmail(
           claim.claimantDid,
         ],
       });
-      return Number(result.rowsAffected ?? 0) === 1;
+    } else {
+      claimWrite = await c.execute({
+        sql: `INSERT INTO account_host_claim (
+          host, claimant_did, claimant_handle, method,
+          claimed_at, verified_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(host) DO NOTHING`,
+        args: [
+          claim.host,
+          claim.claimantDid,
+          claim.claimantHandle,
+          claim.method,
+          claim.claimedAt,
+          claim.verifiedAt,
+          claim.updatedAt,
+        ],
+      });
     }
-    const result = await c.execute({
-      sql: `INSERT INTO account_host_claim (
-        host, claimant_did, claimant_handle, method,
-        claimed_at, verified_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(host) DO NOTHING`,
-      args: [
-        claim.host,
-        claim.claimantDid,
-        claim.claimantHandle,
-        claim.method,
-        claim.claimedAt,
-        claim.verifiedAt,
-        claim.updatedAt,
-      ],
-    });
-    return Number(result.rowsAffected ?? 0) === 1;
+    if (Number(claimWrite.rowsAffected ?? 0) !== 1) return false;
+    const hostWrite = await c.execute(accountHostClaimUpdateQuery({
+      host: row.host,
+      claimHandle: user.handle,
+      claimDid: user.did,
+      operatorListingOptIn: options.operatorListingOptIn,
+      timestamp: ts,
+    }));
+    if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
+      throw new Error("claimed account host disappeared during registration");
+    }
+    return true;
   });
   if (!inserted) {
     const conflictingClaim = await getAccountHostClaim(row.host);
@@ -1655,37 +1694,6 @@ export async function claimAccountHostWithContactEmail(
       claim: conflictingClaim,
     };
   }
-
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `UPDATE account_host
-        SET claim_handle = ?, claim_did = ?,
-            verification_status = CASE
-              WHEN verification_status = 'verified' THEN 'verified'
-              ELSE 'claimed'
-            END,
-            operator_listing_opt_in = CASE
-              WHEN ? IS NULL THEN operator_listing_opt_in
-              ELSE ?
-            END,
-            operator_listing_opted_at = CASE
-              WHEN ? IS NULL THEN operator_listing_opted_at
-              ELSE ?
-            END,
-            updated_at = ?
-        WHERE host = ?`,
-      args: [
-        user.handle,
-        user.did,
-        listingFlag(options.operatorListingOptIn),
-        listingFlag(options.operatorListingOptIn),
-        listingFlag(options.operatorListingOptIn),
-        ts,
-        ts,
-        row.host,
-      ],
-    });
-  });
   const updatedHost = await getAccountHost(row.host) ?? row;
   return { ok: true, host: updatedHost, claim };
 }
