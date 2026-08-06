@@ -25,6 +25,10 @@ import {
   selectManagedApp,
 } from "../../../lib/managed-products.ts";
 import { loadSession } from "../../../lib/oauth.ts";
+import {
+  createAppHostLinkIntent,
+  createBoundAppHostLinkIntent,
+} from "../../../lib/app-host-link-intent.ts";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -36,10 +40,10 @@ export const handler = define.handlers({
     if (proxied) return proxied;
     return await renderForOwner(ctx, {
       error: ctx.url.searchParams.get("linkError") === "1"
-        ? "The host was registered, but the app connection could not be completed. Connect it below."
+        ? "The host is claimed, but the app connection could not be completed. Connect it below."
         : null,
       success: ctx.url.searchParams.get("registered") === "1"
-        ? "Host registered and connected to this app."
+        ? "Host connected to this app."
         : ctx.url.searchParams.get("saved") === "1"
         ? "Host connection saved."
         : null,
@@ -97,12 +101,24 @@ export const handler = define.handlers({
       return redirect(appHostManageHref(app.id, { saved: "1" }));
     }
 
-    const hostId = normalizeHost(text(form.get("host")));
     const relationship = text(form.get("relationship"));
-    if (
-      !hostId ||
-      (relationship !== "same_product" && relationship !== "same_operator")
-    ) {
+    if (relationship !== "same_product" && relationship !== "same_operator") {
+      return await renderForOwner(ctx, {
+        error: "Choose how this host relates to the app.",
+        success: null,
+      });
+    }
+    if (action === "start_detected") {
+      const intent = await createAppHostLinkIntent({
+        appListingId: app.id,
+        relationship,
+        appOwnerDid: ctx.state.user!.did,
+      });
+      return redirect(`/hosts/claim?link_intent=${encodeURIComponent(intent)}`);
+    }
+
+    const hostId = normalizeHost(text(form.get("host")));
+    if (!hostId) {
       return await renderForOwner(ctx, {
         error: "Enter a listed host and choose a relationship.",
         success: null,
@@ -117,12 +133,16 @@ export const handler = define.handlers({
     }
     const claim = await getAccountHostClaim(host.host).catch(() => null);
     if (!claim) {
-      const next = new URLSearchParams({
-        app: app.id,
+      const intent = await createBoundAppHostLinkIntent({
+        appListingId: app.id,
         relationship,
+        appOwnerDid: ctx.state.user!.did,
+        host: host.host,
       });
       return redirect(
-        `/hosts/${encodeURIComponent(host.host)}/claim?${next}`,
+        `/hosts/${encodeURIComponent(host.host)}/claim?${new URLSearchParams({
+          link_intent: intent,
+        })}`,
       );
     }
     const result = await defineDirectoryEntityLink({
@@ -300,11 +320,6 @@ function AppHostRelationshipsPage(props: {
                             value={app.id}
                           />
                           <input type="hidden" name="host" value={link.host} />
-                          <input
-                            type="hidden"
-                            name="appListingId"
-                            value={app.id}
-                          />
                           <button
                             class="profile-form-button-secondary"
                             type="submit"
@@ -323,19 +338,39 @@ function AppHostRelationshipsPage(props: {
                   <div>
                     <h2>Add account hosting</h2>
                     <p>
-                      Connect an existing host below, or register a new host and
-                      return here with the relationship already verified.
+                      Start with a detected PDS or connect an existing claimed
+                      host below.
                     </p>
                   </div>
-                  <a
-                    class="directory-register-button"
-                    href={`/hosts/register?app=${
-                      encodeURIComponent(app.id)
-                    }&relationship=same_product`}
-                  >
-                    Register a new host
-                  </a>
                 </div>
+                <form method="POST" class="host-manage-form">
+                  <input
+                    type="hidden"
+                    name="appListingId"
+                    value={app.id}
+                  />
+                  <label class="profile-form-field">
+                    <span class="profile-form-label">Relationship</span>
+                    <select class="profile-form-input" name="relationship">
+                      <option value="same_product">
+                        Same product — this host is part of the app
+                      </option>
+                      <option value="same_operator">
+                        Same operator — we also run this separate host
+                      </option>
+                    </select>
+                  </label>
+                  <div class="owner-app-relationship-actions">
+                    <button
+                      class="directory-register-button"
+                      type="submit"
+                      name="action"
+                      value="start_detected"
+                    >
+                      Find a detected PDS
+                    </button>
+                  </div>
+                </form>
                 <form method="POST" class="host-manage-form">
                   <input type="hidden" name="action" value="define" />
                   <input

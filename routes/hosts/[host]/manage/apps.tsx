@@ -7,6 +7,7 @@ import {
   type AccountHost,
   getAccountHost,
   getAccountHostClaim,
+  verifiedAccountHostOwnerDid,
 } from "../../../../lib/account-hosts.ts";
 import {
   type AppListing,
@@ -186,7 +187,10 @@ async function loadOwnedHost(ctx: {
     return redirect(`/signin?next=${encodeURIComponent(ctx.url.pathname)}`);
   }
   const claim = await getAccountHostClaim(host.host).catch(() => null);
-  if (!claim || claim.claimantDid !== ctx.state.user.did) {
+  const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
+    null
+  );
+  if (!claim || ownerDid !== ctx.state.user.did) {
     return new Response(
       "Only the verified host owner can manage app connections.",
       { status: 403 },

@@ -1,17 +1,26 @@
 import {
   accountHostAvailability,
+  accountHostClaimAuthorityMatchesUser,
   accountHostClaimUpdateQueryForTest,
+  accountHostDashboardSettingsUpdateQueryForTest,
   DEFAULT_ACCOUNT_HOST_SORT,
   isAccountHostPubliclyListable,
   listSeededAccountHostFallback,
   lookupAccountHostHint,
+  managedAccountHostsQueryForTest,
   normalizeAccountHostPublicHttpsUrl,
   normalizeAccountHostPublicServiceEndpoint,
+  pinnedSeededAccountHostClaimHandle,
   profileHandleCandidatesForHost,
+  resolveAccountHostClaimAuthority,
   sortAccountHostsForDirectory,
+  upsertAccountHostClaimForOwnerForTest,
   validateAccountHostRegistrationInput,
+  verifiedAccountHostOwnerDid,
+  writeContactEmailClaimTransactionForTest,
 } from "./account-hosts.ts";
 import { convertQuestionParameters } from "./neon.ts";
+import { runPostgresTransactionForTest } from "./postgres.ts";
 
 function assert(condition: unknown, message = "Assertion failed"): void {
   if (!condition) throw new Error(message);
@@ -34,6 +43,8 @@ Deno.test("OAuth host claims preserve an omitted directory preference on Postgre
 
   assert(!postgresSql.includes("operator_listing_opt_in"));
   assert(!postgresSql.includes("IS NULL"));
+  assert(postgresSql.includes("WHEN source = 'seeded' THEN claim_handle"));
+  assert(postgresSql.includes("WHEN source = 'seeded' THEN claim_did"));
   assertEquals(
     postgresSql.match(/\$\d+/g),
     ["$1", "$2", "$3", "$4"],
@@ -44,6 +55,194 @@ Deno.test("OAuth host claims preserve an omitted directory preference on Postgre
     1_800_000_000_000,
     "pds.example",
   ]);
+});
+
+Deno.test("dashboard service observation flag has an explicit Postgres type context", () => {
+  const query = accountHostDashboardSettingsUpdateQueryForTest(
+    "pds.example",
+    {
+      serviceEndpoint: "https://pds.example",
+      serviceRecordUri:
+        "at://did:plc:operator/account.atmosphere.host.service/pds.example",
+      serviceRecordCid: "bafyservice",
+    },
+    1_800_000_000_000,
+    "did:plc:operator",
+  );
+  const postgresSql = convertQuestionParameters(query.sql);
+
+  assert(postgresSql.includes("CASE WHEN $9 = 1 THEN $10"));
+  assert(!postgresSql.includes("$9 IS NOT NULL"));
+  assertEquals(query.args[8], 1);
+  assertEquals(query.args[9], 1_800_000_000_000);
+  assertEquals(
+    postgresSql.match(/\$\d+/g)?.length,
+    query.args.length,
+  );
+
+  const withoutRecord = accountHostDashboardSettingsUpdateQueryForTest(
+    "pds.example",
+    {},
+    1_800_000_000_000,
+    "did:plc:operator",
+  );
+  assertEquals(withoutRecord.args[8], 0);
+});
+
+Deno.test("unresolved prebound handles never authorize a matching session handle", () => {
+  const user = { did: "did:plc:operator", handle: "operator.example" };
+  assertEquals(
+    accountHostClaimAuthorityMatchesUser(
+      { handle: "operator.example", did: null },
+      user,
+    ),
+    false,
+  );
+  assert(
+    accountHostClaimAuthorityMatchesUser(
+      { handle: "operator.example", did: user.did },
+      user,
+    ),
+  );
+});
+
+Deno.test("managed-host discovery requires an operational ownership claim", () => {
+  const query = managedAccountHostsQueryForTest("did:plc:operator");
+  assert(query.sql.includes("INNER JOIN account_host_claim c"));
+  assert(query.sql.includes("WHERE c.claimant_did = ?"));
+  assert(!query.sql.includes("profile_did = ?"));
+  assert(!query.sql.includes("h.claim_did = ?"));
+  assertEquals(query.args, ["did:plc:operator"]);
+});
+
+Deno.test("seeded claim handles are pinned to code rather than mutable row values", () => {
+  const seeded = listSeededAccountHostFallback().find((host) =>
+    host.host === "pckt.cafe"
+  );
+  if (!seeded) throw new Error("expected pckt.cafe seed");
+  assertEquals(
+    pinnedSeededAccountHostClaimHandle({
+      host: seeded.host,
+      source: "seeded",
+    }),
+    "pckt.blog",
+  );
+  assertEquals(
+    pinnedSeededAccountHostClaimHandle({
+      host: seeded.host,
+      source: "observed",
+    }),
+    null,
+  );
+});
+
+Deno.test("prebound authority ignores a cached DID when live resolution fails", async () => {
+  const seeded = listSeededAccountHostFallback().find((host) =>
+    host.host === "pckt.cafe"
+  );
+  if (!seeded) throw new Error("expected pckt.cafe seed");
+  const authority = await resolveAccountHostClaimAuthority(
+    {
+      ...seeded,
+      claimHandle: "pckt.blog",
+      claimDid: "did:plc:poisoned-cache",
+    },
+    {
+      resolveIdentity: () =>
+        Promise.reject(new Error("identity resolver unavailable")),
+    },
+  );
+  assertEquals(authority, { handle: "pckt.blog", did: null });
+});
+
+Deno.test("privileged seeded-host ownership requires the pinned live DID", async () => {
+  const seeded = listSeededAccountHostFallback().find((host) =>
+    host.host === "pckt.cafe"
+  );
+  if (!seeded) throw new Error("expected pckt.cafe seed");
+  const claim = {
+    host: seeded.host,
+    claimantDid: "did:plc:operator",
+    claimantHandle: "pckt.blog",
+    method: "oauth_atproto_account" as const,
+    claimedAt: 1,
+    verifiedAt: 1,
+    updatedAt: 1,
+  };
+  const resolver = () =>
+    Promise.resolve({
+      did: "did:plc:operator",
+      handle: "pckt.blog",
+    });
+
+  assertEquals(
+    await verifiedAccountHostOwnerDid(seeded, claim, {
+      resolveIdentity: resolver,
+    }),
+    claim.claimantDid,
+  );
+  assertEquals(
+    await verifiedAccountHostOwnerDid(
+      { ...seeded, source: "manual" },
+      { ...claim, claimantDid: "did:plc:poisoned" },
+      { resolveIdentity: resolver },
+    ),
+    null,
+  );
+  assertEquals(
+    await verifiedAccountHostOwnerDid(seeded, claim, {
+      resolveIdentity: () => Promise.reject(new Error("resolver offline")),
+    }),
+    null,
+  );
+});
+
+Deno.test("contact-email ownership does not require the curated social DID", async () => {
+  const seeded = listSeededAccountHostFallback().find((host) =>
+    host.host === "pckt.cafe"
+  );
+  if (!seeded) throw new Error("expected pckt.cafe seed");
+  const claim = {
+    host: seeded.host,
+    claimantDid: "did:plc:pds-operator",
+    claimantHandle: "operator.example",
+    method: "pds_contact_email" as const,
+    claimedAt: 1,
+    verifiedAt: 1,
+    updatedAt: 1,
+  };
+  let resolved = false;
+  assertEquals(
+    await verifiedAccountHostOwnerDid(seeded, claim, {
+      resolveIdentity: () => {
+        resolved = true;
+        return Promise.reject(new Error("curated social identity unavailable"));
+      },
+    }),
+    claim.claimantDid,
+  );
+  assertEquals(resolved, false);
+});
+
+Deno.test("ordinary claimed hosts use their guarded claim owner", async () => {
+  const host = {
+    ...listSeededAccountHostFallback()[0],
+    host: "ordinary.example",
+    source: "manual" as const,
+  };
+  const claim = {
+    host: host.host,
+    claimantDid: "did:plc:operator",
+    claimantHandle: "operator.example",
+    method: "oauth_atproto_account" as const,
+    claimedAt: 1,
+    verifiedAt: 1,
+    updatedAt: 1,
+  };
+  assertEquals(
+    await verifiedAccountHostOwnerDid(host, claim),
+    claim.claimantDid,
+  );
 });
 
 Deno.test("contact-email host claims write an explicit directory preference on Postgres", () => {
@@ -71,6 +270,185 @@ Deno.test("contact-email host claims write an explicit directory preference on P
     1_800_000_000_000,
     "tranquil.example",
   ]);
+});
+
+Deno.test("contact-email completion consumes the token and writes both ownership rows on one client", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(
+      query: string | { sql: string; args?: unknown[] },
+    ) {
+      statements.push(typeof query === "string" ? query : query.sql);
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+
+  await writeContactEmailClaimTransactionForTest(client, {
+    tokenHash: "token-hash",
+    claim: {
+      host: "pds.example",
+      claimantDid: "did:plc:operator",
+      claimantHandle: "operator.example",
+      method: "pds_contact_email",
+      claimedAt: 1_800_000_000_000,
+      verifiedAt: 1_800_000_000_000,
+      updatedAt: 1_800_000_000_000,
+    },
+    claimHandle: "operator.example",
+    claimDid: "did:plc:operator",
+    operatorListingOptIn: true,
+    timestamp: 1_800_000_000_000,
+  });
+
+  assertEquals(
+    statements.map((sql) =>
+      sql.includes("account_host_claim_challenge")
+        ? "consume"
+        : sql.includes("INSERT INTO account_host_claim")
+        ? "claim"
+        : sql.includes("UPDATE account_host")
+        ? "host"
+        : "unexpected"
+    ),
+    ["consume", "claim", "host"],
+  );
+});
+
+Deno.test("claim ownership upserts are idempotent only for the same DID", async () => {
+  let captured = { sql: "", args: [] as unknown[] };
+  const claim = {
+    host: "pds.example",
+    claimantDid: "did:plc:operator",
+    claimantHandle: "operator.example",
+    method: "oauth_atproto_account" as const,
+    claimedAt: 1_800_000_000_000,
+    verifiedAt: 1_800_000_000_000,
+    updatedAt: 1_800_000_000_000,
+  };
+  const accepted = await upsertAccountHostClaimForOwnerForTest({
+    execute(query, positionalArgs) {
+      captured = typeof query === "string"
+        ? { sql: query, args: positionalArgs ?? [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  }, claim);
+  assert(accepted);
+  assert(
+    captured.sql.includes(
+      "WHERE account_host_claim.claimant_did = excluded.claimant_did",
+    ),
+  );
+  assertEquals(captured.args[0], claim.host);
+  assertEquals(captured.args[1], claim.claimantDid);
+
+  const rejected = await upsertAccountHostClaimForOwnerForTest({
+    execute() {
+      return Promise.resolve({ rows: [], rowsAffected: 0 });
+    },
+  }, claim);
+  assertEquals(rejected, false);
+});
+
+Deno.test("contact-email completion stops before ownership writes when its token was used", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(
+      query: string | { sql: string; args?: unknown[] },
+    ) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (/SELECT host, claimant_did, expires_at, consumed_at/.test(sql)) {
+        return Promise.resolve({
+          rows: [{
+            host: "pds.example",
+            claimant_did: "did:plc:operator",
+            expires_at: 1_800_000_100_000,
+            consumed_at: 1_800_000_000_000,
+          }],
+          rowsAffected: 0,
+        });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 0 });
+    },
+  };
+  let message = "";
+  try {
+    await writeContactEmailClaimTransactionForTest(client, {
+      tokenHash: "used-token-hash",
+      claim: {
+        host: "pds.example",
+        claimantDid: "did:plc:operator",
+        claimantHandle: "operator.example",
+        method: "pds_contact_email",
+        claimedAt: 1_800_000_000_000,
+        verifiedAt: 1_800_000_000_000,
+        updatedAt: 1_800_000_000_000,
+      },
+      claimHandle: "operator.example",
+      claimDid: "did:plc:operator",
+      timestamp: 1_800_000_000_000,
+    });
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  assertEquals(message, "already_used");
+  assertEquals(statements.length, 2);
+  assert(statements[0].includes("account_host_claim_challenge"));
+  assert(statements[1].includes("account_host_claim_challenge"));
+});
+
+Deno.test("a failed contact-email ownership write rolls token consumption back", async () => {
+  const statements: string[] = [];
+  const writeFailure = new Error("account_host write failed");
+  const pool = {
+    connect: () =>
+      Promise.resolve({
+        query(statement: string) {
+          statements.push(statement);
+          if (
+            statement.includes("UPDATE account_host\n") &&
+            !statement.includes("account_host_claim_challenge")
+          ) {
+            return Promise.reject(writeFailure);
+          }
+          return Promise.resolve({ rows: [], rowCount: 1 });
+        },
+        release() {},
+      }),
+  };
+
+  let caught: unknown = null;
+  try {
+    await runPostgresTransactionForTest(
+      pool,
+      (transaction) =>
+        writeContactEmailClaimTransactionForTest(transaction, {
+          tokenHash: "retryable-token-hash",
+          claim: {
+            host: "pds.example",
+            claimantDid: "did:plc:operator",
+            claimantHandle: "operator.example",
+            method: "pds_contact_email",
+            claimedAt: 1_800_000_000_000,
+            verifiedAt: 1_800_000_000_000,
+            updatedAt: 1_800_000_000_000,
+          },
+          claimHandle: "operator.example",
+          claimDid: "did:plc:operator",
+          timestamp: 1_800_000_000_000,
+        }),
+    );
+  } catch (error) {
+    caught = error;
+  }
+
+  assert(caught === writeFailure);
+  assertEquals(statements[0], "BEGIN");
+  assert(statements[1].includes("account_host_claim_challenge"));
+  assert(statements[2].includes("INSERT INTO account_host_claim"));
+  assert(statements[3].includes("UPDATE account_host\n"));
+  assertEquals(statements.at(-1), "ROLLBACK");
 });
 
 Deno.test("seeded account host fallback includes known public hosts", () => {
@@ -440,7 +818,19 @@ Deno.test("account host registration validation rejects unsafe fields before pub
     {
       ok: false,
       reason: "invalid_service_endpoint",
-      message: "Use an HTTPS origin for the host PDS service endpoint.",
+      message: "Enter the HTTPS origin for the host PDS service endpoint.",
+    },
+  );
+  assertEquals(
+    validateAccountHostRegistrationInput({
+      host: "pckt.cafe",
+      displayName: "Pckt",
+      signupStatus: "open",
+    }, user),
+    {
+      ok: false,
+      reason: "invalid_service_endpoint",
+      message: "Enter the HTTPS origin for the host PDS service endpoint.",
     },
   );
   assertEquals(

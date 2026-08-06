@@ -689,28 +689,23 @@ function ManagePage(
                     </p>
                   </div>
                   <div class="owner-app-relationship-actions">
-                    <a
-                      class="directory-register-button"
-                      href={managedAppListingId
-                        ? `/hosts/register?app=${
-                          encodeURIComponent(managedAppListingId)
-                        }&relationship=same_product`
-                        : "/hosts/register"}
-                    >
-                      Register a new host
-                    </a>
-                    {initialPublished && (
-                      <a
-                        class="directory-register-button"
-                        href={managedAppListingId
-                          ? `/apps/manage/host?app=${
+                    {initialPublished && managedAppListingId
+                      ? (
+                        <a
+                          class="directory-register-button"
+                          href={`/apps/manage/host?app=${
                             encodeURIComponent(managedAppListingId)
-                          }`
-                          : "/apps/manage/host"}
-                      >
-                        Connect existing host
-                      </a>
-                    )}
+                          }`}
+                        >
+                          Add account hosting
+                        </a>
+                      )
+                      : (
+                        <p class="profile-form-hint">
+                          Publish the app profile first, then connect a detected
+                          or already-claimed PDS.
+                        </p>
+                      )}
                     <a class="text-link-button" href="/account/products">
                       View all managed products
                     </a>

@@ -7,13 +7,18 @@
  * recognizable even before an observation row exists.
  */
 import { type DbClient, withDb, withDbTransaction } from "./db.ts";
+import { compiledAccountHostServiceEndpoint } from "./account-host-endpoints.ts";
 import {
-  hasPreboundHostAuthority,
   hostClaimProofMessage,
-  hostServiceRecordMatchesUser,
+  hostSelfServiceClaimPolicy,
   verifyHostClaimDomainProof,
 } from "./host-claim-proof.ts";
-import { verifyHostContactEmailChallenge } from "./host-claim-email.ts";
+import {
+  consumeHostContactEmailChallenge,
+  type HostContactEmailVerificationFailureReason,
+  prepareHostContactEmailChallenge,
+} from "./host-claim-email.ts";
+import { resolveIdentity as resolveAtprotoIdentity } from "./identity.ts";
 import { isPrivateNetworkUrl } from "./security.ts";
 
 export type HostSignupStatus =
@@ -240,7 +245,9 @@ export type AccountHostClaimResult =
       | "host_not_found"
       | "not_claimable"
       | "not_authorized"
-      | "already_claimed";
+      | "contact_email_required"
+      | "already_claimed"
+      | HostContactEmailVerificationFailureReason;
     host?: AccountHost;
     authority?: AccountHostClaimAuthority | null;
     claim?: AccountHostClaim | null;
@@ -248,6 +255,17 @@ export type AccountHostClaimResult =
 
 export interface AccountHostClaimOptions {
   operatorListingOptIn?: boolean;
+}
+
+class ContactEmailClaimCompletionError extends Error {
+  constructor(
+    readonly reason:
+      | HostContactEmailVerificationFailureReason
+      | "claim_conflict",
+  ) {
+    super(reason);
+    this.name = "ContactEmailClaimCompletionError";
+  }
 }
 
 export type AccountHostRegistrationResult =
@@ -264,6 +282,7 @@ export type AccountHostRegistrationResult =
       | "invalid_support_url"
       | "invalid_profile_handle"
       | "already_claimed"
+      | "contact_email_required"
       | "not_authorized";
     message: string;
     host?: AccountHost | null;
@@ -316,7 +335,8 @@ export type AccountHostProfileSettingsResult =
       | "invalid_homepage_url"
       | "invalid_signup_url"
       | "invalid_profile_handle"
-      | "invalid_avatar_url";
+      | "invalid_avatar_url"
+      | "not_authorized";
     message: string;
   };
 
@@ -336,7 +356,8 @@ const SEEDED_HOSTS: SeedHost[] = [
       "A large general-purpose account host for people using Bluesky and other Atmosphere apps.",
     homepageUrl: "https://bsky.app",
     signupUrl: "https://bsky.app/",
-    serviceEndpoint: "https://bsky.social",
+    serviceEndpoint: compiledAccountHostServiceEndpoint("bsky.network") ??
+      undefined,
     accountManagementUrl: "https://bsky.app/settings",
     profileHandle: "bsky.app",
     claimHandle: "bsky.app",
@@ -905,6 +926,49 @@ function normalizeHandle(value: string | null | undefined): string {
   return (value ?? "").trim().replace(/^@/, "").toLowerCase();
 }
 
+/**
+ * Return the authority compiled into the curated seed list, never a mutable
+ * value copied back out of the database. Seed rows are a privileged mapping;
+ * self-service and indexed records must not be able to redefine it.
+ */
+export function pinnedSeededAccountHostClaimHandle(
+  host: Pick<AccountHost, "host"> & Partial<Pick<AccountHost, "source">>,
+): string | null {
+  if (host.source !== undefined && host.source !== "seeded") return null;
+  const normalizedHost = normalizeHandle(host.host);
+  const seed = SEEDED_HOSTS.find((candidate) =>
+    normalizeHandle(candidate.host) === normalizedHost
+  );
+  if (!seed) return null;
+  return normalizeClaimProfileHandle(
+    seed.claimHandle ?? seed.profileHandle ?? seed.host,
+  );
+}
+
+/**
+ * Resolve the operator identity pinned by the compiled seed map. Callers that
+ * already loaded an account-host row should pass its source; indexers may omit
+ * source so a corrupted/missing row cannot make a curated domain unprotected.
+ */
+export async function resolvePinnedSeededAccountHostAuthority(
+  host: Pick<AccountHost, "host"> & Partial<Pick<AccountHost, "source">>,
+  options: {
+    resolveIdentity?: (
+      handle: string,
+    ) => Promise<{ did: string; handle: string }>;
+  } = {},
+): Promise<AccountHostClaimAuthority | null> {
+  const handle = pinnedSeededAccountHostClaimHandle(host);
+  if (!handle) return null;
+  const identity = await (options.resolveIdentity ?? resolveAtprotoIdentity)(
+    handle,
+  ).catch(() => null);
+  if (!identity || normalizeHandle(identity.handle) !== handle) {
+    return { handle, did: null };
+  }
+  return { handle, did: identity.did };
+}
+
 function normalizeHostInput(value: string): string | null {
   const raw = value.trim().toLowerCase();
   if (!raw) return null;
@@ -999,12 +1063,6 @@ function normalizeDataLocation(
 function textOrNull(value: string | null | undefined): string | null {
   const text = value?.trim();
   return text ? text : null;
-}
-
-function claimHandleForHost(host: AccountHost): string | null {
-  const handle = normalizeHandle(host.claimHandle ?? host.profileHandle);
-  if (!handle || handle.includes(":") || !handle.includes(".")) return null;
-  return handle;
 }
 
 function parseHostClaimRow(row: Record<string, unknown>): AccountHostClaim {
@@ -1315,22 +1373,7 @@ export async function getAccountHostClaim(
 export async function hasManagedAccountHost(did: string): Promise<boolean> {
   const normalized = did.trim();
   if (!normalized) return false;
-  return await withDb(async (c) => {
-    const r = await c.execute({
-      sql: `
-        SELECT 1
-        FROM account_host
-        WHERE profile_did = ? OR claim_did = ?
-        UNION
-        SELECT 1
-        FROM account_host_claim
-        WHERE claimant_did = ?
-        LIMIT 1
-      `,
-      args: [normalized, normalized, normalized],
-    });
-    return r.rows.length > 0;
-  });
+  return (await listManagedAccountHosts(normalized)).length > 0;
 }
 
 export async function listManagedAccountHosts(
@@ -1338,26 +1381,59 @@ export async function listManagedAccountHosts(
 ): Promise<AccountHost[]> {
   const normalized = did.trim();
   if (!normalized) return [];
-  return await withDb(async (c) => {
-    const r = await c.execute({
-      sql: `
-        SELECT h.*
-        FROM account_host h
-        WHERE h.profile_did = ?
-           OR h.claim_did = ?
-           OR EXISTS (
-             SELECT 1
-             FROM account_host_claim c
-             WHERE c.host = h.host AND c.claimant_did = ?
-           )
-        ORDER BY lower(h.display_name), h.host
-        LIMIT 20
-      `,
-      args: [normalized, normalized, normalized],
-    });
-    return r.rows.map((row) => parseHostRow(row as Record<string, unknown>));
+  const rows = await withDb(async (c) => {
+    const r = await c.execute(managedAccountHostsQuery(normalized));
+    return r.rows as Record<string, unknown>[];
+  });
+  const verified = await Promise.all(rows.map(async (row) => {
+    const host = parseHostRow(row);
+    const claim = parseManagedHostClaimRow(row);
+    const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(
+      () => null,
+    );
+    return ownerDid === normalized ? host : null;
+  }));
+  return verified.filter((host): host is AccountHost => host !== null).slice(
+    0,
+    20,
+  );
+}
+
+function managedAccountHostsQuery(
+  claimantDid: string,
+): { sql: string; args: string[] } {
+  return {
+    sql: `SELECT h.*,
+        c.host AS managed_claim_host,
+        c.claimant_did AS managed_claimant_did,
+        c.claimant_handle AS managed_claimant_handle,
+        c.method AS managed_claim_method,
+        c.claimed_at AS managed_claimed_at,
+        c.verified_at AS managed_verified_at,
+        c.updated_at AS managed_claim_updated_at
+      FROM account_host h
+      INNER JOIN account_host_claim c ON c.host = h.host
+      WHERE c.claimant_did = ?
+      ORDER BY lower(h.display_name), h.host`,
+    args: [claimantDid],
+  };
+}
+
+function parseManagedHostClaimRow(
+  row: Record<string, unknown>,
+): AccountHostClaim {
+  return parseHostClaimRow({
+    host: row.managed_claim_host,
+    claimant_did: row.managed_claimant_did,
+    claimant_handle: row.managed_claimant_handle,
+    method: row.managed_claim_method,
+    claimed_at: row.managed_claimed_at,
+    verified_at: row.managed_verified_at,
+    updated_at: row.managed_claim_updated_at,
   });
 }
+
+export const managedAccountHostsQueryForTest = managedAccountHostsQuery;
 
 export async function listClaimedAccountHostsForOwner(
   did: string,
@@ -1382,37 +1458,79 @@ export async function listClaimedAccountHostsForOwner(
 
 export async function resolveAccountHostClaimAuthority(
   host: AccountHost,
+  options: {
+    resolveIdentity?: (
+      handle: string,
+    ) => Promise<{ did: string; handle: string }>;
+  } = {},
 ): Promise<AccountHostClaimAuthority | null> {
-  const handle = claimHandleForHost(host);
-  if (!handle) return null;
-  const profileHandle = normalizeHandle(host.profileHandle);
-  const cachedDid = host.claimDid ??
-    (profileHandle === handle ? host.profileDid : null);
-  if (cachedDid) {
-    return {
-      handle: host.claimHandle ?? host.profileHandle ?? handle,
-      did: cachedDid,
-    };
-  }
-  const profile = await fetchHostProfile(handle).catch(() => null);
-  if (!profile) return { handle, did: null };
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `UPDATE account_host
-        SET claim_handle = ?, claim_did = ?, updated_at = ?
-        WHERE host = ?`,
-      args: [profile.handle, profile.did, now(), host.host],
+  // Curated seed mappings pin social metadata and let us revalidate
+  // grandfathered OAuth claims. They are not accepted as proof for a new
+  // production claim; that path requires the PDS contact-email challenge.
+  const authority = await resolvePinnedSeededAccountHostAuthority(
+    { host: host.host },
+    options,
+  );
+  if (!authority) return null;
+  if (!authority.did) return authority;
+  if (
+    normalizeHandle(host.claimHandle) !== authority.handle ||
+    host.claimDid !== authority.did
+  ) {
+    await withDb(async (c) => {
+      await c.execute({
+        sql: `UPDATE account_host
+          SET claim_handle = ?, claim_did = ?, source = 'seeded', updated_at = ?
+          WHERE host = ?`,
+        args: [authority.handle, authority.did, now(), host.host],
+      });
     });
-  });
-  return { handle: profile.handle, did: profile.did };
+  }
+  return authority;
 }
 
 export function accountHostClaimAuthorityMatchesUser(
   authority: AccountHostClaimAuthority,
   user: { did: string; handle: string },
 ): boolean {
-  if (authority.did) return authority.did === user.did;
-  return normalizeHandle(authority.handle) === normalizeHandle(user.handle);
+  // A handle without a successfully resolved/pinned DID is not authority.
+  // In particular, never fall back to the session's cached handle.
+  return !!authority.did && authority.did === user.did;
+}
+
+/**
+ * Return the currently verified owner of a claimed host. Curated domains are
+ * recognized from the compiled seed map even if a legacy database row has a
+ * damaged source field, and their pinned handle is resolved live on every
+ * privileged check. A stale claim or resolver failure therefore fails closed.
+ */
+export async function verifiedAccountHostOwnerDid(
+  host: AccountHost,
+  claim: AccountHostClaim | null,
+  options: {
+    resolveIdentity?: (
+      handle: string,
+    ) => Promise<{ did: string; handle: string }>;
+  } = {},
+): Promise<string | null> {
+  if (
+    !claim || normalizeHandle(claim.host) !== normalizeHandle(host.host) ||
+    !claim.claimantDid.trim()
+  ) return null;
+  // Contact-email claims were live-verified against the exact PDS endpoint
+  // and are authoritative even when a curated host's social identity is a
+  // different DID. The compiled social handle remains profile metadata.
+  if (claim.method === "pds_contact_email") return claim.claimantDid.trim();
+  // Deliberately omit `source`: a corrupted mutable row must not turn a
+  // compiled seeded domain into an ordinary self-service claim.
+  const authority = await resolvePinnedSeededAccountHostAuthority(
+    { host: host.host },
+    options,
+  );
+  if (!authority) return claim.claimantDid.trim();
+  return authority.did && authority.did === claim.claimantDid.trim()
+    ? authority.did
+    : null;
 }
 
 interface AccountHostClaimUpdateQueryInput {
@@ -1429,8 +1547,14 @@ function accountHostClaimUpdateQuery(
   const listingWasSelected = input.operatorListingOptIn != null;
   return {
     sql: `UPDATE account_host
-      SET claim_handle = ?,
-          claim_did = ?,
+      SET claim_handle = CASE
+            WHEN source = 'seeded' THEN claim_handle
+            ELSE ?
+          END,
+          claim_did = CASE
+            WHEN source = 'seeded' THEN claim_did
+            ELSE ?
+          END,
           verification_status = CASE
             WHEN verification_status = 'verified' THEN 'verified'
             ELSE 'claimed'
@@ -1461,6 +1585,83 @@ export function accountHostClaimUpdateQueryForTest(
   return accountHostClaimUpdateQuery(input);
 }
 
+interface ContactEmailClaimWriteInput {
+  tokenHash: string;
+  claim: AccountHostClaim;
+  claimHandle: string;
+  claimDid: string;
+  operatorListingOptIn?: boolean;
+  timestamp: number;
+}
+
+async function upsertAccountHostClaimForOwner(
+  c: DbClient,
+  claim: AccountHostClaim,
+): Promise<boolean> {
+  const result = await c.execute({
+    sql: `INSERT INTO account_host_claim (
+        host, claimant_did, claimant_handle, method,
+        claimed_at, verified_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(host) DO UPDATE SET
+        claimant_handle = excluded.claimant_handle,
+        method = excluded.method,
+        verified_at = excluded.verified_at,
+        updated_at = excluded.updated_at
+      WHERE account_host_claim.claimant_did = excluded.claimant_did`,
+    args: [
+      claim.host,
+      claim.claimantDid,
+      claim.claimantHandle,
+      claim.method,
+      claim.claimedAt,
+      claim.verifiedAt,
+      claim.updatedAt,
+    ],
+  });
+  return Number(result.rowsAffected ?? 0) === 1;
+}
+
+export const upsertAccountHostClaimForOwnerForTest =
+  upsertAccountHostClaimForOwner;
+
+async function writeContactEmailClaimTransaction(
+  c: DbClient,
+  input: ContactEmailClaimWriteInput,
+): Promise<void> {
+  const consumed = await consumeHostContactEmailChallenge(
+    c,
+    {
+      tokenHash: input.tokenHash,
+      host: input.claim.host,
+      claimantDid: input.claim.claimantDid,
+      consumedAt: input.timestamp,
+    },
+  );
+  if (!consumed.ok) {
+    throw new ContactEmailClaimCompletionError(consumed.reason);
+  }
+
+  // The guarded upsert makes two different valid tokens for the same owner
+  // idempotent while still refusing to replace another DID's ownership.
+  if (!await upsertAccountHostClaimForOwner(c, input.claim)) {
+    throw new ContactEmailClaimCompletionError("claim_conflict");
+  }
+  const hostWrite = await c.execute(accountHostClaimUpdateQuery({
+    host: input.claim.host,
+    claimHandle: input.claimHandle,
+    claimDid: input.claimDid,
+    operatorListingOptIn: input.operatorListingOptIn,
+    timestamp: input.timestamp,
+  }));
+  if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
+    throw new Error("claimed account host disappeared during registration");
+  }
+}
+
+export const writeContactEmailClaimTransactionForTest =
+  writeContactEmailClaimTransaction;
+
 export async function claimAccountHost(
   host: string,
   user: { did: string; handle: string },
@@ -1468,6 +1669,13 @@ export async function claimAccountHost(
 ): Promise<AccountHostClaimResult> {
   const row = await getAccountHost(host);
   if (!row) return { ok: false, reason: "host_not_found" };
+  if (hostSelfServiceClaimPolicy(row.host) !== "local-dev") {
+    return {
+      ok: false,
+      reason: "contact_email_required",
+      host: row,
+    };
+  }
   const authority = await resolveAccountHostClaimAuthority(row);
   const existingClaim = await getAccountHostClaim(row.host);
   if (existingClaim && existingClaim.claimantDid !== user.did) {
@@ -1480,14 +1688,8 @@ export async function claimAccountHost(
     };
   }
   if (!existingClaim) {
-    const verifiedMethod = await verifyHostClaimDomainProof(row, user);
-    const authorityMatches = authority
-      ? accountHostClaimAuthorityMatchesUser(authority, user)
-      : false;
-    if (
-      !verifiedMethod.ok ||
-      (verifiedMethod.method === "prebound" && !authorityMatches)
-    ) {
+    const verifiedMethod = verifyHostClaimDomainProof(row, user);
+    if (!verifiedMethod.ok) {
       return {
         ok: false,
         reason: "not_authorized",
@@ -1507,42 +1709,18 @@ export async function claimAccountHost(
     verifiedAt: ts,
     updatedAt: ts,
   };
+  let verifiedClaimHandle = user.handle;
+  let verifiedClaimDid = user.did;
+  if (authority?.did) {
+    verifiedClaimHandle = authority.handle;
+    verifiedClaimDid = authority.did;
+  }
   const saved = await withDbTransaction(async (c) => {
-    const claimWrite = existingClaim
-      ? await c.execute({
-        sql: `UPDATE account_host_claim
-          SET claimant_handle = ?, method = ?, verified_at = ?, updated_at = ?
-          WHERE host = ? AND claimant_did = ?`,
-        args: [
-          claim.claimantHandle,
-          claim.method,
-          claim.verifiedAt,
-          claim.updatedAt,
-          claim.host,
-          claim.claimantDid,
-        ],
-      })
-      : await c.execute({
-        sql: `INSERT INTO account_host_claim (
-            host, claimant_did, claimant_handle, method,
-            claimed_at, verified_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(host) DO NOTHING`,
-        args: [
-          claim.host,
-          claim.claimantDid,
-          claim.claimantHandle,
-          claim.method,
-          claim.claimedAt,
-          claim.verifiedAt,
-          claim.updatedAt,
-        ],
-      });
-    if (Number(claimWrite.rowsAffected ?? 0) !== 1) return false;
+    if (!await upsertAccountHostClaimForOwner(c, claim)) return false;
     const hostWrite = await c.execute(accountHostClaimUpdateQuery({
       host: row.host,
-      claimHandle: authority?.handle ?? user.handle,
-      claimDid: authority?.did ?? user.did,
+      claimHandle: verifiedClaimHandle,
+      claimDid: verifiedClaimDid,
       operatorListingOptIn: options.operatorListingOptIn,
       timestamp: ts,
     }));
@@ -1592,21 +1770,7 @@ export async function claimAccountHostWithContactEmail(
       claim: existingClaim,
     };
   }
-  // Explicit curated mappings remain stronger than a general support inbox.
-  if (
-    hasPreboundHostAuthority(row) && authority &&
-    !accountHostClaimAuthorityMatchesUser(authority, user)
-  ) {
-    return {
-      ok: false,
-      reason: "not_authorized",
-      host: row,
-      authority,
-      claim: existingClaim,
-    };
-  }
-
-  const verified = await verifyHostContactEmailChallenge(
+  const verified = await prepareHostContactEmailChallenge(
     {
       host: row.host,
       displayName: row.displayName,
@@ -1618,7 +1782,7 @@ export async function claimAccountHostWithContactEmail(
   if (!verified.ok) {
     return {
       ok: false,
-      reason: "not_authorized",
+      reason: verified.reason,
       host: row,
       authority,
       claim: existingClaim,
@@ -1635,54 +1799,35 @@ export async function claimAccountHostWithContactEmail(
     verifiedAt: ts,
     updatedAt: ts,
   };
-  const inserted = await withDbTransaction(async (c) => {
-    let claimWrite;
-    if (existingClaim) {
-      claimWrite = await c.execute({
-        sql: `UPDATE account_host_claim
-          SET claimant_handle = ?, method = ?, verified_at = ?, updated_at = ?
-          WHERE host = ? AND claimant_did = ?`,
-        args: [
-          claim.claimantHandle,
-          claim.method,
-          claim.verifiedAt,
-          claim.updatedAt,
-          claim.host,
-          claim.claimantDid,
-        ],
+  try {
+    await withDbTransaction(async (c) => {
+      await writeContactEmailClaimTransaction(c, {
+        tokenHash: verified.tokenHash,
+        claim,
+        claimHandle: authority?.did ? authority.handle : user.handle,
+        claimDid: authority?.did ? authority.did : user.did,
+        operatorListingOptIn: options.operatorListingOptIn,
+        timestamp: ts,
       });
-    } else {
-      claimWrite = await c.execute({
-        sql: `INSERT INTO account_host_claim (
-          host, claimant_did, claimant_handle, method,
-          claimed_at, verified_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(host) DO NOTHING`,
-        args: [
-          claim.host,
-          claim.claimantDid,
-          claim.claimantHandle,
-          claim.method,
-          claim.claimedAt,
-          claim.verifiedAt,
-          claim.updatedAt,
-        ],
-      });
+    });
+  } catch (error) {
+    if (
+      error instanceof ContactEmailClaimCompletionError &&
+      error.reason !== "claim_conflict"
+    ) {
+      return {
+        ok: false,
+        reason: error.reason,
+        host: row,
+        authority,
+        claim: existingClaim,
+      };
     }
-    if (Number(claimWrite.rowsAffected ?? 0) !== 1) return false;
-    const hostWrite = await c.execute(accountHostClaimUpdateQuery({
-      host: row.host,
-      claimHandle: user.handle,
-      claimDid: user.did,
-      operatorListingOptIn: options.operatorListingOptIn,
-      timestamp: ts,
-    }));
-    if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
-      throw new Error("claimed account host disappeared during registration");
-    }
-    return true;
-  });
-  if (!inserted) {
+    if (
+      !(error instanceof ContactEmailClaimCompletionError) ||
+      error.reason !== "claim_conflict"
+    ) throw error;
+
     const conflictingClaim = await getAccountHostClaim(row.host);
     return {
       ok: false,
@@ -1710,7 +1855,6 @@ export function validateAccountHostRegistrationInput(
       message: "Enter a public host address like pckt.cafe.",
     };
   }
-
   const displayName = input.displayName.trim();
   if (!displayName || displayName.length > 80) {
     return {
@@ -1745,11 +1889,11 @@ export function validateAccountHostRegistrationInput(
   const serviceEndpoint = input.serviceEndpoint?.trim()
     ? normalizeAccountHostPublicServiceEndpoint(input.serviceEndpoint)
     : null;
-  if (input.serviceEndpoint?.trim() && !serviceEndpoint) {
+  if (!serviceEndpoint) {
     return {
       ok: false,
       reason: "invalid_service_endpoint",
-      message: "Use an HTTPS origin for the host PDS service endpoint.",
+      message: "Enter the HTTPS origin for the host PDS service endpoint.",
     };
   }
 
@@ -1837,6 +1981,15 @@ export async function registerAccountHost(
       message: "Enter a public host address like pckt.cafe.",
     };
   }
+  if (hostSelfServiceClaimPolicy(host) !== "local-dev") {
+    return {
+      ok: false,
+      reason: "contact_email_required",
+      message:
+        "Production host registration starts from a detected PDS. Configure contact.email in com.atproto.server.describeServer, find the PDS by its exact server domain, and complete the emailed claim link.",
+      host: await getAccountHost(host).catch(() => null),
+    };
+  }
 
   const displayName = input.displayName.trim();
   if (!displayName || displayName.length > 80) {
@@ -1870,11 +2023,11 @@ export async function registerAccountHost(
   const serviceEndpoint = input.serviceEndpoint?.trim()
     ? normalizeAccountHostPublicServiceEndpoint(input.serviceEndpoint)
     : null;
-  if (input.serviceEndpoint?.trim() && !serviceEndpoint) {
+  if (!serviceEndpoint) {
     return {
       ok: false,
       reason: "invalid_service_endpoint",
-      message: "Use an HTTPS origin for the host PDS service endpoint.",
+      message: "Enter the HTTPS origin for the host PDS service endpoint.",
     };
   }
   const accountManagementUrl = input.accountManagementUrl?.trim()
@@ -1933,7 +2086,7 @@ export async function registerAccountHost(
   const bskyProfileVisible = input.bskyProfileVisible !== false;
   const existing = await getAccountHost(host);
   const existingClaim = existing
-    ? await getAccountHostClaim(existing.host).catch(() => null)
+    ? await getAccountHostClaim(existing.host)
     : null;
   if (existingClaim && existingClaim.claimantDid !== user.did) {
     return {
@@ -1945,20 +2098,19 @@ export async function registerAccountHost(
       claim: existingClaim,
     };
   }
+  const authority = existing
+    ? await resolveAccountHostClaimAuthority(existing).catch(() => null)
+    : null;
   if (existing) {
-    const authority = await resolveAccountHostClaimAuthority(existing).catch(
-      () => null,
-    );
     if (
-      authority &&
-      !accountHostClaimAuthorityMatchesUser(authority, user) &&
-      !existingClaim
+      authority && !accountHostClaimAuthorityMatchesUser(authority, user)
     ) {
       return {
         ok: false,
         reason: "not_authorized",
-        message:
-          `This host is tied to @${authority.handle}. Sign in as that account to claim it.`,
+        message: authority
+          ? `This host is tied to @${authority.handle}. Sign in as that account to claim it.`
+          : "This curated host's operator identity could not be verified. Try again later.",
         host: existing,
       };
     }
@@ -1974,7 +2126,7 @@ export async function registerAccountHost(
     serviceRecordCid: input.serviceRecordCid ?? existing?.serviceRecordCid ??
       null,
   };
-  const domainProof = await verifyHostClaimDomainProof(proofHost, user);
+  const domainProof = verifyHostClaimDomainProof(proofHost, user);
   if (!domainProof.ok) {
     return {
       ok: false,
@@ -1983,26 +2135,23 @@ export async function registerAccountHost(
       host: existing,
     };
   }
-  const hasPublishedServiceRecord = hostServiceRecordMatchesUser(
-    host,
-    proofHost.serviceRecordUri,
-    proofHost.serviceRecordCid,
-    user,
-  );
-  if (!hasPublishedServiceRecord && domainProof.method !== "local-dev") {
-    return {
-      ok: false,
-      reason: "not_authorized",
-      message:
-        "Host registration needs to publish a host service record from the signed-in account. Sign in again and try registering the host once more.",
-      host: existing,
-    };
-  }
-
   const ts = now();
-  await withDb(async (c) => {
-    await ensureSeededHosts(c);
-    await c.execute({
+  const claim: AccountHostClaim = {
+    host,
+    claimantDid: user.did,
+    claimantHandle: user.handle,
+    method: existingClaim?.method ?? "oauth_atproto_account",
+    claimedAt: existingClaim?.claimedAt ?? ts,
+    verifiedAt: ts,
+    updatedAt: ts,
+  };
+  const saved = await withDbTransaction(async (c) => {
+    // Establish (or refresh) ownership first. The conditional conflict update
+    // prevents a concurrent claimant from being overwritten, and every later
+    // host-field write rolls back if ownership cannot be established.
+    if (!await upsertAccountHostClaimForOwner(c, claim)) return false;
+
+    const hostWrite = await c.execute({
       sql: `INSERT INTO account_host (
           host, display_name, description, data_location,
           inferred_location, inferred_location_source,
@@ -2034,8 +2183,14 @@ export async function registerAccountHost(
           profile_did = COALESCE(excluded.profile_did, account_host.profile_did),
           bsky_profile_visible = excluded.bsky_profile_visible,
           avatar_url = COALESCE(excluded.avatar_url, account_host.avatar_url),
-          claim_handle = excluded.claim_handle,
-          claim_did = excluded.claim_did,
+          claim_handle = CASE
+            WHEN account_host.source = 'seeded' THEN account_host.claim_handle
+            ELSE excluded.claim_handle
+          END,
+          claim_did = CASE
+            WHEN account_host.source = 'seeded' THEN account_host.claim_did
+            ELSE excluded.claim_did
+          END,
           support_url = COALESCE(excluded.support_url, account_host.support_url),
           service_record_uri = COALESCE(excluded.service_record_uri, account_host.service_record_uri),
           service_record_cid = COALESCE(excluded.service_record_cid, account_host.service_record_cid),
@@ -2080,32 +2235,53 @@ export async function registerAccountHost(
         ts,
       ],
     });
+    if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
+      throw new Error("registered account host could not be saved");
+    }
+    const ownershipWrite = await c.execute(accountHostClaimUpdateQuery({
+      host,
+      claimHandle: authority?.did ? authority.handle : profileHandle,
+      claimDid: authority?.did ? authority.did : user.did,
+      operatorListingOptIn: true,
+      timestamp: ts,
+    }));
+    if (Number(ownershipWrite.rowsAffected ?? 0) !== 1) {
+      throw new Error("registered account host disappeared during claim");
+    }
+    return true;
   });
 
-  const claimResult = await claimAccountHost(host, user, {
-    operatorListingOptIn: true,
-  });
-  if (!claimResult.ok) {
+  if (!saved) {
+    const conflictingClaim = await getAccountHostClaim(host);
     return {
       ok: false,
-      reason: claimResult.reason === "already_claimed"
+      reason: conflictingClaim?.claimantDid !== user.did
         ? "already_claimed"
         : "not_authorized",
-      message: claimResult.reason === "already_claimed"
-        ? "This host was registered, but it is already claimed by another account."
-        : "This host was registered, but the signed-in account could not claim it.",
-      host: claimResult.host,
-      claim: claimResult.claim,
+      message: conflictingClaim?.claimantDid !== user.did
+        ? "This host is already claimed by another account, so no listing changes were saved."
+        : "The signed-in account could not claim this host, so no listing changes were saved.",
+      host: await getAccountHost(host),
+      claim: conflictingClaim,
     };
   }
-  return claimResult;
+  const [registeredHost, registeredClaim] = await Promise.all([
+    getAccountHost(host),
+    getAccountHostClaim(host),
+  ]);
+  if (!registeredHost || !registeredClaim) {
+    throw new Error("registered account host could not be read back");
+  }
+  return { ok: true, host: registeredHost, claim: registeredClaim };
 }
 
 export async function updateAccountHostProfileSettings(
   host: string,
   input: AccountHostProfileSettingsInput,
+  claimantDid: string,
 ): Promise<AccountHostProfileSettingsResult> {
   const normalized = host.trim().toLowerCase();
+  const did = claimantDid.trim();
   const displayName = input.displayName.trim();
   if (!displayName || displayName.length > 80) {
     return {
@@ -2160,14 +2336,27 @@ export async function updateAccountHostProfileSettings(
     };
   }
 
-  const existing = await getAccountHost(normalized);
+  const [existing, claim] = await Promise.all([
+    getAccountHost(normalized),
+    getAccountHostClaim(normalized),
+  ]);
+  const ownerDid = existing
+    ? await verifiedAccountHostOwnerDid(existing, claim).catch(() => null)
+    : null;
+  if (!existing || !did || ownerDid !== did) {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      message: "Only the currently verified host owner can update this host.",
+    };
+  }
   const existingProfileHandle = normalizeHandle(existing?.profileHandle);
   const nextProfileHandle = normalizeHandle(profileHandle);
   const profileChanged = existingProfileHandle !== nextProfileHandle;
   const ts = now();
-  await withDb(async (c) => {
+  const saved = await withDb(async (c) => {
     await ensureSeededHosts(c);
-    await c.execute({
+    const result = await c.execute({
       sql: `UPDATE account_host
         SET display_name = ?,
             description = ?,
@@ -2177,15 +2366,20 @@ export async function updateAccountHostProfileSettings(
             signup_status = ?,
             profile_handle = ?,
             bsky_profile_visible = ?,
-            profile_did = CASE WHEN ? THEN NULL ELSE profile_did END,
+            profile_did = CASE WHEN ? = 1 THEN NULL ELSE profile_did END,
             avatar_url = CASE
-              WHEN ? THEN ?
-              WHEN ? THEN NULL
+              WHEN ? = 1 THEN ?
+              WHEN ? = 1 THEN NULL
               ELSE avatar_url
             END,
-            profile_checked_at = CASE WHEN ? THEN NULL ELSE profile_checked_at END,
+            profile_checked_at = CASE WHEN ? = 1 THEN NULL ELSE profile_checked_at END,
             updated_at = ?
-        WHERE host = ?`,
+        WHERE host = ?
+          AND EXISTS (
+            SELECT 1 FROM account_host_claim
+            WHERE account_host_claim.host = account_host.host
+              AND account_host_claim.claimant_did = ?
+          )`,
       args: [
         displayName,
         (input.description ?? "").trim().slice(0, 600),
@@ -2202,9 +2396,19 @@ export async function updateAccountHostProfileSettings(
         profileChanged ? 1 : 0,
         ts,
         normalized,
+        did,
       ],
     });
+    return Number(result.rowsAffected ?? 0) === 1;
   });
+
+  if (!saved) {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      message: "Host ownership changed before these updates could be saved.",
+    };
+  }
 
   const updated = await getAccountHost(normalized);
   return updated ? { ok: true, host: updated } : {
@@ -2234,42 +2438,76 @@ function normalizePublicImageUrl(
 export async function updateAccountHostDashboardSettings(
   host: string,
   input: AccountHostDashboardSettingsInput,
+  claimantDid: string,
 ): Promise<AccountHost | null> {
   const normalized = host.trim().toLowerCase();
-  if (!normalized) return null;
-  await withDb(async (c) => {
+  const did = claimantDid.trim();
+  if (!normalized || !did) return null;
+  const [existing, claim] = await Promise.all([
+    getAccountHost(normalized),
+    getAccountHostClaim(normalized),
+  ]);
+  if (
+    !existing ||
+    await verifiedAccountHostOwnerDid(existing, claim).catch(() => null) !== did
+  ) return null;
+  const saved = await withDb(async (c) => {
     await ensureSeededHosts(c);
-    await c.execute({
-      sql: `UPDATE account_host
-        SET service_endpoint = ?,
-            account_management_url = ?,
-            dashboard_url = ?,
-            capability_manifest_url = ?,
-            capabilities_json = ?,
-            support_url = ?,
-            service_record_uri = COALESCE(?, service_record_uri),
-            service_record_cid = COALESCE(?, service_record_cid),
-            service_observed_at = CASE WHEN ? IS NOT NULL THEN ? ELSE service_observed_at END,
-            updated_at = ?
-        WHERE host = ?`,
-      args: [
-        input.serviceEndpoint ?? null,
-        input.accountManagementUrl ?? null,
-        input.dashboardUrl ?? null,
-        input.capabilityManifestUrl ?? null,
-        input.capabilitiesJson ?? null,
-        input.supportUrl ?? null,
-        input.serviceRecordUri ?? null,
-        input.serviceRecordCid ?? null,
-        input.serviceRecordUri ?? null,
-        now(),
-        now(),
-        normalized,
-      ],
-    });
+    const result = await c.execute(accountHostDashboardSettingsUpdateQuery(
+      normalized,
+      input,
+      now(),
+      did,
+    ));
+    return Number(result.rowsAffected ?? 0) === 1;
   });
-  return await getAccountHost(normalized);
+  return saved ? await getAccountHost(normalized) : null;
 }
+
+function accountHostDashboardSettingsUpdateQuery(
+  host: string,
+  input: AccountHostDashboardSettingsInput,
+  timestamp: number,
+  claimantDid: string,
+): { sql: string; args: DbValue[] } {
+  return {
+    sql: `UPDATE account_host
+      SET service_endpoint = ?,
+          account_management_url = ?,
+          dashboard_url = ?,
+          capability_manifest_url = ?,
+          capabilities_json = ?,
+          support_url = ?,
+          service_record_uri = COALESCE(?, service_record_uri),
+          service_record_cid = COALESCE(?, service_record_cid),
+          service_observed_at = CASE WHEN ? = 1 THEN ? ELSE service_observed_at END,
+          updated_at = ?
+      WHERE host = ?
+        AND EXISTS (
+          SELECT 1 FROM account_host_claim
+          WHERE account_host_claim.host = account_host.host
+            AND account_host_claim.claimant_did = ?
+        )`,
+    args: [
+      input.serviceEndpoint ?? null,
+      input.accountManagementUrl ?? null,
+      input.dashboardUrl ?? null,
+      input.capabilityManifestUrl ?? null,
+      input.capabilitiesJson ?? null,
+      input.supportUrl ?? null,
+      input.serviceRecordUri ?? null,
+      input.serviceRecordCid ?? null,
+      input.serviceRecordUri == null ? 0 : 1,
+      timestamp,
+      timestamp,
+      host,
+      claimantDid,
+    ],
+  };
+}
+
+export const accountHostDashboardSettingsUpdateQueryForTest =
+  accountHostDashboardSettingsUpdateQuery;
 
 /**
  * Change public-directory visibility only when the signed-in DID owns the
@@ -2283,6 +2521,14 @@ export async function updateAccountHostDirectoryListing(
   const normalized = host.trim().toLowerCase();
   const did = claimantDid.trim();
   if (!normalized || !did) return null;
+  const [existing, claim] = await Promise.all([
+    getAccountHost(normalized),
+    getAccountHostClaim(normalized),
+  ]);
+  if (
+    !existing ||
+    await verifiedAccountHostOwnerDid(existing, claim).catch(() => null) !== did
+  ) return null;
   const ts = now();
   const updated = await withDb(async (c) => {
     await ensureSeededHosts(c);

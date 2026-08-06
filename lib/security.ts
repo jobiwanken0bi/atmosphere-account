@@ -244,9 +244,17 @@ export function isCrossOriginReadonlyRequest(
 }
 
 function isTokenBearingLoginRoute(pathname: string): boolean {
-  return pathname === "/login/select" ||
+  return pathname === "/signin" ||
+    pathname === "/oauth/add-account" ||
+    pathname === "/oauth/switch" ||
+    pathname === "/oauth/login" ||
+    pathname === "/oauth/create" ||
+    pathname === "/login/select" ||
     pathname === "/api/login/selection" ||
-    pathname === "/examples/atmosphere-login/callback";
+    pathname === "/examples/atmosphere-login/callback" ||
+    pathname === "/hosts/claim" ||
+    pathname === "/hosts/register" ||
+    /^\/hosts\/[^/]+\/claim$/.test(pathname);
 }
 
 function isPopupCompatibleLoginRoute(pathname: string): boolean {

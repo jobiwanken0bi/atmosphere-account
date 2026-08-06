@@ -31,6 +31,7 @@ interface Props {
     id: string;
     name: string;
     relationship: "same_product" | "same_operator";
+    intentToken: string;
   } | null;
 }
 
@@ -71,9 +72,6 @@ export default function HostRegisterForm(
   );
   const inferenceMessage = useSignal(values.inferenceMessage);
   const bskyProfileVisible = useSignal(values.bskyProfileVisible);
-  const relationship = useSignal<"same_product" | "same_operator">(
-    linkingApp?.relationship ?? "same_product",
-  );
 
   function onAvatarChange(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -102,28 +100,16 @@ export default function HostRegisterForm(
               The new host will be linked as soon as registration succeeds.
             </p>
           </header>
-          <input type="hidden" name="linkAppId" value={linkingApp.id} />
-          <label class="profile-form-field">
-            <span class="profile-form-label">Relationship</span>
-            <select
-              class="profile-form-input"
-              name="relationship"
-              value={relationship.value}
-              onChange={(event) =>
-                relationship.value =
-                  (event.currentTarget as HTMLSelectElement).value ===
-                      "same_operator"
-                    ? "same_operator"
-                    : "same_product"}
-            >
-              <option value="same_product">
-                Same product — this host is part of the app
-              </option>
-              <option value="same_operator">
-                Same operator — this is a separate service we also run
-              </option>
-            </select>
-          </label>
+          <input
+            type="hidden"
+            name="linkIntent"
+            value={linkingApp.intentToken}
+          />
+          <p class="profile-form-hint">
+            {linkingApp.relationship === "same_operator"
+              ? "Same operator — this is a separate service run by the app owner."
+              : "Same product — this host is part of the app."}
+          </p>
         </section>
       )}
       <section class="host-register-form-section host-register-profile-section">
@@ -292,8 +278,8 @@ export default function HostRegisterForm(
               spellcheck={false}
             />
             <span class="profile-form-hint">
-              Usually the domain people get in their handle, like pckt.cafe or
-              npmx.social.
+              Enter the account-host domain you operate. Do not use an app or
+              social website unless it is also the host domain.
             </span>
           </label>
           <label class="profile-form-field">
@@ -312,7 +298,8 @@ export default function HostRegisterForm(
               required
             />
             <span class="profile-form-hint">
-              The PDS origin that owns account controls for this host.
+              The PDS origin operated by this host. This is not necessarily the
+              PDS where your signed-in operator account happens to live.
             </span>
           </label>
           <label class="profile-form-field">

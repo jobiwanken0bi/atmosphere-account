@@ -48,7 +48,10 @@ export const handler = define.handlers({
     });
 
     const next = url.searchParams.get("next") === "host"
-      ? "/hosts/register"
+      ? `/hosts/register?${new URLSearchParams({
+        host: handle,
+        displayName,
+      })}`
       : "/apps/manage";
 
     return new Response(null, {

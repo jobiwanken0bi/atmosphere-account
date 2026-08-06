@@ -565,6 +565,20 @@ CREATE INDEX IF NOT EXISTS directory_entity_link_host_status
 CREATE INDEX IF NOT EXISTS directory_entity_link_app_status
   ON directory_entity_link(app_listing_id, status, relationship);
 
+-- Keep replay protection independent of host/app lifecycle. A deleted entity
+-- must not make an already-used signed continuation usable again.
+CREATE TABLE IF NOT EXISTS app_host_link_intent_consumption (
+  jti text PRIMARY KEY,
+  host text NOT NULL,
+  app_listing_id text NOT NULL,
+  app_owner_did text NOT NULL,
+  expires_at bigint NOT NULL,
+  consumed_at bigint NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS app_host_link_intent_consumption_expires
+  ON app_host_link_intent_consumption(expires_at);
+
 CREATE TABLE IF NOT EXISTS app_alias (
   alias_key text PRIMARY KEY,
   listing_id text NOT NULL REFERENCES app_listing(id) ON DELETE CASCADE,

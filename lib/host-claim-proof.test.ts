@@ -1,14 +1,7 @@
 import {
-  hasPreboundHostAuthority,
-  hostHandleMatchesDomain,
-  hostServiceRecordMatchesUser,
-  wellKnownHostClaimMatchesUser,
+  hostSelfServiceClaimPolicy,
+  verifyHostClaimDomainProof,
 } from "./host-claim-proof.ts";
-import { HOST_SERVICE_NSID } from "./lexicons.ts";
-
-function assert(condition: unknown, message = "Assertion failed"): void {
-  if (!condition) throw new Error(message);
-}
 
 function assertEquals(actual: unknown, expected: unknown): void {
   const a = JSON.stringify(actual);
@@ -16,86 +9,45 @@ function assertEquals(actual: unknown, expected: unknown): void {
   if (a !== e) throw new Error(`Expected ${e}, got ${a}`);
 }
 
-Deno.test("hostHandleMatchesDomain requires the account handle to be the host domain", () => {
-  assert(hostHandleMatchesDomain("pds.example.com", "pds.example.com"));
-  assert(hostHandleMatchesDomain("pds.example.com.", "@pds.example.com"));
+Deno.test("production claims reject handle-domain and curated-handle shortcuts", () => {
+  const handleResult = verifyHostClaimDomainProof(
+    { host: "pds.example.com" },
+    { did: "did:plc:owner", handle: "pds.example.com" },
+    { isDev: false },
+  );
   assertEquals(
-    hostHandleMatchesDomain("pds.example.com", "example.com"),
-    false,
+    handleResult,
+    { ok: false, reason: "missing_domain_proof" },
+  );
+  assertEquals(
+    verifyHostClaimDomainProof(
+      { host: "pckt.cafe" },
+      { did: "did:plc:pinned", handle: "pckt.blog" },
+      { isDev: false },
+    ),
+    { ok: false, reason: "missing_domain_proof" },
   );
 });
 
-Deno.test("hostServiceRecordMatchesUser requires a record from the signed-in DID for the host rkey", () => {
-  const user = { did: "did:plc:hostowner", handle: "pds.example.com" };
-  assert(hostServiceRecordMatchesUser(
-    "pds.example.com",
-    `at://${user.did}/${HOST_SERVICE_NSID}/pds.example.com`,
-    "bafyrecord",
-    user,
-  ));
+Deno.test("only explicit local .test fixtures bypass contact-email claims", () => {
   assertEquals(
-    hostServiceRecordMatchesUser(
-      "pds.example.com",
-      `at://${user.did}/${HOST_SERVICE_NSID}/other.example.com`,
-      "bafyrecord",
-      user,
-    ),
-    false,
+    hostSelfServiceClaimPolicy("fixture.test", { isDev: true }),
+    "local-dev",
   );
   assertEquals(
-    hostServiceRecordMatchesUser(
-      "pds.example.com",
-      `at://did:plc:other/${HOST_SERVICE_NSID}/pds.example.com`,
-      "bafyrecord",
-      user,
+    verifyHostClaimDomainProof(
+      { host: "fixture.test" },
+      { did: "did:plc:fixture", handle: "fixture.test" },
+      { isDev: true },
     ),
-    false,
+    { ok: true, method: "local-dev" },
   );
-});
-
-Deno.test("wellKnownHostClaimMatchesUser accepts DID or handle authority", () => {
-  const user = { did: "did:plc:hostowner", handle: "brand.example" };
-  assert(wellKnownHostClaimMatchesUser(
-    {
-      host: "pds.brand.example",
-      owner: { did: user.did },
-    },
-    "pds.brand.example",
-    user,
-  ));
-  assert(wellKnownHostClaimMatchesUser(
-    {
-      host: "pds.brand.example",
-      claim: { handle: "brand.example" },
-    },
-    "pds.brand.example",
-    user,
-  ));
   assertEquals(
-    wellKnownHostClaimMatchesUser(
-      {
-        host: "other.brand.example",
-        owner: { did: user.did },
-      },
-      "pds.brand.example",
-      user,
-    ),
-    false,
+    hostSelfServiceClaimPolicy("fixture.test", { isDev: false }),
+    "contact-email",
   );
-});
-
-Deno.test("hasPreboundHostAuthority only trusts seeded host mappings", () => {
-  assert(hasPreboundHostAuthority({
-    host: "pckt.cafe",
-    source: "seeded",
-    claimHandle: "pckt.blog",
-  }));
   assertEquals(
-    hasPreboundHostAuthority({
-      host: "pckt.cafe",
-      source: "manual",
-      claimHandle: "pckt.blog",
-    }),
-    false,
+    hostSelfServiceClaimPolicy("pds.example.com", { isDev: true }),
+    "contact-email",
   );
 });

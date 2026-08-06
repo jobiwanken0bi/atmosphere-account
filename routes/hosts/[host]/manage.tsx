@@ -12,9 +12,11 @@ import {
   getAccountHost,
   getAccountHostClaim,
   type HostSignupStatus,
+  isAccountHostPubliclyListable,
   updateAccountHostDashboardSettings,
   updateAccountHostDirectoryListing,
   updateAccountHostProfileSettings,
+  verifiedAccountHostOwnerDid,
 } from "../../../lib/account-hosts.ts";
 import {
   buildHostDashboardState,
@@ -37,7 +39,12 @@ import {
 } from "../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 
-type ManageState = "ready" | "not-claimed" | "not-owner" | "error";
+type ManageState =
+  | "ready"
+  | "not-claimed"
+  | "not-owner"
+  | "authority-unavailable"
+  | "error";
 
 const SIGNUP_STATUSES: Array<{ value: HostSignupStatus; label: string }> = [
   { value: "open", label: "Open signup" },
@@ -86,6 +93,7 @@ interface HostManagePageProps {
   values: ManageFormValues;
   validation: HostDashboardFetchResult | null;
   error: string | null;
+  notice?: string | null;
 }
 
 export const handler = define.handlers({
@@ -114,7 +122,10 @@ export const handler = define.handlers({
     }
     if (!ctx.state.user) return redirectToSignin(host.host, ctx.url);
     const claim = await getAccountHostClaim(host.host).catch(() => null);
-    const state = manageStateForUser(claim, ctx.state.user.did);
+    const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
+      null
+    );
+    const state = manageStateForUser(claim, ownerDid, ctx.state.user.did);
     return ctx.render(
       <HostManagePage
         host={host}
@@ -123,10 +134,14 @@ export const handler = define.handlers({
         account={account}
         values={valuesFromHost(host)}
         validation={null}
-        error={state === "not-claimed"
-          ? "Claim this host before managing account routing."
-          : state === "not-owner"
-          ? "This signed-in account cannot manage the host listing."
+        error={manageStateError(state) ??
+          (ctx.url.searchParams.get("linkError") === "1"
+            ? "The app connection could not be completed. Ask the app owner to start a new connection from app hosting."
+            : null)}
+        notice={ctx.url.searchParams.get("linked") === "1"
+          ? "Host connected to the app successfully."
+          : ctx.url.searchParams.get("claimed") === "1"
+          ? "Host claimed successfully. Review its directory visibility and account routes below."
           : null}
       />,
       { status: state === "ready" ? 200 : 403 },
@@ -169,7 +184,10 @@ export const handler = define.handlers({
     if (!ctx.state.user) return redirectToSignin(host.host, ctx.url);
 
     const claim = await getAccountHostClaim(host.host).catch(() => null);
-    const state = manageStateForUser(claim, ctx.state.user.did);
+    const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
+      null
+    );
+    const state = manageStateForUser(claim, ownerDid, ctx.state.user.did);
     if (state !== "ready") {
       return ctx.render(
         <HostManagePage
@@ -179,9 +197,7 @@ export const handler = define.handlers({
           account={account}
           values={valuesFromHost(host)}
           validation={null}
-          error={state === "not-claimed"
-            ? "Claim this host before managing account routing."
-            : "This signed-in account cannot manage the host listing."}
+          error={manageStateError(state)}
         />,
         { status: 403 },
       );
@@ -251,7 +267,7 @@ export const handler = define.handlers({
         profileHandle: values.profileHandle,
         bskyProfileVisible: values.bskyProfileVisible,
         avatarUrl: publication.avatarUrl,
-      });
+      }, ctx.state.user.did);
       if (result.ok) {
         if (publication.serviceRecordUri) {
           await updateAccountHostDashboardSettings(host.host, {
@@ -263,7 +279,7 @@ export const handler = define.handlers({
             supportUrl: host.supportUrl,
             serviceRecordUri: publication.serviceRecordUri,
             serviceRecordCid: publication.serviceRecordCid ?? null,
-          });
+          }, ctx.state.user.did);
         }
         return new Response(null, {
           status: 303,
@@ -373,7 +389,7 @@ export const handler = define.handlers({
         supportUrl: validation?.manifest?.supportUrl ?? supportUrl,
         serviceRecordUri: publication.serviceRecordUri ?? null,
         serviceRecordCid: publication.serviceRecordCid ?? null,
-      });
+      }, ctx.state.user.did);
       return new Response(null, {
         status: 303,
         headers: {
@@ -564,8 +580,11 @@ function isoFromMs(value: number): string {
 }
 
 function HostManagePage(props: HostManagePageProps) {
-  const { host, claim, state, account, values, validation, error } = props;
+  const { host, claim, state, account, values, validation, error, notice } =
+    props;
   const dashboard = buildHostDashboardState({ host });
+  const publicHostPageIsReady = !!host && !notice &&
+    isAccountHostPubliclyListable(host);
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -573,12 +592,12 @@ function HostManagePage(props: HostManagePageProps) {
         <section class="signin-page-section host-manage-section">
           <div class="container signin-page-container">
             <a
-              href={host && host.operatorListingOptIn !== false
+              href={publicHostPageIsReady
                 ? `/hosts/${encodeURIComponent(host.host)}`
                 : "/hosts"}
               class="text-link-button"
             >
-              Back to host
+              {publicHostPageIsReady ? "Back to host" : "Back to hosts"}
             </a>
             <div class="glass signin-page-card host-manage-card">
               {host
@@ -610,6 +629,7 @@ function HostManagePage(props: HostManagePageProps) {
                       values={values}
                       validation={validation}
                       error={error}
+                      notice={notice ?? null}
                       dashboard={dashboard}
                     />
                   </>
@@ -633,13 +653,14 @@ function HostManagePage(props: HostManagePageProps) {
 }
 
 function ManageBody(
-  { host, claim, state, values, validation, error, dashboard }: {
+  { host, claim, state, values, validation, error, notice, dashboard }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
     state: ManageState;
     values: ManageFormValues;
     validation: HostDashboardFetchResult | null;
     error: string | null;
+    notice: string | null;
     dashboard: ReturnType<typeof buildHostDashboardState>;
   },
 ) {
@@ -651,7 +672,9 @@ function ManageBody(
         )}
         <p class="host-claim-panel-title">Claim required</p>
         <p class="text-body">
-          Claim this host with its linked ATProto account before saving host
+          Configure <code>contact.email</code> in this PDS’s live{" "}
+          <code>com.atproto.server.describeServer</code>{" "}
+          response, then follow the emailed verification link before saving host
           account-page settings.
         </p>
         <a
@@ -660,6 +683,24 @@ function ManageBody(
         >
           <span>Claim this host</span>
         </a>
+      </div>
+    );
+  }
+
+  if (state === "authority-unavailable") {
+    return (
+      <div class="host-claim-panel">
+        {error && (
+          <p class="profile-form-status profile-form-status--error">{error}</p>
+        )}
+        <p class="host-claim-panel-title">
+          Operator verification unavailable
+        </p>
+        <p class="text-body">
+          Atmosphere could not reverify the stored ownership claim, so it is not
+          showing that claimant as the operator or allowing listing changes.
+          Nothing has been changed; try again later.
+        </p>
       </div>
     );
   }
@@ -701,6 +742,9 @@ function ManageBody(
 
   return (
     <>
+      {notice && (
+        <p class="profile-form-status profile-form-status--ok">{notice}</p>
+      )}
       {error && (
         <p class="profile-form-status profile-form-status--error">{error}</p>
       )}
@@ -1215,10 +1259,25 @@ function HostCapabilitySummary(
 
 function manageStateForUser(
   claim: AccountHostClaim | null,
+  verifiedOwnerDid: string | null,
   did: string,
 ): ManageState {
   if (!claim) return "not-claimed";
-  return claim.claimantDid === did ? "ready" : "not-owner";
+  if (!verifiedOwnerDid) return "authority-unavailable";
+  return verifiedOwnerDid === did ? "ready" : "not-owner";
+}
+
+function manageStateError(state: ManageState): string | null {
+  if (state === "not-claimed") {
+    return "Claim this host before managing account routing.";
+  }
+  if (state === "authority-unavailable") {
+    return "The stored host owner could not be reverified.";
+  }
+  if (state === "not-owner") {
+    return "This signed-in account cannot manage the host listing.";
+  }
+  return null;
 }
 
 function redirectToSignin(host: string, url: URL): Response {

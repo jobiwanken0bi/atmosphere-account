@@ -45,7 +45,7 @@ minimal required fields, flexible optional arrays for links and images, and
 token-backed `knownValues` so future host directories can add new roles without
 breaking old records.
 
-Atmosphere's register/manage flow should prefill this profile from the signed-in
+Atmosphere's claim/manage flow should prefill this profile from the signed-in
 account's existing microblog profile when possible. If the host uploads a custom
 avatar or logo, the image is uploaded to the host account's PDS as a blob and
 referenced from the `images` array; Atmosphere does not need R2 for these public
@@ -89,14 +89,15 @@ metadata, and host capabilities.
 Host records are self-asserted. They should not automatically make a host
 "verified" in Atmosphere Account.
 
-Atmosphere should derive trust from:
+For new production claims, Atmosphere derives operator authority from one proof:
+a short-lived, one-time challenge sent only to the contact email announced by
+the exact PDS endpoint. Service reachability, social handles, host records,
+curated profile mappings, conformance checks, and local moderation can inform
+directory metadata, but they do not grant host management.
 
-- OAuth claim flow from the expected admin account.
-- Exact, bidirectionally verified host handle/domain alignment as a shortcut.
-- PDS service endpoint reachability.
-- A one-time challenge sent only to the contact email announced by the PDS.
-- Local moderation state.
-- A future standardized PDS operator declaration when AT Protocol provides one.
+A future standardized, bidirectional PDS operator declaration may add another
+claim proof after the declaration exists in a PDS specification and reference
+implementation. It is not part of the current claim flow.
 
 This means a host card can show the publishing account, while "verified" remains
 an Atmosphere-local or conformance-test result. A self-published record alone
@@ -104,29 +105,26 @@ does not prove that the author controls every hostname it names.
 
 ## Claim Proof
 
-Known hosts can be pre-bound to a specific operator account, for example
-`pckt.cafe` can be claimed by `pckt.blog`. New self-serve host claims need a
-domain proof so someone cannot claim an arbitrary PDS domain by only submitting
-a form.
-
 Atmosphere accepts these claim paths:
 
-- Pre-bound seeded authority, such as `blacksky.community` claimed by
-  `blackskyweb.xyz`.
-- Signed-in account handle exactly matches the host domain.
-- A short-lived, single-use email link sent to `contact.email` from the PDS's
-  live `com.atproto.server.describeServer` response. The link is bound to the
-  signed-in account DID, and Atmosphere rechecks the announced address before
-  completing the claim.
-- Local `.test` hosts in development only, for visual testing.
+- Production: a short-lived, single-use email link sent to `contact.email` from
+  the PDS's live `com.atproto.server.describeServer` response. The challenge is
+  bound to the exact directory host and signed-in account DID. Atmosphere
+  rechecks the live address before atomically consuming the link and recording
+  ownership.
+- Development only: explicit local `.test` fixtures for visual testing.
 
-Host registration also needs to publish
-`account.atmosphere.host.service/{normalized-host}` from the signed-in account.
-The DB-only fallback is only for local `.test` visual fixtures. Atmosphere does
-not ask operators to publish a product-specific HTTPS well-known file. A PDS
-without an announced contact address or exact handle match cannot self-claim;
-exceptional providers need an explicit curated mapping until a standard operator
-declaration exists.
+An operator claims a production host by configuring the PDS so its live
+`com.atproto.server.describeServer` response includes `contact.email`, finding
+the exact PDS domain in Atmosphere's detected-host flow, signing in with the
+account that should manage the listing, and following the emailed link within 20
+minutes. The address is discovered from the PDS rather than accepted from a
+form.
+
+Atmosphere does not ask operators to publish a product-specific HTTPS well-known
+file. A PDS without an announced contact address cannot be claimed self-service
+today. Curated social handles remain profile metadata and do not substitute for
+the email proof.
 
 ## Hosts Page Read Model
 
@@ -212,7 +210,7 @@ page URL.
 
 ## OAuth Scopes
 
-When the host register/manage UI writes these records, request scopes for:
+When the host manage UI writes these records, request scopes for:
 
 ```text
 repo:account.atmosphere.host.profile

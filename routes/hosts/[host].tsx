@@ -12,6 +12,7 @@ import {
   accountHostAvailability,
   type AccountHostClaim,
   type HostVerificationStatus,
+  verifiedAccountHostOwnerDid,
 } from "../../lib/account-hosts.ts";
 import { getHostDetailFromAppview } from "../../lib/appview-client.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
@@ -65,6 +66,9 @@ export const handler = define.handlers({
         }),
       ])
       : [null, []];
+    const verifiedOwnerDid = host && claim
+      ? await verifiedAccountHostOwnerDid(host, claim).catch(() => null)
+      : null;
     return ctx.render(
       <HostDetailPage
         host={host}
@@ -80,6 +84,7 @@ export const handler = define.handlers({
           ctx.url.searchParams.get("from"),
         )}
         account={buildAccountMenuProps(ctx.state)}
+        verifiedOwnerDid={verifiedOwnerDid}
       />,
       { status: host ? 200 : 404 },
     );
@@ -97,6 +102,7 @@ function HostDetailPage(
     managed,
     backHref,
     account,
+    verifiedOwnerDid,
   }: {
     host: AccountHost | null;
     claim: AccountHostClaim | null;
@@ -107,6 +113,7 @@ function HostDetailPage(
     managed: boolean;
     backHref: string;
     account: ReturnType<typeof buildAccountMenuProps>;
+    verifiedOwnerDid: string | null;
   },
 ) {
   if (!host) {
@@ -138,7 +145,7 @@ function HostDetailPage(
   const temporarilyUnavailable = accountHostAvailability(host) === "grace";
   const handleSummary = hostHandleSummary(friendly, pdsDescription);
   const isManagedByCurrentAccount = Boolean(
-    claim && account.user && claim.claimantDid === account.user.did,
+    claim && account.user && verifiedOwnerDid === account.user.did,
   );
   const canOfferSignup = Boolean(
     host.signupUrl &&
@@ -465,12 +472,19 @@ function HostDetailPage(
                     <span>Manage host</span>
                   </a>
                 )
-                : claim
+                : claim && verifiedOwnerDid
                 ? (
                   <p class="host-detail-claim-note">
                     {claimed ? "Claim verified. " : ""}
                     Managed by{" "}
                     <AtmosphereHandle handle={claim.claimantHandle} />
+                  </p>
+                )
+                : claim
+                ? (
+                  <p class="host-detail-claim-note">
+                    Operator verification is temporarily unavailable. The stored
+                    claimant is not being shown as verified.
                   </p>
                 )
                 : (

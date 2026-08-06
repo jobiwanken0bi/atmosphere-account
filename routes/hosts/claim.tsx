@@ -8,6 +8,13 @@ import {
 } from "../../lib/account-hosts.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
+import {
+  appHostLinkIntentErrorMessage,
+  type AppHostLinkSelectorIntent,
+  bindAppHostLinkIntent,
+  resolveAppHostLinkSelectorIntent,
+  type ResolvedAppHostLinkIntent,
+} from "../../lib/app-host-link-intent.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -16,7 +23,22 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
-    if (!ctx.state.user) return redirectToSignin(ctx.url);
+    const rawLinkIntent = ctx.url.searchParams.get("link_intent");
+    if (!ctx.state.user) {
+      if (rawLinkIntent?.trim()) {
+        return new Response(
+          "Return to the app owner account and start the host connection again.",
+          { status: 400, headers: { "cache-control": "no-store" } },
+        );
+      }
+      return redirectToSignin(ctx.url);
+    }
+
+    const linkContext = await loadOptionalLinkIntent(
+      rawLinkIntent,
+      ctx.state.user.did,
+    );
+    if (linkContext instanceof Response) return linkContext;
 
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "detected-host-claim-search",
@@ -38,6 +60,20 @@ export const handler = define.handlers({
             publish: "1",
             from: "detected",
           });
+          if (linkContext) {
+            const bound = await bindAppHostLinkIntent(
+              linkContext.token,
+              host.host,
+              ctx.state.user.did,
+            );
+            if (!bound.ok) {
+              return new Response(
+                appHostLinkIntentErrorMessage(bound.reason),
+                { status: 400, headers: { "cache-control": "no-store" } },
+              );
+            }
+            search.set("link_intent", bound.value.token);
+          }
           return new Response(null, {
             status: 303,
             headers: {
@@ -48,7 +84,7 @@ export const handler = define.handlers({
           });
         }
         error =
-          "We haven’t detected that PDS in relay inventory yet. Check the exact PDS domain and try again after it has active accounts on the network.";
+          "We haven’t detected that PDS in relay inventory yet. Check the exact PDS domain, make sure it has an active account visible to the relay, and configure contact.email in com.atproto.server.describeServer before trying again.";
       }
     }
 
@@ -57,6 +93,7 @@ export const handler = define.handlers({
         account={buildAccountMenuProps(ctx.state)}
         input={input}
         error={error}
+        linkContext={linkContext}
       />,
       { status: error ? 404 : 200 },
     );
@@ -77,10 +114,11 @@ export function normalizeDetectedPdsDomain(value: string): string | null {
 }
 
 function DetectedHostClaimPage(
-  { account, input, error }: {
+  { account, input, error, linkContext }: {
     account: ReturnType<typeof buildAccountMenuProps>;
     input: string;
     error: string | null;
+    linkContext: ResolvedAppHostLinkIntent<AppHostLinkSelectorIntent> | null;
   },
 ) {
   return (
@@ -89,19 +127,40 @@ function DetectedHostClaimPage(
         <Nav account={account} active="hosts" />
         <section class="signin-page-section host-claim-section">
           <div class="container signin-page-container">
-            <a href="/hosts" class="text-link-button">
-              Back to hosts
+            <a
+              href={linkContext
+                ? `/apps/manage/host?app=${
+                  encodeURIComponent(linkContext.app.id)
+                }`
+                : "/hosts"}
+              class="text-link-button"
+            >
+              {linkContext ? "Back to app hosting" : "Back to hosts"}
             </a>
             <div class="glass signin-page-card host-claim-card">
-              <p class="text-eyebrow">Claim a detected PDS</p>
-              <h1 class="host-claim-title">List your PDS publicly</h1>
+              <p class="text-eyebrow">
+                {linkContext
+                  ? "Connect account hosting"
+                  : "Claim a detected PDS"}
+              </p>
+              <h1 class="host-claim-title">
+                {linkContext
+                  ? `Connect a PDS to ${linkContext.app.name}`
+                  : "List your PDS publicly"}
+              </h1>
               <p class="text-body host-claim-copy">
-                Atmosphere keeps likely personal PDSes out of the public
-                directory by default. If you operate one and want it listed,
-                enter its exact PDS domain. We’ll use the relay data already on
-                hand to prefill the claim.
+                {linkContext
+                  ? "Enter the exact PDS domain. If it is unclaimed, Atmosphere will verify the contact email announced by that PDS. If it is already claimed, its verified operator can approve the connection."
+                  : "Atmosphere keeps likely personal PDSes out of the public directory by default. If you operate one and want it listed, enter its exact PDS domain. We’ll use the relay data already on hand to prefill the claim."}
               </p>
               <form method="GET" action="/hosts/claim" class="host-claim-form">
+                {linkContext && (
+                  <input
+                    type="hidden"
+                    name="link_intent"
+                    value={linkContext.token}
+                  />
+                )}
                 <label class="profile-form-field host-claim-domain-field">
                   <span class="profile-form-label">PDS domain</span>
                   <input
@@ -140,6 +199,21 @@ function DetectedHostClaimPage(
       </div>
     </div>
   );
+}
+
+async function loadOptionalLinkIntent(
+  token: string | null,
+  currentDid: string,
+): Promise<
+  ResolvedAppHostLinkIntent<AppHostLinkSelectorIntent> | null | Response
+> {
+  if (!token?.trim()) return null;
+  const resolved = await resolveAppHostLinkSelectorIntent(token, currentDid);
+  if (resolved.ok) return resolved.value;
+  return new Response(appHostLinkIntentErrorMessage(resolved.reason), {
+    status: 400,
+    headers: { "cache-control": "no-store" },
+  });
 }
 
 function redirectToSignin(url: URL): Response {

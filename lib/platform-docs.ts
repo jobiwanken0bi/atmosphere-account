@@ -2072,8 +2072,8 @@ return Response.redirect(oauthUrl);`,
       "Optional manifests are compatibility metadata, not the primary account surface and not a delegation of account authority.",
     ],
     primaryCta: {
-      label: "Register a host",
-      href: "/hosts/register",
+      label: "Claim a detected PDS",
+      href: "/hosts/claim",
     },
     secondaryCta: {
       label: "Host directory",

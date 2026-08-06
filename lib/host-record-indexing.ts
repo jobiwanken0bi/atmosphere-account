@@ -1,4 +1,7 @@
-import { type HostSignupStatus } from "./account-hosts.ts";
+import {
+  type HostSignupStatus,
+  resolvePinnedSeededAccountHostAuthority,
+} from "./account-hosts.ts";
 import { type DbClient, withDb } from "./db.ts";
 import {
   HOST_IMAGE_PURPOSE_AVATAR,
@@ -24,6 +27,12 @@ export interface HostProtocolRecordInput {
   rkey: string;
   authorHandle?: string | null;
   value: unknown;
+}
+
+export interface HostRecordIndexingOptions {
+  resolveIdentity?: (
+    handle: string,
+  ) => Promise<{ did: string; handle: string }>;
 }
 
 export interface ParsedHostServiceRecord {
@@ -358,17 +367,25 @@ export function parseHostProtocolRecord(
 export async function upsertHostProtocolRecord(
   input: HostProtocolRecordInput,
 ): Promise<ParsedHostProtocolRecord | null> {
+  return await withDb((c) => upsertHostProtocolRecordWithClient(c, input));
+}
+
+/** The client-taking boundary keeps one index projection update together and
+ * makes its authorization-sensitive SQL independently testable. */
+export async function upsertHostProtocolRecordWithClient(
+  c: DbClient,
+  input: HostProtocolRecordInput,
+  indexedAt = now(),
+  options: HostRecordIndexingOptions = {},
+): Promise<ParsedHostProtocolRecord | null> {
   const parsed = parseHostProtocolRecord(input);
   if (!parsed) return null;
-  const indexedAt = now();
-  await withDb(async (c) => {
-    await upsertHostRecordRow(c, input, parsed, indexedAt);
-    if (parsed.kind === "service") {
-      await upsertAccountHostFromService(c, input, parsed, indexedAt);
-    } else {
-      await enrichAccountHostsFromProfile(c, input, parsed, indexedAt);
-    }
-  });
+  await upsertHostRecordRow(c, input, parsed, indexedAt);
+  if (parsed.kind === "service") {
+    await upsertAccountHostFromService(c, input, parsed, indexedAt, options);
+  } else {
+    await enrichAccountHostsFromProfile(c, input, parsed, indexedAt, options);
+  }
   return parsed;
 }
 
@@ -494,18 +511,27 @@ async function upsertAccountHostFromService(
   input: HostProtocolRecordInput,
   parsed: ParsedHostServiceRecord,
   indexedAt: number,
+  options: HostRecordIndexingOptions,
 ): Promise<void> {
+  const seededProjection = await seededProjectionAuthorization(
+    c,
+    parsed.host,
+    input.repoDid,
+    options,
+  );
+  if (!seededProjection.allowed) return;
+  const seededProjectionAllowed = seededProjection.seeded ? 1 : 0;
   const authorHandle = normalizeHandle(input.authorHandle);
   await c.execute({
     sql: `INSERT INTO account_host (
         host, display_name, description, data_location, homepage_url, signup_url,
         service_endpoint, account_management_url, dashboard_url,
         capability_manifest_url, capabilities_json, support_url,
-        profile_handle, profile_did, claim_handle, claim_did,
+        profile_handle, profile_did,
         signup_status, verification_status, source, match_patterns,
         service_record_uri, service_record_cid, service_observed_at,
         last_checked_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'observed', 'manual', ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(host) DO UPDATE SET
         display_name = excluded.display_name,
         description = CASE
@@ -520,10 +546,24 @@ async function upsertAccountHostFromService(
         capability_manifest_url = COALESCE(excluded.capability_manifest_url, account_host.capability_manifest_url),
         capabilities_json = COALESCE(excluded.capabilities_json, account_host.capabilities_json),
         support_url = COALESCE(excluded.support_url, account_host.support_url),
-        profile_handle = COALESCE(account_host.profile_handle, excluded.profile_handle),
-        profile_did = COALESCE(account_host.profile_did, excluded.profile_did),
-        claim_handle = COALESCE(account_host.claim_handle, excluded.claim_handle),
-        claim_did = COALESCE(account_host.claim_did, excluded.claim_did),
+        profile_handle = CASE
+          WHEN ? = 1 THEN excluded.profile_handle
+          WHEN EXISTS (
+            SELECT 1 FROM account_host_claim
+            WHERE account_host_claim.host = account_host.host
+              AND account_host_claim.claimant_did = excluded.profile_did
+          ) THEN excluded.profile_handle
+          ELSE COALESCE(account_host.profile_handle, excluded.profile_handle)
+        END,
+        profile_did = CASE
+          WHEN ? = 1 THEN excluded.profile_did
+          WHEN EXISTS (
+            SELECT 1 FROM account_host_claim
+            WHERE account_host_claim.host = account_host.host
+              AND account_host_claim.claimant_did = excluded.profile_did
+          ) THEN excluded.profile_did
+          ELSE COALESCE(account_host.profile_did, excluded.profile_did)
+        END,
         signup_status = excluded.signup_status,
         verification_status = CASE
           WHEN account_host.verification_status IN ('verified', 'claimed')
@@ -543,9 +583,20 @@ async function upsertAccountHostFromService(
       WHERE (
           account_host.verification_status = 'observed'
           AND account_host.source <> 'seeded'
+          AND NOT EXISTS (
+            SELECT 1 FROM account_host_claim
+            WHERE account_host_claim.host = account_host.host
+          )
         )
-        OR account_host.claim_did = excluded.claim_did
-        OR account_host.profile_did = excluded.profile_did`,
+        OR EXISTS (
+          SELECT 1 FROM account_host_claim
+          WHERE account_host_claim.host = account_host.host
+            AND account_host_claim.claimant_did = excluded.profile_did
+        )
+        OR (
+          account_host.source = 'seeded'
+          AND ? = 1
+        )`,
     args: [
       parsed.host,
       parsed.displayName,
@@ -560,8 +611,6 @@ async function upsertAccountHostFromService(
       parsed.supportUrl,
       authorHandle,
       input.repoDid,
-      authorHandle,
-      input.repoDid,
       parsed.signupStatus,
       JSON.stringify(parsed.matchPatterns),
       input.uri,
@@ -570,6 +619,9 @@ async function upsertAccountHostFromService(
       indexedAt,
       parsed.createdAt ?? indexedAt,
       indexedAt,
+      seededProjectionAllowed,
+      seededProjectionAllowed,
+      seededProjectionAllowed,
     ],
   });
 }
@@ -579,6 +631,7 @@ async function enrichAccountHostsFromProfile(
   input: HostProtocolRecordInput,
   parsed: ParsedHostProfileRecord,
   indexedAt: number,
+  options: HostRecordIndexingOptions,
 ): Promise<void> {
   const authorHandle = normalizeHandle(input.authorHandle);
   const targetHosts = new Set<string>();
@@ -593,7 +646,20 @@ async function enrichAccountHostsFromProfile(
   }
   const direct = await c.execute({
     sql: `SELECT host FROM account_host
-      WHERE profile_did = ? OR claim_did = ?
+      WHERE (
+          profile_did = ?
+          AND (
+            source = 'seeded'
+            OR NOT EXISTS (
+              SELECT 1 FROM account_host_claim
+              WHERE account_host_claim.host = account_host.host
+            )
+          )
+        ) OR EXISTS (
+          SELECT 1 FROM account_host_claim
+          WHERE account_host_claim.host = account_host.host
+            AND account_host_claim.claimant_did = ?
+        )
       LIMIT 25`,
     args: [input.repoDid, input.repoDid],
   });
@@ -601,6 +667,14 @@ async function enrichAccountHostsFromProfile(
     if (row.host) targetHosts.add(String(row.host));
   }
   for (const host of targetHosts) {
+    const seededProjection = await seededProjectionAuthorization(
+      c,
+      host,
+      input.repoDid,
+      options,
+    );
+    if (!seededProjection.allowed) continue;
+    const seededProjectionAllowed = seededProjection.seeded ? 1 : 0;
     await c.execute({
       sql: `UPDATE account_host
         SET display_name = CASE
@@ -616,16 +690,33 @@ async function enrichAccountHostsFromProfile(
             support_url = COALESCE(account_host.support_url, ?),
             avatar_url = COALESCE(?, account_host.avatar_url),
             profile_handle = COALESCE(?, account_host.profile_handle),
-            profile_did = COALESCE(account_host.profile_did, ?),
-            claim_handle = COALESCE(account_host.claim_handle, ?),
-            claim_did = COALESCE(account_host.claim_did, ?),
+            profile_did = CASE
+              WHEN ? = 1 THEN ?
+              WHEN EXISTS (
+                SELECT 1 FROM account_host_claim
+                WHERE account_host_claim.host = account_host.host
+                  AND account_host_claim.claimant_did = ?
+              ) THEN ?
+              ELSE COALESCE(account_host.profile_did, ?)
+            END,
             profile_checked_at = ?,
             updated_at = ?
         WHERE host = ?
           AND (
-            (verification_status = 'observed' AND source <> 'seeded')
-            OR claim_did = ?
-            OR profile_did = ?
+            (
+              verification_status = 'observed'
+              AND source <> 'seeded'
+              AND NOT EXISTS (
+                SELECT 1 FROM account_host_claim
+                WHERE account_host_claim.host = account_host.host
+              )
+            )
+            OR EXISTS (
+              SELECT 1 FROM account_host_claim
+              WHERE account_host_claim.host = account_host.host
+                AND account_host_claim.claimant_did = ?
+            )
+            OR (source = 'seeded' AND ? = 1)
           )`,
       args: [
         parsed.name,
@@ -634,15 +725,54 @@ async function enrichAccountHostsFromProfile(
         parsed.supportUrl,
         parsed.avatarUrl,
         authorHandle,
+        seededProjectionAllowed,
         input.repoDid,
-        authorHandle,
+        input.repoDid,
+        input.repoDid,
         input.repoDid,
         indexedAt,
         indexedAt,
         host,
         input.repoDid,
-        input.repoDid,
+        seededProjectionAllowed,
       ],
     });
   }
+}
+
+async function seededProjectionAuthorization(
+  c: DbClient,
+  host: string,
+  repoDid: string,
+  options: HostRecordIndexingOptions,
+): Promise<{ seeded: boolean; allowed: boolean }> {
+  // Omit `source` deliberately: a poisoned/missing read-model row must not
+  // cause a domain pinned in the compiled seed map to lose its protection.
+  const authority = await resolvePinnedSeededAccountHostAuthority(
+    { host },
+    { resolveIdentity: options.resolveIdentity },
+  );
+  if (!authority) return { seeded: false, allowed: true };
+
+  // A live PDS contact-email claim is the operational authority, including
+  // when a curated host's social/profile DID is intentionally different. Once
+  // that stronger proof exists, the compiled social DID must not keep writing
+  // operational service metadata over the verified operator's changes.
+  const claimResult = await c.execute({
+    sql: `SELECT claimant_did, method FROM account_host_claim
+      WHERE host = ? LIMIT 1`,
+    args: [host],
+  });
+  const claim = claimResult.rows[0];
+  if (claim?.method === "pds_contact_email") {
+    return {
+      seeded: true,
+      allowed: String(claim.claimant_did ?? "").trim() === repoDid,
+    };
+  }
+  return {
+    seeded: true,
+    // A resolver failure returns a null DID, so seeded projections fail closed.
+    allowed: authority.did !== null && authority.did === repoDid,
+  };
 }

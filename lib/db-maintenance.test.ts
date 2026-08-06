@@ -20,9 +20,12 @@ Deno.test("database maintenance removes expired replay keys using second timesta
       if (/app_session/i.test(sql)) return { rowsAffected: 3 };
       if (/login_selection_replay/i.test(sql)) return { rowsAffected: 4 };
       if (/login_picker_intent/i.test(sql)) return { rowsAffected: 5 };
-      if (/passkey_ceremony/i.test(sql)) return { rowsAffected: 6 };
-      if (/rate_limit_bucket/i.test(sql)) return { rowsAffected: 7 };
-      if (/worker_lease/i.test(sql)) return { rowsAffected: 8 };
+      if (/app_host_link_intent_consumption/i.test(sql)) {
+        return { rowsAffected: 6 };
+      }
+      if (/passkey_ceremony/i.test(sql)) return { rowsAffected: 7 };
+      if (/rate_limit_bucket/i.test(sql)) return { rowsAffected: 8 };
+      if (/worker_lease/i.test(sql)) return { rowsAffected: 9 };
       if (/PRAGMA optimize/i.test(sql)) return { rowsAffected: 0 };
       throw new Error(`Unexpected SQL: ${sql}`);
     },
@@ -39,9 +42,10 @@ Deno.test("database maintenance removes expired replay keys using second timesta
     expiredAppSessions: 3,
     expiredLoginSelectionReplays: 4,
     expiredLoginPickerIntents: 5,
-    expiredPasskeyCeremonies: 6,
-    expiredRateLimitBuckets: 7,
-    expiredWorkerLeases: 8,
+    expiredAppHostLinkIntents: 6,
+    expiredPasskeyCeremonies: 7,
+    expiredRateLimitBuckets: 8,
+    expiredWorkerLeases: 9,
     optimized: false,
   });
   assertEquals(

@@ -27,8 +27,10 @@ import {
 } from "./security.ts";
 import {
   type AccountHost,
+  type AccountHostClaim,
   getAccountHost,
   getAccountHostClaim,
+  verifiedAccountHostOwnerDid,
 } from "./account-hosts.ts";
 
 const SELECTION_TOKEN_TTL_SEC = 2 * 60;
@@ -453,6 +455,10 @@ export async function getLoginAppForOwner(
 interface PreferredAccountHostDependencies {
   getHost?: typeof getAccountHost;
   getClaim?: typeof getAccountHostClaim;
+  verifyOwner?: (
+    host: AccountHost,
+    claim: AccountHostClaim | null,
+  ) => Promise<string | null>;
 }
 
 export async function verifyPreferredAccountHostForOwner(
@@ -468,8 +474,14 @@ export async function verifyPreferredAccountHostForOwner(
     getHostClaim(host),
     getHost(host),
   ]);
+  const verifiedOwnerDid = accountHost
+    ? await (dependencies.verifyOwner ?? verifiedAccountHostOwnerDid)(
+      accountHost,
+      claim,
+    ).catch(() => null)
+    : null;
   if (
-    !accountHost || !claim || claim.claimantDid !== ownerDid.trim() ||
+    !accountHost || !claim || verifiedOwnerDid !== ownerDid.trim() ||
     !accountHost.signupUrl ||
     (accountHost.signupStatus !== "open" &&
       accountHost.signupStatus !== "invite_required")
@@ -495,8 +507,14 @@ export async function resolveVerifiedPreferredAccountHost(
     getHostClaim(app.preferredAccountHost),
     getHost(app.preferredAccountHost),
   ]);
+  const verifiedOwnerDid = host
+    ? await (dependencies.verifyOwner ?? verifiedAccountHostOwnerDid)(
+      host,
+      claim,
+    ).catch(() => null)
+    : null;
   if (
-    !host || !claim || claim.claimantDid !== app.contactDid ||
+    !host || !claim || verifiedOwnerDid !== app.contactDid ||
     !host.signupUrl ||
     (host.signupStatus !== "open" && host.signupStatus !== "invite_required")
   ) {

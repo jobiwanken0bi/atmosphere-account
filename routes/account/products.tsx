@@ -175,9 +175,14 @@ function ManagedProductsPage(props: ManagedProductsPageProps) {
                     apps, including apps run by another account.
                   </p>
                 </div>
-                <a class="profile-form-button-secondary" href="/hosts/register">
-                  Register a host
-                </a>
+                <div class="account-products-group-actions">
+                  <a
+                    class="profile-form-button-secondary"
+                    href="/hosts/claim"
+                  >
+                    Claim detected PDS
+                  </a>
+                </div>
               </div>
               {hosts.length === 0
                 ? (
@@ -282,14 +287,7 @@ function ManagedAppCard(
         <a href={`/apps/${encodeURIComponent(app.slug)}`}>View profile</a>
         {editHref && <a href={editHref}>Edit listing</a>}
         <a href={`/apps/manage/host?app=${encodeURIComponent(app.id)}`}>
-          Manage hosting
-        </a>
-        <a
-          href={`/hosts/register?app=${
-            encodeURIComponent(app.id)
-          }&relationship=same_product`}
-        >
-          Add a host
+          {positiveLinks.length > 0 ? "Manage hosting" : "Add a host"}
         </a>
       </div>
     </article>

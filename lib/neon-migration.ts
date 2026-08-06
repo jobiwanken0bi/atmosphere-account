@@ -26,6 +26,7 @@ export const NEON_APP_TABLES = [
   "app_record",
   "app_listing",
   "directory_entity_link",
+  "app_host_link_intent_consumption",
   "app_alias",
   "app_review",
   "app_favorite",

@@ -668,6 +668,19 @@ const SCHEMA_STATEMENTS: string[] = [
     FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE,
     FOREIGN KEY(app_listing_id) REFERENCES app_listing(id) ON DELETE CASCADE
   )`,
+  /**
+   * Durable one-time consumption ledger for signed app-to-host continuation
+   * intents. It intentionally has no foreign keys: replay protection must
+   * survive deletion of the linked host or app until the intent expires.
+   */
+  `CREATE TABLE IF NOT EXISTS app_host_link_intent_consumption (
+    jti TEXT PRIMARY KEY,
+    host TEXT NOT NULL,
+    app_listing_id TEXT NOT NULL,
+    app_owner_did TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    consumed_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS app_alias (
     alias_key TEXT PRIMARY KEY,
     listing_id TEXT NOT NULL,
@@ -903,6 +916,7 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS app_listing_public_name ON app_listing(deleted_at, name COLLATE NOCASE)`,
   `CREATE INDEX IF NOT EXISTS directory_entity_link_host_status ON directory_entity_link(host, status, relationship)`,
   `CREATE INDEX IF NOT EXISTS directory_entity_link_app_status ON directory_entity_link(app_listing_id, status, relationship)`,
+  `CREATE INDEX IF NOT EXISTS app_host_link_intent_consumption_expires ON app_host_link_intent_consumption(expires_at)`,
   `CREATE INDEX IF NOT EXISTS app_review_listing ON app_review(listing_id, deleted_at, created_at)`,
   `CREATE INDEX IF NOT EXISTS app_review_subject ON app_review(listing_uri, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS app_favorite_listing ON app_favorite(listing_id, deleted_at, created_at)`,

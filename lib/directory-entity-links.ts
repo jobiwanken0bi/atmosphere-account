@@ -1,5 +1,16 @@
-import { type DbClient, withDb } from "./db.ts";
+import {
+  type DbClient,
+  isPostgresBackend,
+  withDb,
+  withDbTransaction,
+} from "./db.ts";
 import type { AppListing } from "./app-directory.ts";
+import type { BoundAppHostLinkIntent } from "./app-host-link-intent.ts";
+import {
+  getAccountHost,
+  getAccountHostClaim,
+  verifiedAccountHostOwnerDid,
+} from "./account-hosts.ts";
 
 export type DirectoryEntityRelationship =
   | "same_product"
@@ -91,6 +102,22 @@ export function currentDirectoryOwnerApproval(
     : null;
 }
 
+/**
+ * A claimed relationship remains public only while the stored claim and the
+ * independently verified host authority both still match the owner that
+ * approved the relationship. This deliberately fails closed when a compiled
+ * seeded host has a stale or poisoned mutable claim row.
+ */
+export function claimedDirectoryLinkHasCurrentHostAuthority(
+  linkHostOwnerDid: string,
+  storedClaimantDid: string | null,
+  verifiedHostOwnerDid: string | null,
+): boolean {
+  const linkOwner = linkHostOwnerDid.trim();
+  return !!linkOwner && storedClaimantDid === linkOwner &&
+    verifiedHostOwnerDid === linkOwner;
+}
+
 export async function listDirectoryEntityLinksForHost(
   host: string,
 ): Promise<DirectoryEntityAppLink[]> {
@@ -154,7 +181,7 @@ export async function listVerifiedDirectoryEntityLinksForApp(
   appListingId: string,
 ): Promise<DirectoryEntityAppLink[]> {
   if (!appListingId.trim()) return [];
-  return await withDb(async (c) => {
+  const rows = await withDb(async (c) => {
     const result = await c.execute({
       sql: `
         SELECT d.*, l.slug AS app_slug, l.name AS app_name,
@@ -180,11 +207,16 @@ export async function listVerifiedDirectoryEntityLinksForApp(
       `,
       args: [appListingId.trim()],
     });
-    return result.rows.flatMap((row) => {
-      const link = rowToAppLink(row);
-      return link && linkIsCurrentlyAuthorized(row, link) ? [link] : [];
-    });
+    return result.rows;
   });
+  const ownerCache = new Map<string, Promise<string | null>>();
+  const checked = await Promise.all(rows.map(async (row) => {
+    const link = rowToAppLink(row);
+    return link && await linkIsCurrentlyAuthorized(row, link, ownerCache)
+      ? link
+      : null;
+  }));
+  return checked.filter((link): link is DirectoryEntityAppLink => !!link);
 }
 
 export async function listVerifiedDirectoryEntityLinksForHosts(
@@ -193,7 +225,7 @@ export async function listVerifiedDirectoryEntityLinksForHosts(
   const normalized = [...new Set(hosts.map(normalizeHost).filter(Boolean))];
   if (normalized.length === 0) return {};
   const placeholders = normalized.map(() => "?").join(", ");
-  return await withDb(async (c) => {
+  const rows = await withDb(async (c) => {
     const result = await c.execute({
       sql: `
         SELECT d.*, l.slug AS app_slug, l.name AS app_name,
@@ -219,14 +251,19 @@ export async function listVerifiedDirectoryEntityLinksForHosts(
       `,
       args: normalized,
     });
-    const links: Record<string, DirectoryEntityAppLink[]> = {};
-    for (const row of result.rows) {
-      const link = rowToAppLink(row);
-      if (!link || !linkIsCurrentlyAuthorized(row, link)) continue;
-      (links[link.host] ??= []).push(link);
-    }
-    return links;
+    return result.rows;
   });
+  const links: Record<string, DirectoryEntityAppLink[]> = {};
+  const ownerCache = new Map<string, Promise<string | null>>();
+  for (const row of rows) {
+    const link = rowToAppLink(row);
+    if (
+      !link ||
+      !await linkIsCurrentlyAuthorized(row, link, ownerCache)
+    ) continue;
+    (links[link.host] ??= []).push(link);
+  }
+  return links;
 }
 
 export async function getDirectoryEntityLink(
@@ -264,6 +301,13 @@ export async function defineDirectoryEntityLink(input: {
       error: "This app does not have a verifiable owner DID.",
     };
   }
+  const verifiedHostOwnerDid = await verifiedDirectoryHostOwnerDid(host);
+  if (!verifiedHostOwnerDid) {
+    return {
+      ok: false,
+      error: "The claimed host owner could not be verified.",
+    };
+  }
 
   return await withDb(async (c) => {
     const claimResult = await c.execute({
@@ -276,7 +320,10 @@ export async function defineDirectoryEntityLink(input: {
       `,
       args: [host],
     });
-    const hostOwnerDid = value(claimResult.rows[0], "claimant_did");
+    const storedHostOwnerDid = value(claimResult.rows[0], "claimant_did");
+    const hostOwnerDid = storedHostOwnerDid === verifiedHostOwnerDid
+      ? verifiedHostOwnerDid
+      : null;
     const hostProfileDid = value(claimResult.rows[0], "profile_did");
     if (!hostOwnerDid) {
       return {
@@ -391,6 +438,192 @@ export async function defineDirectoryEntityLink(input: {
   });
 }
 
+/**
+ * Complete an app-initiated host connection after another signed-in DID has
+ * proved and claimed the host. The signed continuation supplies the original
+ * app owner's approval; this transaction re-checks both current owners before
+ * recording both approvals together.
+ */
+export async function establishDirectoryEntityLinkFromIntent(input: {
+  intent: BoundAppHostLinkIntent;
+  currentHostDid: string;
+}): Promise<DirectoryEntityLinkMutation> {
+  const verifiedHostOwnerDid = await verifiedDirectoryHostOwnerDid(
+    input.intent.host,
+  );
+  if (!verifiedHostOwnerDid || verifiedHostOwnerDid !== input.currentHostDid) {
+    return {
+      ok: false,
+      error: "This account does not control the verified claimed host.",
+    };
+  }
+  return await withDbTransaction((c) =>
+    establishDirectoryEntityLinkFromIntentWithClient(c, {
+      ...input,
+      verifiedHostOwnerDid,
+    })
+  );
+}
+
+export async function establishDirectoryEntityLinkFromIntentWithClient(
+  c: DbClient,
+  input: {
+    intent: BoundAppHostLinkIntent;
+    currentHostDid: string;
+    verifiedHostOwnerDid: string;
+    now?: number;
+  },
+): Promise<DirectoryEntityLinkMutation> {
+  const host = normalizeHost(input.intent.host);
+  const appListingId = input.intent.appListingId.trim();
+  const appOwnerDid = input.intent.appOwnerDid.trim();
+  const currentHostDid = input.currentHostDid.trim();
+  const ownerLock = isPostgresBackend() ? " FOR UPDATE" : "";
+  if (
+    input.intent.kind !== "bound" || !host || !appListingId ||
+    host !== input.intent.host ||
+    !/^[A-Za-z0-9_-]{22,128}$/.test(input.intent.jti) ||
+    (input.intent.relationship !== "same_product" &&
+      input.intent.relationship !== "same_operator")
+  ) {
+    return { ok: false, error: "Choose a valid host and relationship." };
+  }
+
+  const appResult = await c.execute({
+    sql: `SELECT product_did, profile_did, legacy_profile_did
+      FROM app_listing
+      WHERE id = ? AND deleted_at IS NULL
+      LIMIT 1${ownerLock}`,
+    args: [appListingId],
+  });
+  const appRow = appResult.rows[0];
+  const currentAppOwnerDids = appRow
+    ? appIdentityDids({
+      productDid: value(appRow, "product_did"),
+      profileDid: value(appRow, "profile_did"),
+      legacyProfileDid: value(appRow, "legacy_profile_did"),
+    })
+    : [];
+  if (!currentAppOwnerDids.includes(appOwnerDid)) {
+    return {
+      ok: false,
+      error: "The app owner changed after this host connection was approved.",
+    };
+  }
+
+  const claimResult = await c.execute({
+    sql: `SELECT claimant_did FROM account_host_claim
+      WHERE host = ? LIMIT 1${ownerLock}`,
+    args: [host],
+  });
+  const storedHostOwnerDid = value(claimResult.rows[0], "claimant_did");
+  const hostOwnerDid = input.verifiedHostOwnerDid.trim();
+  if (
+    !hostOwnerDid || storedHostOwnerDid !== hostOwnerDid ||
+    hostOwnerDid !== currentHostDid
+  ) {
+    return {
+      ok: false,
+      error: "This account does not control the claimed host.",
+    };
+  }
+
+  const existing = await c.execute({
+    sql: `SELECT * FROM directory_entity_link
+      WHERE host = ? AND app_listing_id = ? LIMIT 1`,
+    args: [host, appListingId],
+  });
+  const previous = existing.rows.length > 0
+    ? rowToLink(existing.rows[0])
+    : null;
+  const now = input.now ?? Date.now();
+  if (input.intent.expiresAt <= now) {
+    return {
+      ok: false,
+      error: "This app-to-host setup link has expired.",
+    };
+  }
+  const consumed = await c.execute({
+    sql: `INSERT INTO app_host_link_intent_consumption (
+        jti, host, app_listing_id, app_owner_did, expires_at, consumed_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(jti) DO NOTHING`,
+    args: [
+      input.intent.jti,
+      host,
+      appListingId,
+      appOwnerDid,
+      input.intent.expiresAt,
+      now,
+    ],
+  });
+  if (Number(consumed.rowsAffected ?? 0) !== 1) {
+    const priorConsumption = await c.execute({
+      sql: `SELECT host, app_listing_id, app_owner_did, expires_at
+        FROM app_host_link_intent_consumption
+        WHERE jti = ? LIMIT 1`,
+      args: [input.intent.jti],
+    });
+    const consumption = priorConsumption.rows[0];
+    const replayedLink = previous ??
+      await getLinkWithClient(c, host, appListingId);
+    if (
+      consumption && replayedLink &&
+      value(consumption, "host") === host &&
+      value(consumption, "app_listing_id") === appListingId &&
+      value(consumption, "app_owner_did") === appOwnerDid &&
+      numberValue(consumption, "expires_at") === input.intent.expiresAt &&
+      replayedLink.host === host &&
+      replayedLink.appListingId === appListingId &&
+      replayedLink.relationship === input.intent.relationship &&
+      replayedLink.status === "verified" &&
+      replayedLink.source === "claimed" &&
+      replayedLink.hostOwnerDid === hostOwnerDid &&
+      replayedLink.appOwnerDid === appOwnerDid
+    ) {
+      // Consumption and link creation commit atomically. Treat an exact retry
+      // of that completed operation as success instead of trapping the user in
+      // an unusable one-time-link loop.
+      return { ok: true, link: replayedLink };
+    }
+    return {
+      ok: false,
+      error:
+        "This app-to-host setup link has already been used. Start the connection again from app hosting.",
+    };
+  }
+  await c.execute({
+    sql: `INSERT INTO directory_entity_link (
+        host, app_listing_id, relationship, status, source,
+        host_owner_did, app_owner_did, host_approved_at, app_approved_at,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, 'verified', 'claimed', ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(host, app_listing_id) DO UPDATE SET
+        relationship = excluded.relationship,
+        status = 'verified',
+        source = 'claimed',
+        host_owner_did = excluded.host_owner_did,
+        app_owner_did = excluded.app_owner_did,
+        host_approved_at = excluded.host_approved_at,
+        app_approved_at = excluded.app_approved_at,
+        updated_at = excluded.updated_at`,
+    args: [
+      host,
+      appListingId,
+      input.intent.relationship,
+      hostOwnerDid,
+      appOwnerDid,
+      now,
+      now,
+      previous?.createdAt ?? now,
+      now,
+    ],
+  });
+  const link = await getLinkWithClient(c, host, appListingId);
+  if (!link) throw new Error("Relationship could not be saved.");
+  return { ok: true, link };
+}
+
 export async function approveDirectoryEntityLink(
   host: string,
   app: AppListing,
@@ -398,6 +631,15 @@ export async function approveDirectoryEntityLink(
 ): Promise<DirectoryEntityLinkMutation> {
   const normalizedHost = normalizeHost(host);
   if (!normalizedHost) return { ok: false, error: "Invalid host." };
+  const verifiedHostOwnerDid = await verifiedDirectoryHostOwnerDid(
+    normalizedHost,
+  );
+  if (!verifiedHostOwnerDid) {
+    return {
+      ok: false,
+      error: "The claimed host owner could not be verified.",
+    };
+  }
   return await withDb(async (c) => {
     const existing = await getLinkWithClient(c, normalizedHost, app.id);
     if (!existing) return { ok: false, error: "Relationship not found." };
@@ -405,7 +647,13 @@ export async function approveDirectoryEntityLink(
       sql: `SELECT claimant_did FROM account_host_claim WHERE host = ? LIMIT 1`,
       args: [normalizedHost],
     });
-    const hostOwnerDid = value(claimResult.rows[0], "claimant_did");
+    const storedHostOwnerDid = value(claimResult.rows[0], "claimant_did");
+    const hostOwnerDid = storedHostOwnerDid === verifiedHostOwnerDid
+      ? verifiedHostOwnerDid
+      : null;
+    if (!hostOwnerDid) {
+      return { ok: false, error: "The claimed host owner changed." };
+    }
     const appDids = appIdentityDids(app);
     const did = currentDid.trim();
     const approvesHost = hostOwnerDid === did;
@@ -474,13 +722,16 @@ export async function removeDirectoryEntityLink(input: {
 }): Promise<DirectoryEntityLinkMutation> {
   const host = normalizeHost(input.host);
   if (!host) return { ok: false, error: "Invalid host." };
+  const verifiedHostOwnerDid = await verifiedDirectoryHostOwnerDid(host);
   return await withDb(async (c) => {
     const claimResult = await c.execute({
       sql: `SELECT claimant_did FROM account_host_claim WHERE host = ? LIMIT 1`,
       args: [host],
     });
-    const controlsHost = value(claimResult.rows[0], "claimant_did") ===
-      input.currentDid.trim();
+    const storedHostOwnerDid = value(claimResult.rows[0], "claimant_did");
+    const controlsHost = !!verifiedHostOwnerDid &&
+      storedHostOwnerDid === verifiedHostOwnerDid &&
+      verifiedHostOwnerDid === input.currentDid.trim();
     const controlsApp = userControlsAppListing(input.app, input.currentDid);
     if (!controlsHost && !controlsApp) {
       return {
@@ -536,10 +787,11 @@ function rowToLink(input: unknown): DirectoryEntityLink | null {
   };
 }
 
-function linkIsCurrentlyAuthorized(
+async function linkIsCurrentlyAuthorized(
   row: unknown,
   link: DirectoryEntityLink,
-): boolean {
+  ownerCache: Map<string, Promise<string | null>>,
+): Promise<boolean> {
   const appDids = [
     value(row, "product_did"),
     value(row, "profile_did"),
@@ -547,7 +799,31 @@ function linkIsCurrentlyAuthorized(
   ].filter((did): did is string => Boolean(did));
   if (!appDids.includes(link.appOwnerDid)) return false;
   if (link.source === "seeded") return true;
-  return value(row, "claimant_did") === link.hostOwnerDid;
+  let owner = ownerCache.get(link.host);
+  if (!owner) {
+    owner = verifiedDirectoryHostOwnerDid(link.host);
+    ownerCache.set(link.host, owner);
+  }
+  return claimedDirectoryLinkHasCurrentHostAuthority(
+    link.hostOwnerDid,
+    value(row, "claimant_did"),
+    await owner,
+  );
+}
+
+async function verifiedDirectoryHostOwnerDid(
+  host: string,
+): Promise<string | null> {
+  const normalizedHost = normalizeHost(host);
+  if (!normalizedHost) return null;
+  const [accountHost, claim] = await Promise.all([
+    getAccountHost(normalizedHost).catch(() => null),
+    getAccountHostClaim(normalizedHost).catch(() => null),
+  ]);
+  if (!accountHost) return null;
+  return await verifiedAccountHostOwnerDid(accountHost, claim).catch(() =>
+    null
+  );
 }
 
 function normalizeHost(host: string): string {

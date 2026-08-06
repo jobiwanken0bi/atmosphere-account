@@ -1,14 +1,7 @@
 import { IS_DEV } from "./env.ts";
-import { HOST_SERVICE_NSID } from "./lexicons.ts";
-import { readResponseTextWithLimit } from "./security.ts";
 
 export interface HostClaimProofHost {
   host: string;
-  source?: string | null;
-  claimHandle?: string | null;
-  profileHandle?: string | null;
-  serviceRecordUri?: string | null;
-  serviceRecordCid?: string | null;
 }
 
 export interface HostClaimProofUser {
@@ -16,18 +9,16 @@ export interface HostClaimProofUser {
   handle: string;
 }
 
-export type HostClaimProofMethod =
-  | "prebound"
-  | "handle-domain"
-  | "local-dev";
+export type HostClaimProofMethod = "local-dev";
 
 export type HostClaimProofResult =
   | { ok: true; method: HostClaimProofMethod }
   | { ok: false; reason: "missing_domain_proof" };
 
-const WELL_KNOWN_PATH = "/.well-known/atmosphere-host.json";
-const WELL_KNOWN_TIMEOUT_MS = 2500;
-const WELL_KNOWN_MAX_BYTES = 32_000;
+export interface HostClaimProofOptions {
+  /** Test seam only. Mutating production callers always use the runtime flag. */
+  isDev?: boolean;
+}
 
 function normalizeHost(value: unknown): string | null {
   const raw = typeof value === "string"
@@ -42,120 +33,40 @@ function normalizeHost(value: unknown): string | null {
   return null;
 }
 
-function normalizeDid(value: unknown): string | null {
-  const raw = typeof value === "string" ? value.trim() : "";
-  return /^did:[a-z]+:[a-zA-Z0-9._:%-]+$/.test(raw) ? raw : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-export function hostHandleMatchesDomain(
+export function isLocalDevHostClaim(
   host: string,
-  handle: string | null | undefined,
+  options: { isDev?: boolean } = {},
 ): boolean {
   const normalizedHost = normalizeHost(host);
-  const normalizedHandle = normalizeHost(handle);
-  return !!normalizedHost && normalizedHost === normalizedHandle;
+  return (options.isDev ?? IS_DEV) && !!normalizedHost &&
+    normalizedHost.endsWith(".test");
 }
 
-export function hostServiceRecordMatchesUser(
+/**
+ * Production self-service ownership is contact-email only. The sole exception
+ * is an explicit local `.test` fixture while the process is actually in dev.
+ */
+export function hostSelfServiceClaimPolicy(
   host: string,
-  serviceRecordUri: string | null | undefined,
-  serviceRecordCid: string | null | undefined,
-  user: HostClaimProofUser,
-): boolean {
-  const normalizedHost = normalizeHost(host);
-  if (
-    !normalizedHost || !serviceRecordUri?.trim() || !serviceRecordCid?.trim()
-  ) {
-    return false;
-  }
-  const expectedUri = `at://${user.did}/${HOST_SERVICE_NSID}/${normalizedHost}`;
-  return serviceRecordUri.trim() === expectedUri;
-}
-
-export function hasPreboundHostAuthority(host: HostClaimProofHost): boolean {
-  return host.source === "seeded" && !!normalizeHost(host.claimHandle);
-}
-
-export function isLocalDevHostClaim(host: string): boolean {
-  const normalizedHost = normalizeHost(host);
-  return IS_DEV && !!normalizedHost && normalizedHost.endsWith(".test");
-}
-
-export function wellKnownHostClaimMatchesUser(
-  value: unknown,
-  host: string,
-  user: HostClaimProofUser,
-): boolean {
-  const record = asRecord(value);
-  if (!record) return false;
-  const manifestHost = normalizeHost(record.host) ??
-    normalizeHost(record.domain);
-  const normalizedHost = normalizeHost(host);
-  if (!normalizedHost || manifestHost !== normalizedHost) return false;
-
-  const owner = asRecord(record.owner) ?? asRecord(record.claim) ?? record;
-  const claimDid = normalizeDid(owner.claimDid) ?? normalizeDid(owner.did);
-  const claimHandle = normalizeHost(owner.claimHandle) ??
-    normalizeHost(owner.handle);
-  return claimDid === user.did ||
-    (!!claimHandle && claimHandle === normalizeHost(user.handle));
-}
-
-/** @deprecated Retained temporarily to recognize historical proof files. */
-export async function fetchWellKnownHostClaimProof(
-  host: string,
-  user: HostClaimProofUser,
-  options: {
-    fetchImpl?: typeof fetch;
-    timeoutMs?: number;
-  } = {},
-): Promise<boolean> {
-  const normalizedHost = normalizeHost(host);
-  if (!normalizedHost) return false;
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const url = new URL(`https://${normalizedHost}${WELL_KNOWN_PATH}`);
-  try {
-    const response = await fetchImpl(url, {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(
-        Math.max(500, options.timeoutMs ?? WELL_KNOWN_TIMEOUT_MS),
-      ),
-    });
-    if (!response.ok) return false;
-    const text = await readResponseTextWithLimit(
-      response,
-      WELL_KNOWN_MAX_BYTES,
-    );
-    if (!text.ok) return false;
-    const parsed = JSON.parse(text.text);
-    return wellKnownHostClaimMatchesUser(parsed, normalizedHost, user);
-  } catch {
-    return false;
-  }
+  options: { isDev?: boolean } = {},
+): "contact-email" | "local-dev" {
+  return isLocalDevHostClaim(host, options) ? "local-dev" : "contact-email";
 }
 
 export function verifyHostClaimDomainProof(
   host: HostClaimProofHost,
-  user: HostClaimProofUser,
+  _user: HostClaimProofUser,
+  options: HostClaimProofOptions = {},
 ): HostClaimProofResult {
-  if (hasPreboundHostAuthority(host)) {
-    return { ok: true, method: "prebound" };
-  }
-  if (hostHandleMatchesDomain(host.host, user.handle)) {
-    return { ok: true, method: "handle-domain" };
-  }
-  if (isLocalDevHostClaim(host.host)) {
+  // Social handles and host records can describe a host but do not prove who
+  // controls its PDS. Production ownership is verified only by the separate
+  // contact.email challenge flow.
+  if (isLocalDevHostClaim(host.host, options)) {
     return { ok: true, method: "local-dev" };
   }
   return { ok: false, reason: "missing_domain_proof" };
 }
 
 export function hostClaimProofMessage(): string {
-  return "Claim this host from its directory page and verify the contact email announced by its PDS. An exact, bidirectionally verified handle match can be used as a shortcut.";
+  return "Configure contact.email in this PDS's live com.atproto.server.describeServer response, then retry. Atmosphere sends that address a one-time verification link; social handles and host records do not prove operator ownership.";
 }

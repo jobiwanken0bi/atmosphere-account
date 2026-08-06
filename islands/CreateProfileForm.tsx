@@ -90,7 +90,7 @@ interface Props {
    *  handle if the user has changed it but not republished). Used to
    *  link to the public profile from the action row. */
   publicProfileHandle?: string | null;
-  /** Directory identifier used to continue directly into host registration. */
+  /** Directory identifier used to continue into verified host connection. */
   managedAppIdentifier?: string | null;
   /** Publish a new ATStore record even when this DID already owns an app. */
   createNewListing?: boolean;
@@ -1762,9 +1762,9 @@ export default function CreateProfileForm(
         )}
         {published.value && hostAppIdentifier.value && (
           <a
-            href={`/hosts/register?app=${
+            href={`/apps/manage/host?app=${
               encodeURIComponent(hostAppIdentifier.value)
-            }&relationship=same_product`}
+            }`}
             class="profile-form-button-secondary profile-form-button-secondary--lg"
           >
             Add account hosting

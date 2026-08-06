@@ -8870,6 +8870,14 @@ body {
   gap: 1rem;
 }
 
+.account-products-group-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
 .account-products-group-head h2,
 .relationship-create-heading h2,
 .host-register-link-section h2 {
@@ -9066,6 +9074,11 @@ body {
   .account-products-group-head > a,
   .relationship-create-heading > a,
   .managed-app-switcher > button {
+    width: 100%;
+  }
+
+  .account-products-group-actions {
+    display: grid;
     width: 100%;
   }
 

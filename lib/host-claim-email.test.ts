@@ -1,11 +1,17 @@
 import {
+  consumeHostContactEmailChallenge,
   createComailHostContactEmailDelivery,
+  getHostContactEmailAvailability,
   type HostContactEmailChallengeRecord,
   type HostContactEmailChallengeStore,
+  hostContactEmailVerificationFailureMessage,
   inspectHostContactEmailChallenge,
+  isHostContactEmailVerificationFailureReason,
   maskEmail,
   normalizeEmail,
+  prepareHostContactEmailChallenge,
   requestHostContactEmailChallenge,
+  reserveHostContactEmailChallenge,
   verifyHostContactEmailChallenge,
 } from "./host-claim-email.ts";
 import { sha256B64u } from "./jose.ts";
@@ -45,9 +51,22 @@ function memoryStore(): HostContactEmailChallengeStore & {
   const records = new Map<string, HostContactEmailChallengeRecord>();
   return {
     records,
-    save(record) {
+    reserve(record, limits) {
+      const recent = [...records.values()].filter((candidate) =>
+        candidate.createdAt >= limits.since
+      );
+      if (
+        recent.filter((candidate) => candidate.host === record.host).length >=
+          limits.host ||
+        recent.filter((candidate) =>
+            candidate.claimantDid === record.claimantDid
+          ).length >= limits.claimant ||
+        recent.filter((candidate) =>
+            candidate.emailFingerprint === record.emailFingerprint
+          ).length >= limits.email
+      ) return Promise.resolve(false);
       records.set(record.tokenHash, { ...record });
-      return Promise.resolve();
+      return Promise.resolve(true);
     },
     remove(tokenHash) {
       records.delete(tokenHash);
@@ -57,30 +76,31 @@ function memoryStore(): HostContactEmailChallengeStore & {
       const record = records.get(tokenHash);
       return Promise.resolve(record ? { ...record } : null);
     },
-    consume(tokenHash, consumedAt) {
-      const record = records.get(tokenHash);
-      if (
-        !record || record.consumedAt !== null || record.expiresAt < consumedAt
-      ) {
-        return Promise.resolve(false);
+    consume(input) {
+      const record = records.get(input.tokenHash);
+      if (!record || record.host !== input.host) {
+        return Promise.resolve({ ok: false, reason: "invalid" as const });
       }
-      records.set(tokenHash, { ...record, consumedAt });
-      return Promise.resolve(true);
-    },
-    recentCounts(input) {
-      const recent = [...records.values()].filter((record) =>
-        record.createdAt >= input.since
-      );
-      return Promise.resolve({
-        host: recent.filter((record) => record.host === input.host).length,
-        claimant: recent.filter((record) =>
-          record.claimantDid === input.claimantDid
-        )
-          .length,
-        email: recent.filter((record) =>
-          record.emailFingerprint === input.emailFingerprint
-        ).length,
+      if (record.claimantDid !== input.claimantDid) {
+        return Promise.resolve({
+          ok: false,
+          reason: "account_mismatch" as const,
+        });
+      }
+      if (record.consumedAt !== null) {
+        return Promise.resolve({
+          ok: false,
+          reason: "already_used" as const,
+        });
+      }
+      if (record.expiresAt < input.consumedAt) {
+        return Promise.resolve({ ok: false, reason: "expired" as const });
+      }
+      records.set(input.tokenHash, {
+        ...record,
+        consumedAt: input.consumedAt,
       });
+      return Promise.resolve({ ok: true });
     },
   };
 }
@@ -162,6 +182,120 @@ Deno.test("PDS contact email claims are DID-bound, live-rechecked, and single us
   );
 });
 
+Deno.test("concurrent contact-email requests cannot overrun one rate-limit slot", async () => {
+  const store = memoryStore();
+  const results = await Promise.all(
+    Array.from({ length: 6 }, () =>
+      requestHostContactEmailChallenge(
+        target,
+        user,
+        "https://atmosphere.example",
+        "/hosts/pds.example.social/claim",
+        {
+          now: 5_000,
+          store,
+          fetchImpl: describeServerFetch(),
+          fingerprintSecret: "test-secret",
+          delivery: { send: () => Promise.resolve() },
+        },
+      )),
+  );
+  assertEquals(results.filter((result) => result.ok).length, 5);
+  assertEquals(
+    results.filter((result) => !result.ok && result.reason === "rate_limited")
+      .length,
+    1,
+  );
+  assertEquals(store.records.size, 5);
+});
+
+Deno.test("database challenge reservations lock, count, and insert in one unit", async () => {
+  const statements: string[] = [];
+  const reserved = await reserveHostContactEmailChallenge(
+    {
+      execute(query) {
+        const sql = typeof query === "string" ? query : query.sql;
+        statements.push(sql);
+        if (sql.includes("SUM(CASE WHEN host")) {
+          return Promise.resolve({
+            rows: [{ host_count: 4, claimant_count: 4, email_count: 4 }],
+            rowsAffected: 0,
+          });
+        }
+        return Promise.resolve({ rows: [], rowsAffected: 1 });
+      },
+    },
+    {
+      tokenHash: "reserved-token",
+      host: target.host,
+      claimantDid: user.did,
+      claimantHandle: user.handle,
+      emailFingerprint: "fingerprint",
+      createdAt: 5_000,
+      expiresAt: 6_000,
+      consumedAt: null,
+    },
+    { since: 0, host: 5, claimant: 10, email: 5 },
+    { postgresBackend: true },
+  );
+  assertEquals(reserved, true);
+  assert(statements[0].includes("pg_advisory_xact_lock"));
+  assert(statements[1].startsWith("DELETE FROM"));
+  assert(statements[2].includes("SUM(CASE WHEN host"));
+  assert(statements[3].includes("INSERT INTO account_host_claim_challenge"));
+});
+
+Deno.test("failed contact-email delivery releases its reserved slot", async () => {
+  const store = memoryStore();
+  const result = await requestHostContactEmailChallenge(
+    target,
+    user,
+    "https://atmosphere.example",
+    "/hosts/pds.example.social/claim",
+    {
+      now: 6_000,
+      store,
+      fetchImpl: describeServerFetch(),
+      fingerprintSecret: "test-secret",
+      delivery: {
+        send: () => Promise.reject(new Error("mailbox unavailable")),
+      },
+    },
+  );
+  assertEquals(result, { ok: false, reason: "delivery_failed" });
+  assertEquals(store.records.size, 0);
+});
+
+Deno.test("contact-email setup sees a newly announced address immediately", async () => {
+  let email: string | null = null;
+  let calls = 0;
+  const fetchImpl = ((_input: URL | Request | string, _init?: RequestInit) => {
+    calls += 1;
+    return Promise.resolve(
+      new Response(JSON.stringify({
+        did: "did:web:pds.example.social",
+        contact: email ? { email } : {},
+      })),
+    );
+  }) as typeof fetch;
+
+  assertEquals(
+    await getHostContactEmailAvailability(target, { fetchImpl }),
+    {
+      available: false,
+      maskedEmail: null,
+      deliveryConfigured: true,
+    },
+  );
+  email = "ops@example.social";
+  const refreshed = await getHostContactEmailAvailability(target, {
+    fetchImpl,
+  });
+  assertEquals(refreshed.available, true);
+  assertEquals(refreshed.maskedEmail, "op•••@example.social");
+  assertEquals(calls, 2);
+});
+
 Deno.test("PDS contact email verification fails when the live address changes", async () => {
   const store = memoryStore();
   let token = "";
@@ -196,6 +330,124 @@ Deno.test("PDS contact email verification fails when the live address changes", 
   assertEquals(store.records.get(await sha256B64u(token))?.consumedAt, null);
 });
 
+Deno.test("prepared PDS contact verification stays unconsumed until the caller's transaction", async () => {
+  const store = memoryStore();
+  let token = "";
+  await requestHostContactEmailChallenge(
+    target,
+    user,
+    "https://atmosphere.example",
+    "/hosts/pds.example.social/claim",
+    {
+      now: 3_000,
+      store,
+      fetchImpl: describeServerFetch(),
+      fingerprintSecret: "test-secret",
+      delivery: {
+        send(input) {
+          token = new URL(input.verificationUrl).searchParams.get("token") ??
+            "";
+          return Promise.resolve();
+        },
+      },
+    },
+  );
+
+  const prepared = await prepareHostContactEmailChallenge(
+    target,
+    user,
+    token,
+    {
+      now: 3_100,
+      store,
+      fetchImpl: describeServerFetch(),
+      fingerprintSecret: "test-secret",
+    },
+  );
+  assert(prepared.ok);
+  assertEquals(store.records.get(prepared.tokenHash)?.consumedAt, null);
+
+  let transactionToken = "";
+  const consumed = await consumeHostContactEmailChallenge(
+    {
+      execute(query) {
+        assert(typeof query !== "string");
+        transactionToken = String(query.args?.[1] ?? "");
+        return Promise.resolve({ rows: [], rowsAffected: 1 });
+      },
+    },
+    {
+      tokenHash: prepared.tokenHash,
+      host: prepared.host,
+      claimantDid: prepared.claimantDid,
+      consumedAt: 3_200,
+    },
+  );
+  assertEquals(consumed, { ok: true });
+  assertEquals(transactionToken, prepared.tokenHash);
+});
+
+Deno.test("PDS contact email inspection distinguishes invalid and expired links", async () => {
+  const store = memoryStore();
+  assertEquals(
+    await inspectHostContactEmailChallenge(target, user, "not-a-token", {
+      store,
+    }),
+    { ok: false, reason: "invalid" },
+  );
+
+  let token = "";
+  await requestHostContactEmailChallenge(
+    target,
+    user,
+    "https://atmosphere.example",
+    "/hosts/pds.example.social/claim",
+    {
+      now: 4_000,
+      store,
+      fetchImpl: describeServerFetch(),
+      fingerprintSecret: "test-secret",
+      delivery: {
+        send(input) {
+          token = new URL(input.verificationUrl).searchParams.get("token") ??
+            "";
+          return Promise.resolve();
+        },
+      },
+    },
+  );
+  assertEquals(
+    await inspectHostContactEmailChallenge(target, user, token, {
+      now: 4_000 + 20 * 60_000 + 1,
+      store,
+    }),
+    { ok: false, reason: "expired" },
+  );
+});
+
+Deno.test("PDS contact email failures have distinct actionable feedback", () => {
+  const reasons = [
+    "invalid",
+    "expired",
+    "already_used",
+    "account_mismatch",
+    "contact_changed",
+  ] as const;
+  const messages = reasons.map((reason) =>
+    hostContactEmailVerificationFailureMessage(reason)
+  );
+  assertEquals(new Set(messages).size, reasons.length);
+  assert(messages[0].includes("invalid"));
+  assert(messages[1].includes("expired"));
+  assert(messages[2].includes("already been used"));
+  assert(messages[3].includes("different Atmosphere account"));
+  assert(messages[4].includes("contact email changed"));
+  for (const reason of reasons) {
+    assert(isHostContactEmailVerificationFailureReason(reason));
+  }
+  assert(!isHostContactEmailVerificationFailureReason("not_authorized"));
+});
+
 Deno.test("a tenant PDS contact cannot claim a different umbrella hostname", async () => {
   const requested = await requestHostContactEmailChallenge(
     {
@@ -214,6 +466,42 @@ Deno.test("a tenant PDS contact cannot claim a different umbrella hostname", asy
     },
   );
   assertEquals(requested, { ok: false, reason: "contact_unavailable" });
+});
+
+Deno.test("a compiled umbrella host can use only its exact bound PDS origin", async () => {
+  for (
+    const { serviceEndpoint, ok } of [
+      { serviceEndpoint: "https://bsky.social", ok: true },
+      { serviceEndpoint: "https://bsky.social/", ok: true },
+      { serviceEndpoint: "https://bsky.social:8443", ok: false },
+      { serviceEndpoint: "https://bsky.social.example", ok: false },
+      { serviceEndpoint: "https://other.example", ok: false },
+    ]
+  ) {
+    const requested = await requestHostContactEmailChallenge(
+      {
+        host: "bsky.network",
+        displayName: "Bluesky",
+        serviceEndpoint,
+      },
+      user,
+      "https://atmosphere.example",
+      "/hosts/bsky.network/claim",
+      {
+        store: memoryStore(),
+        fetchImpl: describeServerFetch("ops@bsky.social"),
+        fingerprintSecret: "test-secret",
+        delivery: { send: () => Promise.resolve() },
+      },
+    );
+    assertEquals(requested.ok, ok);
+    if (!ok) {
+      assertEquals(requested, {
+        ok: false,
+        reason: "contact_unavailable",
+      });
+    }
+  }
 });
 
 Deno.test("contact email normalization and masking do not expose the mailbox", () => {

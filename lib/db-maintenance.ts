@@ -6,6 +6,7 @@ export interface DatabaseMaintenanceResult {
   expiredAppSessions: number;
   expiredLoginSelectionReplays: number;
   expiredLoginPickerIntents: number;
+  expiredAppHostLinkIntents: number;
   expiredPasskeyCeremonies: number;
   expiredRateLimitBuckets: number;
   expiredWorkerLeases: number;
@@ -67,6 +68,12 @@ export async function runDatabaseMaintenanceForClient(
       args: [now],
     }),
   );
+  const expiredAppHostLinkIntents = rowsAffected(
+    await c.execute({
+      sql: `DELETE FROM app_host_link_intent_consumption WHERE expires_at <= ?`,
+      args: [now],
+    }),
+  );
   const expiredPasskeyCeremonies = rowsAffected(
     await c.execute({
       sql: `DELETE FROM passkey_ceremony WHERE expires_at <= ?`,
@@ -103,6 +110,7 @@ export async function runDatabaseMaintenanceForClient(
     expiredAppSessions,
     expiredLoginSelectionReplays,
     expiredLoginPickerIntents,
+    expiredAppHostLinkIntents,
     expiredPasskeyCeremonies,
     expiredRateLimitBuckets,
     expiredWorkerLeases,

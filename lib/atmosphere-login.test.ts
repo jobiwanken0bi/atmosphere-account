@@ -50,6 +50,7 @@ function app(overrides: Partial<LoginApp> = {}): LoginApp {
 const preferredHost = {
   ...listSeededAccountHostFallback()[0],
   host: "accounts.example.com",
+  source: "manual" as const,
   signupUrl: "https://accounts.example.com/signup",
   signupStatus: "open" as const,
   verificationStatus: "claimed" as const,
@@ -85,6 +86,25 @@ Deno.test("preferred account host registration requires the app owner's claim", 
       },
     );
     throw new Error("Expected preferred host verification to fail");
+  } catch (err) {
+    if (!(err instanceof LoginRequestError)) throw err;
+    assertEquals(err.status, 400);
+  }
+});
+
+Deno.test("preferred account host registration fails closed when seeded ownership is stale", async () => {
+  try {
+    await verifyPreferredAccountHostForOwner(
+      "did:plc:owner",
+      preferredHost.host,
+      {
+        getHost: () =>
+          Promise.resolve({ ...preferredHost, source: "seeded" as const }),
+        getClaim: () => Promise.resolve(preferredClaim),
+        verifyOwner: () => Promise.resolve(null),
+      },
+    );
+    throw new Error("Expected stale seeded ownership to be rejected");
   } catch (err) {
     if (!(err instanceof LoginRequestError)) throw err;
     assertEquals(err.status, 400);

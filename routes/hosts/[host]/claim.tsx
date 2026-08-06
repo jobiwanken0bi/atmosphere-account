@@ -9,34 +9,40 @@ import {
   type AccountHost,
   type AccountHostClaim,
   type AccountHostClaimAuthority,
-  accountHostClaimAuthorityMatchesUser,
   claimAccountHost,
   claimAccountHostWithContactEmail,
   getAccountHost,
   getAccountHostClaim,
   resolveAccountHostClaimAuthority,
+  verifiedAccountHostOwnerDid,
 } from "../../../lib/account-hosts.ts";
 import {
-  hasPreboundHostAuthority,
   hostClaimProofMessage,
+  hostSelfServiceClaimPolicy,
   verifyHostClaimDomainProof,
 } from "../../../lib/host-claim-proof.ts";
 import {
   getHostContactEmailAvailability,
   type HostContactEmailAvailability,
+  hostContactEmailVerificationFailureMessage,
+  type HostContactEmailVerificationFailureReason,
   inspectHostContactEmailChallenge,
+  isHostContactEmailVerificationFailureReason,
   requestHostContactEmailChallenge,
 } from "../../../lib/host-claim-email.ts";
 import { trustedRequestOrigin } from "../../../lib/atmosphere-origins.ts";
+import { IS_DEV } from "../../../lib/env.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import { type AppListing } from "../../../lib/app-directory.ts";
 import {
-  type AppListing,
-  getAppListingById,
-} from "../../../lib/app-directory.ts";
-import {
-  defineDirectoryEntityLink,
-  userControlsAppListing,
+  establishDirectoryEntityLinkFromIntent,
 } from "../../../lib/directory-entity-links.ts";
+import {
+  appHostLinkIntentErrorMessage,
+  type BoundAppHostLinkIntent,
+  resolveBoundAppHostLinkIntent,
+  type ResolvedAppHostLinkIntent,
+} from "../../../lib/app-host-link-intent.ts";
 
 type ClaimState =
   | "ready"
@@ -59,6 +65,7 @@ interface ClaimPageProps {
   linkContext: HostClaimLinkContext | null;
   contactEmail: HostContactEmailAvailability | null;
   token: string | null;
+  tokenFailure: HostContactEmailVerificationFailureReason | null;
   notice: string | null;
   previewUrl: string | null;
   directoryListing: boolean;
@@ -68,10 +75,16 @@ interface ClaimPageProps {
 interface HostClaimLinkContext {
   app: AppListing;
   relationship: "same_product" | "same_operator";
+  appOwnerDid: string;
+  intentToken: string;
+  intent: BoundAppHostLinkIntent;
 }
 
 export const handler = define.handlers({
   async GET(ctx) {
+    const capturedToken = captureHostClaimToken(ctx.url, ctx.params.host);
+    if (capturedToken) return capturedToken;
+
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
       (err) => appviewUnavailable("host claim page", err),
     );
@@ -99,6 +112,7 @@ export const handler = define.handlers({
           linkContext={null}
           contactEmail={null}
           token={null}
+          tokenFailure={null}
           notice={null}
           previewUrl={null}
           directoryListing
@@ -110,19 +124,30 @@ export const handler = define.handlers({
     if (!ctx.state.user) {
       return redirectToSignin(host.host, ctx.url);
     }
-    const linkContext = await loadLinkContext(ctx.state.user, ctx.url);
+    const linkContext = await loadLinkContext(ctx.url, host.host);
+    if (linkContext instanceof Response) return linkContext;
     const page = await buildClaimPageProps(
       host,
       ctx.state.user,
       buildAccountMenuProps(ctx.state),
       linkContext,
       {
-        token: ctx.url.searchParams.get("token"),
+        error: ctx.url.searchParams.get("linkError") === "1"
+          ? "The host is claimed, but its app connection could not be completed. Try connecting it again below."
+          : null,
+        token: readHostClaimToken(ctx.req),
         directoryListing: readDirectoryListingIntent(ctx.url),
         detectedLookup: readDetectedLookupIntent(ctx.url),
       },
     );
-    return ctx.render(<HostClaimPage {...page} />);
+    const response = await ctx.render(<HostClaimPage {...page} />);
+    if (page.tokenFailure && page.tokenFailure !== "account_mismatch") {
+      response.headers.append(
+        "set-cookie",
+        clearHostClaimTokenCookie(host.host),
+      );
+    }
+    return response;
   },
 
   async POST(ctx) {
@@ -145,13 +170,43 @@ export const handler = define.handlers({
       refillMs: 60 * 60_000,
     });
     if (limited) return limited;
-    const linkContext = await loadLinkContext(ctx.state.user, ctx.url);
+    const linkContext = await loadLinkContext(ctx.url, host.host);
+    if (linkContext instanceof Response) return linkContext;
     const form = await ctx.req.formData().catch(() => null);
     const action = textValue(form?.get("action"));
     const listingSelection = readDirectoryListingSelection(form);
     const directoryListing = listingSelection ??
       readDirectoryListingIntent(ctx.url);
     const detectedLookup = readDetectedLookupIntent(ctx.url);
+    if (action === "connect_app" && linkContext) {
+      const existingClaim = await getAccountHostClaim(host.host).catch(() =>
+        null
+      );
+      const verifiedOwnerDid = existingClaim
+        ? await verifiedAccountHostOwnerDid(host, existingClaim).catch(() =>
+          null
+        )
+        : null;
+      if (verifiedOwnerDid !== ctx.state.user.did) {
+        const page = await buildClaimPageProps(
+          host,
+          ctx.state.user,
+          buildAccountMenuProps(ctx.state),
+          linkContext,
+          {
+            error: "This account does not control the verified claimed host.",
+            directoryListing,
+            detectedLookup,
+          },
+        );
+        return ctx.render(<HostClaimPage {...page} />, { status: 403 });
+      }
+      return await completeAppHostLink(
+        host,
+        ctx.state.user.did,
+        linkContext,
+      );
+    }
     if (action === "request_email") {
       const existingClaim = await getAccountHostClaim(host.host).catch(() =>
         null
@@ -169,26 +224,6 @@ export const handler = define.handlers({
           },
         );
         return ctx.render(<HostClaimPage {...page} />, { status: 409 });
-      }
-      const authority = await resolveAccountHostClaimAuthority(host).catch(() =>
-        null
-      );
-      if (
-        hasPreboundHostAuthority(host) && authority &&
-        !accountHostClaimAuthorityMatchesUser(authority, ctx.state.user)
-      ) {
-        const page = await buildClaimPageProps(
-          host,
-          ctx.state.user,
-          buildAccountMenuProps(ctx.state),
-          linkContext,
-          {
-            error: `This curated host is already tied to @${authority.handle}.`,
-            directoryListing,
-            detectedLookup,
-          },
-        );
-        return ctx.render(<HostClaimPage {...page} />, { status: 403 });
       }
       const availability = await getHostContactEmailAvailability({
         host: host.host,
@@ -237,68 +272,114 @@ export const handler = define.handlers({
       });
     }
 
+    const verificationToken = action === "verify_email"
+      ? textValue(form?.get("token")) || readHostClaimToken(ctx.req)
+      : "";
     const result = action === "verify_email"
       ? await claimAccountHostWithContactEmail(
         host.host,
         ctx.state.user,
-        textValue(form?.get("token")),
+        verificationToken,
         listingSelection == null
           ? {}
           : { operatorListingOptIn: listingSelection },
       )
-      : await claimAccountHost(
+      : action === "claim" &&
+          hostSelfServiceClaimPolicy(host.host) === "local-dev"
+      ? await claimAccountHost(
         host.host,
         ctx.state.user,
         listingSelection == null
           ? {}
           : { operatorListingOptIn: listingSelection },
-      );
+      )
+      : {
+        ok: false as const,
+        reason: "contact_email_required" as const,
+        host,
+      };
     if (result.ok) {
       if (linkContext) {
-        const linked = await defineDirectoryEntityLink({
-          host: result.host.host,
-          app: linkContext.app,
-          relationship: linkContext.relationship,
-          approvedBy: "app",
-          currentDid: ctx.state.user.did,
-        }).catch(() => ({ ok: false as const }));
-        const search = new URLSearchParams({ app: linkContext.app.id });
-        search.set(linked.ok ? "saved" : "linkError", "1");
-        return new Response(null, {
-          status: 303,
-          headers: { location: `/apps/manage/host?${search}` },
-        });
+        return await completeAppHostLink(
+          result.host,
+          ctx.state.user.did,
+          linkContext,
+        );
       }
       return new Response(null, {
         status: 303,
         headers: {
-          location: result.host.operatorListingOptIn === false
-            ? `/hosts/${encodeURIComponent(result.host.host)}/manage?claimed=1`
-            : `/hosts/${encodeURIComponent(result.host.host)}?claimed=1`,
+          location: `/hosts/${
+            encodeURIComponent(result.host.host)
+          }/manage?claimed=1`,
+          "set-cookie": clearHostClaimTokenCookie(host.host),
         },
       });
     }
+    const emailFailure = isHostContactEmailVerificationFailureReason(
+        result.reason,
+      )
+      ? result.reason
+      : null;
     const page = await buildClaimPageProps(
       result.host ?? host,
       ctx.state.user,
       buildAccountMenuProps(ctx.state),
       linkContext,
       {
-        error: result.reason === "already_claimed"
+        error: emailFailure
+          ? hostContactEmailVerificationFailureMessage(emailFailure)
+          : result.reason === "already_claimed"
           ? "This host has already been claimed."
           : result.reason === "not_authorized"
-          ? action === "verify_email"
-            ? "That verification link is invalid, expired, already used, or the PDS contact address changed. Request a new email and try again."
-            : hostClaimProofMessage()
+          ? hostClaimProofMessage()
+          : result.reason === "contact_email_required"
+          ? hostClaimProofMessage()
           : "This host is not ready to be claimed yet.",
-        token: action === "verify_email" ? textValue(form?.get("token")) : null,
+        token: action === "verify_email" ? verificationToken : null,
+        tokenFailure: emailFailure,
         directoryListing,
         detectedLookup,
       },
     );
-    return ctx.render(<HostClaimPage {...page} />, { status: 403 });
+    const response = await ctx.render(<HostClaimPage {...page} />, {
+      status: 403,
+    });
+    if (
+      action === "verify_email" && emailFailure !== "account_mismatch"
+    ) {
+      response.headers.append(
+        "set-cookie",
+        clearHostClaimTokenCookie(host.host),
+      );
+    }
+    return response;
   },
 });
+
+async function completeAppHostLink(
+  host: AccountHost,
+  currentHostDid: string,
+  linkContext: HostClaimLinkContext,
+): Promise<Response> {
+  const linked = await establishDirectoryEntityLinkFromIntent({
+    intent: linkContext.intent,
+    currentHostDid,
+  }).catch((error) => {
+    console.error("[host-claim] app connection completion failed:", error);
+    return { ok: false as const };
+  });
+  const location = linked.ok
+    ? `/hosts/${encodeURIComponent(host.host)}/manage?linked=1`
+    : `/hosts/${encodeURIComponent(host.host)}/manage?linkError=1`;
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location,
+      "set-cookie": clearHostClaimTokenCookie(host.host),
+    },
+  });
+}
 
 function appviewUnavailable(scope: string, err: unknown): Response {
   console.error(`[appview] ${scope} proxy failed:`, err);
@@ -321,6 +402,7 @@ async function buildClaimPageProps(
     notice?: string | null;
     previewUrl?: string | null;
     token?: string | null;
+    tokenFailure?: HostContactEmailVerificationFailureReason | null;
     directoryListing?: boolean;
     detectedLookup?: boolean;
   } = {},
@@ -329,41 +411,48 @@ async function buildClaimPageProps(
     getAccountHostClaim(host.host).catch(() => null),
     resolveAccountHostClaimAuthority(host).catch(() => null),
   ]);
+  const verifiedClaimOwnerDid = claim
+    ? await verifiedAccountHostOwnerDid(host, claim).catch(() => null)
+    : null;
   let state: ClaimState = "not-claimable";
   let contactEmail: HostContactEmailAvailability | null = null;
   const token = feedback.token?.trim() || null;
-  if (claim?.claimantDid === user.did) {
-    state = "claimed-by-you";
-  } else if (claim) {
-    state = "claimed-by-other";
-  } else {
-    const proof = await verifyHostClaimDomainProof(host, user);
-    const authorityMatches = authority &&
-      accountHostClaimAuthorityMatchesUser(authority, user);
-    if (proof.ok && (proof.method !== "prebound" || authorityMatches)) {
-      state = "ready";
-    } else if (hasPreboundHostAuthority(host) && authority) {
-      state = "not-authorized";
-    } else {
-      contactEmail = await getHostContactEmailAvailability({
+  let tokenFailure: HostContactEmailVerificationFailureReason | null =
+    feedback.tokenFailure ?? null;
+  let tokenIsReady = false;
+  if (token && !tokenFailure) {
+    const inspected = await inspectHostContactEmailChallenge(
+      {
         host: host.host,
         displayName: host.displayName,
         serviceEndpoint: host.serviceEndpoint,
-      }).catch(() => null);
-      state = contactEmail?.available ? "email" : "not-claimable";
-      if (token) {
-        const inspected = await inspectHostContactEmailChallenge(
-          {
-            host: host.host,
-            displayName: host.displayName,
-            serviceEndpoint: host.serviceEndpoint,
-          },
-          user,
-          token,
-        ).catch(() => ({ ok: false as const, reason: "invalid" as const }));
-        if (inspected.ok) state = "email-token";
-      }
-    }
+      },
+      user,
+      token,
+    ).catch(() => ({ ok: false as const, reason: "invalid" as const }));
+    if (inspected.ok) tokenIsReady = true;
+    else tokenFailure = inspected.reason;
+  }
+  if (verifiedClaimOwnerDid === user.did) {
+    state = "claimed-by-you";
+  } else if (verifiedClaimOwnerDid) {
+    state = "claimed-by-other";
+  } else if (claim) {
+    state = "not-authorized";
+  } else if (hostSelfServiceClaimPolicy(host.host) === "local-dev") {
+    const proof = verifyHostClaimDomainProof(host, user);
+    state = proof.ok ? "ready" : "not-claimable";
+  } else {
+    contactEmail = await getHostContactEmailAvailability({
+      host: host.host,
+      displayName: host.displayName,
+      serviceEndpoint: host.serviceEndpoint,
+    }).catch(() => null);
+    state = tokenIsReady
+      ? "email-token"
+      : contactEmail?.available
+      ? "email"
+      : "not-claimable";
   }
   return {
     host,
@@ -371,11 +460,15 @@ async function buildClaimPageProps(
     authority,
     state,
     activeHandle: user.handle,
-    error: feedback.error ?? null,
+    error: feedback.error ??
+      (tokenFailure
+        ? hostContactEmailVerificationFailureMessage(tokenFailure)
+        : null),
     account,
     linkContext,
     contactEmail,
     token,
+    tokenFailure,
     notice: feedback.notice ?? null,
     previewUrl: feedback.previewUrl ?? null,
     directoryListing: feedback.directoryListing ?? true,
@@ -405,6 +498,7 @@ function HostClaimPage(props: ClaimPageProps) {
     linkContext,
     contactEmail,
     token,
+    tokenFailure,
     notice,
     previewUrl,
     directoryListing,
@@ -418,13 +512,17 @@ function HostClaimPage(props: ClaimPageProps) {
           <div class="container signin-page-container">
             <a
               href={detectedLookup
-                ? "/hosts/claim"
+                ? detectedClaimHref(linkContext)
                 : host
                 ? `/hosts/${encodeURIComponent(host.host)}`
                 : "/hosts"}
               class="text-link-button"
             >
-              {detectedLookup ? "Back to PDS lookup" : "Back to host"}
+              {detectedLookup && linkContext
+                ? "Back to app hosting"
+                : detectedLookup
+                ? "Back to PDS lookup"
+                : "Back to host"}
             </a>
             <div class="glass signin-page-card host-claim-card">
               {host
@@ -458,6 +556,7 @@ function HostClaimPage(props: ClaimPageProps) {
                       linkContext={linkContext}
                       contactEmail={contactEmail}
                       token={token}
+                      tokenFailure={tokenFailure}
                       notice={notice}
                       previewUrl={previewUrl}
                       directoryListing={directoryListing}
@@ -494,6 +593,7 @@ function ClaimBody(
     linkContext,
     contactEmail,
     token,
+    tokenFailure,
     notice,
     previewUrl,
     directoryListing,
@@ -508,6 +608,7 @@ function ClaimBody(
     linkContext: HostClaimLinkContext | null;
     contactEmail: HostContactEmailAvailability | null;
     token: string | null;
+    tokenFailure: HostContactEmailVerificationFailureReason | null;
     notice: string | null;
     previewUrl: string | null;
     directoryListing: boolean;
@@ -517,6 +618,9 @@ function ClaimBody(
   if (state === "claimed-by-you") {
     return (
       <div class="host-claim-panel host-claim-panel-ok">
+        {error && (
+          <p class="profile-form-status profile-form-status--error">{error}</p>
+        )}
         <p class="host-claim-panel-title">
           Claimed by <AtmosphereHandle handle={claim?.claimantHandle} />
         </p>
@@ -537,6 +641,7 @@ function ClaimBody(
         </a>
         {linkContext && (
           <form method="POST">
+            <input type="hidden" name="action" value="connect_app" />
             <button type="submit" class="directory-register-button">
               Connect to {linkContext.app.name}
             </button>
@@ -548,11 +653,27 @@ function ClaimBody(
   if (state === "claimed-by-other") {
     return (
       <div class="host-claim-panel">
+        {error && (
+          <p class="profile-form-status profile-form-status--error">{error}</p>
+        )}
         <p class="host-claim-panel-title">Already claimed</p>
         <p class="text-body">
           This host is managed by{" "}
           <AtmosphereHandle handle={claim?.claimantHandle} />.
         </p>
+        {linkContext && (
+          <a
+            class="directory-register-button host-claim-secondary-action"
+            href={switchAccountHref(
+              host.host,
+              linkContext,
+              directoryListing,
+              detectedLookup,
+            )}
+          >
+            <span>Use the verified host operator account</span>
+          </a>
+        )}
       </div>
     );
   }
@@ -568,20 +689,8 @@ function ClaimBody(
             Signed in as <AtmosphereHandle handle={activeHandle} />
           </p>
           <p class="text-body">
-            {authority?.handle
-              ? (
-                <>
-                  This matches the host account{" "}
-                  <AtmosphereHandle handle={authority.handle} />. You can claim
-                  the listing now.
-                </>
-              )
-              : (
-                <>
-                  Atmosphere verified an operator proof tied to this PDS. You
-                  can claim the listing now.
-                </>
-              )}
+            This local development fixture can be claimed without sending an
+            email.
           </p>
         </div>
         <DirectoryListingChoice checked={directoryListing} />
@@ -600,7 +709,9 @@ function ClaimBody(
     return (
       <form method="POST" class="host-claim-form">
         <input type="hidden" name="action" value="verify_email" />
-        <input type="hidden" name="token" value={token} />
+        {error && (
+          <p class="profile-form-status profile-form-status--error">{error}</p>
+        )}
         <div class="host-claim-panel host-claim-panel-ok">
           <p class="host-claim-panel-title">Finish email verification</p>
           <p class="text-body">
@@ -628,6 +739,26 @@ function ClaimBody(
             {notice}
           </p>
         )}
+        {tokenFailure === "account_mismatch" && token && (
+          <a
+            class="directory-register-button host-claim-secondary-action"
+            href={`/oauth/add-account?next=${
+              encodeURIComponent(
+                claimPathForContext(
+                  host.host,
+                  linkContext,
+                  directoryListing,
+                  detectedLookup,
+                ),
+              )
+            }`}
+          >
+            <span class="directory-register-button-icon" aria-hidden="true">
+              +
+            </span>
+            <span>Switch or add account</span>
+          </a>
+        )}
         <div class="host-claim-panel host-claim-panel-ok">
           <p class="host-claim-panel-title">Verify through the PDS</p>
           <p class="text-body">
@@ -636,6 +767,19 @@ function ClaimBody(
             <AtmosphereHandle handle={activeHandle} />.
           </p>
         </div>
+        {linkContext && tokenFailure !== "account_mismatch" && (
+          <a
+            class="text-link-button"
+            href={switchAccountHref(
+              host.host,
+              linkContext,
+              directoryListing,
+              detectedLookup,
+            )}
+          >
+            Use the host operator account instead
+          </a>
+        )}
         <DirectoryListingChoice checked={directoryListing} />
         {previewUrl && (
           <a class="text-link-button" href={previewUrl}>
@@ -657,18 +801,39 @@ function ClaimBody(
     );
   }
   if (state === "not-authorized") {
+    if (!authority?.did) {
+      return (
+        <div class="host-claim-panel">
+          {error && (
+            <p class="profile-form-status profile-form-status--error">
+              {error}
+            </p>
+          )}
+          <p class="host-claim-panel-title">
+            Operator verification unavailable
+          </p>
+          <p class="text-body">
+            Atmosphere could not live-verify the account currently recorded as
+            this host’s operator. Nothing has been changed; try again later.
+          </p>
+        </div>
+      );
+    }
     return (
       <div class="host-claim-panel">
         {error && (
           <p class="profile-form-status profile-form-status--error">{error}</p>
         )}
         <p class="host-claim-panel-title">
-          Sign in as <AtmosphereHandle handle={authority?.handle} />
+          Operator account required
         </p>
         <p class="text-body">
           You are currently signed in as{" "}
-          <AtmosphereHandle handle={activeHandle} />. This host can only be
-          claimed by its linked ATProto account.
+          <AtmosphereHandle handle={activeHandle} />. This host is pinned to
+          {" "}
+          <AtmosphereHandle handle={authority.handle} />. If that is already
+          this account, its stored ownership record needs repair before changes
+          can be made.
         </p>
         <a
           class="directory-register-button host-claim-secondary-action"
@@ -698,11 +863,25 @@ function ClaimBody(
       )}
       <p class="host-claim-panel-title">More verification needed</p>
       <p class="text-body">
-        This PDS does not expose a usable contact email, and the signed-in
-        account has not provided another accepted operator proof. Atmosphere
-        cannot safely infer its operator account yet. A standardized PDS
-        operator declaration could make this self-service in the future.
+        This PDS does not expose a usable contact email. Configure{" "}
+        <code>contact.email</code> in its live{" "}
+        <code>com.atproto.server.describeServer</code>{" "}
+        response, then retry. Atmosphere will send that address a one-time link
+        to verify the management account.
       </p>
+      {linkContext && (
+        <a
+          class="directory-register-button host-claim-secondary-action"
+          href={switchAccountHref(
+            host.host,
+            linkContext,
+            directoryListing,
+            detectedLookup,
+          )}
+        >
+          <span>Use the host operator account</span>
+        </a>
+      )}
     </div>
   );
 }
@@ -753,11 +932,103 @@ function claimPathForContext(
     publish: directoryListing ? "1" : "0",
   });
   if (linkContext) {
-    search.set("app", linkContext.app.id);
-    search.set("relationship", linkContext.relationship);
+    search.set("link_intent", linkContext.intentToken);
   }
   if (detectedLookup) search.set("from", "detected");
   return `${path}?${search}`;
+}
+
+function switchAccountHref(
+  host: string,
+  linkContext: HostClaimLinkContext | null,
+  directoryListing: boolean,
+  detectedLookup: boolean,
+): string {
+  return `/oauth/add-account?next=${
+    encodeURIComponent(
+      claimPathForContext(
+        host,
+        linkContext,
+        directoryListing,
+        detectedLookup,
+      ),
+    )
+  }`;
+}
+
+const HOST_CLAIM_TOKEN_COOKIE = "atmo_host_claim_token";
+const HOST_CLAIM_TOKEN_MAX_AGE_SECONDS = 20 * 60;
+
+function captureHostClaimToken(
+  url: URL,
+  routeHost: string,
+): Response | null {
+  if (!url.searchParams.has("token")) return null;
+  const rawToken = url.searchParams.get("token")?.trim() ?? "";
+  const token = /^[A-Za-z0-9_-]{43}$/.test(rawToken) ? rawToken : "invalid";
+  const host = normalizeClaimCookieHost(routeHost);
+  const clean = new URL(url);
+  clean.searchParams.delete("token");
+  const headers = new Headers({
+    location: `${clean.pathname}${clean.search}`,
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
+    "x-robots-tag": "noindex, nofollow",
+  });
+  if (host) {
+    headers.append("set-cookie", buildHostClaimTokenCookie(host, token));
+  }
+  return new Response(null, { status: 303, headers });
+}
+
+function readHostClaimToken(req: Request): string {
+  const cookie = req.headers.get("cookie");
+  if (!cookie) return "";
+  for (const part of cookie.split(";").map((value) => value.trim())) {
+    if (!part.startsWith(`${HOST_CLAIM_TOKEN_COOKIE}=`)) continue;
+    try {
+      const value = decodeURIComponent(
+        part.slice(HOST_CLAIM_TOKEN_COOKIE.length + 1),
+      );
+      return value.length <= 256 ? value : "";
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+function buildHostClaimTokenCookie(host: string, token: string): string {
+  const flags = [
+    `Path=/hosts/${encodeURIComponent(host)}/claim`,
+    `Max-Age=${HOST_CLAIM_TOKEN_MAX_AGE_SECONDS}`,
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (!IS_DEV) flags.push("Secure");
+  return `${HOST_CLAIM_TOKEN_COOKIE}=${encodeURIComponent(token)}; ${
+    flags.join("; ")
+  }`;
+}
+
+function clearHostClaimTokenCookie(host: string): string {
+  const flags = [
+    `Path=/hosts/${encodeURIComponent(host)}/claim`,
+    "Max-Age=0",
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (!IS_DEV) flags.push("Secure");
+  return `${HOST_CLAIM_TOKEN_COOKIE}=; ${flags.join("; ")}`;
+}
+
+function normalizeClaimCookieHost(value: string): string | null {
+  try {
+    const host = decodeURIComponent(value).trim().toLowerCase();
+    return /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(host) ? host : null;
+  } catch {
+    return null;
+  }
 }
 
 function readDirectoryListingIntent(url: URL): boolean {
@@ -831,17 +1102,35 @@ function DetectedHostSummary({ host }: { host: AccountHost }) {
 }
 
 async function loadLinkContext(
-  user: { did: string },
   url: URL,
-): Promise<HostClaimLinkContext | null> {
-  const id = url.searchParams.get("app")?.trim();
-  if (!id) return null;
-  const app = await getAppListingById(id).catch(() => null);
-  if (!app || !userControlsAppListing(app, user.did)) return null;
+  expectedHost: string,
+): Promise<HostClaimLinkContext | null | Response> {
+  const token = url.searchParams.get("link_intent")?.trim();
+  if (!token) return null;
+  const resolved = await resolveBoundAppHostLinkIntent(token, expectedHost);
+  if (!resolved.ok) {
+    return new Response(appHostLinkIntentErrorMessage(resolved.reason), {
+      status: 400,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+  return linkContextFromResolvedIntent(resolved.value);
+}
+
+function linkContextFromResolvedIntent(
+  value: ResolvedAppHostLinkIntent<BoundAppHostLinkIntent>,
+): HostClaimLinkContext {
   return {
-    app,
-    relationship: url.searchParams.get("relationship") === "same_operator"
-      ? "same_operator"
-      : "same_product",
+    app: value.app,
+    relationship: value.intent.relationship,
+    appOwnerDid: value.intent.appOwnerDid,
+    intentToken: value.token,
+    intent: value.intent,
   };
+}
+
+function detectedClaimHref(linkContext: HostClaimLinkContext | null): string {
+  return linkContext
+    ? `/apps/manage/host?app=${encodeURIComponent(linkContext.app.id)}`
+    : "/hosts/claim";
 }

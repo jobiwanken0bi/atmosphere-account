@@ -1,4 +1,5 @@
-import { type DbClient, withDb } from "./db.ts";
+import { dbBackend, type DbClient, withDb, withDbTransaction } from "./db.ts";
+import { accountHostContactEndpointIsBound } from "./account-host-endpoints.ts";
 import {
   COMAIL_API_KEY,
   COMAIL_SENDER_DID,
@@ -41,16 +42,22 @@ export interface HostContactEmailChallengeRecord {
 }
 
 export interface HostContactEmailChallengeStore {
-  save(record: HostContactEmailChallengeRecord): Promise<void>;
+  reserve(
+    record: HostContactEmailChallengeRecord,
+    limits: HostContactEmailChallengeReservationLimits,
+  ): Promise<boolean>;
   remove(tokenHash: string): Promise<void>;
   read(tokenHash: string): Promise<HostContactEmailChallengeRecord | null>;
-  consume(tokenHash: string, consumedAt: number): Promise<boolean>;
-  recentCounts(input: {
-    host: string;
-    claimantDid: string;
-    emailFingerprint: string;
-    since: number;
-  }): Promise<{ host: number; claimant: number; email: number }>;
+  consume(input: HostContactEmailChallengeConsumeInput): Promise<
+    HostContactEmailChallengeConsumeResult
+  >;
+}
+
+export interface HostContactEmailChallengeReservationLimits {
+  since: number;
+  host: number;
+  claimant: number;
+  email: number;
 }
 
 export interface HostContactEmailDelivery {
@@ -117,11 +124,76 @@ type HostContactEmailVerificationFailure = Extract<
   { ok: false }
 >;
 
+export type HostContactEmailVerificationFailureReason =
+  HostContactEmailVerificationFailure["reason"];
+
+export interface HostContactEmailChallengeConsumeInput {
+  tokenHash: string;
+  host: string;
+  claimantDid: string;
+  consumedAt: number;
+}
+
+export type HostContactEmailChallengeConsumeResult =
+  | { ok: true }
+  | {
+    ok: false;
+    reason: "invalid" | "expired" | "already_used" | "account_mismatch";
+  };
+
+const HOST_CONTACT_EMAIL_VERIFICATION_FAILURES = new Set<
+  HostContactEmailVerificationFailureReason
+>([
+  "invalid",
+  "expired",
+  "already_used",
+  "account_mismatch",
+  "contact_changed",
+]);
+
+export function isHostContactEmailVerificationFailureReason(
+  value: unknown,
+): value is HostContactEmailVerificationFailureReason {
+  return typeof value === "string" &&
+    HOST_CONTACT_EMAIL_VERIFICATION_FAILURES.has(
+      value as HostContactEmailVerificationFailureReason,
+    );
+}
+
+export function hostContactEmailVerificationFailureMessage(
+  reason: HostContactEmailVerificationFailureReason,
+): string {
+  switch (reason) {
+    case "invalid":
+      return "This verification link is invalid. Request a new email and use the link it contains.";
+    case "expired":
+      return "This verification link has expired. Request a new email to continue.";
+    case "already_used":
+      return "This verification link has already been used. Request a new email if this account does not manage the host yet.";
+    case "account_mismatch":
+      return "This verification link belongs to a different Atmosphere account. Switch to the account that requested it, or add that account.";
+    case "contact_changed":
+      return "The PDS contact email changed after this link was sent. Request a new email using the current address.";
+  }
+}
+
+export type PreparedHostContactEmailVerificationResult =
+  | {
+    ok: true;
+    tokenHash: string;
+    host: string;
+    claimantDid: string;
+  }
+  | HostContactEmailVerificationFailure;
+
 export async function getHostContactEmailAvailability(
   target: HostContactClaimTarget,
   options: HostContactEmailOptions = {},
 ): Promise<HostContactEmailAvailability> {
-  const email = await readAnnouncedContactEmail(target, options.fetchImpl);
+  // Claim setup must reflect the PDS's current declaration so operators can
+  // add contact.email and retry immediately rather than waiting on discovery
+  // cache expiry.
+  const email = await readAnnouncedContactEmail(target, options.fetchImpl, 0);
   return {
     available: !!email,
     maskedEmail: email ? maskEmail(email) : null,
@@ -137,7 +209,7 @@ export async function requestHostContactEmailChallenge(
   claimPath: string,
   options: HostContactEmailOptions = {},
 ): Promise<HostContactEmailRequestResult> {
-  const email = await readAnnouncedContactEmail(target, options.fetchImpl);
+  const email = await readAnnouncedContactEmail(target, options.fetchImpl, 0);
   if (!email) return { ok: false, reason: "contact_unavailable" };
 
   const delivery = options.delivery ?? configuredDelivery();
@@ -152,16 +224,6 @@ export async function requestHostContactEmailChallenge(
     email,
     options.fingerprintSecret,
   );
-  const counts = await store.recentCounts({
-    host: target.host,
-    claimantDid: user.did,
-    emailFingerprint,
-    since: ts - CHALLENGE_WINDOW_MS,
-  });
-  if (counts.host >= 5 || counts.claimant >= 10 || counts.email >= 5) {
-    return { ok: false, reason: "rate_limited" };
-  }
-
   const token = randomB64u(TOKEN_BYTES);
   const tokenHash = await sha256B64u(token);
   const expiresAt = ts + CHALLENGE_TTL_MS;
@@ -176,7 +238,13 @@ export async function requestHostContactEmailChallenge(
     consumedAt: null,
   };
   const verificationUrl = buildVerificationUrl(publicOrigin, claimPath, token);
-  await store.save(record);
+  const reserved = await store.reserve(record, {
+    since: ts - CHALLENGE_WINDOW_MS,
+    host: 5,
+    claimant: 10,
+    email: 5,
+  });
+  if (!reserved) return { ok: false, reason: "rate_limited" };
 
   if (previewOnly) {
     console.info(
@@ -227,6 +295,35 @@ export async function verifyHostContactEmailChallenge(
   token: string,
   options: HostContactEmailOptions = {},
 ): Promise<HostContactEmailVerificationResult> {
+  const prepared = await prepareHostContactEmailChallenge(
+    target,
+    user,
+    token,
+    options,
+  );
+  if (!prepared.ok) return prepared;
+
+  const store = options.store ?? dbHostContactEmailChallengeStore;
+  return await store.consume({
+    tokenHash: prepared.tokenHash,
+    host: prepared.host,
+    claimantDid: prepared.claimantDid,
+    consumedAt: options.now ?? Date.now(),
+  });
+}
+
+/**
+ * Validate a challenge and re-check the PDS's live contact address without
+ * consuming the one-time token. Claim completion uses this before opening its
+ * database transaction, then conditionally consumes the token inside the same
+ * transaction as both ownership writes.
+ */
+export async function prepareHostContactEmailChallenge(
+  target: HostContactClaimTarget,
+  user: HostContactClaimUser,
+  token: string,
+  options: HostContactEmailOptions = {},
+): Promise<PreparedHostContactEmailVerificationResult> {
   const checked = await readChallenge(target, user, token, options);
   if (!checked.ok) return checked;
 
@@ -244,13 +341,60 @@ export async function verifyHostContactEmailChallenge(
   if (currentFingerprint !== checked.record.emailFingerprint) {
     return { ok: false, reason: "contact_changed" };
   }
+  return {
+    ok: true,
+    tokenHash: checked.record.tokenHash,
+    host: checked.record.host,
+    claimantDid: checked.record.claimantDid,
+  };
+}
 
-  const store = options.store ?? dbHostContactEmailChallengeStore;
-  const consumed = await store.consume(
-    checked.record.tokenHash,
-    options.now ?? Date.now(),
-  );
-  return consumed ? { ok: true } : { ok: false, reason: "already_used" };
+export async function consumeHostContactEmailChallenge(
+  c: DbClient,
+  input: HostContactEmailChallengeConsumeInput,
+): Promise<HostContactEmailChallengeConsumeResult> {
+  const result = await c.execute({
+    sql: `UPDATE account_host_claim_challenge SET consumed_at = ?
+      WHERE token_hash = ?
+        AND host = ?
+        AND claimant_did = ?
+        AND consumed_at IS NULL
+        AND expires_at >= ?`,
+    args: [
+      input.consumedAt,
+      input.tokenHash,
+      input.host,
+      input.claimantDid,
+      input.consumedAt,
+    ],
+  });
+  if (rowsAffected(result) === 1) return { ok: true };
+
+  // Stay inside the ownership transaction when explaining why the guarded
+  // consume failed. This preserves useful expiry/replay feedback without
+  // weakening the host + account binding on the actual mutation.
+  const current = await c.execute({
+    sql: `SELECT host, claimant_did, expires_at, consumed_at
+      FROM account_host_claim_challenge
+      WHERE token_hash = ? LIMIT 1`,
+    args: [input.tokenHash],
+  });
+  const row = current.rows[0] as Record<string, unknown> | undefined;
+  if (!row || String(row.host ?? "") !== input.host) {
+    return { ok: false, reason: "invalid" };
+  }
+  if (String(row.claimant_did ?? "") !== input.claimantDid) {
+    return { ok: false, reason: "account_mismatch" };
+  }
+  if (row.consumed_at !== null && row.consumed_at !== undefined) {
+    return { ok: false, reason: "already_used" };
+  }
+  if (Number(row.expires_at ?? 0) < input.consumedAt) {
+    return { ok: false, reason: "expired" };
+  }
+  // A row that changed between the guarded UPDATE and this read is still not
+  // safe to consume. Treat the indeterminate state as an invalid challenge.
+  return { ok: false, reason: "invalid" };
 }
 
 async function readChallenge(
@@ -290,9 +434,7 @@ async function readAnnouncedContactEmail(
     // A contact address on one tenant must not authorize an umbrella provider
     // or another hostname. Cross-domain products need a curated mapping (and,
     // eventually, a standardized operator declaration).
-    if (
-      new URL(endpoint).hostname.toLowerCase() !== target.host.toLowerCase()
-    ) {
+    if (!accountHostContactEndpointIsBound(target.host, endpoint)) {
       return null;
     }
   } catch {
@@ -489,24 +631,12 @@ function rowsAffected(result: { rowsAffected?: number | bigint }): number {
 
 export const dbHostContactEmailChallengeStore: HostContactEmailChallengeStore =
   {
-    async save(record) {
-      await withDb(async (c) => {
-        await c.execute({
-          sql: `INSERT INTO account_host_claim_challenge (
-          token_hash, host, claimant_did, claimant_handle, email_fingerprint,
-          created_at, expires_at, consumed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
-          args: [
-            record.tokenHash,
-            record.host,
-            record.claimantDid,
-            record.claimantHandle,
-            record.emailFingerprint,
-            record.createdAt,
-            record.expiresAt,
-          ],
-        });
-      });
+    async reserve(record, limits) {
+      return await withDbTransaction((c) =>
+        reserveHostContactEmailChallenge(c, record, limits, {
+          postgresBackend: dbBackend() === "postgres",
+        })
+      );
     },
     async remove(tokenHash) {
       await withDb(async (c) => {
@@ -527,20 +657,58 @@ export const dbHostContactEmailChallengeStore: HostContactEmailChallengeStore =
         return row ? rowToRecord(row) : null;
       });
     },
-    async consume(tokenHash, consumedAt) {
+    async consume(input) {
       return await withDb(async (c) => {
-        const result = await c.execute({
-          sql: `UPDATE account_host_claim_challenge SET consumed_at = ?
-          WHERE token_hash = ? AND consumed_at IS NULL AND expires_at >= ?`,
-          args: [consumedAt, tokenHash, consumedAt],
-        });
-        return rowsAffected(result) === 1;
+        return await consumeHostContactEmailChallenge(c, input);
       });
     },
-    async recentCounts(input) {
-      return await withDb((c) => recentCounts(c, input));
-    },
   };
+
+/**
+ * Atomically reserve one rate-limit slot and persist its challenge. SQLite's
+ * write transaction serializes the count + insert section. PostgreSQL also
+ * takes a transaction-scoped advisory lock so concurrent request snapshots
+ * cannot each observe the same remaining slot.
+ */
+export async function reserveHostContactEmailChallenge(
+  c: DbClient,
+  record: HostContactEmailChallengeRecord,
+  limits: HostContactEmailChallengeReservationLimits,
+  options: { postgresBackend?: boolean } = {},
+): Promise<boolean> {
+  if (options.postgresBackend) {
+    await c.execute(
+      "SELECT pg_advisory_xact_lock(CAST(1096043843 AS bigint))",
+    );
+  }
+  const counts = await recentCounts(c, {
+    host: record.host,
+    claimantDid: record.claimantDid,
+    emailFingerprint: record.emailFingerprint,
+    since: limits.since,
+  });
+  if (
+    counts.host >= limits.host || counts.claimant >= limits.claimant ||
+    counts.email >= limits.email
+  ) return false;
+
+  await c.execute({
+    sql: `INSERT INTO account_host_claim_challenge (
+      token_hash, host, claimant_did, claimant_handle, email_fingerprint,
+      created_at, expires_at, consumed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+    args: [
+      record.tokenHash,
+      record.host,
+      record.claimantDid,
+      record.claimantHandle,
+      record.emailFingerprint,
+      record.createdAt,
+      record.expiresAt,
+    ],
+  });
+  return true;
+}
 
 async function recentCounts(
   c: DbClient,

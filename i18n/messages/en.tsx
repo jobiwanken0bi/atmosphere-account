@@ -270,7 +270,6 @@ const en = {
     temporarilyUnavailable: "Temporarily unavailable",
     compatibilityChecked: "Compatibility checked",
     view: "View",
-    register: "Register a host",
     missingHostTitle: "Don’t see your PDS?",
     missingHostCopy:
       "It may have been detected as a personal PDS and kept out of the public directory. If you operate it, claim the detected PDS to have it listed.",

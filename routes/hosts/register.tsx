@@ -23,15 +23,19 @@ import { getBskyProfile, uploadBlob } from "../../lib/pds.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
+import { hostSelfServiceClaimPolicy } from "../../lib/host-claim-proof.ts";
+import { type AppListing } from "../../lib/app-directory.ts";
 import {
-  type AppListing,
-  getAppListingById,
-  getAppListingByIdentifier,
-} from "../../lib/app-directory.ts";
-import {
-  defineDirectoryEntityLink,
-  userControlsAppListing,
+  establishDirectoryEntityLinkFromIntent,
 } from "../../lib/directory-entity-links.ts";
+import {
+  appHostLinkIntentErrorMessage,
+  bindAppHostLinkIntent,
+  type BoundAppHostLinkIntent,
+  resolveAppHostLinkSelectorIntent,
+  resolveBoundAppHostLinkIntent,
+  type ResolvedAppHostLinkIntent,
+} from "../../lib/app-host-link-intent.ts";
 
 interface RegisterValues {
   host: string;
@@ -65,6 +69,9 @@ interface RegisterPageProps {
 interface HostRegistrationLinkContext {
   app: AppListing;
   relationship: "same_product" | "same_operator";
+  appOwnerDid: string;
+  intentToken: string;
+  intent: BoundAppHostLinkIntent;
 }
 
 interface RegisterRenderContext {
@@ -90,16 +97,25 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
+    const hostHint = textValue(ctx.url.searchParams.get("host"));
+    if (hostSelfServiceClaimPolicy(hostHint) !== "local-dev") {
+      return await redirectLegacyRegistrationToDetectedClaim(
+        ctx.url.searchParams.get("link_intent"),
+        hostHint,
+        ctx.state.user?.did ?? null,
+      );
+    }
     if (!ctx.state.user) return redirectToSignin(ctx.url);
     const linkContext = await loadLinkContext(
-      ctx.state.user,
-      ctx.url.searchParams.get("app"),
-      ctx.url.searchParams.get("relationship"),
+      ctx.url.searchParams.get("link_intent"),
+      hostHint,
+      ctx.state.user.did,
     );
+    if (linkContext instanceof Response) return linkContext;
     const prefill = await buildRegisterPrefill(
       ctx.state.user,
       ctx.url,
-      linkContext?.app ?? null,
+      linkContext?.relationship === "same_product" ? linkContext.app : null,
     );
     return ctx.render(
       <RegisterHostPage
@@ -129,19 +145,20 @@ export const handler = define.handlers({
     if (large) return large;
     const form = await ctx.req.formData().catch(() => null);
     const values = valuesFromForm(form);
-    const requestedLinkAppId = textValue(form?.get("linkAppId"));
-    const linkContext = await loadLinkContext(
-      ctx.state.user,
-      requestedLinkAppId,
-      textValue(form?.get("relationship")),
-    );
-    if (requestedLinkAppId && !linkContext) {
-      return await renderRegisterError(
-        ctx,
-        values,
-        "That app is not managed by this account.",
+    const requestedLinkIntent = textValue(form?.get("linkIntent"));
+    if (hostSelfServiceClaimPolicy(values.host) !== "local-dev") {
+      return await redirectLegacyRegistrationToDetectedClaim(
+        requestedLinkIntent || null,
+        values.host,
+        ctx.state.user.did,
       );
     }
+    const linkContext = await loadLinkContext(
+      requestedLinkIntent || null,
+      values.host,
+      ctx.state.user.did,
+    );
+    if (linkContext instanceof Response) return linkContext;
     if (textValue(form?.get("action")) === "infer_location") {
       const inferred = await inferHostNetworkLocation({
         host: values.host,
@@ -205,18 +222,31 @@ export const handler = define.handlers({
     );
     if (result.ok) {
       if (linkContext) {
-        const linked = await defineDirectoryEntityLink({
-          host: result.host.host,
-          app: linkContext.app,
-          relationship: linkContext.relationship,
-          approvedBy: "app",
-          currentDid: ctx.state.user.did,
+        const linked = await establishDirectoryEntityLinkFromIntent({
+          intent: linkContext.intent,
+          currentHostDid: ctx.state.user.did,
         }).catch(() => ({ ok: false as const }));
-        const search = new URLSearchParams({ app: linkContext.app.id });
-        search.set(linked.ok ? "registered" : "linkError", "1");
+        if (!linked.ok) {
+          const retry = new URLSearchParams({
+            link_intent: linkContext.intentToken,
+            linkError: "1",
+          });
+          return new Response(null, {
+            status: 303,
+            headers: {
+              location: `/hosts/${
+                encodeURIComponent(result.host.host)
+              }/claim?${retry}`,
+            },
+          });
+        }
         return new Response(null, {
           status: 303,
-          headers: { location: `/apps/manage/host?${search}` },
+          headers: {
+            location: `/hosts/${
+              encodeURIComponent(result.host.host)
+            }/manage?linked=1`,
+          },
         });
       }
       return new Response(null, {
@@ -247,6 +277,35 @@ function redirectToSignin(url: URL): Response {
   return new Response(null, {
     status: 303,
     headers: { location: `${signin.pathname}${signin.search}` },
+  });
+}
+
+async function redirectLegacyRegistrationToDetectedClaim(
+  token: string | null,
+  host: string,
+  currentDid: string | null,
+): Promise<Response> {
+  const search = new URLSearchParams();
+  if (host.trim()) search.set("domain", host.trim());
+  if (token?.trim()) {
+    if (!currentDid) {
+      return new Response(
+        "Return to the app owner account and start the host connection again.",
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    const selector = await resolveAppHostLinkSelectorIntent(token, currentDid);
+    if (!selector.ok) {
+      return new Response(appHostLinkIntentErrorMessage(selector.reason), {
+        status: 400,
+        headers: { "cache-control": "no-store" },
+      });
+    }
+    search.set("link_intent", selector.value.token);
+  }
+  return new Response(null, {
+    status: 303,
+    headers: { location: `/hosts/claim${search.size ? `?${search}` : ""}` },
   });
 }
 
@@ -413,7 +472,6 @@ async function buildRegisterPrefill(
    */
   const appProfile = await getProfileByDid(user.did).catch(() => null);
 
-  if (!values.host) values.host = user.handle;
   if (!values.displayName) {
     values.displayName = linkedApp?.name || appProfile?.name ||
       bsky?.displayName || "";
@@ -424,12 +482,6 @@ async function buildRegisterPrefill(
   }
   if (!values.homepageUrl && (linkedApp?.primaryUrl || appProfile?.mainLink)) {
     values.homepageUrl = linkedApp?.primaryUrl || appProfile?.mainLink || "";
-  }
-  if (!values.serviceEndpoint && session?.pdsUrl) {
-    values.serviceEndpoint = session.pdsUrl;
-  }
-  if (!values.serviceEndpoint && values.homepageUrl) {
-    values.serviceEndpoint = originFromUrl(values.homepageUrl);
   }
   if (!values.avatarUrl) {
     if (linkedApp?.iconUrl) {
@@ -475,14 +527,6 @@ function clearInferenceValues(values: RegisterValues): void {
   values.inferredLocationSource = "";
   values.inferredLocationCheckedAt = null;
   values.inferredLocationEvidenceJson = "";
-}
-
-function originFromUrl(value: string): string {
-  try {
-    return new URL(value).origin;
-  } catch {
-    return "";
-  }
 }
 
 async function renderRegisterResultError(
@@ -580,7 +624,13 @@ async function publishHostProfileFromForm(
   }
 
   try {
-    const serviceEndpoint = values.serviceEndpoint || session.pdsUrl;
+    if (!values.serviceEndpoint) {
+      return {
+        ok: false,
+        message: "Enter the PDS service endpoint operated by this host.",
+      };
+    }
+    const serviceEndpoint = values.serviceEndpoint;
     const records = await publishHostRecords(user, session.pdsUrl, {
       host: values.host,
       displayName: values.displayName,
@@ -638,19 +688,29 @@ function RegisterHostPage(
               {linkContext ? "Back to app hosting" : "Back to hosts"}
             </a>
             <div class="glass signin-page-card host-register-card">
-              <p class="text-eyebrow">
-                {linkContext ? "Add account hosting" : "Register account host"}
-              </p>
+              <p class="text-eyebrow">Local development fixture</p>
               <h1 class="host-claim-title">
                 {linkContext
-                  ? `Register a host for ${linkContext.app.name}`
-                  : "List your account host"}
+                  ? `Register a .test host for ${linkContext.app.name}`
+                  : "Register a .test account host"}
               </h1>
               <p class="text-body host-claim-copy">
-                {linkContext
-                  ? "Create the operational host profile now. Atmosphere will connect it to the app automatically after the host proof succeeds."
-                  : "Register with the Atmosphere account that represents the host. If the account handle is different from the host domain, add the host proof file to the host website first."}
+                This form is only available for local <code>.test</code>{" "}
+                fixtures while Atmosphere is running in development mode.
+                Production hosts must be detected from relay activity and
+                verified through the PDS contact email.
               </p>
+              <div class="host-claim-panel">
+                <p class="host-claim-panel-title">Running a production PDS?</p>
+                <p class="text-body">
+                  Configure <code>contact.email</code> in{" "}
+                  <code>com.atproto.server.describeServer</code>, then find the
+                  exact PDS domain in the detected-host flow.
+                </p>
+                <a class="text-link-button" href="/hosts/claim">
+                  Find and claim a detected PDS
+                </a>
+              </div>
               {user && (
                 <div class="host-claim-panel host-claim-panel-ok">
                   <p class="host-claim-panel-title">
@@ -662,6 +722,20 @@ function RegisterHostPage(
                     pass.
                   </p>
                 </div>
+              )}
+              {linkContext && (
+                <a
+                  class="text-link-button"
+                  href={`/oauth/add-account?next=${
+                    encodeURIComponent(
+                      `/hosts/register?link_intent=${
+                        encodeURIComponent(linkContext.intentToken)
+                      }&host=${encodeURIComponent(values.host)}`,
+                    )
+                  }`}
+                >
+                  Use another account to register this host
+                </a>
               )}
               {error && (
                 <p class="profile-form-status profile-form-status--error">
@@ -676,6 +750,7 @@ function RegisterHostPage(
                     id: linkContext.app.id,
                     name: linkContext.app.name,
                     relationship: linkContext.relationship,
+                    intentToken: linkContext.intentToken,
                   }
                   : null}
               />
@@ -689,19 +764,36 @@ function RegisterHostPage(
 }
 
 async function loadLinkContext(
-  user: { did: string },
-  appListingId: string | null,
-  relationshipValue: string | null,
-): Promise<HostRegistrationLinkContext | null> {
-  const id = appListingId?.trim();
-  if (!id) return null;
-  const app = await getAppListingById(id).catch(() => null) ??
-    await getAppListingByIdentifier(id, { syncLegacy: false }).catch(() =>
-      null
+  token: string | null,
+  expectedHost: string,
+  currentDid: string,
+): Promise<HostRegistrationLinkContext | null | Response> {
+  if (!token?.trim()) return null;
+  let resolved = await resolveBoundAppHostLinkIntent(token, expectedHost);
+  if (!resolved.ok && resolved.reason === "wrong_stage") {
+    resolved = await bindAppHostLinkIntent(
+      token,
+      expectedHost,
+      currentDid,
     );
-  if (!app || !userControlsAppListing(app, user.did)) return null;
-  const relationship = relationshipValue === "same_operator"
-    ? "same_operator"
-    : "same_product";
-  return { app, relationship };
+  }
+  if (!resolved.ok) {
+    return new Response(appHostLinkIntentErrorMessage(resolved.reason), {
+      status: 400,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+  return contextFromResolvedIntent(resolved.value);
+}
+
+function contextFromResolvedIntent(
+  value: ResolvedAppHostLinkIntent<BoundAppHostLinkIntent>,
+): HostRegistrationLinkContext {
+  return {
+    app: value.app,
+    relationship: value.intent.relationship,
+    appOwnerDid: value.intent.appOwnerDid,
+    intentToken: value.token,
+    intent: value.intent,
+  };
 }

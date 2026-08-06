@@ -237,10 +237,6 @@ export default define.page(async function HostsPage(ctx) {
                 copy={copy}
               />
             )}
-            <DirectoryRegisterCta
-              href={registerHostHref()}
-              label={copy.register}
-            />
             <DirectoryHiddenHostCta copy={copy} />
           </div>
         </section>
@@ -367,21 +363,6 @@ function activeFilterCount(input: HostDirectoryInput): number {
     Number(input.verificationStatus !== "all");
 }
 
-function DirectoryRegisterCta(
-  { href, label }: { href: string; label: string },
-) {
-  return (
-    <div class="directory-register-cta">
-      <a href={href} class="directory-register-button">
-        <span class="directory-register-button-icon" aria-hidden="true">
-          +
-        </span>
-        <span>{label}</span>
-      </a>
-    </div>
-  );
-}
-
 function DirectoryHiddenHostCta({ copy }: { copy: HostsDirectoryCopy }) {
   return (
     <aside class="directory-hidden-host-cta">
@@ -501,8 +482,4 @@ function linkedAppIndicatorLabel(
   return apps.length > 1
     ? copy.operatesApps(apps.length)
     : copy.appIndicatorLabel;
-}
-
-function registerHostHref(): string {
-  return "/hosts/register";
 }
