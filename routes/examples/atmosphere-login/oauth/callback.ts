@@ -1,28 +1,74 @@
 import { define } from "../../../../utils.ts";
 import {
   buildExampleAppSessionCookie,
+  cancelExampleAtprotoOAuth,
   completeExampleAtprotoOAuthCallback,
 } from "../../../../lib/example-atproto-oauth.ts";
+import {
+  InvalidOAuthRequestInputError,
+  singleSearchValue,
+} from "../../../../lib/oauth-request-input.ts";
+import {
+  clearOAuthFlowBindingCookie,
+  readOAuthFlowBindingCookie,
+} from "../../../../lib/oauth-flow-binding.ts";
+
+const MAX_EXAMPLE_CALLBACK_QUERY_BYTES = 16_384;
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const state = ctx.url.searchParams.get("state");
-    const code = ctx.url.searchParams.get("code");
-    const iss = ctx.url.searchParams.get("iss");
-    const error = ctx.url.searchParams.get("error");
-    if (error) {
-      return new Response(`example authorization denied: ${error}`, {
+    if (ctx.url.search.length > MAX_EXAMPLE_CALLBACK_QUERY_BYTES) {
+      return new Response("invalid callback", { status: 414 });
+    }
+    let state: string | null;
+    let code: string | null;
+    let iss: string | null;
+    let error: string | null;
+    try {
+      state = singleSearchValue(ctx.url.searchParams, "state");
+      code = singleSearchValue(ctx.url.searchParams, "code");
+      iss = singleSearchValue(ctx.url.searchParams, "iss");
+      error = singleSearchValue(ctx.url.searchParams, "error");
+      if (error !== null && code !== null) {
+        throw new InvalidOAuthRequestInputError();
+      }
+    } catch {
+      return new Response("invalid callback", { status: 400 });
+    }
+    if (!state) {
+      return new Response("missing state, code, or iss", { status: 400 });
+    }
+    const browserBinding = readOAuthFlowBindingCookie(ctx.req, state);
+    if (!browserBinding) {
+      return new Response("example callback browser mismatch", {
         status: 400,
+        headers: { "cache-control": "no-store" },
       });
     }
-    if (!state || !code || !iss) {
-      return new Response("missing state, code, or iss", { status: 400 });
+    if (error) {
+      await cancelExampleAtprotoOAuth(
+        state,
+        ctx.url.origin,
+        browserBinding,
+      ).catch(() => false);
+      return clearFlowCookie(
+        new Response("example authorization denied", { status: 400 }),
+        state,
+      );
+    }
+    if (!code || !iss) {
+      return clearFlowCookie(
+        new Response("missing state, code, or iss", { status: 400 }),
+        state,
+      );
     }
     try {
       const result = await completeExampleAtprotoOAuthCallback({
         state,
         code,
         iss,
+        origin: ctx.url.origin,
+        browserBinding,
       });
       const headers = new Headers({
         location: "/examples/atmosphere-login/app?signed_in=1",
@@ -35,12 +81,29 @@ export const handler = define.handlers({
           pdsUrl: result.pdsUrl,
         }),
       );
+      const flowCookie = clearOAuthFlowBindingCookie(state);
+      if (flowCookie) headers.append("set-cookie", flowCookie);
       return new Response(null, { status: 303, headers });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return new Response(`example callback failed: ${message}`, {
-        status: 400,
-      });
+      await cancelExampleAtprotoOAuth(
+        state,
+        ctx.url.origin,
+        browserBinding,
+      ).catch(() => false);
+      console.warn("[example-oauth] callback failed:", err);
+      return clearFlowCookie(
+        new Response("example callback failed", {
+          status: 400,
+          headers: { "cache-control": "no-store" },
+        }),
+        state,
+      );
     }
   },
 });
+
+function clearFlowCookie(response: Response, state: string): Response {
+  const cookie = clearOAuthFlowBindingCookie(state);
+  if (cookie) response.headers.append("set-cookie", cookie);
+  return response;
+}

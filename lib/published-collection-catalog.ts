@@ -11,6 +11,7 @@ const BROWSE_PATH = "/xrpc/garden.lexicon.browse";
 const FETCH_TIMEOUT_MS = 3_500;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_RESULTS = 20;
+const MAX_PARSED_RESULTS = 100;
 const CACHE_TTL_MS = 10 * 60_000;
 const ERROR_CACHE_TTL_MS = 30_000;
 const MAX_CACHE_ENTRIES = 250;
@@ -76,6 +77,8 @@ export function parseLexiconGardenAutocomplete(
   const items = (value as { suggestions?: unknown }).suggestions;
   if (!Array.isArray(items)) return null;
 
+  const resultLimit = suggestionLimit(limit, MAX_RESULTS);
+  if (resultLimit === 0) return [];
   const suggestions: CollectionSuggestion[] = [];
   const seen = new Set<string>();
   for (const item of items) {
@@ -87,19 +90,21 @@ export function parseLexiconGardenAutocomplete(
     if (!isCollectionNsid(id) || seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     suggestions.push(publishedSuggestion(id, safeCatalogUrl(row.url)));
-    if (suggestions.length >= Math.max(0, limit)) break;
+    if (suggestions.length >= resultLimit) break;
   }
   return suggestions;
 }
 
 export function parseLexiconGardenBrowse(
   value: unknown,
-  limit = 100,
+  limit = MAX_PARSED_RESULTS,
 ): CollectionSuggestion[] | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const items = (value as { lexicons?: unknown }).lexicons;
   if (!Array.isArray(items)) return null;
 
+  const resultLimit = suggestionLimit(limit, MAX_PARSED_RESULTS);
+  if (resultLimit === 0) return [];
   const suggestions: CollectionSuggestion[] = [];
   const seen = new Set<string>();
   for (const value of items) {
@@ -109,7 +114,7 @@ export function parseLexiconGardenBrowse(
     if (!isCollectionNsid(id) || seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     suggestions.push(publishedSuggestion(id));
-    if (suggestions.length >= Math.max(0, limit)) break;
+    if (suggestions.length >= resultLimit) break;
   }
   return suggestions;
 }
@@ -140,10 +145,30 @@ async function boundedJson(
     redirect: "error",
     signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
   });
-  if (!response.ok) throw new Error(`Catalog returned HTTP ${response.status}`);
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(`Catalog returned HTTP ${response.status}`);
+  }
+  if (!isJsonMediaType(response.headers.get("content-type"))) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("Catalog returned a non-JSON response");
+  }
   const bounded = await readResponseTextWithLimit(response, MAX_RESPONSE_BYTES);
   if (!bounded.ok) throw new Error(`Catalog ${bounded.error}`);
   return JSON.parse(bounded.text);
+}
+
+function suggestionLimit(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(
+    MAX_PARSED_RESULTS,
+    Math.max(0, Math.floor(value)),
+  );
+}
+
+function isJsonMediaType(value: string | null): boolean {
+  const mediaType = (value ?? "").split(";", 1)[0].trim().toLowerCase();
+  return mediaType === "application/json" || mediaType.endsWith("+json");
 }
 
 export async function queryLexiconGarden(

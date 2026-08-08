@@ -22,12 +22,12 @@ kill_timeout = 30
   dockerfile = 'worker.Dockerfile'
 
 [deploy]
-  strategy = 'rolling'
-  release_command = 'deno run -A --node-modules-dir=auto scripts/migrate-db.ts'
+strategy = 'rolling'
+release_command = 'deno run --cached-only --frozen --no-prompt --allow-read=/app --allow-net --allow-env --allow-sys --allow-ffi=/app/node_modules --node-modules-dir=auto scripts/migrate-db.ts'
 
 # Single always-on background process.
 [processes]
-  worker = 'deno run -A --node-modules-dir=auto worker/indexer.ts'
+worker = 'deno run --cached-only --frozen --no-prompt --allow-read=/app --allow-net --allow-env --allow-sys --allow-ffi=/app/node_modules --node-modules-dir=auto worker/indexer.ts'
 
 [[restart]]
   policy = 'always'

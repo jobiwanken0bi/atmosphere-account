@@ -1,4 +1,9 @@
 import { ATMOSPHERE_DID, IS_DEV } from "./env.ts";
+import {
+  isJsonMediaType,
+  isPrivateNetworkHostname,
+  readResponseTextWithLimit,
+} from "./security.ts";
 
 /**
  * atproto identity helpers: resolve handles to DIDs, fetch DID documents,
@@ -11,6 +16,20 @@ const PUBLIC_RESOLVER = "https://public.api.bsky.app";
 const PLC_DIRECTORY = "https://plc.directory";
 const ATMOSPHERE_ACCOUNT_HANDLE = "atmosphereaccount.com";
 const ATMOSPHERE_ACCOUNT_DID = "did:plc:ab7uvkn4kyf7l7prl26pz4r2";
+const MAX_DID_LENGTH = 2_048;
+const MAX_DNS_JSON_BYTES = 64 * 1024;
+const MAX_WELL_KNOWN_DID_BYTES = 4 * 1024;
+const MAX_IDENTITY_JSON_BYTES = 256 * 1024;
+const DNS_RESOLUTION_TIMEOUT_MS = 3_000;
+const RESERVED_HANDLE_SUFFIXES = [
+  ".localhost",
+  ".local",
+  ".test",
+  ".invalid",
+  ".example",
+  ".onion",
+  ".home.arpa",
+] as const;
 
 export interface DidDocument {
   id: string;
@@ -30,7 +49,6 @@ export interface ResolvedIdentity {
 }
 
 const didRe = /^did:[a-z]+:[a-zA-Z0-9._:%-]+$/;
-const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 export function isHandle(s: string): boolean {
   if (s.length < 3 || s.length > 253) return false;
@@ -49,46 +67,45 @@ export function isHandle(s: string): boolean {
 }
 
 export function isDid(s: string): boolean {
-  return didRe.test(s);
+  return s.length <= MAX_DID_LENGTH && didRe.test(s);
+}
+
+function isReservedHandle(handle: string): boolean {
+  const normalized = `.${handle.toLowerCase().replace(/\.$/, "")}`;
+  return RESERVED_HANDLE_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
+}
+
+export function isProductionHandleAllowedForTest(handle: string): boolean {
+  return isHandle(handle) && !isReservedHandle(handle);
 }
 
 function isPrivateOrLocalHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  if (
-    host === "localhost" || host === "0.0.0.0" || host === "::1" ||
-    host.endsWith(".localhost")
-  ) return true;
-  const v6 = host.startsWith("[") && host.endsWith("]")
-    ? host.slice(1, -1)
-    : host.includes(":")
-    ? host
-    : null;
-  if (v6) {
-    return v6 === "::1" || v6.startsWith("fc") || v6.startsWith("fd") ||
-      v6.startsWith("fe80:");
-  }
-  if (!IPV4_RE.test(host)) return false;
-  const parts = host.split(".").map(Number);
-  if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
-    return true;
-  }
-  const [a, b] = parts;
-  return a === 10 || a === 127 || a === 0 || a === 169 && b === 254 ||
-    a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168;
+  return isPrivateNetworkHostname(hostname);
 }
 
 export function normalizeServiceEndpoint(endpoint: string): string {
+  const url = parseSafeEndpointUrl(endpoint);
+  if (url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("service endpoint must be an origin");
+  }
+  return url.origin;
+}
+
+function parseSafeEndpointUrl(endpoint: string): URL {
+  if (!endpoint || endpoint.length > 2_048) {
+    throw new Error("unsafe service endpoint length");
+  }
   const url = new URL(endpoint);
+  if (url.username || url.password) {
+    throw new Error("unsafe service endpoint credentials");
+  }
   if (url.protocol !== "https:" && !(IS_DEV && url.protocol === "http:")) {
     throw new Error(`unsafe service endpoint protocol: ${endpoint}`);
   }
   if (!IS_DEV && isPrivateOrLocalHostname(url.hostname)) {
     throw new Error(`unsafe service endpoint host: ${endpoint}`);
   }
-  url.username = "";
-  url.password = "";
-  url.hash = "";
-  return url.toString().replace(/\/$/, "");
+  return url;
 }
 
 function normalizeDnsTxtValue(data: string): string {
@@ -116,11 +133,15 @@ export async function resolveHandle(handle: string): Promise<string> {
   if (lower === ATMOSPHERE_ACCOUNT_HANDLE) {
     return ATMOSPHERE_DID || ATMOSPHERE_ACCOUNT_DID;
   }
+  if (!IS_DEV && isReservedHandle(lower)) {
+    throw new Error(`reserved handle host: ${handle}`);
+  }
   if (!IS_DEV && isPrivateOrLocalHostname(lower)) {
     throw new Error(`unsafe handle host: ${handle}`);
   }
 
   // 1. DNS-over-HTTPS TXT record at _atproto.<handle>
+  let conflictingDnsClaims = false;
   try {
     const r = await fetch(
       `https://cloudflare-dns.com/dns-query?name=_atproto.${
@@ -128,31 +149,45 @@ export async function resolveHandle(handle: string): Promise<string> {
       }&type=TXT`,
       {
         headers: { accept: "application/dns-json" },
+        redirect: "manual",
         signal: AbortSignal.timeout(4000),
       },
     );
     if (r.ok) {
-      const json = await r.json() as {
+      const json = await readBoundedJson(r, MAX_DNS_JSON_BYTES) as {
         Answer?: Array<{ data: string }>;
       };
+      const answers = new Set<string>();
       for (const ans of json.Answer ?? []) {
+        if (!ans || typeof ans.data !== "string") continue;
         const data = normalizeDnsTxtValue(ans.data);
         const m = data.match(/^did=(.+)$/);
-        if (m && isDid(m[1])) return m[1];
+        if (m && isDid(m[1])) answers.add(m[1]);
       }
+      if (answers.size === 1) return [...answers][0];
+      conflictingDnsClaims = answers.size > 1;
     }
   } catch {
     // fall through
   }
+  if (conflictingDnsClaims) {
+    throw new Error(`conflicting DNS handle claims for ${handle}`);
+  }
 
   // 2. Well-known HTTPS endpoint on the handle's domain
   try {
+    if (!IS_DEV) await assertPublicDnsHostname(lower);
     const r = await fetch(`https://${lower}/.well-known/atproto-did`, {
       headers: { accept: "text/plain" },
+      redirect: "manual",
       signal: AbortSignal.timeout(4000),
     });
     if (r.ok) {
-      const text = (await r.text()).trim();
+      const body = await readResponseTextWithLimit(
+        r,
+        MAX_WELL_KNOWN_DID_BYTES,
+      );
+      const text = body.ok ? body.text.trim() : "";
       if (isDid(text)) return text;
     }
   } catch {
@@ -164,13 +199,140 @@ export async function resolveHandle(handle: string): Promise<string> {
     `${PUBLIC_RESOLVER}/xrpc/com.atproto.identity.resolveHandle?handle=${
       encodeURIComponent(lower)
     }`,
+    {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(4000),
+    },
   );
   if (!r.ok) throw new Error(`could not resolve handle: ${handle}`);
-  const json = await r.json() as { did: string };
+  const json = await readBoundedJson(r, MAX_IDENTITY_JSON_BYTES) as {
+    did: string;
+  };
   if (!isDid(json.did)) {
     throw new Error(`resolver returned invalid DID for ${handle}`);
   }
   return json.did;
+}
+
+function didWebDocumentUrl(
+  did: string,
+  allowDevelopmentPaths: boolean,
+): string {
+  const methodId = did.slice("did:web:".length);
+  if (!methodId) throw new Error("invalid did:web identifier");
+  // AT Protocol's did:web profile is origin-only. The sole development
+  // exception is an explicitly encoded loopback authority with an optional
+  // port (for example did:web:localhost%3A3000); generic DID Web path forms
+  // remain rejected even in development.
+  if (methodId.includes(":") || methodId.includes("%")) {
+    if (!allowDevelopmentPaths || methodId.includes(":")) {
+      throw new Error("path-based did:web identifiers are not supported");
+    }
+    let authority: string;
+    try {
+      authority = decodeURIComponent(methodId);
+    } catch {
+      throw new Error("invalid encoded did:web authority");
+    }
+    let loopback: URL;
+    try {
+      loopback = new URL(`http://${authority}`);
+    } catch {
+      throw new Error("invalid development did:web authority");
+    }
+    if (
+      loopback.username || loopback.password || loopback.pathname !== "/" ||
+      loopback.search || loopback.hash ||
+      !isExplicitLoopbackHostname(loopback.hostname)
+    ) {
+      throw new Error("development did:web must use a loopback authority");
+    }
+    return `${loopback.origin}/.well-known/did.json`;
+  }
+
+  const host = methodId.toLowerCase();
+  if (allowDevelopmentPaths && isExplicitLoopbackHostname(host)) {
+    return `http://${host}/.well-known/did.json`;
+  }
+  if (!isHandle(host) || (!allowDevelopmentPaths && isReservedHandle(host))) {
+    throw new Error("did:web must use a public DNS hostname");
+  }
+  return `https://${host}/.well-known/did.json`;
+}
+
+function isExplicitLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host === "::1") return true;
+  const octets = host.split(".").map(Number);
+  return octets.length === 4 && octets[0] === 127 &&
+    octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255);
+}
+
+export function didWebDocumentUrlForTest(
+  did: string,
+  allowDevelopmentPaths = false,
+): string {
+  return didWebDocumentUrl(did, allowDevelopmentPaths);
+}
+
+type AddressRecordType = "A" | "AAAA";
+type AddressResolver = (
+  hostname: string,
+  type: AddressRecordType,
+) => Promise<string[]>;
+
+const systemAddressResolver: AddressResolver = async (hostname, type) =>
+  await Deno.resolveDns(hostname, type) as string[];
+
+export async function assertPublicDnsHostname(
+  hostname: string,
+  resolve: AddressResolver = systemAddressResolver,
+): Promise<void> {
+  if (isReservedHandle(hostname) || isPrivateOrLocalHostname(hostname)) {
+    throw new Error("hostname is private or special-use");
+  }
+  const lookups = await Promise.allSettled([
+    resolveWithTimeout(resolve, hostname, "A"),
+    resolveWithTimeout(resolve, hostname, "AAAA"),
+  ]);
+  const addresses = lookups.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : []
+  );
+  if (addresses.length === 0) {
+    throw new Error("hostname has no public address records");
+  }
+  if (addresses.some((address) => isPrivateNetworkHostname(address))) {
+    throw new Error("hostname resolves to a private or special-use address");
+  }
+}
+
+async function resolveWithTimeout(
+  resolve: AddressResolver,
+  hostname: string,
+  type: AddressRecordType,
+): Promise<string[]> {
+  let timeout: number | undefined;
+  try {
+    return await Promise.race([
+      resolve(hostname, type),
+      new Promise<string[]>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("DNS resolution timed out")),
+          DNS_RESOLUTION_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+export async function assertPublicDnsHostnameForTest(
+  hostname: string,
+  resolve: AddressResolver,
+): Promise<void> {
+  await assertPublicDnsHostname(hostname, resolve);
 }
 
 export async function resolveDidDocument(did: string): Promise<DidDocument> {
@@ -179,27 +341,35 @@ export async function resolveDidDocument(did: string): Promise<DidDocument> {
   if (did.startsWith("did:plc:")) {
     const r = await fetch(`${PLC_DIRECTORY}/${did}`, {
       headers: { accept: "application/json" },
+      redirect: "manual",
       signal: AbortSignal.timeout(6000),
     });
     if (!r.ok) throw new Error(`PLC directory returned ${r.status} for ${did}`);
-    return await r.json() as DidDocument;
+    return parseDidDocument(
+      await readBoundedJson(r, MAX_IDENTITY_JSON_BYTES),
+      did,
+    );
   }
 
   if (did.startsWith("did:web:")) {
-    const target = did.slice("did:web:".length).split(":").join("/");
-    const url = target.includes("/")
-      ? `https://${target}/did.json`
-      : `https://${target}/.well-known/did.json`;
+    const url = didWebDocumentUrl(did, IS_DEV);
     const parsed = new URL(url);
-    if (!IS_DEV && isPrivateOrLocalHostname(parsed.hostname)) {
-      throw new Error(`unsafe did:web host: ${parsed.hostname}`);
+    if (!IS_DEV) {
+      if (isReservedHandle(parsed.hostname)) {
+        throw new Error(`reserved did:web host: ${parsed.hostname}`);
+      }
+      await assertPublicDnsHostname(parsed.hostname);
     }
     const r = await fetch(url, {
       headers: { accept: "application/json" },
+      redirect: "manual",
       signal: AbortSignal.timeout(6000),
     });
     if (!r.ok) throw new Error(`did:web returned ${r.status} for ${did}`);
-    return await r.json() as DidDocument;
+    return parseDidDocument(
+      await readBoundedJson(r, MAX_IDENTITY_JSON_BYTES),
+      did,
+    );
   }
 
   throw new Error(`unsupported DID method: ${did}`);
@@ -207,37 +377,37 @@ export async function resolveDidDocument(did: string): Promise<DidDocument> {
 
 export function findPdsEndpoint(doc: DidDocument): string {
   const svc = (doc.service ?? []).find((s) =>
-    s.id === "#atproto_pds" || s.type === "AtprotoPersonalDataServer"
+    (s.id === "#atproto_pds" || s.id === `${doc.id}#atproto_pds`) &&
+    s.type === "AtprotoPersonalDataServer"
   );
   if (!svc) throw new Error(`no atproto PDS in DID doc for ${doc.id}`);
-  return normalizeServiceEndpoint(svc.serviceEndpoint);
+  const endpoint = normalizeServiceEndpoint(svc.serviceEndpoint);
+  if (endpoint !== new URL(endpoint).origin) {
+    throw new Error(`atproto PDS endpoint is not an origin for ${doc.id}`);
+  }
+  return endpoint;
 }
 
-function handleCandidatesFromDidDocument(doc: DidDocument): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
+function authoritativeHandleFromDidDocument(doc: DidDocument): string | null {
   for (const aka of doc.alsoKnownAs ?? []) {
     if (!aka.startsWith("at://")) continue;
     const handle = aka.slice("at://".length).toLowerCase();
-    if (!isHandle(handle) || seen.has(handle)) continue;
-    seen.add(handle);
-    out.push(handle);
+    if (isHandle(handle)) return handle;
   }
-  return out;
+  return null;
 }
 
 async function verifiedHandleForDid(
   did: string,
   doc: DidDocument,
 ): Promise<string | null> {
-  for (const handle of handleCandidatesFromDidDocument(doc)) {
-    try {
-      if (await resolveHandle(handle) === did) return handle;
-    } catch {
-      // Try the next alsoKnownAs handle before falling back to the DID.
-    }
+  const handle = authoritativeHandleFromDidDocument(doc);
+  if (!handle) return null;
+  try {
+    return await resolveHandle(handle) === did ? handle : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /**
@@ -259,10 +429,8 @@ export async function resolveIdentity(
   }
   did = await resolveHandle(id);
   const doc = await resolveDidDocument(did);
-  const aka = (doc.alsoKnownAs ?? []).map((u) =>
-    u.startsWith("at://") ? u.slice(5) : u
-  );
-  if (!aka.includes(id.toLowerCase())) {
+  const authoritativeHandle = authoritativeHandleFromDidDocument(doc);
+  if (authoritativeHandle !== id.toLowerCase()) {
     throw new Error(`handle ${id} does not match DID document for ${did}`);
   }
   handle = id.toLowerCase();
@@ -300,10 +468,41 @@ function stringField(
 
 function normalizeAuthServerUrl(raw: string, field: string): string {
   try {
-    return normalizeServiceEndpoint(raw);
+    const url = parseSafeEndpointUrl(raw);
+    if (url.hash) throw new Error("endpoint must not contain a fragment");
+    return url.pathname === "/" && !url.search ? url.origin : url.toString();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`invalid authorization server ${field}: ${message}`);
+  }
+}
+
+function requireMetadataValues(
+  record: Record<string, unknown>,
+  field: string,
+  required: readonly string[],
+): string[] {
+  const values = record[field];
+  if (
+    !Array.isArray(values) ||
+    !values.every((value): value is string => typeof value === "string") ||
+    required.some((value) => !values.includes(value))
+  ) {
+    throw new Error(
+      `authorization server metadata ${field} does not support ${
+        required.join(", ")
+      }`,
+    );
+  }
+  return values;
+}
+
+function requireMetadataTrue(
+  record: Record<string, unknown>,
+  field: string,
+): void {
+  if (record[field] !== true) {
+    throw new Error(`authorization server metadata requires ${field}`);
   }
 }
 
@@ -317,9 +516,42 @@ function parseAuthServerMetadata(
     "issuer",
   );
   const issuerOrigin = new URL(issuer).origin;
-  if (issuerOrigin !== expectedOrigin) {
+  if (issuer !== issuerOrigin || issuerOrigin !== expectedOrigin) {
     throw new Error(
-      `authorization server issuer origin mismatch: ${issuerOrigin} vs ${expectedOrigin}`,
+      `authorization server issuer must be the expected origin: ${issuer} vs ${expectedOrigin}`,
+    );
+  }
+  requireMetadataValues(record, "response_types_supported", ["code"]);
+  requireMetadataValues(record, "grant_types_supported", [
+    "authorization_code",
+    "refresh_token",
+  ]);
+  requireMetadataValues(record, "code_challenge_methods_supported", [
+    "S256",
+  ]);
+  requireMetadataValues(record, "token_endpoint_auth_methods_supported", [
+    "none",
+    "private_key_jwt",
+  ]);
+  requireMetadataValues(
+    record,
+    "token_endpoint_auth_signing_alg_values_supported",
+    ["ES256"],
+  );
+  const scopesSupported = requireMetadataValues(record, "scopes_supported", [
+    "atproto",
+  ]);
+  const dpopAlgorithms = requireMetadataValues(
+    record,
+    "dpop_signing_alg_values_supported",
+    ["ES256"],
+  );
+  requireMetadataTrue(record, "authorization_response_iss_parameter_supported");
+  requireMetadataTrue(record, "require_pushed_authorization_requests");
+  requireMetadataTrue(record, "client_id_metadata_document_supported");
+  if (record.require_request_uri_registration === false) {
+    throw new Error(
+      "authorization server metadata disables request URI registration",
     );
   }
   const authorizationEndpoint = normalizeAuthServerUrl(
@@ -360,18 +592,8 @@ function parseAuthServerMetadata(
     authorization_endpoint: authorizationEndpoint,
     token_endpoint: tokenEndpoint,
     pushed_authorization_request_endpoint: parEndpoint,
-    scopes_supported: Array.isArray(record.scopes_supported)
-      ? record.scopes_supported.filter((v): v is string =>
-        typeof v === "string"
-      )
-      : undefined,
-    dpop_signing_alg_values_supported: Array.isArray(
-        record.dpop_signing_alg_values_supported,
-      )
-      ? record.dpop_signing_alg_values_supported.filter((v): v is string =>
-        typeof v === "string"
-      )
-      : undefined,
+    scopes_supported: scopesSupported,
+    dpop_signing_alg_values_supported: dpopAlgorithms,
     prompt_values_supported: Array.isArray(record.prompt_values_supported)
       ? record.prompt_values_supported.filter((v): v is string =>
         typeof v === "string"
@@ -389,45 +611,108 @@ export async function discoverAuthServer(
   pdsUrl: string,
 ): Promise<AuthServerMetadata> {
   const pdsOrigin = new URL(normalizeServiceEndpoint(pdsUrl)).origin;
-  let asOrigin = pdsOrigin;
-  try {
-    const prRes = await fetch(
-      `${pdsOrigin}/.well-known/oauth-protected-resource`,
-      {
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(6000),
-      },
-    );
-    if (prRes.ok) {
-      const pr = jsonRecord(
-        await prRes.json(),
-        "protected-resource metadata",
-      );
-      const authorizationServers = Array.isArray(pr.authorization_servers)
-        ? pr.authorization_servers.filter((v): v is string =>
-          typeof v === "string" && v.length > 0
-        )
-        : [];
-      if (authorizationServers.length > 0) {
-        asOrigin = new URL(
-          normalizeServiceEndpoint(authorizationServers[0]),
-        ).origin;
-      }
-    }
-  } catch {
-    // Fall back to PDS origin as the authorization server.
+  if (!IS_DEV) await assertPublicDnsHostname(new URL(pdsOrigin).hostname);
+  const prRes = await fetch(
+    `${pdsOrigin}/.well-known/oauth-protected-resource`,
+    {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(6000),
+    },
+  );
+  if (prRes.status !== 200) {
+    await prRes.body?.cancel().catch(() => {});
+    throw new Error("could not fetch protected-resource metadata");
   }
+  const pr = jsonRecord(
+    await readBoundedJson(prRes, MAX_IDENTITY_JSON_BYTES),
+    "protected-resource metadata",
+  );
+  const resource = normalizeServiceEndpoint(
+    stringField(pr, "resource", "protected-resource metadata"),
+  );
+  if (resource !== pdsOrigin) {
+    throw new Error("protected-resource metadata resource did not match PDS");
+  }
+  if (
+    !Array.isArray(pr.authorization_servers) ||
+    pr.authorization_servers.length !== 1 ||
+    typeof pr.authorization_servers[0] !== "string"
+  ) {
+    throw new Error(
+      "protected-resource metadata must name exactly one authorization server",
+    );
+  }
+  const asEndpoint = normalizeServiceEndpoint(pr.authorization_servers[0]);
+  const asOrigin = new URL(asEndpoint).origin;
+  if (asEndpoint !== asOrigin) {
+    throw new Error("authorization server identifier must be an origin");
+  }
+  if (!IS_DEV) await assertPublicDnsHostname(new URL(asOrigin).hostname);
   const asRes = await fetch(
     `${asOrigin}/.well-known/oauth-authorization-server`,
     {
       headers: { accept: "application/json" },
+      redirect: "manual",
       signal: AbortSignal.timeout(6000),
     },
   );
-  if (!asRes.ok) {
+  if (asRes.status !== 200) {
     throw new Error(
       `could not fetch authorization server metadata at ${asOrigin}`,
     );
   }
-  return parseAuthServerMetadata(await asRes.json(), asOrigin);
+  return parseAuthServerMetadata(
+    await readBoundedJson(asRes, MAX_IDENTITY_JSON_BYTES),
+    asOrigin,
+  );
+}
+
+async function readBoundedJson(
+  response: Response,
+  maxBytes: number,
+): Promise<unknown> {
+  if (!isJsonMediaType(response.headers.get("content-type"))) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("identity endpoint returned a non-JSON response");
+  }
+  const body = await readResponseTextWithLimit(response, maxBytes);
+  if (!body.ok) throw new Error(`identity response ${body.error}`);
+  try {
+    return JSON.parse(body.text);
+  } catch {
+    throw new Error("identity endpoint returned invalid JSON");
+  }
+}
+
+function parseDidDocument(value: unknown, expectedDid: string): DidDocument {
+  const record = jsonRecord(value, "DID document");
+  if (record.id !== expectedDid) {
+    throw new Error("DID document id did not match the requested DID");
+  }
+  const alsoKnownAs = Array.isArray(record.alsoKnownAs)
+    ? record.alsoKnownAs.filter((entry): entry is string =>
+      typeof entry === "string" && entry.length <= MAX_DID_LENGTH
+    ).slice(0, 64)
+    : undefined;
+  const service = Array.isArray(record.service)
+    ? record.service.flatMap((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return [];
+      }
+      const item = entry as Record<string, unknown>;
+      if (
+        typeof item.id !== "string" || typeof item.type !== "string" ||
+        typeof item.serviceEndpoint !== "string" ||
+        item.id.length > 256 || item.type.length > 256 ||
+        item.serviceEndpoint.length > 2_048
+      ) return [];
+      return [{
+        id: item.id,
+        type: item.type,
+        serviceEndpoint: item.serviceEndpoint,
+      }];
+    }).slice(0, 64)
+    : undefined;
+  return { id: expectedDid, alsoKnownAs, service };
 }

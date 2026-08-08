@@ -278,8 +278,11 @@ Deno.test("isUnregisteredDevLoginReturnAllowed is off outside dev", () => {
 
 Deno.test("readLoginRequest rejects oversized client IDs", () => {
   const url = new URL("https://atmosphereaccount.com/login/select");
-  url.searchParams.set("client_id", `https://app.example/${"a".repeat(2100)}`);
-  url.searchParams.set("return_uri", "https://app.example/callback");
+  url.searchParams.set(
+    "client_id",
+    `https://app.example.com/${"a".repeat(2100)}`,
+  );
+  url.searchParams.set("return_uri", "https://app.example.com/callback");
   url.searchParams.set("state", "state");
 
   try {
@@ -291,10 +294,32 @@ Deno.test("readLoginRequest rejects oversized client IDs", () => {
   }
 });
 
+Deno.test("readLoginRequest rejects ambiguous security parameters", () => {
+  for (
+    const query of [
+      "client_id=https%3A%2F%2Fone.example&client_id=https%3A%2F%2Ftwo.example&return_uri=https%3A%2F%2Fone.example%2Fcallback&state=state",
+      "client_id=https%3A%2F%2Fapp.example&return_uri=https%3A%2F%2Fapp.example%2Fone&redirect_uri=https%3A%2F%2Fapp.example%2Ftwo&state=state",
+      "client_id=https%3A%2F%2Fapp.example&return_uri=https%3A%2F%2Fapp.example%2Fcallback&state=one&state=two",
+    ]
+  ) {
+    try {
+      readLoginRequest(
+        new URL(`https://atmosphereaccount.com/login/select?${query}`),
+      );
+      throw new Error("Expected readLoginRequest to throw");
+    } catch (err) {
+      if (!(err instanceof LoginRequestError)) throw err;
+    }
+  }
+});
+
 Deno.test("readLoginRequest rejects oversized return URIs", () => {
   const url = new URL("https://atmosphereaccount.com/login/select");
-  url.searchParams.set("client_id", "https://app.example/client.json");
-  url.searchParams.set("return_uri", `https://app.example/${"a".repeat(2100)}`);
+  url.searchParams.set("client_id", "https://app.example.com/client.json");
+  url.searchParams.set(
+    "return_uri",
+    `https://app.example.com/${"a".repeat(2100)}`,
+  );
   url.searchParams.set("state", "state");
 
   try {
@@ -310,7 +335,7 @@ Deno.test("resolveLoginAppForRequest rejects private-network HTTPS client IDs be
   try {
     await resolveLoginAppForRequest({
       clientId: "https://192.168.1.20/client.json",
-      returnUri: "https://app.example/callback",
+      returnUri: "https://app.example.com/callback",
       state: "state",
       scope: null,
     });
@@ -324,7 +349,7 @@ Deno.test("resolveLoginAppForRequest rejects private-network HTTPS client IDs be
 Deno.test("resolveLoginAppForRequest rejects private-network HTTPS return URIs before lookup", async () => {
   try {
     await resolveLoginAppForRequest({
-      clientId: "https://app.example/client.json",
+      clientId: "https://app.example.com/client.json",
       returnUri: "https://127.0.0.1/callback",
       state: "state",
       scope: null,
@@ -339,8 +364,8 @@ Deno.test("resolveLoginAppForRequest rejects private-network HTTPS return URIs b
 Deno.test("resolveLoginAppForRequest normalizes client IDs before registered lookup", async () => {
   let lookedUpClientId: string | null = null;
   const resolved = await resolveLoginAppForRequest({
-    clientId: "https://app.example/client.json#ignored",
-    returnUri: "https://app.example/callback#ignored",
+    clientId: "https://app.example.com/client.json#ignored",
+    returnUri: "https://app.example.com/callback#ignored",
     state: "state",
     scope: null,
   }, {
@@ -348,33 +373,36 @@ Deno.test("resolveLoginAppForRequest normalizes client IDs before registered loo
       lookedUpClientId = clientId;
       return Promise.resolve(app({
         clientId,
-        allowedReturnUris: ["https://app.example/callback"],
+        allowedReturnUris: ["https://app.example.com/callback"],
       }));
     },
   });
 
-  assertEquals(lookedUpClientId, "https://app.example/client.json");
-  assertEquals(resolved.app.clientId, "https://app.example/client.json");
-  assertEquals(resolved.returnUri.toString(), "https://app.example/callback");
+  assertEquals(lookedUpClientId, "https://app.example.com/client.json");
+  assertEquals(resolved.app.clientId, "https://app.example.com/client.json");
+  assertEquals(
+    resolved.returnUri.toString(),
+    "https://app.example.com/callback",
+  );
 });
 
 Deno.test("resolveLoginAppForRequest keeps query strings exact for registered callbacks", async () => {
   const resolved = await resolveLoginAppForRequest({
-    clientId: "https://app.example/client.json",
-    returnUri: "https://app.example/callback?mode=popup#ignored",
+    clientId: "https://app.example.com/client.json",
+    returnUri: "https://app.example.com/callback?mode=popup#ignored",
     state: "state",
     scope: null,
   }, {
     getLoginApp: (clientId) =>
       Promise.resolve(app({
         clientId,
-        allowedReturnUris: ["https://app.example/callback?mode=popup"],
+        allowedReturnUris: ["https://app.example.com/callback?mode=popup"],
       })),
   });
 
   assertEquals(
     resolved.returnUri.toString(),
-    "https://app.example/callback?mode=popup",
+    "https://app.example.com/callback?mode=popup",
   );
 });
 
@@ -409,15 +437,17 @@ Deno.test("resolveLoginAppForRequest uses generic icon for registered reference 
 Deno.test("resolveLoginAppForRequest rejects registered callbacks with mismatched query strings", async () => {
   try {
     await resolveLoginAppForRequest({
-      clientId: "https://app.example/client.json",
-      returnUri: "https://app.example/callback?mode=popup",
+      clientId: "https://app.example.com/client.json",
+      returnUri: "https://app.example.com/callback?mode=popup",
       state: "state",
       scope: null,
     }, {
       getLoginApp: (clientId) =>
         Promise.resolve(app({
           clientId,
-          allowedReturnUris: ["https://app.example/callback?mode=redirect"],
+          allowedReturnUris: [
+            "https://app.example.com/callback?mode=redirect",
+          ],
         })),
     });
     throw new Error("Expected resolveLoginAppForRequest to throw");

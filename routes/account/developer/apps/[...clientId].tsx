@@ -19,12 +19,17 @@ import {
   requestLoginAppTrustReview,
   splitAllowedReturnUris,
 } from "../../../../lib/atmosphere-login.ts";
-import { rejectLargeRequest } from "../../../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
 import {
   type AccountHost,
   listClaimedAccountHostsForOwner,
 } from "../../../../lib/account-hosts.ts";
+import { developerAuthorizationHref } from "../../../../lib/oauth-entry-context.ts";
 
 interface DeveloperAppFormValues {
   appName: string;
@@ -149,7 +154,20 @@ export const handler = define.handlers({
       );
     }
 
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_DEVELOPER_APP_DETAIL_FORM_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid app form",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const action = formText(form, "action");
     const values = valuesFromForm(form, app);
     const reviewNotes = formText(form, "review_notes");
@@ -625,9 +643,7 @@ function clientIdFromParams(value: string | undefined): string {
 }
 
 function redirectToSignin(url: URL): Response {
-  return redirectTo(
-    `/signin?next=${encodeURIComponent(url.pathname + url.search)}`,
-  );
+  return redirectTo(developerAuthorizationHref(url));
 }
 
 function redirectTo(location: string): Response {

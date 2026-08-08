@@ -1,4 +1,10 @@
 import { useSignal } from "@preact/signals";
+import {
+  type ContextualReauthorization,
+  contextualReauthorization,
+  contextualReauthorizationFromApiPayload,
+} from "../lib/reauth-required.ts";
+import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
 
 interface Props {
   disabled: boolean;
@@ -6,6 +12,9 @@ interface Props {
   remoteUri?: string | null;
   issues: string[];
   preview: AtstoreMigrationPreview | null;
+  currentDid: string;
+  currentHandle: string;
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
 }
 
 interface AtstoreMigrationPreview {
@@ -25,7 +34,16 @@ type Message =
   | null;
 
 export default function AtstoreMigrationButton(
-  { disabled, initialUri, remoteUri = null, issues, preview }: Props,
+  {
+    disabled,
+    initialUri,
+    remoteUri = null,
+    issues,
+    preview,
+    currentDid,
+    currentHandle,
+    rememberedAccounts = [],
+  }: Props,
 ) {
   const loading = useSignal(false);
   const uri = useSignal(initialUri);
@@ -41,6 +59,7 @@ export default function AtstoreMigrationButton(
       }
       : null,
   );
+  const reauthorization = useSignal<ContextualReauthorization | null>(null);
   const isDisabled = disabled || loading.value || !!uri.value;
   const state = uri.value
     ? migrationState("active")
@@ -60,6 +79,7 @@ export default function AtstoreMigrationButton(
         headers: { "content-type": "application/json" },
       });
       const body = await res.json().catch(() => ({})) as {
+        ok?: unknown;
         uri?: string;
         communityProfileUri?: string;
         slug?: string;
@@ -67,14 +87,35 @@ export default function AtstoreMigrationButton(
         issues?: string[];
         detail?: string;
         error?: string;
+        reauthUrl?: string;
       };
       if (!res.ok) {
+        const contextual = contextualReauthorizationFromApiPayload(body) ??
+          (res.status === 401
+            ? contextualReauthorization({
+              returnTo: "/apps/manage?migrate=shared-records",
+              action: "app",
+              capabilities: ["app"],
+              targetName: preview?.name ?? "this app",
+            })
+            : null);
+        if (contextual) {
+          reauthorization.value = contextual;
+          return;
+        }
         const detail = body.issues?.join(" ") || body.detail ||
           "Migration failed. Please try again.";
         message.value = { kind: "error", text: detail };
         return;
       }
-      uri.value = body.uri ?? null;
+      if (body.ok !== true || typeof body.uri !== "string" || !body.uri) {
+        message.value = {
+          kind: "error",
+          text: "Migration returned an invalid response. Please try again.",
+        };
+        return;
+      }
+      uri.value = body.uri;
       remoteRecordUri.value = null;
       message.value = {
         kind: "ok",
@@ -195,6 +236,16 @@ export default function AtstoreMigrationButton(
           <summary>Technical details</summary>
           <code>{uri.value}</code>
         </details>
+      )}
+      {reauthorization.value && (
+        <ContextualReauthorizationDialog
+          authorization={reauthorization.value}
+          currentDid={currentDid}
+          currentHandle={currentHandle}
+          rememberedAccounts={rememberedAccounts}
+          restrictToCurrentAccount
+          onClose={() => reauthorization.value = null}
+        />
       )}
     </div>
   );

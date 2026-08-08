@@ -1,5 +1,16 @@
 import { useSignal } from "@preact/signals";
+import { useEffect } from "preact/hooks";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
+import {
+  type ContextualReauthorization,
+  contextualReauthorization,
+  contextualReauthorizationFromApiPayload,
+} from "../lib/reauth-required.ts";
+import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
+import {
+  accountReviewDeleteResumeLocation,
+  accountReviewDeleteReturnPath,
+} from "../lib/app-interaction-reauth.ts";
 
 interface Props {
   reviewId: number;
@@ -8,9 +19,13 @@ interface Props {
   rating: number;
   body: string;
   updatedAt: number;
+  currentDid: string;
+  currentHandle: string;
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
   copy: {
     viewProject: string;
     delete: string;
+    confirmDelete: string;
     deleting: string;
     deleted: string;
     error: string;
@@ -20,8 +35,10 @@ interface Props {
 export default function UserReviewRow(p: Props) {
   const status = useSignal<"idle" | "deleting" | "deleted">("idle");
   const error = useSignal<string | null>(null);
+  const reauthorization = useSignal<ContextualReauthorization | null>(null);
 
   const remove = async () => {
+    if (!globalThis.confirm(p.copy.confirmDelete)) return;
     status.value = "deleting";
     error.value = null;
     try {
@@ -29,13 +46,44 @@ export default function UserReviewRow(p: Props) {
         `/api/registry/reviews/${encodeURIComponent(String(p.reviewId))}`,
         { method: "DELETE" },
       );
-      if (!r.ok) throw new Error(await r.text());
+      const payload = await r.json().catch(() => null) as
+        | { ok?: unknown; error?: string; detail?: string; reauthUrl?: string }
+        | null;
+      if (!r.ok) {
+        const contextual = contextualReauthorizationFromApiPayload(payload) ??
+          (r.status === 401 || payload?.error === "not_authenticated" ||
+              payload?.error === "oauth_session_expired"
+            ? contextualReauthorization({
+              returnTo: accountReviewDeleteReturnPath(p.reviewId),
+              action: "legacy_review_manage",
+              capabilities: ["legacy_review_manage"],
+              targetName: p.targetName,
+            })
+            : null);
+        if (contextual) {
+          status.value = "idle";
+          reauthorization.value = contextual;
+          return;
+        }
+        throw new Error(p.copy.error);
+      }
+      if (payload?.ok !== true) throw new Error(p.copy.error);
       status.value = "deleted";
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : p.copy.error;
+    } catch {
+      error.value = p.copy.error;
       status.value = "idle";
     }
   };
+
+  useEffect(() => {
+    const resume = accountReviewDeleteResumeLocation(
+      globalThis.location.href,
+      p.reviewId,
+    );
+    if (!resume.shouldConfirm) return;
+    globalThis.history.replaceState(null, "", resume.cleanLocation);
+    void remove();
+  }, []);
 
   if (status.value === "deleted") {
     return (
@@ -80,9 +128,22 @@ export default function UserReviewRow(p: Props) {
         </button>
       </div>
       {error.value && (
-        <p class="report-modal-status report-modal-status--error">
-          {p.copy.error}: {error.value}
+        <p
+          class="report-modal-status report-modal-status--error"
+          role="alert"
+        >
+          {error.value}
         </p>
+      )}
+      {reauthorization.value && (
+        <ContextualReauthorizationDialog
+          authorization={reauthorization.value}
+          currentDid={p.currentDid}
+          currentHandle={p.currentHandle}
+          rememberedAccounts={p.rememberedAccounts}
+          restrictToCurrentAccount
+          onClose={() => reauthorization.value = null}
+        />
       )}
     </article>
   );

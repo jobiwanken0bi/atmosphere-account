@@ -18,22 +18,39 @@ import {
   startHostAccountCreation,
 } from "../../lib/oauth.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
-import { isSafeRelativePath } from "../../lib/security.ts";
+import {
+  IDENTITY_OAUTH_SCOPE,
+  normalizeOAuthCapabilities,
+} from "../../lib/oauth-scopes.ts";
+import {
+  isOAuthAction,
+  isOAuthActionCapabilityRequest,
+  type OAuthAction,
+  safeOAuthTargetName,
+} from "../../lib/oauth-action.ts";
+import { oauthActionAllowsAccountCreation } from "../../lib/oauth-action-copy.ts";
+import {
+  InvalidOAuthRequestInputError,
+  optionalEnum,
+  optionalSafeRelativePath,
+  repeatedSearchValues,
+  singleSearchValue,
+} from "../../lib/oauth-request-input.ts";
+import { readLoginRequest } from "../../lib/atmosphere-login.ts";
+import { buildOAuthFlowBindingCookie } from "../../lib/oauth-flow-binding.ts";
 
 const MAX_HOST_LENGTH = 253;
-
-function safeNext(raw: string | null): string | null {
-  return isSafeRelativePath(raw) ? raw : null;
-}
-
-function safeIntent(raw: string | null): SignInIntent | null {
-  return raw === "user" || raw === "project" ? raw : null;
-}
+const MAX_CREATE_QUERY_BYTES = 16_384;
 
 function isLoginSelectionReturn(path: string | null): boolean {
   if (!path) return false;
   try {
-    return new URL(path, "https://local.invalid").pathname === "/login/select";
+    const url = new URL(path, "https://local.invalid");
+    if (
+      url.origin !== "https://local.invalid" || url.pathname !== "/login/select"
+    ) return false;
+    readLoginRequest(url);
+    return true;
   } catch {
     return false;
   }
@@ -52,66 +69,203 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   });
   if (limited) return limited;
 
-  const hostName = (ctx.url.searchParams.get("host") ?? "").trim()
-    .toLowerCase();
-  const returnTo = safeNext(ctx.url.searchParams.get("next"));
-  const intent = safeIntent(ctx.url.searchParams.get("intent"));
-  if (!hostName || hostName.length > MAX_HOST_LENGTH) {
-    return new Response("missing or invalid account host", { status: 400 });
+  if (ctx.url.search.length > MAX_CREATE_QUERY_BYTES) {
+    return publicAccountCreationError(
+      "Account-creation link is too large.",
+      414,
+    );
   }
+  let hostName: string;
+  let returnTo: string | null;
+  let intent: SignInIntent | null;
+  let capabilities;
+  let action;
+  let targetName;
+  let continuation: "login_selection" | null;
+  try {
+    hostName = (singleSearchValue(ctx.url.searchParams, "host") ?? "")
+      .trim().toLowerCase();
+    returnTo = optionalSafeRelativePath(
+      singleSearchValue(ctx.url.searchParams, "next"),
+    );
+    intent = optionalEnum(
+      singleSearchValue(ctx.url.searchParams, "intent"),
+      [
+        "user",
+        "project",
+      ] as const,
+    );
+    capabilities = normalizeOAuthCapabilities(
+      repeatedSearchValues(ctx.url.searchParams, "capability"),
+    );
+    const rawAction = singleSearchValue(ctx.url.searchParams, "action");
+    if (rawAction !== null && !isOAuthAction(rawAction)) {
+      throw new InvalidOAuthRequestInputError();
+    }
+    action = rawAction ?? undefined;
+    targetName = safeOAuthTargetName(
+      singleSearchValue(ctx.url.searchParams, "name"),
+    );
+    continuation = optionalEnum(
+      singleSearchValue(ctx.url.searchParams, "continuation"),
+      ["login_selection"] as const,
+    );
+  } catch {
+    return publicAccountCreationError(
+      "This account-creation link is invalid. Return to Atmosphere and try again.",
+      400,
+    );
+  }
+  if (!hostName || hostName.length > MAX_HOST_LENGTH) {
+    return publicAccountCreationError("Choose an available account host.", 400);
+  }
+  if (!capabilities) {
+    return publicAccountCreationError(
+      "This account-creation link is invalid. Return to Atmosphere and try again.",
+      400,
+    );
+  }
+  if (!isOAuthActionCapabilityRequest(action, capabilities)) {
+    return publicAccountCreationError(
+      "This account-creation link is invalid. Return to Atmosphere and try again.",
+      400,
+    );
+  }
+  const normalizedAction = enforceDirectAccountCreationAction(action);
+  if (normalizedAction instanceof Response) return normalizedAction;
 
   const host = await getAccountHost(hostName).catch(() => null);
   if (
     !host || !host.serviceEndpoint || !host.signupUrl ||
     !isCreateAccountHostEligible(host)
   ) {
-    return new Response("account host is not available for signup", {
-      status: 404,
-    });
+    return publicAccountCreationError(
+      "This account host isn’t available for signup. Choose another host.",
+      404,
+    );
   }
 
   const oauth = oauthClientConfigForRequest(ctx.url, ctx.req.headers);
   const loginSelectionReturn = isLoginSelectionReturn(returnTo);
+  if (continuation === "login_selection" && !loginSelectionReturn) {
+    return publicAccountCreationError(
+      "This account-creation link is invalid. Return to the app and try again.",
+      400,
+    );
+  }
+  if (
+    returnTo &&
+    new URL(returnTo, "https://local.invalid").pathname === "/login/select" &&
+    !loginSelectionReturn
+  ) {
+    return publicAccountCreationError(
+      "This account-creation link is invalid. Return to the app and try again.",
+      400,
+    );
+  }
+  if (
+    loginSelectionReturn &&
+    (intent !== null || capabilities.length !== 1 ||
+      capabilities[0] !== "identity" ||
+      normalizedAction !== "account")
+  ) {
+    return publicAccountCreationError(
+      "This account-creation link is invalid. Return to the app and try again.",
+      400,
+    );
+  }
   const oauthOptions = {
     clientId: oauth.clientId,
     redirectUri: oauth.redirectUri,
-    scope: loginSelectionReturn ? "atproto" : undefined,
+    action: normalizedAction,
+    targetName,
+    ...(loginSelectionReturn
+      ? {
+        scope: IDENTITY_OAUTH_SCOPE,
+        capabilities,
+        persistSession: false,
+      }
+      : { capabilities }),
   };
   if (!isOAuthConfigured(oauthOptions)) {
-    return new Response("OAuth is not configured", { status: 503 });
+    return publicAccountCreationError(
+      "Account creation isn’t available right now. Try again shortly.",
+      503,
+    );
   }
 
   try {
-    const { redirectUrl } = await startHostAccountCreation(
-      host.serviceEndpoint,
-      returnTo,
-      intent,
-      oauthOptions,
-      loginSelectionReturn ? "login_selection" : null,
+    const { redirectUrl, state, browserBinding } =
+      await startHostAccountCreation(
+        host.serviceEndpoint,
+        returnTo,
+        intent,
+        oauthOptions,
+        loginSelectionReturn ? continuation ?? "login_selection" : null,
+      );
+    const headers = new Headers({
+      location: redirectUrl,
+      "cache-control": "no-store",
+    });
+    headers.append(
+      "set-cookie",
+      buildOAuthFlowBindingCookie(state, browserBinding),
     );
     return new Response(null, {
       status: 303,
-      headers: {
-        location: redirectUrl,
-        "cache-control": "no-store",
-      },
+      headers,
     });
   } catch (err) {
     if (err instanceof OAuthAccountCreationUnsupportedError) {
-      return new Response(
-        "This host no longer supports direct OAuth account creation.",
-        {
-          status: 409,
-          headers: { "cache-control": "no-store" },
-        },
+      return publicAccountCreationError(
+        "This account host can’t create an account here right now. Choose another host.",
+        409,
       );
     }
-    const message = err instanceof Error ? err.message : String(err);
-    return new Response(`account creation failed: ${message}`, { status: 400 });
+    console.warn("[oauth] account creation start failed:", err);
+    return oauthAccountCreationFailureResponse();
   }
 }
 
 export const handler = define.handlers({ GET: handle });
+
+export function oauthAccountCreationFailureResponse(): Response {
+  return publicAccountCreationError(
+    "Couldn’t create the account with this host. Choose another host or try again.",
+    400,
+  );
+}
+
+/**
+ * `/signin` hides account creation for actions that can only be completed by
+ * an existing owner. Enforce that same policy at the direct endpoint so a
+ * crafted `/oauth/create` URL cannot bypass the chooser. Missing action is the
+ * normal account flow and therefore normalizes to `account`.
+ */
+export function enforceDirectAccountCreationAction(
+  action: OAuthAction | undefined,
+): OAuthAction | Response {
+  const normalized = action ?? "account";
+  return oauthActionAllowsAccountCreation(normalized)
+    ? normalized
+    : publicAccountCreationError(
+      "This action requires an existing account. Sign in instead.",
+      400,
+    );
+}
+
+function publicAccountCreationError(
+  message: string,
+  status: number,
+): Response {
+  return new Response(message, {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 function appviewUnavailable(scope: string, err: unknown): Response {
   console.error(`[appview] ${scope} proxy failed:`, err);

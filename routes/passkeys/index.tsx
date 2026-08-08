@@ -1,13 +1,20 @@
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
+import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
 import PasskeyManager from "../../islands/PasskeyManager.tsx";
 import { isLoginRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { IS_DEV, loginOrigin } from "../../lib/env.ts";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import {
+  PASSKEY_OAUTH_ACTION,
+  PASSKEY_OAUTH_CAPABILITIES,
+} from "../../lib/passkey-authorization.ts";
 import { define, type State } from "../../utils.ts";
 
 interface PasskeyPageProps {
   user: State["user"];
   initialHandle?: string;
   returnTo: string;
+  rememberedAccounts: Array<{ did: string; handle: string }>;
 }
 
 export const handler = define.handlers({
@@ -34,6 +41,7 @@ export const handler = define.handlers({
         user={ctx.state.user}
         initialHandle={initialHandle}
         returnTo={returnTo}
+        rememberedAccounts={ctx.state.rememberedAccounts ?? []}
       />,
       { headers: { "cache-control": "no-store" } },
     );
@@ -41,7 +49,7 @@ export const handler = define.handlers({
 });
 
 function PasskeyPage(
-  { user, initialHandle, returnTo }: PasskeyPageProps,
+  { user, initialHandle, returnTo, rememberedAccounts }: PasskeyPageProps,
 ) {
   return (
     <div id="page-top" class="login-picker-page passkey-page">
@@ -90,12 +98,13 @@ function PasskeyPage(
                 <SignedOutPasskeyState
                   initialHandle={initialHandle}
                   returnTo={returnTo}
+                  rememberedAccounts={rememberedAccounts}
                 />
               )}
           </div>
           <p class="passkey-page-footnote">
-            Passkeys are scoped to Atmosphere Login. Your account remains hosted
-            by your chosen ATProto provider.
+            Passkeys work with Atmosphere Login. Your account still lives with
+            your account host.
           </p>
         </div>
       </section>
@@ -103,12 +112,14 @@ function PasskeyPage(
   );
 }
 
-function SignedOutPasskeyState(
-  { initialHandle, returnTo }: {
+export function SignedOutPasskeyState(
+  { initialHandle, returnTo, rememberedAccounts = [] }: {
     initialHandle?: string;
     returnTo: string;
+    rememberedAccounts?: Array<{ did: string; handle: string }>;
   },
 ) {
+  const href = signedOutPasskeySigninHref(initialHandle, returnTo);
   return (
     <div class="passkey-signed-out">
       <span class="passkey-signed-out-icon" aria-hidden="true">
@@ -121,28 +132,37 @@ function SignedOutPasskeyState(
           confirm which Atmosphere account you control.
         </p>
       </div>
-      <form method="post" action="/oauth/login" class="passkey-relink-form">
-        <input type="hidden" name="next" value={returnTo} />
-        <label for="passkey-account-handle">Atmosphere handle</label>
-        <input
-          id="passkey-account-handle"
-          name="handle"
-          type="text"
-          inputMode="email"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellcheck={false}
-          autoComplete="username"
-          required
-          value={initialHandle ?? ""}
-          placeholder="your-handle.example"
+      <div class="passkey-signed-out-action">
+        <ContextualSignInLink
+          href={href}
+          returnTo={returnTo}
+          action={PASSKEY_OAUTH_ACTION}
+          capabilities={PASSKEY_OAUTH_CAPABILITIES}
+          targetName={initialHandle ? `@${initialHandle}` : ""}
+          label="Verify with account host"
+          className="passkey-primary-button"
+          rememberedAccounts={rememberedAccounts}
+          initialHandle={initialHandle}
         />
-        <button type="submit" class="passkey-primary-button">
-          Verify with account host
-        </button>
-      </form>
+      </div>
     </div>
   );
+}
+
+export function signedOutPasskeySigninHref(
+  initialHandle: string | undefined,
+  returnTo: string,
+): string {
+  const href = oauthSigninUrl({
+    next: returnTo,
+    action: PASSKEY_OAUTH_ACTION,
+    capabilities: PASSKEY_OAUTH_CAPABILITIES,
+    name: initialHandle ? `@${initialHandle}` : undefined,
+  });
+  if (!initialHandle) return href;
+  const url = new URL(href, "https://atmosphere.invalid");
+  url.searchParams.set("handle", initialHandle);
+  return `${url.pathname}?${url.searchParams.toString()}`;
 }
 
 function safeHandle(raw: string | null): string | undefined {

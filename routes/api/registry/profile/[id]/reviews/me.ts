@@ -6,8 +6,14 @@
 import { define } from "../../../../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../../../../lib/appview-client.ts";
 import { withRateLimit } from "../../../../../../lib/rate-limit.ts";
-import { loadSession } from "../../../../../../lib/oauth.ts";
-import { deleteReviewRecord } from "../../../../../../lib/pds.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+} from "../../../../../../lib/oauth.ts";
+import {
+  deleteReviewRecord,
+  isPdsScopeMissingError,
+} from "../../../../../../lib/pds.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
@@ -17,6 +23,8 @@ import {
   getOwnReview,
   getReviewSummary,
 } from "../../../../../../lib/reviews.ts";
+import { hasOAuthCapabilities } from "../../../../../../lib/oauth-scopes.ts";
+import { oauthReauthorizationUrl } from "../../../../../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   DELETE: withRateLimit(async (ctx) => {
@@ -33,8 +41,15 @@ export const handler = define.handlers({
 
     const existing = await getOwnReview(target.did, user.did);
     if (existing?.reviewRkey) {
-      const session = await loadSession(user.did);
-      if (!session) return jsonError(401, "oauth_session_expired");
+      const session = await getValidSession(user.did);
+      if (
+        !session ||
+        !hasOAuthCapabilities(grantedScopeForSession(session), [
+          "legacy_review_manage",
+        ])
+      ) {
+        return reauthorizationRequired(user.handle, target.handle);
+      }
       const deleted = await deleteReviewRecord(
         user.did,
         session.pdsUrl,
@@ -43,6 +58,9 @@ export const handler = define.handlers({
         err instanceof Error ? err : new Error(String(err))
       );
       if (deleted) {
+        if (isPdsScopeMissingError(deleted)) {
+          return reauthorizationRequired(user.handle, target.handle);
+        }
         return jsonResponse(502, {
           error: "delete_record_failed",
           detail: deleted.message,
@@ -72,6 +90,20 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function reauthorizationRequired(handle: string, target: string): Response {
+  const next = `/apps/${encodeURIComponent(target)}?review=compose`;
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: oauthReauthorizationUrl({
+      next,
+      action: "legacy_review_manage",
+      capabilities: ["legacy_review_manage"],
+      name: target,
+    }),
+    handle,
+  });
 }
 
 function appviewProxyError(err: unknown): Response {

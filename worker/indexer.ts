@@ -117,6 +117,10 @@ const CURSOR_PERSIST_INTERVAL_MS = 5_000;
 const LEASE_NAME = "jetstream-indexer";
 const LEASE_TTL_MS = 45_000;
 const LEASE_RENEW_INTERVAL_MS = 15_000;
+const DEFAULT_MAX_PENDING_EVENTS = 1_000;
+const MAX_PENDING_EVENTS = jetstreamMaxPendingEvents(
+  Deno.env.get("JETSTREAM_MAX_PENDING_EVENTS"),
+);
 
 class LeaseUnavailableError extends Error {
   constructor() {
@@ -158,10 +162,105 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   }
 }
 
-// Lightweight in-memory cache so we don't re-resolve every author's
-// DID document for every event.
-const pdsCache = new Map<string, { pdsUrl: string; expiresAt: number }>();
+interface IndexerIdentity {
+  pdsUrl: string;
+  handle: string | null;
+}
+
+interface IndexerIdentityCacheOptions {
+  ttlMs: number;
+  maxEntries: number;
+  now?: () => number;
+}
+
+/**
+ * Small LRU cache for DID documents used by the serial indexer.
+ *
+ * This deliberately does not serve an expired identity when refresh fails.
+ * A stale PDS endpoint is not merely stale presentation data: after an account
+ * migration it could make us read records from a host the DID no longer names.
+ */
+export class IndexerIdentityCache {
+  private readonly values = new Map<
+    string,
+    { value: IndexerIdentity; expiresAt: number }
+  >();
+  private readonly inFlight = new Map<string, Promise<IndexerIdentity>>();
+  private readonly now: () => number;
+
+  constructor(private readonly options: IndexerIdentityCacheOptions) {
+    this.now = options.now ?? (() => Date.now());
+  }
+
+  get(
+    did: string,
+    load: () => Promise<IndexerIdentity>,
+  ): Promise<IndexerIdentity> {
+    const cached = this.values.get(did);
+    if (cached && cached.expiresAt > this.now()) {
+      this.values.delete(did);
+      this.values.set(did, cached);
+      return Promise.resolve(cached.value);
+    }
+    if (cached) this.values.delete(did);
+
+    const existingLoad = this.inFlight.get(did);
+    if (existingLoad) return existingLoad;
+
+    const refresh = load().then((value) => {
+      this.set(did, value);
+      return value;
+    }).finally(() => {
+      if (this.inFlight.get(did) === refresh) this.inFlight.delete(did);
+    });
+    this.inFlight.set(did, refresh);
+    return refresh;
+  }
+
+  private set(did: string, value: IndexerIdentity): void {
+    const now = this.now();
+    for (const [key, entry] of this.values) {
+      if (entry.expiresAt <= now) this.values.delete(key);
+    }
+    if (
+      !this.values.has(did) &&
+      this.values.size >= this.options.maxEntries
+    ) {
+      const oldest = this.values.keys().next().value;
+      if (oldest) this.values.delete(oldest);
+    }
+    this.values.delete(did);
+    this.values.set(did, {
+      value,
+      expiresAt: now + this.options.ttlMs,
+    });
+  }
+}
+
+// Resolving a DID document yields both values used by the indexer. Keeping them
+// together avoids a second PLC/did:web request for profile and host events.
 const PDS_CACHE_TTL_MS = 30 * 60 * 1000;
+const identityCache = new IndexerIdentityCache({
+  ttlMs: PDS_CACHE_TTL_MS,
+  maxEntries: 4_096,
+});
+
+export function jetstreamMaxPendingEvents(
+  raw: string | null | undefined,
+): number {
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    return DEFAULT_MAX_PENDING_EVENTS;
+  }
+  return Math.min(parsed, 10_000);
+}
+
+export function jetstreamBacklogIsFull(
+  pendingEvents: number,
+  maxPendingEvents: number,
+): boolean {
+  return pendingEvents >= maxPendingEvents;
+}
 
 function handleFromDidDocument(
   doc: { alsoKnownAs?: string[] },
@@ -173,22 +272,29 @@ function handleFromDidDocument(
 async function resolvePdsForDid(
   did: string,
 ): Promise<string> {
-  const cached = pdsCache.get(did);
-  if (cached && cached.expiresAt > Date.now()) return cached.pdsUrl;
-  const doc = await resolveDidDocument(did);
-  const pdsUrl = findPdsEndpoint(doc);
-  pdsCache.set(did, { pdsUrl, expiresAt: Date.now() + PDS_CACHE_TTL_MS });
-  return pdsUrl;
+  return (await resolveIndexerIdentity(did)).pdsUrl;
 }
 
 /** Best-effort handle lookup from the DID document's alsoKnownAs. */
 async function resolveHandleFromDoc(did: string): Promise<string> {
   try {
-    const doc = await resolveDidDocument(did);
-    return handleFromDidDocument(doc) ?? did;
+    return (await resolveIndexerIdentity(did)).handle ?? did;
   } catch {
     return did;
   }
+}
+
+async function resolveIndexerIdentity(did: string): Promise<{
+  pdsUrl: string;
+  handle: string | null;
+}> {
+  return await identityCache.get(did, async () => {
+    const doc = await resolveDidDocument(did);
+    return {
+      pdsUrl: findPdsEndpoint(doc),
+      handle: handleFromDidDocument(doc),
+    };
+  });
 }
 
 async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
@@ -627,11 +733,12 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   let processedCursor = cursor ?? 0;
   let renewTimer: number | undefined;
   let connectedAt: number | null = null;
+  let processingQueue = Promise.resolve();
 
   try {
     return await new Promise<never>((_, reject) => {
       let stopped = false;
-      let queue = Promise.resolve();
+      let pendingEvents = 0;
 
       const stopWithError = (err: unknown) => {
         if (stopped) return;
@@ -656,7 +763,17 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
       });
       ws.addEventListener("message", (msg) => {
         if (stopped) return;
-        queue = queue.then(async () => {
+        if (jetstreamBacklogIsFull(pendingEvents, MAX_PENDING_EVENTS)) {
+          stopWithError(
+            new Error(
+              `Jetstream event backlog exceeded ${MAX_PENDING_EVENTS}; reconnecting from persisted cursor`,
+            ),
+          );
+          return;
+        }
+        pendingEvents++;
+        processingQueue = processingQueue.then(async () => {
+          if (stopped) return;
           const event = JSON.parse(String(msg.data)) as JetstreamEvent;
           await processEvent(event);
           if (event.time_us > processedCursor) processedCursor = event.time_us;
@@ -669,6 +786,8 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
         }).catch((err) => {
           console.error("[indexer] message error:", err);
           stopWithError(err);
+        }).finally(() => {
+          pendingEvents--;
         });
       });
       ws.addEventListener("close", (ev) => {
@@ -697,6 +816,9 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   } finally {
     if (renewTimer !== undefined) clearInterval(renewTimer);
     if (activeSocket === ws) activeSocket = null;
+    // Do not release the distributed lease while an event that already began
+    // may still be writing. Queued events become no-ops once `stopped` is set.
+    await processingQueue.catch(() => {});
     await releaseWorkerLease(LEASE_NAME, workerId).catch((err) => {
       console.warn("[indexer] lease release failed:", err);
     });

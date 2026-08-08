@@ -85,6 +85,14 @@ Deno.test("published collection search sanitizes and caps browse results", () =>
   assertEquals(parsed?.map((item) => item.id), [
     "community.lexicon.calendar.event",
   ]);
+  assertEquals(
+    parseLexiconGardenBrowse({
+      lexicons: [
+        "community.lexicon.calendar.event",
+      ],
+    }, 0),
+    [],
+  );
 });
 
 Deno.test("published collection search preserves case-sensitive names", () => {
@@ -113,7 +121,10 @@ Deno.test("published collection search uses record-only autocomplete", async () 
             url: "/lexicon/example/event",
           }],
         }),
-        { status: 200 },
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
       ),
     );
   }) as typeof fetch;
@@ -141,7 +152,10 @@ Deno.test("published collection search falls back to documented browsing", async
         JSON.stringify({
           lexicons: ["community.lexicon.calendar.rsvp"],
         }),
-        { status: 200 },
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
       ),
     );
   }) as typeof fetch;
@@ -178,7 +192,10 @@ Deno.test("published browse fallback filters before applying the result cap", as
             "app.bsky.feed.post",
           ],
         }),
-        { status: 200 },
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
       ),
     );
   }) as typeof fetch;
@@ -196,6 +213,7 @@ Deno.test("published search cache keeps case-sensitive queries separate", async 
     return Promise.resolve(
       new Response(JSON.stringify({ suggestions: [] }), {
         status: 200,
+        headers: { "content-type": "application/json" },
       }),
     );
   }) as typeof fetch;
@@ -203,4 +221,29 @@ Deno.test("published search cache keeps case-sensitive queries separate", async 
   await searchPublishedCollections("fooBar", { fetcher, now: 123_456 });
   await searchPublishedCollections("foobar", { fetcher, now: 123_456 });
   assertEquals(requestCount, 2);
+});
+
+Deno.test("published collection search rejects redirects and non-JSON bodies", async () => {
+  const redirects: Array<RequestRedirect | undefined> = [];
+  let calls = 0;
+  const result = await queryLexiconGarden(
+    "app.bsky",
+    ((_input, init) => {
+      redirects.push(init?.redirect);
+      calls++;
+      return Promise.resolve(
+        calls === 1
+          ? new Response(null, {
+            status: 302,
+            headers: { location: "http://127.0.0.1/private" },
+          })
+          : new Response('{"lexicons":[]}', {
+            headers: { "content-type": "text/html" },
+          }),
+      );
+    }) as typeof fetch,
+  );
+
+  assertEquals(redirects, ["error", "error"]);
+  assertEquals(result, { suggestions: [], unavailable: true });
 });

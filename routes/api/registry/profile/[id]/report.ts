@@ -26,7 +26,11 @@ import {
   REPORT_REASONS,
   type ReportReason,
 } from "../../../../../lib/reports.ts";
-import { rejectLargeRequest } from "../../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../../lib/security.ts";
 
 interface ReportPayload {
   reason?: unknown;
@@ -49,9 +53,20 @@ export const handler = define.handlers({
       : await getProfileByHandle(raw.toLowerCase()).catch(() => null);
     if (!target) return jsonError(404, "not_found");
 
-    const body = await ctx.req.json().catch(() => null) as
-      | ReportPayload
-      | null;
+    let body: ReportPayload | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_REPORT_REQUEST_BYTES,
+      ) as ReportPayload | null;
+    } catch (error) {
+      return jsonError(
+        error instanceof RequestBodyTooLargeError ? 413 : 400,
+        error instanceof RequestBodyTooLargeError
+          ? "request_body_too_large"
+          : "invalid_body",
+      );
+    }
     if (!body) return jsonError(400, "invalid_body");
 
     const reason = typeof body.reason === "string" ? body.reason : "";

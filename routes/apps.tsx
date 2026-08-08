@@ -5,6 +5,7 @@ import StoreHero from "../components/explore/StoreHero.tsx";
 import AppBrowseControls from "../islands/AppBrowseControls.tsx";
 import {
   AppCategoryTiles,
+  AppDirectoryAvailability,
   AppDiscoverySplit,
   AppSpotlight,
 } from "../components/explore/AppDirectoryShowcase.tsx";
@@ -12,10 +13,14 @@ import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import type { AppSearchResult } from "../lib/app-directory.ts";
 import { loadAppsHomeFromAppview } from "../lib/appview-client.ts";
 import { EdgeStaleCache } from "../lib/edge-cache.ts";
+import ContextualSignInLink from "../islands/ContextualSignInLink.tsx";
+import { oauthSigninUrl } from "../lib/oauth-action.ts";
+import { getSessionForCapabilities } from "../lib/oauth.ts";
 
 interface ExploreData {
   result: AppSearchResult;
   account: ReturnType<typeof buildAccountMenuProps>;
+  appAuthorized: boolean;
 }
 
 const APPS_HOME_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -40,9 +45,18 @@ export const handler = define.handlers({
       emptyAppsHomeResult()
     );
 
+    const account = buildAccountMenuProps(ctx.state);
+    const appAuthorized = account.user
+      ? Boolean(
+        await getSessionForCapabilities(account.user.did, ["app"], {
+          quiet: true,
+        }).catch(() => null),
+      )
+      : false;
     const data: ExploreData = {
       result,
-      account: buildAccountMenuProps(ctx.state),
+      account,
+      appAuthorized,
     };
     return ctx.render(<ExplorePage data={data} locale={ctx.state.locale} />);
   },
@@ -106,14 +120,20 @@ function ExplorePage({ data, locale: _locale }: ExplorePageProps) {
           trending={data.result.trending}
           fresh={data.result.fresh}
         />
+        <AppDirectoryAvailability
+          hasCards={data.result.featured.length > 0 ||
+            data.result.trending.length > 0 || data.result.fresh.length > 0}
+        />
 
         <section class="section app-directory-bottom-cta">
           <div class="container">
             <DirectoryRegisterCta
-              href="/apps/create?intent=project"
+              href="/apps/manage?new=1"
               label="Register an app"
               secondaryHref="/apps/all"
               secondaryLabel="See all apps"
+              account={data.account}
+              appAuthorized={data.appAuthorized}
             />
           </div>
         </section>
@@ -159,11 +179,13 @@ function redirectBrowseAllUrl(url: URL): Response {
 }
 
 function DirectoryRegisterCta(
-  { href, label, secondaryHref, secondaryLabel }: {
+  { href, label, secondaryHref, secondaryLabel, account, appAuthorized }: {
     href: string;
     label: string;
     secondaryHref?: string;
     secondaryLabel?: string;
+    account: ReturnType<typeof buildAccountMenuProps>;
+    appAuthorized: boolean;
   },
 ) {
   return (
@@ -176,12 +198,40 @@ function DirectoryRegisterCta(
           <span>{secondaryLabel}</span>
         </a>
       )}
-      <a href={href} class="directory-register-button">
-        <span class="directory-register-button-icon" aria-hidden="true">
-          +
-        </span>
-        <span>{label}</span>
-      </a>
+      {account.user && appAuthorized
+        ? (
+          <a href={href} class="directory-register-button">
+            <span class="directory-register-button-icon" aria-hidden="true">
+              +
+            </span>
+            <span>{label}</span>
+          </a>
+        )
+        : (
+          <ContextualSignInLink
+            href={appRegistrationSigninHref()}
+            returnTo="/apps/manage?new=1"
+            intent="project"
+            action="app"
+            capabilities={["app"]}
+            targetName="your app"
+            label={label}
+            className="directory-register-button"
+            leadingPlus
+            rememberedAccounts={account.rememberedAccounts}
+            initialHandle={account.user?.handle}
+          />
+        )}
     </div>
   );
+}
+
+export function appRegistrationSigninHref(): string {
+  return oauthSigninUrl({
+    next: "/apps/manage?new=1",
+    intent: "project",
+    action: "app",
+    capabilities: ["app"],
+    name: "your app",
+  });
 }

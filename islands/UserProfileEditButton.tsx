@@ -1,8 +1,19 @@
 import { useSignal } from "@preact/signals";
+import { useEffect, useId } from "preact/hooks";
 import { createPortal } from "preact/compat";
-import UserProfileEditForm from "./UserProfileEditForm.tsx";
+import { useDialog } from "../lib/use-dialog.ts";
+import UserProfileEditForm, {
+  userProfilePendingKey,
+  userProfileResumeMarker,
+} from "./UserProfileEditForm.tsx";
+import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
+import { clearPendingBrowserAction } from "../lib/pending-browser-action.ts";
+import { userProfileResumeLocation } from "../lib/user-profile-resume.ts";
 
 interface Props {
+  did: string;
+  currentHandle: string;
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
   displayName: string;
   bio: string;
   avatarUrl: string | null;
@@ -24,29 +35,85 @@ interface Props {
 
 export default function UserProfileEditButton(props: Props) {
   const open = useSignal(false);
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const titleId = `account-profile-edit-title-${id}`;
+  const descriptionId = `account-profile-edit-description-${id}`;
+
+  useEffect(() => {
+    const cancellation = oauthCancellationLocation(
+      globalThis.location.href,
+      "user-profile",
+    );
+    if (cancellation.wasCancelled) {
+      globalThis.history.replaceState(null, "", cancellation.cleanLocation);
+      try {
+        sessionStorage.removeItem(userProfileResumeMarker(props.did));
+      } catch {
+        // Storage restrictions must not break the account page.
+      }
+      void clearPendingBrowserAction(userProfilePendingKey(props.did)).catch(
+        () => {},
+      );
+      return;
+    }
+    const resume = userProfileResumeLocation(
+      globalThis.location.href,
+      props.did,
+    );
+    if (resume.hadMarker) {
+      globalThis.history.replaceState(null, "", resume.cleanLocation);
+    }
+    let armed = false;
+    try {
+      armed = sessionStorage.getItem(userProfileResumeMarker(props.did)) ===
+        props.did;
+    } catch {
+      // Resume is optional in browsers that block session storage.
+    }
+    if (resume.shouldResume && armed) {
+      open.value = true;
+    } else if (resume.hadMarker || armed) {
+      try {
+        sessionStorage.removeItem(userProfileResumeMarker(props.did));
+      } catch {
+        // Keep clearing the durable draft below.
+      }
+      void clearPendingBrowserAction(userProfilePendingKey(props.did)).catch(
+        () => {},
+      );
+    }
+  }, []);
 
   const close = () => {
     open.value = false;
   };
+  const dialogRef = useDialog<HTMLDivElement>(open.value, close);
 
   const modal = (
     <div
       class="modal-backdrop account-profile-edit-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="account-profile-edit-title"
       onClick={(event) => {
         if (event.target === event.currentTarget) close();
       }}
     >
-      <div class="modal-card account-profile-edit-modal">
+      <div
+        class="modal-card account-profile-edit-modal"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        tabIndex={-1}
+      >
         <header class="modal-header account-profile-edit-header">
           <div>
             <p class="text-eyebrow">Profile</p>
-            <h2 id="account-profile-edit-title" class="modal-title">
+            <h2 id={titleId} class="modal-title">
               {props.title}
             </h2>
-            <p class="modal-body-text">{props.description}</p>
+            <p id={descriptionId} class="modal-body-text">
+              {props.description}
+            </p>
           </div>
           <button
             type="button"
@@ -59,6 +126,9 @@ export default function UserProfileEditButton(props: Props) {
         </header>
         <div class="account-profile-edit-body">
           <UserProfileEditForm
+            did={props.did}
+            currentHandle={props.currentHandle}
+            rememberedAccounts={props.rememberedAccounts}
             displayName={props.displayName}
             bio={props.bio}
             avatarUrl={props.avatarUrl}
@@ -90,6 +160,8 @@ export default function UserProfileEditButton(props: Props) {
       <button
         type="button"
         class="account-dashboard-button account-dashboard-button--primary"
+        aria-haspopup="dialog"
+        aria-expanded={open.value ? "true" : "false"}
         onClick={() => open.value = true}
       >
         <svg

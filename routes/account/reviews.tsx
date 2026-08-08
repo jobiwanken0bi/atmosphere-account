@@ -55,6 +55,7 @@ export const handler = define.handlers({
     return ctx.render(
       <AccountReviewsPage
         account={buildAccountMenuProps(ctx.state)}
+        did={user.did}
         handle={user.handle}
         reviews={enriched}
         t={getMessages(ctx.state.locale)}
@@ -76,6 +77,7 @@ function appviewUnavailable(scope: string, err: unknown): Response {
 
 interface AccountReviewsPageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
+  did: string;
   handle: string;
   reviews: ReviewWithTarget[];
   // deno-lint-ignore no-explicit-any
@@ -83,7 +85,7 @@ interface AccountReviewsPageProps {
 }
 
 function AccountReviewsPage(
-  { account, handle, reviews, t }: AccountReviewsPageProps,
+  { account, did, handle, reviews, t }: AccountReviewsPageProps,
 ) {
   const copy = t.accountReviews;
   return (
@@ -123,9 +125,13 @@ function AccountReviewsPage(
                       rating={review.rating}
                       body={review.body}
                       updatedAt={review.updatedAt}
+                      currentDid={did}
+                      currentHandle={handle}
+                      rememberedAccounts={account.rememberedAccounts}
                       copy={{
                         viewProject: copy.viewProject,
                         delete: copy.delete,
+                        confirmDelete: copy.confirmDelete,
                         deleting: copy.deleting,
                         deleted: copy.deleted,
                         error: copy.error,

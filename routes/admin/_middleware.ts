@@ -1,8 +1,8 @@
 /**
  * Gate every /admin/* route on the ADMIN_DIDS allowlist.
  *
- * Non-admin and signed-out callers see the same 404 we'd render for a
- * truly missing path, so we don't leak that the section exists.
+ * Signed-out callers first use the contextual identity picker. Signed-in
+ * non-admin callers see the same 404 we'd render for a truly missing path.
  *
  * `/api/admin/*` lives under `/api`, not `/admin`, so it goes through
  * its own JSON-shaped gate (`requireAdminApi`).
@@ -10,6 +10,7 @@
 import { define } from "../../utils.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
+import { adminAuthorizationHref } from "../../lib/oauth-entry-context.ts";
 
 export const handler = define.middleware(async (ctx) => {
   const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
@@ -20,10 +21,9 @@ export const handler = define.middleware(async (ctx) => {
   const user = ctx.state.user;
   if (!user) {
     const url = new URL(ctx.req.url);
-    const next = url.pathname + url.search;
     return new Response(null, {
       status: 303,
-      headers: { location: `/oauth/login?next=${encodeURIComponent(next)}` },
+      headers: { location: adminAuthorizationHref(url) },
     });
   }
   if (!isAdmin(user.did)) {

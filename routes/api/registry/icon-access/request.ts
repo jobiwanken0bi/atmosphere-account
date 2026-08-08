@@ -19,7 +19,12 @@ import {
   getProfileByDid,
   requestIconAccess,
 } from "../../../../lib/registry.ts";
-import { rejectLargeRequest } from "../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../lib/security.ts";
+import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
 
 interface RequestPayload {
   email?: unknown;
@@ -35,10 +40,27 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return jsonError(401, "not_authenticated");
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "icon-access-request",
+      capacity: 6,
+      refillMs: 60 * 60_000,
+    });
+    if (limited) return limited;
 
-    const body = await ctx.req.json().catch(() => null) as
-      | RequestPayload
-      | null;
+    let body: RequestPayload | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_ICON_ACCESS_REQUEST_BYTES,
+      ) as RequestPayload | null;
+    } catch (error) {
+      return jsonError(
+        error instanceof RequestBodyTooLargeError ? 413 : 400,
+        error instanceof RequestBodyTooLargeError
+          ? "request_body_too_large"
+          : "invalid_body",
+      );
+    }
     if (!body || typeof body.email !== "string") {
       return jsonError(400, "missing_email");
     }
@@ -69,8 +91,8 @@ export const handler = define.handlers({
     try {
       await requestIconAccess(user.did, email);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "request_failed", m);
+      console.error("[icon-access] verification request failed:", err);
+      return jsonError(500, "request_failed");
     }
     return jsonOk({ ok: true, status: "requested" });
   },

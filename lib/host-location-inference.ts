@@ -1,3 +1,5 @@
+import { readResponseTextWithLimit } from "./security.ts";
+
 const DNS_JSON_ENDPOINT = "https://cloudflare-dns.com/dns-query";
 const IP_GEO_ENDPOINT = "https://ipwho.is";
 const REQUEST_TIMEOUT_MS = 4_000;
@@ -202,7 +204,7 @@ async function fetchDnsAnswers(
       headers: { accept: "application/dns-json" },
     });
     if (!response.ok) return [];
-    const json = await response.json() as DnsJsonResponse;
+    const json = await readBoundedJson<DnsJsonResponse>(response);
     if (json.Status !== 0) return [];
     const expectedType = type === "A" ? 1 : 28;
     return (json.Answer ?? [])
@@ -220,10 +222,22 @@ async function fetchIpGeo(ip: string): Promise<IpWhoIsResponse | null> {
       headers: { accept: "application/json" },
     });
     if (!response.ok) return null;
-    return await response.json() as IpWhoIsResponse;
+    return await readBoundedJson<IpWhoIsResponse>(response);
   } catch {
     return null;
   }
+}
+
+async function readBoundedJson<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ??
+    "";
+  if (!contentType.includes("json")) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("location provider returned a non-JSON response");
+  }
+  const body = await readResponseTextWithLimit(response, 128 * 1024);
+  if (!body.ok) throw new Error(`location provider ${body.error}`);
+  return JSON.parse(body.text) as T;
 }
 
 async function fetchWithTimeout(
@@ -233,7 +247,11 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetch(input, {
+      ...init,
+      redirect: init.redirect ?? "manual",
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timer);
   }

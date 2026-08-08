@@ -25,9 +25,18 @@ import {
 import { appHrefForHost } from "../../../../lib/directory-identity-links.ts";
 import { proxyAppviewPageResponse } from "../../../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
-import { rejectLargeRequest } from "../../../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../lib/security.ts";
 import { loadManagedAppPortfolio } from "../../../../lib/managed-products.ts";
-import { loadSession } from "../../../../lib/oauth.ts";
+import {
+  getSessionForCapabilities,
+  loadSession,
+} from "../../../../lib/oauth.ts";
+import { oauthSigninUrl } from "../../../../lib/oauth-action.ts";
+import ConfirmedActionForm from "../../../../islands/ConfirmedActionForm.tsx";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -61,7 +70,18 @@ export const handler = define.handlers({
 
     const host = await loadOwnedHost(ctx);
     if (host instanceof Response) return host;
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_RELATIONSHIP_FORM_BYTES,
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      form = null;
+    }
     if (!form) {
       return await renderForOwner(ctx, {
         error: "Invalid form.",
@@ -184,7 +204,7 @@ async function loadOwnedHost(ctx: {
   const host = await getAccountHost(hostId).catch(() => null);
   if (!host) return new Response("Host not found.", { status: 404 });
   if (!ctx.state.user) {
-    return redirect(`/signin?next=${encodeURIComponent(ctx.url.pathname)}`);
+    return redirect(hostAuthorizationHref(host, ctx.url));
   }
   const claim = await getAccountHostClaim(host.host).catch(() => null);
   const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
@@ -196,7 +216,26 @@ async function loadOwnedHost(ctx: {
       { status: 403 },
     );
   }
+  if (
+    !await getSessionForCapabilities(ctx.state.user.did, ["host"], {
+      quiet: true,
+    })
+  ) {
+    return redirect(hostAuthorizationHref(host, ctx.url));
+  }
   return host;
+}
+
+export function hostAuthorizationHref(
+  host: Pick<AccountHost, "displayName">,
+  url: URL,
+): string {
+  return oauthSigninUrl({
+    next: `${url.pathname}${url.search}`,
+    action: "host_manage",
+    capabilities: ["host"],
+    name: host.displayName,
+  });
 }
 
 function HostAppRelationshipsPage(props: {
@@ -278,20 +317,19 @@ function HostAppRelationshipsPage(props: {
                             Continue approval
                           </a>
                         )}
-                        <form method="POST">
-                          <input type="hidden" name="action" value="remove" />
-                          <input
-                            type="hidden"
-                            name="appListingId"
-                            value={link.appListingId}
-                          />
-                          <button
-                            class="profile-form-button-secondary"
-                            type="submit"
-                          >
-                            Remove
-                          </button>
-                        </form>
+                        <ConfirmedActionForm
+                          action={`/hosts/${
+                            encodeURIComponent(host.host)
+                          }/manage/apps`}
+                          fields={{
+                            action: "remove",
+                            appListingId: link.appListingId,
+                          }}
+                          label="Remove"
+                          confirmation={`Remove the connection between ${host.displayName} and ${link.appName}?`}
+                          buttonClass="profile-form-button-secondary"
+                          ariaLabel={`Remove connection to ${link.appName}`}
+                        />
                       </div>
                     </article>
                   ))}

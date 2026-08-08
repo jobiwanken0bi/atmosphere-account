@@ -4,6 +4,7 @@ import {
   accountHostClaimUpdateQueryForTest,
   accountHostDashboardSettingsUpdateQueryForTest,
   DEFAULT_ACCOUNT_HOST_SORT,
+  fetchHostProfileForTest,
   isAccountHostPubliclyListable,
   listSeededAccountHostFallback,
   lookupAccountHostHint,
@@ -31,6 +32,36 @@ function assertEquals(actual: unknown, expected: unknown): void {
   const e = JSON.stringify(expected);
   if (a !== e) throw new Error(`Expected ${e}, got ${a}`);
 }
+
+Deno.test("fixed Bluesky profile fetch refuses redirects and non-JSON bodies", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    let mode: "redirect" | "wrong-type" = "redirect";
+    globalThis.fetch =
+      ((_input: string | URL | Request, init?: RequestInit) => {
+        assertEquals(init?.redirect, "manual");
+        return Promise.resolve(
+          mode === "redirect"
+            ? new Response(null, { status: 302 })
+            : new Response("<html></html>", {
+              headers: { "content-type": "text/html" },
+            }),
+        );
+      }) as typeof fetch;
+    for (const next of ["redirect", "wrong-type"] as const) {
+      mode = next;
+      let rejected = false;
+      try {
+        await fetchHostProfileForTest("host.example");
+      } catch {
+        rejected = true;
+      }
+      assert(rejected, `expected ${next} response rejection`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 Deno.test("OAuth host claims preserve an omitted directory preference on Postgres", () => {
   const query = accountHostClaimUpdateQueryForTest({
@@ -608,7 +639,7 @@ Deno.test("public host policy requires recent reachability and public intent", (
   assertEquals(
     isAccountHostPubliclyListable({
       ...base,
-      signupUrl: "https://host.example/signup",
+      signupUrl: "https://host.example.com/signup",
     }, now),
     true,
   );

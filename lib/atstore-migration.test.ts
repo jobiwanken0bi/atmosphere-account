@@ -1,5 +1,6 @@
 import {
   atmosphereProfileAtUri,
+  atstoreListingPublishRkey,
   buildAtstoreListingFromProfile,
   buildAtstoreListingFromProfileRecord,
   createAtstoreListingRkey,
@@ -273,4 +274,20 @@ Deno.test("getAtstoreMigrationReadiness requires an app URL and icon", () => {
 Deno.test("createAtstoreListingRkey returns an AT Protocol TID", () => {
   const rkey = createAtstoreListingRkey();
   assert(isAtprotoTid(rkey), `expected TID rkey, got ${rkey}`);
+});
+
+Deno.test("distinct app retries keep the same ATStore record key", () => {
+  const requested = createAtstoreListingRkey();
+  assertEquals(atstoreListingPublishRkey(null, requested), requested);
+  assertEquals(
+    atstoreListingPublishRkey("existingrecord", requested),
+    "existingrecord",
+  );
+  let rejected = false;
+  try {
+    atstoreListingPublishRkey(null, "not a tid");
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, "expected an invalid retry key to be rejected");
 });

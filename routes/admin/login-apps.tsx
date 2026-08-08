@@ -10,6 +10,7 @@ import {
   loginAppStatusLabel,
   moderateLoginAppTrustReview,
 } from "../../lib/atmosphere-login.ts";
+import { readAdminFormRequest } from "../../lib/admin-request.ts";
 
 interface LoginAppReviewRow {
   app: LoginApp;
@@ -37,7 +38,9 @@ export const handler = define.handlers({
   },
 
   async POST(ctx) {
-    const form = await ctx.req.formData().catch(() => null);
+    const parsed = await readAdminFormRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const form = parsed.value;
     const clientId = formText(form, "client_id");
     const action = formText(form, "action");
     const reason = formText(form, "reason");

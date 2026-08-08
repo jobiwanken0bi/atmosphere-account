@@ -1,10 +1,14 @@
 import { accountHostKeyForEndpoint, getAccountHost } from "./account-hosts.ts";
 import { type DbClient, withDb } from "./db.ts";
+import { readResponseTextWithLimit } from "./security.ts";
 
 export const PDS_RELAY_BASE_URL = "https://bsky.network";
 const LIST_HOSTS_PATH = "/xrpc/com.atproto.sync.listHosts";
 const DEFAULT_PAGE_SIZE = 1000;
 const MAX_PAGE_SIZE = 1000;
+const MAX_SCAN_PAGES = 100;
+const MAX_CURSOR_LENGTH = 2_048;
+const MAX_RELAY_PAGE_BYTES = 2 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
 const UPSERT_CHUNK_SIZE = 50;
 const MIN_COMPLETE_SCAN_RETAINED_FRACTION = 0.95;
@@ -121,9 +125,13 @@ export function parseRelayListHostsPage(
   if (!Array.isArray(page.hosts)) {
     throw new Error("Relay listHosts response is missing hosts[]");
   }
+  if (page.hosts.length > MAX_PAGE_SIZE) {
+    throw new Error("Relay listHosts response has too many hosts");
+  }
   if (
     page.cursor !== undefined &&
-    (typeof page.cursor !== "string" || !page.cursor.trim())
+    (typeof page.cursor !== "string" || !page.cursor.trim() ||
+      page.cursor.length > MAX_CURSOR_LENGTH)
   ) {
     throw new Error("Relay listHosts response has an invalid cursor");
   }
@@ -181,9 +189,12 @@ export async function fetchRelayPdsInventory(
   }
   if (
     options.maxPages != null &&
-    (!Number.isFinite(options.maxPages) || options.maxPages <= 0)
+    (!Number.isFinite(options.maxPages) || options.maxPages <= 0 ||
+      options.maxPages > MAX_SCAN_PAGES)
   ) {
-    throw new Error("maxPages must be a positive finite number");
+    throw new Error(
+      `maxPages must be between 1 and ${MAX_SCAN_PAGES}`,
+    );
   }
   if (
     options.timeoutMs != null &&
@@ -195,9 +206,10 @@ export async function fetchRelayPdsInventory(
     MAX_PAGE_SIZE,
     Math.max(1, Math.floor(options.pageSize ?? DEFAULT_PAGE_SIZE)),
   );
-  const maxPages = options.maxPages == null
-    ? Number.POSITIVE_INFINITY
-    : Math.max(1, Math.floor(options.maxPages));
+  const maxPages = Math.max(
+    1,
+    Math.floor(options.maxPages ?? MAX_SCAN_PAGES),
+  );
   const timeoutMs = Math.max(500, options.timeoutMs ?? FETCH_TIMEOUT_MS);
   const instances = new Map<string, RelayPdsInstance>();
   const seenCursors = new Set<string>();
@@ -211,12 +223,31 @@ export async function fetchRelayPdsInventory(
     if (cursor) url.searchParams.set("cursor", cursor);
     const response = await fetchImpl(url, {
       headers: { accept: "application/json" },
+      redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       throw new Error(`Relay listHosts returned HTTP ${response.status}`);
     }
-    const parsed = parseRelayListHostsPage(await response.json());
+    const contentType = response.headers.get("content-type")?.toLowerCase() ??
+      "";
+    if (!contentType.includes("application/json")) {
+      await response.body?.cancel().catch(() => {});
+      throw new Error("Relay listHosts returned a non-JSON response");
+    }
+    const body = await readResponseTextWithLimit(
+      response,
+      MAX_RELAY_PAGE_BYTES,
+    );
+    if (!body.ok) throw new Error(`Relay listHosts ${body.error}`);
+    let value: unknown;
+    try {
+      value = JSON.parse(body.text);
+    } catch {
+      throw new Error("Relay listHosts returned invalid JSON");
+    }
+    const parsed = parseRelayListHostsPage(value);
     pages++;
     for (const instance of parsed.instances) {
       instances.set(instance.serviceHost, instance);

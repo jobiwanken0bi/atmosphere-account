@@ -2,10 +2,14 @@ import {
   applySecurityHeadersForTest,
   csrfExpectedOriginForTest,
   isCrossOriginReadonlyRequest,
+  isJsonMediaType,
+  isPrivateNetworkHostname,
   isPrivateNetworkUrl,
   isSafeRelativePath,
   isSameOriginUnsafeRequest,
+  readFormDataRequestWithLimit,
   readJsonRequestWithLimit,
+  readResponseBytesWithLimit,
   readResponseTextWithLimit,
   requestBodyTooLarge,
   RequestBodyTooLargeError,
@@ -17,6 +21,14 @@ function assertEquals(actual: unknown, expected: unknown): void {
   }
 }
 
+Deno.test("JSON media type checks reject substring lookalikes", () => {
+  assertEquals(isJsonMediaType("application/json; charset=utf-8"), true);
+  assertEquals(isJsonMediaType("application/problem+json"), true);
+  assertEquals(isJsonMediaType("application/dns-json"), true);
+  assertEquals(isJsonMediaType("application/jsonp"), false);
+  assertEquals(isJsonMediaType("text/json"), false);
+});
+
 Deno.test("CSRF rejects cross-site unsafe requests by default", () => {
   const req = new Request("https://atmosphereaccount.com/api/account/profile", {
     method: "POST",
@@ -25,6 +37,58 @@ Deno.test("CSRF rejects cross-site unsafe requests by default", () => {
   assertEquals(
     isSameOriginUnsafeRequest(req, "https://atmosphereaccount.com"),
     false,
+  );
+});
+
+Deno.test("CSRF fails closed for cookie-backed writes without origin metadata", () => {
+  const expectedOrigin = "https://atmosphereaccount.com";
+  const strippedBrowserRequest = new Request(
+    `${expectedOrigin}/api/account/profile`,
+    {
+      method: "POST",
+      headers: { cookie: "atmo_sid=session.signature" },
+    },
+  );
+  const sameOriginFetchMetadata = new Request(
+    `${expectedOrigin}/api/account/profile`,
+    {
+      method: "POST",
+      headers: {
+        cookie: "atmo_sid=session.signature",
+        "sec-fetch-site": "same-origin",
+      },
+    },
+  );
+  const siblingSubdomainRequest = new Request(
+    `${expectedOrigin}/api/account/profile`,
+    {
+      method: "POST",
+      headers: {
+        cookie: "atmo_sid=session.signature",
+        "sec-fetch-site": "same-site",
+      },
+    },
+  );
+  const serverToServerRequest = new Request(
+    `${expectedOrigin}/api/account/profile`,
+    { method: "POST" },
+  );
+
+  assertEquals(
+    isSameOriginUnsafeRequest(strippedBrowserRequest, expectedOrigin),
+    false,
+  );
+  assertEquals(
+    isSameOriginUnsafeRequest(sameOriginFetchMetadata, expectedOrigin),
+    true,
+  );
+  assertEquals(
+    isSameOriginUnsafeRequest(siblingSubdomainRequest, expectedOrigin),
+    false,
+  );
+  assertEquals(
+    isSameOriginUnsafeRequest(serverToServerRequest, expectedOrigin),
+    true,
   );
 });
 
@@ -94,12 +158,30 @@ Deno.test("private network URL detection covers common IP literal forms", () => 
   );
   assertEquals(isPrivateNetworkUrl("http://example.com"), true);
   assertEquals(isPrivateNetworkUrl("https://localhost"), true);
+  assertEquals(isPrivateNetworkUrl("https://localhost."), true);
   assertEquals(isPrivateNetworkUrl("https://127.0.0.1"), true);
   assertEquals(isPrivateNetworkUrl("https://10.0.0.5"), true);
   assertEquals(isPrivateNetworkUrl("https://172.20.0.5"), true);
   assertEquals(isPrivateNetworkUrl("https://192.168.1.5"), true);
   assertEquals(isPrivateNetworkUrl("https://[::1]"), true);
   assertEquals(isPrivateNetworkUrl("https://[fd00::1]"), true);
+  assertEquals(isPrivateNetworkUrl("https://[::ffff:127.0.0.1]"), true);
+  assertEquals(isPrivateNetworkUrl("https://[::ffff:10.0.0.1]"), true);
+  assertEquals(isPrivateNetworkUrl("https://[::127.0.0.1]"), true);
+  assertEquals(isPrivateNetworkUrl("https://[ff02::1]"), true);
+  assertEquals(isPrivateNetworkUrl("https://198.18.0.1"), true);
+  assertEquals(isPrivateNetworkUrl("https://203.0.113.7"), true);
+  assertEquals(isPrivateNetworkUrl("https://8.8.8.8"), false);
+  assertEquals(isPrivateNetworkUrl("https://[2606:4700:4700::1111]"), false);
+  assertEquals(isPrivateNetworkHostname("::ffff:127.0.0.1"), true);
+  assertEquals(isPrivateNetworkHostname("service.internal"), true);
+  assertEquals(isPrivateNetworkHostname("service.home.arpa"), true);
+  assertEquals(isPrivateNetworkHostname("service.test"), true);
+  assertEquals(isPrivateNetworkHostname("service.invalid"), true);
+  assertEquals(isPrivateNetworkHostname("service.example"), true);
+  assertEquals(isPrivateNetworkHostname("hidden.onion"), true);
+  assertEquals(isPrivateNetworkHostname("2001:db8::1"), true);
+  assertEquals(isPrivateNetworkHostname("3fff::1"), true);
 });
 
 Deno.test("request body size checks use content-length before parsing", () => {
@@ -123,6 +205,21 @@ Deno.test("bounded response reader rejects oversized responses", async () => {
     4,
   );
   assertEquals(tooLarge.ok, false);
+
+  const understated = await readResponseBytesWithLimit(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.enqueue(new Uint8Array([4, 5, 6]));
+          controller.close();
+        },
+      }),
+      { headers: { "content-length": "2" } },
+    ),
+    4,
+  );
+  assertEquals(understated.ok, false);
 });
 
 Deno.test("bounded JSON reader rejects oversized streamed requests", async () => {
@@ -140,6 +237,27 @@ Deno.test("bounded JSON reader rejects oversized streamed requests", async () =>
   let tooLarge = false;
   try {
     await readJsonRequestWithLimit(request, 8);
+  } catch (error) {
+    tooLarge = error instanceof RequestBodyTooLargeError;
+  }
+  assertEquals(tooLarge, true);
+});
+
+Deno.test("bounded form reader rejects chunked bodies without content-length", async () => {
+  const request = new Request("https://atmosphereaccount.com/oauth/login", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("handle="));
+        controller.enqueue(new TextEncoder().encode("far-too-large.example"));
+        controller.close();
+      },
+    }),
+  });
+  let tooLarge = false;
+  try {
+    await readFormDataRequestWithLimit(request, 8);
   } catch (error) {
     tooLarge = error instanceof RequestBodyTooLargeError;
   }
@@ -179,6 +297,13 @@ Deno.test("security policy confines passkey ceremonies to the same origin", () =
   assertEquals(policy.includes("publickey-credentials-get=(self)"), true);
 });
 
+Deno.test("security policy disables inline HTML event handlers", () => {
+  const policy = applySecurityHeadersForTest("/apps").get(
+    "content-security-policy",
+  ) ?? "";
+  assertEquals(policy.includes("script-src-attr 'none'"), true);
+});
+
 Deno.test("ordinary pages keep the default referrer policy", () => {
   const headers = applySecurityHeadersForTest("/apps");
   assertEquals(
@@ -186,6 +311,21 @@ Deno.test("ordinary pages keep the default referrer policy", () => {
     "strict-origin-when-cross-origin",
   );
   assertEquals(headers.has("cache-control"), false);
+});
+
+Deno.test("personalized HTML is explicitly private and not cacheable", () => {
+  const headers = applySecurityHeadersForTest(
+    "/apps",
+    new Headers({ "content-type": "text/html; charset=utf-8" }),
+    true,
+  );
+  assertEquals(headers.get("cache-control"), "private, no-store");
+
+  const publicHeaders = applySecurityHeadersForTest(
+    "/apps",
+    new Headers({ "content-type": "text/html; charset=utf-8" }),
+  );
+  assertEquals(publicHeaders.has("cache-control"), false);
 });
 
 Deno.test("login popup routes keep opener-compatible COOP", () => {

@@ -115,11 +115,14 @@ const user = { did: "did:plc:operator", handle: "operator.example" };
 function describeServerFetch(email = "Ops@Example.Social"): typeof fetch {
   return ((_input: URL | Request | string, _init?: RequestInit) =>
     Promise.resolve(
-      new Response(JSON.stringify({
-        did: "did:web:pds.example.social",
-        availableUserDomains: ["example.social"],
-        contact: { email },
-      })),
+      new Response(
+        JSON.stringify({
+          did: "did:web:pds.example.social",
+          availableUserDomains: ["example.social"],
+          contact: { email },
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
     )) as typeof fetch;
 }
 
@@ -272,10 +275,13 @@ Deno.test("contact-email setup sees a newly announced address immediately", asyn
   const fetchImpl = ((_input: URL | Request | string, _init?: RequestInit) => {
     calls += 1;
     return Promise.resolve(
-      new Response(JSON.stringify({
-        did: "did:web:pds.example.social",
-        contact: email ? { email } : {},
-      })),
+      new Response(
+        JSON.stringify({
+          did: "did:web:pds.example.social",
+          contact: email ? { email } : {},
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
     );
   }) as typeof fetch;
 

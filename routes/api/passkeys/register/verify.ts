@@ -7,6 +7,7 @@ import {
   verifyPasskeyRegistration,
 } from "../../../../lib/passkeys.ts";
 import { passkeyRelyingPartyForRequest } from "../../../../lib/passkey-rp.ts";
+import { passkeyAuthorizationUrl } from "../../../../lib/passkey-authorization.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
 import {
   readJsonRequestWithLimit,
@@ -32,7 +33,7 @@ export const handler = define.handlers({
     if (
       (!ticket || ticket.did !== user.did) &&
       devAccount?.handle.toLowerCase() !== user.handle.toLowerCase()
-    ) return authError(user.handle, 403);
+    ) return authError(user, 403);
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "passkey-registration-verify",
       capacity: 12,
@@ -44,7 +45,7 @@ export const handler = define.handlers({
     if (
       !devAccount && !await getValidSession(user.did, { quiet: true })
     ) {
-      return authError(user.handle, 403);
+      return authError(user, 403);
     }
 
     try {
@@ -114,17 +115,22 @@ function passkeyJson(passkey: PasskeySummary) {
   };
 }
 
-function authError(handle: string | null, status: number): Response {
-  const redirectUrl = handle ? managementReauthUrl(handle) : null;
+function authError(
+  account: { did: string; handle: string } | null,
+  status: number,
+): Response {
+  const redirectUrl = account ? managementReauthUrl(account) : null;
   return json({
     error: "Reconfirm with your account host before changing passkeys.",
     ...(redirectUrl ? { redirectUrl } : {}),
   }, status);
 }
 
-function managementReauthUrl(handle: string): string {
-  const next = `/passkeys?handle=${encodeURIComponent(handle)}`;
-  return `/oauth/login?${new URLSearchParams({ handle, next }).toString()}`;
+function managementReauthUrl(account: { did: string; handle: string }): string {
+  const next = `/passkeys?handle=${encodeURIComponent(account.handle)}`;
+  return passkeyAuthorizationUrl(account.did, next, {
+    targetName: account.handle,
+  });
 }
 
 function json(value: unknown, status = 200): Response {

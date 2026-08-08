@@ -4,6 +4,7 @@
 import { define } from "../../../../../utils.ts";
 import { requireAdminApi } from "../../../../../lib/admin.ts";
 import { moderateReview } from "../../../../../lib/reviews.ts";
+import { readAdminJsonRequest } from "../../../../../lib/admin-request.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -21,11 +22,10 @@ async function moderate(
 ): Promise<Response> {
   const id = Number(rawId);
   if (!Number.isFinite(id) || id <= 0) return jsonError(400, "invalid_id");
-  const body = await req.json().catch(() => null) as
-    | { notes?: unknown }
-    | null;
-  const notes = typeof body?.notes === "string"
-    ? body.notes.trim().slice(0, 1000) || null
+  const parsed = await readAdminJsonRequest(req);
+  if (!parsed.ok) return parsed.response;
+  const notes = typeof parsed.value.notes === "string"
+    ? parsed.value.notes.trim().slice(0, 1000) || null
     : null;
   const ok = await moderateReview(id, adminDid, action, notes);
   return ok ? jsonResponse(200, { ok: true }) : jsonError(404, "not_found");

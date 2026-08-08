@@ -6,6 +6,8 @@ import HostMark from "../../components/hosts/HostMark.tsx";
 import BskyIcon from "../../components/icons/BskyIcon.tsx";
 import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
 import HostVisitLink from "../../islands/HostVisitLink.tsx";
+import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
+import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHost,
@@ -28,6 +30,8 @@ import { normalizeHostDirectoryReturnTo } from "../../lib/host-directory-navigat
 import { getResolvedAppLinksForHost } from "../../lib/app-directory.ts";
 import type { ResolvedDirectoryAppLink } from "../../lib/app-directory.ts";
 import { getMessages, type Messages } from "../../i18n/mod.ts";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import { getSessionForCapabilities } from "../../lib/oauth.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -69,6 +73,14 @@ export const handler = define.handlers({
     const verifiedOwnerDid = host && claim
       ? await verifiedAccountHostOwnerDid(host, claim).catch(() => null)
       : null;
+    const account = buildAccountMenuProps(ctx.state);
+    const hostAuthorized = Boolean(
+      account.user && verifiedOwnerDid === account.user.did &&
+        await getSessionForCapabilities(account.user.did, ["host"], {
+          quiet: true,
+        }).catch(() => null),
+    );
+    const outcomeNotice = hostDetailOutcomeNotice(ctx.url);
     return ctx.render(
       <HostDetailPage
         host={host}
@@ -80,11 +92,13 @@ export const handler = define.handlers({
         directoryCopy={getMessages(ctx.state.locale).hostsDirectory}
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}
+        outcomeNotice={outcomeNotice}
         backHref={normalizeHostDirectoryReturnTo(
           ctx.url.searchParams.get("from"),
         )}
-        account={buildAccountMenuProps(ctx.state)}
+        account={account}
         verifiedOwnerDid={verifiedOwnerDid}
+        hostAuthorized={hostAuthorized}
       />,
       { status: host ? 200 : 404 },
     );
@@ -100,9 +114,11 @@ function HostDetailPage(
     directoryCopy,
     claimed,
     managed,
+    outcomeNotice,
     backHref,
     account,
     verifiedOwnerDid,
+    hostAuthorized,
   }: {
     host: AccountHost | null;
     claim: AccountHostClaim | null;
@@ -111,9 +127,11 @@ function HostDetailPage(
     directoryCopy: Messages["hostsDirectory"];
     claimed: boolean;
     managed: boolean;
+    outcomeNotice: HostDetailOutcomeNotice | null;
     backHref: string;
     account: ReturnType<typeof buildAccountMenuProps>;
     verifiedOwnerDid: string | null;
+    hostAuthorized: boolean;
   },
 ) {
   if (!host) {
@@ -458,6 +476,17 @@ function HostDetailPage(
             </details>
 
             <div class="host-detail-claim-row">
+              {outcomeNotice && (
+                <p
+                  class={`profile-form-status ${
+                    outcomeNotice.kind === "error"
+                      ? "profile-form-status--error"
+                      : "profile-form-status--ok"
+                  }`}
+                >
+                  {outcomeNotice.text}
+                </p>
+              )}
               {managed && (
                 <p class="profile-form-status profile-form-status--ok">
                   Host changes saved.
@@ -465,12 +494,16 @@ function HostDetailPage(
               )}
               {isManagedByCurrentAccount
                 ? (
-                  <a
-                    class="directory-register-button host-detail-claim-button"
-                    href={manageHostHref(host)}
-                  >
-                    <span>Manage host</span>
-                  </a>
+                  <OwnerManagementLink
+                    authorized={hostAuthorized}
+                    kind="host"
+                    destinationHref={manageHostHref(host)}
+                    targetName={host.displayName}
+                    label="Manage host"
+                    className="directory-register-button host-detail-claim-button"
+                    rememberedAccounts={account.rememberedAccounts}
+                    initialHandle={account.user?.handle}
+                  />
                 )
                 : claim && verifiedOwnerDid
                 ? (
@@ -488,13 +521,29 @@ function HostDetailPage(
                   </p>
                 )
                 : (
-                  <a
-                    class="directory-register-button host-detail-claim-button"
-                    href={claimHostHref(host)}
-                  >
-                    <span class="directory-register-button-icon">+</span>
-                    <span>Claim this host</span>
-                  </a>
+                  account.user
+                    ? (
+                      <a
+                        class="directory-register-button host-detail-claim-button"
+                        href={claimHostHref(host)}
+                      >
+                        <span class="directory-register-button-icon">+</span>
+                        <span>Claim this host</span>
+                      </a>
+                    )
+                    : (
+                      <ContextualSignInLink
+                        href={hostClaimSigninHref(host)}
+                        returnTo={claimHostHref(host)}
+                        action="host_claim"
+                        capabilities={["identity"]}
+                        targetName={host.displayName}
+                        label="Claim this host"
+                        className="directory-register-button host-detail-claim-button"
+                        leadingPlus
+                        rememberedAccounts={account.rememberedAccounts}
+                      />
+                    )
                 )}
             </div>
           </div>
@@ -556,8 +605,45 @@ function claimHostHref(host: AccountHost): string {
   return `/hosts/${encodeURIComponent(host.host)}/claim`;
 }
 
+function hostClaimSigninHref(host: AccountHost): string {
+  return oauthSigninUrl({
+    next: claimHostHref(host),
+    action: "host_claim",
+    capabilities: ["identity"],
+    name: host.displayName,
+  });
+}
+
 function manageHostHref(host: AccountHost): string {
   return `/hosts/${encodeURIComponent(host.host)}/manage`;
+}
+
+export interface HostDetailOutcomeNotice {
+  kind: "ok" | "error";
+  text: string;
+}
+
+export function hostDetailOutcomeNotice(
+  url: URL,
+): HostDetailOutcomeNotice | null {
+  const claimed = url.searchParams.get("claimed") === "1";
+  if (url.searchParams.get("linkError") === "1") {
+    return {
+      kind: "error",
+      text: claimed
+        ? "Host claimed, but the app connection could not be completed. Ask the app owner to start a new connection from app hosting."
+        : "The app connection could not be completed. Ask the app owner to start a new connection from app hosting.",
+    };
+  }
+  if (url.searchParams.get("linked") === "1") {
+    return {
+      kind: "ok",
+      text: claimed
+        ? "Host claimed and connected to the app successfully."
+        : "Host connected to the app successfully.",
+    };
+  }
+  return claimed ? { kind: "ok", text: "Host claimed successfully." } : null;
 }
 
 function bskyProfileHref(handle: string): string {

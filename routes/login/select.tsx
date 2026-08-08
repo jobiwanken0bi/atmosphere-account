@@ -32,7 +32,11 @@ import {
   checkDurableRateLimit,
   checkProxyAwareRateLimit,
 } from "../../lib/rate-limit.ts";
-import { rejectLargeRequest } from "../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../lib/security.ts";
 import {
   createLoginSelectionIntent,
   readLoginSelectionIntent,
@@ -69,6 +73,10 @@ export const handler = define.handlers({
       (err) => appviewUnavailable("login picker page", err),
     );
     if (proxied) return proxied;
+
+    if (ctx.url.search.length > MAX_PICKER_FORM_BYTES) {
+      return browserHandoffError("request URL too large", 414, false);
+    }
 
     const opened = await checkProxyAwareRateLimit(ctx.req, {
       scope: "login-picker-open",
@@ -165,7 +173,11 @@ export const handler = define.handlers({
         : browserHandoffResponse(redirectUrl, { json: wantsJson });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const status = err instanceof LoginRequestError ? err.status : 400;
+      const status = err instanceof RequestBodyTooLargeError
+        ? 413
+        : err instanceof LoginRequestError
+        ? err.status
+        : 400;
       return browserHandoffError(message, status, wantsJson);
     }
   },
@@ -184,16 +196,26 @@ function appviewUnavailable(scope: string, err: unknown): Response {
 
 async function optionalFormData(req: Request): Promise<FormData> {
   const contentType = req.headers.get("content-type") ?? "";
-  return contentType
-    ? await req.formData().catch(() => new FormData())
-    : new FormData();
+  if (!contentType || !req.body) return new FormData();
+  const form = await readFormDataRequestWithLimit(req, MAX_PICKER_FORM_BYTES);
+  if (!form) throw new LoginRequestError("invalid picker form");
+  return form;
 }
 
 function inputValue(sourceUrl: URL, form: FormData, key: string): string {
-  const formValue = form.get(key);
-  return typeof formValue === "string"
-    ? formValue
-    : sourceUrl.searchParams.get(key) ?? "";
+  const formValues = form.getAll(key);
+  const queryValues = sourceUrl.searchParams.getAll(key);
+  if (formValues.length > 1 || queryValues.length > 1) {
+    throw new LoginRequestError(`duplicate ${key}`);
+  }
+  const formValue = formValues[0];
+  if (formValue !== undefined && typeof formValue !== "string") {
+    throw new LoginRequestError(`invalid ${key}`);
+  }
+  if (formValue !== undefined && queryValues.length > 0) {
+    throw new LoginRequestError(`duplicate ${key}`);
+  }
+  return formValue ?? queryValues[0] ?? "";
 }
 
 function readLoginRequestFromInput(
@@ -535,6 +557,7 @@ function LoginPickerBody(
               <div class="login-picker-add-account-body">
                 <SignInForm
                   returnTo={selectPath}
+                  continuation="login_selection"
                   rememberedAccounts={[]}
                   createAccountHosts={createAccountHosts}
                   createAccountHostsEndpoint={hostEndpoint}
@@ -550,6 +573,7 @@ function LoginPickerBody(
               ? (
                 <SignInForm
                   returnTo={selectPath}
+                  continuation="login_selection"
                   rememberedAccounts={[]}
                   createAccountHosts={createAccountHosts}
                   createAccountHostsEndpoint={hostEndpoint}

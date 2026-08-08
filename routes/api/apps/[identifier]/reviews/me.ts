@@ -7,8 +7,16 @@ import {
   getOwnAppReview,
 } from "../../../../../lib/app-directory.ts";
 import { ATSTORE_REVIEW_NSID } from "../../../../../lib/app-lexicons.ts";
-import { getValidSession } from "../../../../../lib/oauth.ts";
-import { deleteRecord } from "../../../../../lib/pds.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+} from "../../../../../lib/oauth.ts";
+import {
+  deleteRecord,
+  isPdsScopeMissingError,
+} from "../../../../../lib/pds.ts";
+import { hasOAuthCapabilities } from "../../../../../lib/oauth-scopes.ts";
+import { appReviewReauthorizationUrl } from "../../../../../lib/app-interaction-reauth.ts";
 
 export const handler = define.handlers({
   DELETE: withRateLimit(async (ctx) => {
@@ -30,7 +38,14 @@ export const handler = define.handlers({
     if (!existing) return jsonResponse(200, { ok: true, removed: false });
 
     const session = await getValidSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    if (
+      !session ||
+      !hasOAuthCapabilities(grantedScopeForSession(session), [
+        "review_manage",
+      ])
+    ) {
+      return reauthorizationRequired(user.handle, app);
+    }
 
     const deleted = await deleteRecord(
       user.did,
@@ -41,6 +56,9 @@ export const handler = define.handlers({
       err instanceof Error ? err : new Error(String(err))
     );
     if (deleted) {
+      if (isPdsScopeMissingError(deleted)) {
+        return reauthorizationRequired(user.handle, app);
+      }
       return jsonResponse(502, {
         error: "delete_record_failed",
         detail: deleted.message,
@@ -60,6 +78,21 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function reauthorizationRequired(
+  handle: string,
+  app: { slug: string; name: string },
+): Response {
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: appReviewReauthorizationUrl(
+      app.slug,
+      app.name,
+      "review_manage",
+    ),
+    handle,
+  });
 }
 
 function appviewProxyError(err: unknown): Response {

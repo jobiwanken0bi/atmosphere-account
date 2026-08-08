@@ -131,8 +131,10 @@ POSTGRES_SSL_MODE=disable
 
 Inside Railway, `${{Postgres.DATABASE_URL}}` resolves to the private database
 connection string. Local operator scripts may use Railway's public database URL
-temporarily for migration and copy tasks, but that is not the desired permanent
-web runtime shape.
+temporarily for migration and copy tasks; public connections use verified TLS by
+default. `POSTGRES_SSL_MODE=no-verify` is an emergency compatibility escape
+hatch and should not be used for normal operation. Public access is not the
+desired permanent web runtime shape.
 
 Postgres runtime tasks:
 
@@ -399,8 +401,10 @@ Run schema bootstrap explicitly before deploys and after additive DB changes:
 deno task db:migrate
 ```
 
-Run cleanup for expired OAuth/app sessions, Atmosphere Login replay keys, and
-stale worker leases:
+Run cleanup for expired OAuth flow state, app sessions, Atmosphere Login replay
+keys, and stale worker leases. Persisted OAuth refresh sessions are retained
+past their short-lived access-token expiry and are cleaned up by the OAuth
+lifecycle itself:
 
 ```sh
 deno task db:maintain

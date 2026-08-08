@@ -15,6 +15,8 @@ import {
   resolveAppHostLinkSelectorIntent,
   type ResolvedAppHostLinkIntent,
 } from "../../lib/app-host-link-intent.ts";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import { getSessionForCapabilities } from "../../lib/oauth.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -31,6 +33,13 @@ export const handler = define.handlers({
           { status: 400, headers: { "cache-control": "no-store" } },
         );
       }
+      return redirectToSignin(ctx.url);
+    }
+    if (
+      !await getSessionForCapabilities(ctx.state.user.did, ["identity"], {
+        quiet: true,
+      })
+    ) {
       return redirectToSignin(ctx.url);
     }
 
@@ -217,11 +226,19 @@ async function loadOptionalLinkIntent(
 }
 
 function redirectToSignin(url: URL): Response {
-  const signin = new URL("/signin", url.origin);
-  signin.searchParams.set("next", `/hosts/claim${url.search}`);
   return new Response(null, {
     status: 303,
-    headers: { location: `${signin.pathname}${signin.search}` },
+    headers: { location: detectedHostClaimAuthorizationHref(url) },
+  });
+}
+
+export function detectedHostClaimAuthorizationHref(url: URL): string {
+  const domain = url.searchParams.get("domain")?.trim();
+  return oauthSigninUrl({
+    next: `/hosts/claim${url.search}`,
+    action: "host_claim",
+    capabilities: ["identity"],
+    name: domain || "an account host",
   });
 }
 

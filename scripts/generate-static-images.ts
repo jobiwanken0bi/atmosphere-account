@@ -1,4 +1,4 @@
-import sharp from "npm:sharp@0.34.5";
+import sharp from "sharp";
 import { Buffer } from "node:buffer";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";

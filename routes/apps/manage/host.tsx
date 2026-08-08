@@ -9,6 +9,7 @@ import {
 import {
   type AppListing,
   getAppListingById,
+  getAppListingByIdentifier,
 } from "../../../lib/app-directory.ts";
 import {
   defineDirectoryEntityLink,
@@ -19,16 +20,22 @@ import {
 } from "../../../lib/directory-entity-links.ts";
 import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
-import { rejectLargeRequest } from "../../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
 import {
   loadManagedAppPortfolio,
   selectManagedApp,
 } from "../../../lib/managed-products.ts";
-import { loadSession } from "../../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../../lib/oauth.ts";
+import { oauthSigninUrl } from "../../../lib/oauth-action.ts";
 import {
   createAppHostLinkIntent,
   createBoundAppHostLinkIntent,
 } from "../../../lib/app-host-link-intent.ts";
+import ConfirmedActionForm from "../../../islands/ConfirmedActionForm.tsx";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -64,7 +71,18 @@ export const handler = define.handlers({
     const large = rejectLargeRequest(ctx.req, MAX_RELATIONSHIP_FORM_BYTES);
     if (large) return large;
 
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_RELATIONSHIP_FORM_BYTES,
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      form = null;
+    }
     if (!form) {
       return await renderForOwner(ctx, {
         error: "Invalid form.",
@@ -195,16 +213,55 @@ async function loadOwnedApp(
   identifier?: string | null,
 ): Promise<{ app: AppListing; apps: AppListing[] } | Response> {
   const user = ctx.state.user;
-  if (!user) return redirect(`/apps/create?intent=project`);
-  const session = await loadSession(user.did).catch(() => null);
-  const portfolio = await loadManagedAppPortfolio({
-    did: user.did,
-    pdsUrl: session?.pdsUrl,
-  }).catch(() => ({
-    apps: [],
-    discoveredAtstoreCount: 0,
-    syncUnavailable: true,
-  }));
+  const next = `${ctx.url.pathname}${ctx.url.search}`;
+  if (!user) {
+    return redirect(oauthSigninUrl({
+      next,
+      action: "app",
+      capabilities: ["app"],
+      name: "your app",
+    }));
+  }
+  const explicitIdentifier = identifier?.trim() ?? "";
+  let requestedApp: AppListing | null = null;
+  if (explicitIdentifier) {
+    try {
+      requestedApp = await getAppListingById(explicitIdentifier);
+      requestedApp ??= await getAppListingByIdentifier(explicitIdentifier, {
+        syncLegacy: false,
+      });
+    } catch (error) {
+      return appviewUnavailable(error);
+    }
+  }
+  if (explicitIdentifier && !requestedApp) {
+    return new Response("App listing not found.", { status: 404 });
+  }
+  if (requestedApp && !userControlsAppListing(requestedApp, user.did)) {
+    return new Response("This account cannot manage that app listing.", {
+      status: 403,
+    });
+  }
+  const session = await getSessionForCapabilities(user.did, ["app"], {
+    quiet: true,
+  });
+  if (!session) {
+    return redirect(oauthSigninUrl({
+      next,
+      action: "app",
+      capabilities: ["app"],
+      name: requestedApp?.name ?? "your app",
+    }));
+  }
+  let portfolio;
+  try {
+    portfolio = await loadManagedAppPortfolio({
+      did: user.did,
+      pdsUrl: session.pdsUrl,
+    });
+  } catch (error) {
+    return appviewUnavailable(error);
+  }
   if (portfolio.apps.length === 0) {
     return new Response("Publish the app listing before connecting a host.", {
       status: 404,
@@ -312,21 +369,18 @@ function AppHostRelationshipsPage(props: {
                             Continue approval
                           </a>
                         )}
-                        <form method="POST">
-                          <input type="hidden" name="action" value="remove" />
-                          <input
-                            type="hidden"
-                            name="appListingId"
-                            value={app.id}
-                          />
-                          <input type="hidden" name="host" value={link.host} />
-                          <button
-                            class="profile-form-button-secondary"
-                            type="submit"
-                          >
-                            Remove
-                          </button>
-                        </form>
+                        <ConfirmedActionForm
+                          action="/apps/manage/host"
+                          fields={{
+                            action: "remove",
+                            appListingId: app.id,
+                            host: link.host,
+                          }}
+                          label="Remove"
+                          confirmation={`Remove the connection between ${app.name} and ${link.hostDisplayName}?`}
+                          buttonClass="profile-form-button-secondary"
+                          ariaLabel={`Remove connection to ${link.hostDisplayName}`}
+                        />
                       </div>
                     </article>
                   ))}

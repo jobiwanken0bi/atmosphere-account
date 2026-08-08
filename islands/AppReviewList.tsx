@@ -27,6 +27,14 @@ interface ReviewsResponse {
   sort: AppReviewSort;
 }
 
+export function showAppReviewHeaderSummary(
+  reviewCount: number,
+  averageRating: number | null,
+  hasSharedListing: boolean,
+): boolean {
+  return (reviewCount > 0 && averageRating != null) || !hasSharedListing;
+}
+
 export default function AppReviewList(
   { identifier, initialReviews, initialSort, copy }: Props,
 ) {

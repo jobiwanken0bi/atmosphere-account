@@ -5,7 +5,7 @@
  */
 import { define } from "../../utils.ts";
 import { OAUTH_PUBLIC_JWK } from "../../lib/env.ts";
-import { parseJwkEnv } from "../../lib/jose.ts";
+import { parseJwkEnv, publicJwkOnly } from "../../lib/jose.ts";
 
 export const handler = define.handlers({
   GET(): Response {
@@ -20,7 +20,9 @@ export const handler = define.handlers({
     }
     let key: unknown;
     try {
-      key = parseJwkEnv("OAUTH_PUBLIC_JWK", OAUTH_PUBLIC_JWK);
+      // Never publish private JWK members if the public-key environment value
+      // was populated with the private key by mistake.
+      key = publicJwkOnly(parseJwkEnv("OAUTH_PUBLIC_JWK", OAUTH_PUBLIC_JWK));
     } catch (err) {
       return new Response(
         JSON.stringify({

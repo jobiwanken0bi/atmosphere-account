@@ -12,6 +12,9 @@ import {
 import { searchAppsFromAppview } from "../../lib/appview-client.ts";
 import { appCollectionLabel } from "../../lib/app-collections.ts";
 import { EdgeStaleCache } from "../../lib/edge-cache.ts";
+import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import { getSessionForCapabilities } from "../../lib/oauth.ts";
 
 interface BrowseAppsData {
   query: string;
@@ -22,6 +25,7 @@ interface BrowseAppsData {
   total: number;
   result: AppSearchResult;
   account: ReturnType<typeof buildAccountMenuProps>;
+  appAuthorized: boolean;
 }
 
 const APP_BROWSE_CACHE_TTL_MS = 30 * 1000;
@@ -51,6 +55,14 @@ export const handler = define.handlers({
     })
       .catch(() => emptyBrowseResult(page));
 
+    const account = buildAccountMenuProps(ctx.state);
+    const appAuthorized = account.user
+      ? Boolean(
+        await getSessionForCapabilities(account.user.did, ["app"], {
+          quiet: true,
+        }).catch(() => null),
+      )
+      : false;
     const data: BrowseAppsData = {
       query,
       tags,
@@ -59,7 +71,8 @@ export const handler = define.handlers({
       pageSize: result.pageSize,
       total: result.total,
       result,
-      account: buildAccountMenuProps(ctx.state),
+      account,
+      appAuthorized,
     };
 
     return ctx.render(<BrowseAppsPage data={data} />);
@@ -170,8 +183,10 @@ function BrowseAppsPage({ data }: { data: BrowseAppsData }) {
               sort={data.sort}
             />
             <DirectoryRegisterCta
-              href="/apps/create?intent=project"
+              href="/apps/manage?new=1"
               label="Register an app"
+              account={data.account}
+              appAuthorized={data.appAuthorized}
             />
           </div>
         </section>
@@ -268,16 +283,49 @@ function AppPagination(
 }
 
 function DirectoryRegisterCta(
-  { href, label }: { href: string; label: string },
+  { href, label, account, appAuthorized }: {
+    href: string;
+    label: string;
+    account: ReturnType<typeof buildAccountMenuProps>;
+    appAuthorized: boolean;
+  },
 ) {
   return (
     <div class="directory-register-cta">
-      <a href={href} class="directory-register-button">
-        <span class="directory-register-button-icon" aria-hidden="true">
-          +
-        </span>
-        <span>{label}</span>
-      </a>
+      {account.user && appAuthorized
+        ? (
+          <a href={href} class="directory-register-button">
+            <span class="directory-register-button-icon" aria-hidden="true">
+              +
+            </span>
+            <span>{label}</span>
+          </a>
+        )
+        : (
+          <ContextualSignInLink
+            href={appRegistrationSigninHref()}
+            returnTo="/apps/manage?new=1"
+            intent="project"
+            action="app"
+            capabilities={["app"]}
+            targetName="your app"
+            label={label}
+            className="directory-register-button"
+            leadingPlus
+            rememberedAccounts={account.rememberedAccounts}
+            initialHandle={account.user?.handle}
+          />
+        )}
     </div>
   );
+}
+
+export function appRegistrationSigninHref(): string {
+  return oauthSigninUrl({
+    next: "/apps/manage?new=1",
+    intent: "project",
+    action: "app",
+    capabilities: ["app"],
+    name: "your app",
+  });
 }

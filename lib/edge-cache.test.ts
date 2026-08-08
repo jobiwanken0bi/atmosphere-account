@@ -77,6 +77,43 @@ Deno.test("EdgeStaleCache keeps stale value when refresh fails", async () => {
   );
 });
 
+Deno.test("EdgeStaleCache never serves a value beyond the stale ceiling", async () => {
+  let now = 1_000;
+  const cache = new EdgeStaleCache<number>({
+    freshMs: 100,
+    staleMs: 1_000,
+    now: () => now,
+  });
+
+  assertEquals(await cache.get("key", () => Promise.resolve(1)), 1);
+  now += 1_001;
+  let rejected = false;
+  try {
+    await cache.get("key", () => Promise.reject(new Error("load failed")));
+  } catch {
+    rejected = true;
+  }
+  assertEquals(rejected, true);
+  assertEquals(await cache.get("key", () => Promise.resolve(2)), 2);
+});
+
+Deno.test("EdgeStaleCache cleans up a synchronously throwing cold load", async () => {
+  const cache = new EdgeStaleCache<number>({
+    freshMs: 100,
+    staleMs: 1_000,
+  });
+  let rejected = false;
+  try {
+    await cache.get("key", () => {
+      throw new Error("load failed");
+    });
+  } catch {
+    rejected = true;
+  }
+  assertEquals(rejected, true);
+  assertEquals(await cache.get("key", () => Promise.resolve(2)), 2);
+});
+
 Deno.test("EdgeStaleCache evicts the least recently used bounded entry", async () => {
   let loads = 0;
   const cache = new EdgeStaleCache<number>({

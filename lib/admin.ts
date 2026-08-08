@@ -12,6 +12,7 @@
  * check on the resulting session DID.
  */
 import { ADMIN_DIDS } from "./env.ts";
+import { adminAuthorizationHref } from "./oauth-entry-context.ts";
 
 export function isAdmin(did: string | null | undefined): boolean {
   if (!did) return false;
@@ -30,9 +31,9 @@ interface AdminCtxLike {
 }
 
 /**
- * Throws via redirect (302 → /oauth/login) when the request isn't from
- * an admin. Page routes should `await requireAdmin(ctx)` at the top of
- * their handler. Returns the verified admin DID on success.
+ * Throws via redirect to the contextual account picker when signed out.
+ * Page routes should call `requireAdmin(ctx)` at the top of their handler.
+ * Returns the verified admin DID on success.
  */
 export function requireAdmin(ctx: AdminCtxLike): string {
   const user = ctx.state.user;
@@ -69,11 +70,11 @@ export function requireAdminApi(
 
 function loginUrl(currentUrl: string): string {
   try {
-    const url = new URL(currentUrl);
-    const next = url.pathname + url.search;
-    return `/oauth/login?next=${encodeURIComponent(next)}`;
+    return adminAuthorizationHref(new URL(currentUrl));
   } catch {
-    return "/oauth/login";
+    return adminAuthorizationHref(
+      new URL("https://atmosphere.invalid/admin"),
+    );
   }
 }
 
@@ -81,8 +82,7 @@ function redirectResponse(location: string): Response {
   return new Response(null, { status: 303, headers: { location } });
 }
 
-/** Surface admin routes as 404 to anonymous/non-admin users so we don't
- *  leak that the URL exists. (Logged-in non-admins also get 404.) */
+/** Surface admin routes as 404 to signed-in non-admin users. */
 function notFoundResponse(): Response {
   return new Response("not found", { status: 404 });
 }
@@ -90,6 +90,10 @@ function notFoundResponse(): Response {
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+      "x-content-type-options": "nosniff",
+    },
   });
 }

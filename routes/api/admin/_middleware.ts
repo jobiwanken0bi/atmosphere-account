@@ -1,4 +1,5 @@
 import { define } from "../../../utils.ts";
+import { requireAdminApi } from "../../../lib/admin.ts";
 import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 
 export const handler = define.middleware(async (ctx) => {
@@ -6,6 +7,8 @@ export const handler = define.middleware(async (ctx) => {
     (err) => appviewUnavailable("admin API", err),
   );
   if (proxied) return proxied;
+  const gate = requireAdminApi(ctx);
+  if (!gate.ok) return gate.response;
   return ctx.next();
 });
 

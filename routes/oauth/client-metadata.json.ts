@@ -7,7 +7,7 @@
 import { define } from "../../utils.ts";
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { siteOrigin } from "../../lib/env.ts";
-import { DEFAULT_OAUTH_SCOPE } from "../../lib/oauth-scopes.ts";
+import { OAUTH_CLIENT_METADATA_SCOPE } from "../../lib/oauth-scopes.ts";
 
 export const handler = define.handlers({
   GET(ctx): Response {
@@ -16,14 +16,14 @@ export const handler = define.handlers({
       client_id: oauth.clientId,
       application_type: "web",
       client_name: "Atmosphere Account Registry",
-      client_uri: siteOrigin(),
+      client_uri: `${oauth.origin}/`,
       logo_uri: `${oauth.origin}/union.svg`,
       tos_uri: siteOrigin(),
       policy_uri: siteOrigin(),
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       redirect_uris: [oauth.redirectUri],
-      scope: DEFAULT_OAUTH_SCOPE,
+      scope: OAUTH_CLIENT_METADATA_SCOPE,
       dpop_bound_access_tokens: true,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "ES256",

@@ -14,7 +14,9 @@ import { FreshAppCard } from "../../components/explore/AppDirectoryShowcase.tsx"
 import AppLikeButton, {
   appLikeReauthHref,
 } from "../../islands/AppLikeButton.tsx";
-import AppReviewList from "../../islands/AppReviewList.tsx";
+import AppReviewList, {
+  showAppReviewHeaderSummary,
+} from "../../islands/AppReviewList.tsx";
 import ProfileReviewComposer from "../../islands/ProfileReviewComposer.tsx";
 import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import ShareButton from "../../islands/ShareButton.tsx";
@@ -22,6 +24,7 @@ import WebsiteIcon from "../../components/icons/WebsiteIcon.tsx";
 import BskyIcon from "../../components/icons/BskyIcon.tsx";
 import TangledIcon from "../../components/icons/TangledIcon.tsx";
 import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
+import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 import {
   AndroidIcon,
   AppleIcon,
@@ -80,6 +83,9 @@ import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import { favoriteResumeReturnPath } from "../../lib/favorite-resume.ts";
+import { getSessionForCapabilities } from "../../lib/oauth.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -174,21 +180,29 @@ export const handler = define.handlers({
     const legacyProfile = profile && !appListing?.atstoreListingUri
       ? profile
       : null;
-    const [reviewSummary, reviews, ownReview, updates] = legacyProfile
-      ? await Promise.all([
-        getReviewSummary(legacyProfile.did).catch(() => emptyReviewSummary()),
-        listVisibleReviews(legacyProfile.did, { limit: 20 }).catch(() => []),
-        user
-          ? getOwnReview(legacyProfile.did, user.did).catch(() => null)
-          : null,
-        listProfileUpdates(legacyProfile.did, { limit: 6 }).catch(() => []),
-      ])
-      : [
-        emptyReviewSummary(),
-        [] as ReviewRow[],
-        null,
-        [] as ProfileUpdateRow[],
-      ];
+    const [reviewSummary, reviews, ownReview, updates, ownerAppSession] =
+      legacyProfile
+        ? await Promise.all([
+          getReviewSummary(legacyProfile.did).catch(() => emptyReviewSummary()),
+          listVisibleReviews(legacyProfile.did, { limit: 20 }).catch(() => []),
+          user
+            ? getOwnReview(legacyProfile.did, user.did).catch(() => null)
+            : null,
+          listProfileUpdates(legacyProfile.did, { limit: 6 }).catch(() => []),
+          user?.did === legacyProfile.did
+            ? getSessionForCapabilities(user.did, ["app"], { quiet: true })
+              .catch(
+                () => null,
+              )
+            : Promise.resolve(null),
+        ])
+        : [
+          emptyReviewSummary(),
+          [] as ReviewRow[],
+          null,
+          [] as ProfileUpdateRow[],
+          null,
+        ];
     const [displayReviews, displayAppReviews] = await Promise.all([
       legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
       enrichAppMirroredReviews(appReviews),
@@ -299,6 +313,7 @@ export const handler = define.handlers({
         appReviewSort={appReviewSort}
         appSourceAliases={appSourceAliases}
         canInspectAppSources={canInspectAppSources}
+        appAuthorized={Boolean(ownerAppSession)}
         reviewSummary={reviewSummary}
         reviews={displayReviews}
         updates={updates}
@@ -328,6 +343,7 @@ interface DetailProps {
   appReviewSort: AppReviewSort;
   appSourceAliases: AppAliasRow[];
   canInspectAppSources: boolean;
+  appAuthorized: boolean;
   reviewSummary: ReviewSummary;
   reviews: DisplayReview[];
   updates: ProfileUpdateRow[];
@@ -354,6 +370,7 @@ function ProfileDetailPage(
     appReviewSort,
     appSourceAliases,
     canInspectAppSources,
+    appAuthorized,
     reviewSummary,
     reviews,
     updates,
@@ -427,6 +444,7 @@ function ProfileDetailPage(
     ? `/api/registry/banner/${encodeURIComponent(profile.did)}`
     : null;
   const shareCopy = t.detail.share;
+  const profilePath = `/apps/${encodeURIComponent(profile.handle)}`;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -486,14 +504,31 @@ function ProfileDetailPage(
                 reviews={reviews}
                 signedIn={!!signedInUser}
                 isOwner={isOwner}
+                reportAuth={{
+                  returnTo: profilePath,
+                  targetName: profile.name,
+                  rememberedAccounts: account.rememberedAccounts,
+                  currentDid: signedInUser?.did,
+                  currentHandle: signedInUser?.handle,
+                }}
                 action={
                   <ProfileReviewComposer
                     targetId={profile.handle}
                     signedIn={!!signedInUser}
                     isOwner={isOwner}
-                    loginHref={`/signin?next=${
-                      encodeURIComponent(`/apps/${profile.handle}`)
-                    }`}
+                    loginHref={oauthSigninUrl({
+                      action: "legacy_review",
+                      name: profile.name,
+                      next: `/apps/${profile.handle}?review=compose`,
+                      capabilities: ["legacy_review"],
+                    })}
+                    returnTo={`/apps/${profile.handle}?review=compose`}
+                    authCapabilities={["legacy_review"]}
+                    authAction="legacy_review"
+                    authTargetName={profile.name}
+                    rememberedAccounts={account.rememberedAccounts}
+                    currentDid={signedInUser?.did}
+                    currentHandle={signedInUser?.handle}
                     ownReview={ownReview
                       ? {
                         id: ownReview.id,
@@ -555,16 +590,22 @@ function ProfileDetailPage(
 
             {isOwner && (
               <p style={{ marginTop: "1.5rem" }}>
-                <a href="/apps/manage" class="explore-cta-primary">
-                  {t.detail.editProfile}
-                </a>
+                <OwnerManagementLink
+                  authorized={appAuthorized}
+                  kind="app"
+                  destinationHref="/apps/manage"
+                  targetName={profile.name}
+                  label={t.detail.editProfile}
+                  className="explore-cta-primary"
+                  rememberedAccounts={account.rememberedAccounts}
+                  initialHandle={signedInUser?.handle}
+                />
               </p>
             )}
 
             {!isOwner && (
               <ReportProfileButton
                 targetId={profile.handle}
-                signedIn={!!signedInUser}
                 copy={{
                   button: messages.report.button,
                   modalTitle: messages.report.modalTitle,
@@ -575,6 +616,7 @@ function ProfileDetailPage(
                   submit: messages.report.submit,
                   submitting: messages.report.submitting,
                   cancel: messages.report.cancel,
+                  done: messages.report.done,
                   sentTitle: messages.report.sentTitle,
                   sentBody: messages.report.sentBody,
                   duplicate: messages.report.duplicate,
@@ -720,6 +762,7 @@ function AppListingDetailPage(
               signedInUser={signedInUser}
               isOwner={isOwner}
               locale={locale}
+              rememberedAccounts={account.rememberedAccounts}
             />
 
             {relatedApps.length > 0 && (
@@ -950,6 +993,7 @@ function AppReviewsSection(
     signedInUser,
     isOwner,
     locale,
+    rememberedAccounts,
   }: {
     app: AppListing;
     reviews: DisplayAppReview[];
@@ -959,15 +1003,40 @@ function AppReviewsSection(
     signedInUser: { did: string; handle: string } | null;
     isOwner: boolean;
     locale: Locale;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
   },
 ) {
   const messages = getMessages(locale);
   const detailPath = `/apps/${app.slug}`;
+  const reviewReturnPath = `${detailPath}?review=compose`;
+  const favoriteReturnPath = favoriteResumeReturnPath(app.slug, "save");
+  const favoriteRemoveReturnPath = favoriteResumeReturnPath(
+    app.slug,
+    "remove",
+  );
   const encodedIdentifier = encodeURIComponent(app.slug);
-  const loginHref = `/signin?next=${encodeURIComponent(detailPath)}`;
-  const reauthHref = signedInUser
-    ? appLikeReauthHref(signedInUser.handle, detailPath)
-    : loginHref;
+  const reviewLoginHref = oauthSigninUrl({
+    action: "review",
+    name: app.name,
+    next: reviewReturnPath,
+    capabilities: ["review"],
+  });
+  const favoriteLoginHref = oauthSigninUrl({
+    action: "favorite",
+    name: app.name,
+    next: favoriteReturnPath,
+    capabilities: ["favorite"],
+  });
+  const reauthSaveHref = signedInUser
+    ? appLikeReauthHref(signedInUser.did, favoriteReturnPath, app.name)
+    : favoriteLoginHref;
+  const reauthRemoveHref = signedInUser
+    ? appLikeReauthHref(
+      signedInUser.did,
+      favoriteRemoveReturnPath,
+      app.name,
+    )
+    : favoriteLoginHref;
   const reviewSummary = app.reviewCount > 0 && app.averageRating != null
     ? messages.reviews.summary.average(
       app.averageRating.toFixed(1),
@@ -983,7 +1052,11 @@ function AppReviewsSection(
           <h2 class="profile-card-section-title">
             {messages.reviews.list.heading}
           </h2>
-          <p class="app-detail-review-summary">{reviewSummary}</p>
+          {showAppReviewHeaderSummary(
+            app.reviewCount,
+            app.averageRating,
+            !!app.atstoreListingUri,
+          ) && <p class="app-detail-review-summary">{reviewSummary}</p>}
           {isOwner && app.favoriteCount > 0 && (
             <p class="app-detail-review-meta">
               {messages.reviews.app.likeCount(app.favoriteCount)}
@@ -996,8 +1069,15 @@ function AppReviewsSection(
               identifier={app.slug}
               signedIn={!!signedInUser}
               isOwner={isOwner}
-              loginHref={loginHref}
-              reauthHref={reauthHref}
+              loginHref={favoriteLoginHref}
+              reauthSaveHref={reauthSaveHref}
+              reauthRemoveHref={reauthRemoveHref}
+              returnTo={favoriteReturnPath}
+              removeReturnTo={favoriteRemoveReturnPath}
+              rememberedAccounts={rememberedAccounts}
+              currentDid={signedInUser?.did}
+              currentHandle={signedInUser?.handle}
+              targetName={app.name}
               initiallyLiked={!!ownFavorite}
               count={app.favoriteCount}
               copy={messages.reviews.app.like}
@@ -1006,7 +1086,14 @@ function AppReviewsSection(
               targetId={app.slug}
               signedIn={!!signedInUser}
               isOwner={isOwner}
-              loginHref={loginHref}
+              loginHref={reviewLoginHref}
+              returnTo={reviewReturnPath}
+              authCapabilities={["review"]}
+              authAction="review"
+              authTargetName={app.name}
+              rememberedAccounts={rememberedAccounts}
+              currentDid={signedInUser?.did}
+              currentHandle={signedInUser?.handle}
               submitEndpoint={`/api/apps/${encodedIdentifier}/reviews`}
               deleteEndpoint={`/api/apps/${encodedIdentifier}/reviews/me`}
               maxBodyLength={8000}

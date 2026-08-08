@@ -13,12 +13,17 @@ import {
   registerLoginAppForOwner,
   splitAllowedReturnUris,
 } from "../../../lib/atmosphere-login.ts";
-import { rejectLargeRequest } from "../../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 import {
   type AccountHost,
   listClaimedAccountHostsForOwner,
 } from "../../../lib/account-hosts.ts";
+import { developerAuthorizationHref } from "../../../lib/oauth-entry-context.ts";
 
 interface DeveloperAppFormValues {
   appName: string;
@@ -87,7 +92,20 @@ export const handler = define.handlers({
     if (limited) return limited;
     const large = rejectLargeRequest(ctx.req, MAX_DEVELOPER_APP_FORM_BYTES);
     if (large) return large;
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_DEVELOPER_APP_FORM_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid app form",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const values = valuesFromForm(form);
     try {
       await registerLoginAppForOwner(user.did, {
@@ -466,9 +484,7 @@ function DeveloperAppCard({ app }: { app: LoginApp }) {
 function redirectToSignin(url: URL): Response {
   return new Response(null, {
     status: 303,
-    headers: {
-      location: `/signin?next=${encodeURIComponent(url.pathname + url.search)}`,
-    },
+    headers: { location: developerAuthorizationHref(url) },
   });
 }
 

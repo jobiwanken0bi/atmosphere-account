@@ -5,9 +5,11 @@ import { IS_DEV } from "../../../lib/env.ts";
 import { runtimeRelease } from "../../../lib/release.ts";
 import { getWorkerLeaseStatus } from "../../../lib/worker-lease.ts";
 import { getPdsInventoryFreshness } from "../../../lib/pds-inventory-health.ts";
+import { readResponseTextWithLimit } from "../../../lib/security.ts";
 
 const INDEXER_LEASE = "jetstream-indexer";
 const READINESS_SUCCESS_CACHE_MS = 2_000;
+const MAX_APPVIEW_READINESS_BYTES = 256 * 1024;
 
 interface ReadinessResult {
   body: Record<string, unknown>;
@@ -99,14 +101,37 @@ async function appviewReadiness(
   fetchImpl: typeof fetch = fetch,
 ): Promise<ReadinessResult> {
   const url = new URL("/api/health/ready", appview);
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.username || url.password
+  ) {
+    throw new Error("invalid appview readiness URL");
+  }
   const res = await fetchImpl(url, {
     headers: { accept: "application/json" },
+    redirect: "manual",
     signal: AbortSignal.timeout(5000),
   });
-  const rawBody = await res.json().catch(() => ({
+  const contentType = res.headers.get("content-type");
+  let rawBody: unknown = {
     ok: false,
     error: "invalid_appview_readiness_response",
-  }));
+  };
+  if (isJsonMediaType(contentType)) {
+    const bounded = await readResponseTextWithLimit(
+      res,
+      MAX_APPVIEW_READINESS_BYTES,
+    );
+    if (bounded.ok) {
+      try {
+        rawBody = JSON.parse(bounded.text);
+      } catch {
+        // Keep the fail-closed invalid response value.
+      }
+    }
+  } else {
+    await res.body?.cancel().catch(() => {});
+  }
   const body = isRecord(rawBody)
     ? rawBody
     : { ok: false, error: "invalid_appview_readiness_response" };
@@ -130,6 +155,11 @@ async function appviewReadiness(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isJsonMediaType(value: string | null): boolean {
+  const mediaType = (value ?? "").split(";", 1)[0].trim().toLowerCase();
+  return mediaType === "application/json" || mediaType.endsWith("+json");
 }
 
 function readinessJson(

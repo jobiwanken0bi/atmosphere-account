@@ -1,3 +1,5 @@
+import { asset } from "fresh/runtime";
+
 export function wantsBrowserHandoffJson(req: Request): boolean {
   return req.headers.get("x-atmosphere-login") === "1" ||
     (req.headers.get("accept") ?? "").includes("application/json");
@@ -22,6 +24,9 @@ export function browserHandoffResponse(
 
 export function browserHandoffDocument(redirectUrl: string): Response {
   const href = escapeHtmlAttribute(redirectUrl);
+  const stylesheetHref = asset("/styles.css");
+  const handoffScriptSrc = asset("/login-handoff.js");
+  const logoSrc = asset("/union.svg");
   return new Response(
     `<!doctype html>
 <html lang="en">
@@ -31,12 +36,12 @@ export function browserHandoffDocument(redirectUrl: string): Response {
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>Continue with Atmosphere</title>
-    <link rel="stylesheet" href="/styles.css">
-    <script type="module" src="/login-handoff.js"></script>
+    <link rel="stylesheet" href="${stylesheetHref}">
+    <script type="module" src="${handoffScriptSrc}"></script>
   </head>
   <body>
     <main class="login-handoff-page">
-      <img src="/union.svg" alt="" width="36" height="36">
+      <img src="${logoSrc}" alt="" width="36" height="36">
       <p>Returning you to the app</p>
       <a data-login-handoff-target href="${href}">Continue</a>
     </main>

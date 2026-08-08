@@ -1,16 +1,16 @@
 import { useT } from "../i18n/mod.ts";
 
-const atmosphereApps = [
+export const atmosphereApps = [
   { name: "Bluesky", file: "bluesky.jpg", ring: "app-bluesky inner-ring" },
   { name: "Spark", file: "spark.png", ring: "app-spark inner-ring" },
   {
     name: "Margin",
-    file: "margin.webp",
+    file: "margin.jpg",
     ring: "app-margin outer-ring mobile-extra",
   },
   {
     name: "Mu Social",
-    file: "mu-social.webp",
+    file: "mu-social.jpg",
     ring: "app-mu inner-ring",
   },
   { name: "Blacksky", file: "blacksky.jpg", ring: "app-blacksky inner-ring" },
@@ -37,7 +37,7 @@ const atmosphereApps = [
   },
   {
     name: "Anisota",
-    file: "anisota.webp",
+    file: "anisota.jpg",
     ring: "app-anisota outer-ring mobile-extra",
   },
   { name: "Tangled", file: "tangled.jpg", ring: "app-tangled inner-ring" },
@@ -54,7 +54,7 @@ const atmosphereApps = [
   { name: "Plyr", file: "plyr.jpg", ring: "app-plyr inner-ring" },
   {
     name: "Pckt",
-    file: "pckt.webp",
+    file: "pckt.jpg",
     ring: "app-pckt outer-ring edge-icon mobile-extra",
   },
   {
@@ -69,7 +69,7 @@ const atmosphereApps = [
   },
   {
     name: "Cartridge",
-    file: "cartridge.webp",
+    file: "cartridge.jpg",
     ring: "app-cartridge outer-ring mobile-extra",
   },
   {
@@ -79,22 +79,22 @@ const atmosphereApps = [
   },
   {
     name: "Blento",
-    file: "blento.webp",
+    file: "blento.jpg",
     ring: "app-blento outer-ring mobile-extra",
   },
   {
     name: "Surf",
-    file: "surf.webp",
+    file: "surf.jpg",
     ring: "app-surf outer-ring edge-icon mobile-extra",
   },
   {
     name: "Sifa",
-    file: "sifa.webp",
+    file: "sifa.jpg",
     ring: "app-sifa outer-ring mobile-extra",
   },
   {
     name: "Sill",
-    file: "sill.webp",
+    file: "sill.jpg",
     ring: "app-sill outer-ring mobile-extra",
   },
 ];
@@ -122,10 +122,11 @@ export default function LottieSection() {
           {atmosphereApps.map((app) => (
             <span key={app.name} class={`app-icon ${app.ring}`}>
               <img
-                src={`/atmosphere-apps/${app.file}`}
+                src={`/atmosphere-app-icons/${app.file}`}
                 alt=""
                 loading="lazy"
                 decoding="async"
+                fetchPriority="low"
                 width={64}
                 height={64}
               />

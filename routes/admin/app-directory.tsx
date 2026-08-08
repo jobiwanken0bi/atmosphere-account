@@ -21,6 +21,7 @@ import {
   listRecentAppDirectoryJobs,
   startAppDirectoryJob,
 } from "../../lib/app-directory-jobs.ts";
+import { readAdminFormRequest } from "../../lib/admin-request.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -43,7 +44,9 @@ export const handler = define.handlers({
     );
   },
   async POST(ctx) {
-    const form = await ctx.req.formData().catch(() => null);
+    const parsed = await readAdminFormRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const form = parsed.value;
     const action = formText(form, "action");
     const kind = readJobKind(action) ?? "rescore_trending";
     const job = await enqueueAppDirectoryJob(

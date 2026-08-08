@@ -4,7 +4,7 @@ import { SUPPORTED_LOCALES, useLocale, useT } from "../i18n/mod.ts";
  * JS-free language switcher. Renders nothing while only one locale is
  * registered, so it stays out of the way until more translations land.
  *
- * The form GETs `/api/locale`, which writes the cookie and redirects back
+ * The form POSTs `/api/locale`, which writes the cookie and redirects back
  * to the page that submitted it.
  */
 export default function LocaleSwitcher({ returnTo }: { returnTo?: string }) {
@@ -15,7 +15,7 @@ export default function LocaleSwitcher({ returnTo }: { returnTo?: string }) {
 
   return (
     <form
-      method="get"
+      method="post"
       action="/api/locale"
       class="locale-switcher"
       aria-label={t.localeSwitcher.label}

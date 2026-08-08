@@ -20,7 +20,7 @@
  */
 import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
-import { getValidSession } from "../../lib/oauth.ts";
+import { getValidSession, grantedScopeForSession } from "../../lib/oauth.ts";
 import {
   buildSessionCookie,
   createSession,
@@ -28,7 +28,12 @@ import {
 } from "../../lib/session.ts";
 import { readRememberedAccountsFromHeader } from "../../lib/remembered-accounts.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
-import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../lib/security.ts";
 import {
   browserHandoffError,
   browserHandoffResponse,
@@ -37,73 +42,256 @@ import {
 import { devPickerAccountForDid } from "../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../lib/env.ts";
 import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
+import {
+  hasOAuthCapabilities,
+  normalizeOAuthCapabilities,
+  type OAuthCapability,
+} from "../../lib/oauth-scopes.ts";
+import {
+  isOAuthAction,
+  isOAuthActionCapabilityRequest,
+  type OAuthAction,
+  safeOAuthTargetName,
+} from "../../lib/oauth-action.ts";
+import {
+  InvalidOAuthRequestInputError,
+  optionalEnum,
+  optionalJsonString,
+  optionalJsonStringList,
+  optionalSafeRelativePath,
+  plainJsonRecord,
+  rejectSearchFormOverlap,
+  rejectSearchJsonOverlap,
+  repeatedFormStrings,
+  repeatedSearchValues,
+  singleFormString,
+  singleSearchValue,
+} from "../../lib/oauth-request-input.ts";
 
 const SWITCH_SESSION_TIMEOUT_MS = 5_000;
 const MAX_SWITCH_BODY_BYTES = 8_192;
-
-function safeNext(raw: string | null | undefined): string | null {
-  return raw && isSafeRelativePath(raw) ? raw : null;
-}
+const SWITCH_CONTEXT_FIELDS = [
+  "did",
+  "next",
+  "intent",
+  "choose",
+  "capability",
+  "action",
+  "name",
+] as const;
 
 async function readInput(
   req: Request,
   url: URL,
-): Promise<{ did: string | null; next: string | null }> {
+): Promise<{
+  did: string | null;
+  next: string | null;
+  intent: "user" | "project" | null;
+  chooseAnotherAccount: boolean;
+  capabilities: OAuthCapability[] | null;
+  action: OAuthAction | null;
+  targetName: string | null;
+}> {
+  const queryCapabilities = normalizeOAuthCapabilities(
+    repeatedSearchValues(url.searchParams, "capability"),
+  );
+  const queryIntent = optionalEnum(
+    singleSearchValue(url.searchParams, "intent"),
+    ["user", "project"] as const,
+  );
+  const queryChoose = optionalEnum(
+    singleSearchValue(url.searchParams, "choose"),
+    ["another"] as const,
+  );
+  const rawQueryAction = singleSearchValue(url.searchParams, "action");
+  if (rawQueryAction !== null && !isOAuthAction(rawQueryAction)) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  const queryAction = rawQueryAction;
+  const queryTargetName = safeOAuthTargetName(
+    singleSearchValue(url.searchParams, "name"),
+  ) ?? null;
+  const queryDid = singleSearchValue(url.searchParams, "did")?.trim() || null;
+  const queryNext = optionalSafeRelativePath(
+    singleSearchValue(url.searchParams, "next"),
+  );
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
-    const body = await req.json().catch(() => null) as
-      | { did?: string; next?: string }
-      | null;
+    const body = plainJsonRecord(
+      await readJsonRequestWithLimit(req, MAX_SWITCH_BODY_BYTES),
+    );
+    rejectSearchJsonOverlap(url.searchParams, body, SWITCH_CONTEXT_FIELDS);
+    const bodyCapabilities = optionalJsonStringList(body, "capability");
+    const bodyAction = optionalJsonString(body, "action");
+    if (bodyAction !== null && !isOAuthAction(bodyAction)) {
+      throw new InvalidOAuthRequestInputError();
+    }
+    const bodyIntent = optionalEnum(
+      optionalJsonString(body, "intent"),
+      [
+        "user",
+        "project",
+      ] as const,
+    );
+    const bodyChoose = optionalEnum(
+      optionalJsonString(body, "choose"),
+      [
+        "another",
+      ] as const,
+    );
     return {
-      did: body?.did?.trim() ?? null,
-      next: safeNext(body?.next),
+      did: optionalJsonString(body, "did")?.trim() || queryDid,
+      next: optionalSafeRelativePath(optionalJsonString(body, "next")) ??
+        queryNext,
+      intent: bodyIntent ?? queryIntent,
+      chooseAnotherAccount: bodyChoose === "another" ||
+        queryChoose === "another",
+      capabilities: bodyCapabilities
+        ? normalizeOAuthCapabilities(bodyCapabilities)
+        : queryCapabilities,
+      action: bodyAction ?? queryAction,
+      targetName: safeOAuthTargetName(optionalJsonString(body, "name")) ??
+        queryTargetName,
     };
   }
-  const form = await req.formData().catch(() => null);
-  if (!form) {
+  if (!req.body && !ct) {
     return {
-      did: url.searchParams.get("did")?.trim() || null,
-      next: safeNext(url.searchParams.get("next")),
+      did: queryDid,
+      next: queryNext,
+      intent: queryIntent,
+      chooseAnotherAccount: queryChoose === "another",
+      capabilities: queryCapabilities,
+      action: queryAction,
+      targetName: queryTargetName,
     };
   }
-  const v = form.get("did");
-  const next = form.get("next");
+  const form = await readFormDataRequestWithLimit(req, MAX_SWITCH_BODY_BYTES);
+  if (!form) throw new InvalidOAuthRequestInputError();
+  rejectSearchFormOverlap(url.searchParams, form, SWITCH_CONTEXT_FIELDS);
+  const formIntent = optionalEnum(
+    singleFormString(form, "intent"),
+    [
+      "user",
+      "project",
+    ] as const,
+  );
+  const formChoose = optionalEnum(
+    singleFormString(form, "choose"),
+    [
+      "another",
+    ] as const,
+  );
+  const formCapabilities = repeatedFormStrings(form, "capability");
+  const formAction = singleFormString(form, "action");
+  if (formAction !== null && !isOAuthAction(formAction)) {
+    throw new InvalidOAuthRequestInputError();
+  }
   return {
-    did: typeof v === "string"
-      ? v.trim()
-      : url.searchParams.get("did")?.trim() || null,
-    next: safeNext(
-      typeof next === "string" ? next : url.searchParams.get("next"),
-    ),
+    did: singleFormString(form, "did")?.trim() || queryDid,
+    next: optionalSafeRelativePath(singleFormString(form, "next")) ??
+      queryNext,
+    intent: formIntent ?? queryIntent,
+    chooseAnotherAccount: formChoose === "another" ||
+      queryChoose === "another",
+    capabilities: formCapabilities.length > 0
+      ? normalizeOAuthCapabilities(formCapabilities)
+      : queryCapabilities,
+    action: formAction ?? queryAction,
+    targetName: safeOAuthTargetName(singleFormString(form, "name")) ??
+      queryTargetName,
   };
 }
 
 export function buildSwitchReauthLocation(
-  handle: string,
+  identifier: string,
   next: string | null,
+  capabilities: readonly OAuthCapability[] = [],
+  intent: "user" | "project" | null = null,
+  action: OAuthAction | null = null,
+  targetName: string | null = null,
+  chooseAnotherAccount = false,
 ): string {
-  const location = new URLSearchParams({ handle });
+  const location = new URLSearchParams({ handle: identifier });
   if (next) location.set("next", next);
+  if (intent) location.set("intent", intent);
+  if (action) location.set("action", action);
+  if (targetName) location.set("name", targetName);
+  if (chooseAnotherAccount) location.set("choose", "another");
+  for (const capability of capabilities) {
+    location.append("capability", capability);
+  }
   return `/oauth/login?${location.toString()}`;
 }
 
 export async function readSwitchInputForTest(
   req: Request,
 ): Promise<{ did: string | null; next: string | null }> {
-  return await readInput(req, new URL(req.url));
+  const { did, next } = await readInput(req, new URL(req.url));
+  return { did, next };
+}
+
+/** Full parser view used by capability-preservation regression tests. */
+export async function readSwitchAuthorizationInputForTest(
+  req: Request,
+): Promise<{
+  did: string | null;
+  next: string | null;
+  intent: "user" | "project" | null;
+  capabilities: OAuthCapability[] | null;
+  action: OAuthAction | null;
+  targetName: string | null;
+  chooseAnotherAccount: boolean;
+}> {
+  const {
+    did,
+    next,
+    intent,
+    capabilities,
+    action,
+    targetName,
+    chooseAnotherAccount,
+  } = await readInput(
+    req,
+    new URL(req.url),
+  );
+  return {
+    did,
+    next,
+    intent,
+    capabilities,
+    action,
+    targetName,
+    chooseAnotherAccount,
+  };
 }
 
 function redirectToReauth(
   req: Request,
-  handle: string,
+  identifier: string,
   next: string | null,
+  capabilities: readonly OAuthCapability[],
+  intent: "user" | "project" | null,
+  action: OAuthAction | null,
+  targetName: string | null,
+  chooseAnotherAccount: boolean,
 ): Response {
   const headers = new Headers();
   headers.append("set-cookie", clearPasskeyManagementCookie());
-  return browserHandoffResponse(buildSwitchReauthLocation(handle, next), {
-    json: wantsBrowserHandoffJson(req),
-    headers,
-  });
+  return browserHandoffResponse(
+    buildSwitchReauthLocation(
+      identifier,
+      next,
+      capabilities,
+      intent,
+      action,
+      targetName,
+      chooseAnotherAccount,
+    ),
+    {
+      json: wantsBrowserHandoffJson(req),
+      headers,
+    },
+  );
 }
 
 function switchedSessionHeaders(sessionCookie: string): Headers {
@@ -147,8 +335,38 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     );
   }
   const wantsJson = wantsBrowserHandoffJson(ctx.req);
-  const { did, next } = await readInput(ctx.req, url);
+  let input: Awaited<ReturnType<typeof readInput>>;
+  try {
+    input = await readInput(ctx.req, url);
+  } catch (error) {
+    return browserHandoffError(
+      error instanceof RequestBodyTooLargeError
+        ? "request body too large"
+        : "invalid authorization context",
+      error instanceof RequestBodyTooLargeError ? 413 : 400,
+      wantsJson,
+    );
+  }
+  const {
+    did,
+    next,
+    intent,
+    capabilities,
+    action,
+    targetName,
+    chooseAnotherAccount,
+  } = input;
   if (!did) return browserHandoffError("missing did", 400, wantsJson);
+  if (!capabilities) {
+    return browserHandoffError("invalid capability", 400, wantsJson);
+  }
+  if (!isOAuthActionCapabilityRequest(action, capabilities)) {
+    return browserHandoffError(
+      "invalid action capability combination",
+      400,
+      wantsJson,
+    );
+  }
 
   const remembered = await readRememberedAccountsFromHeader(
     ctx.req.headers.get("cookie"),
@@ -174,11 +392,17 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     devAccount &&
     devAccount.handle.toLowerCase() === target.handle.toLowerCase()
   ) {
-    await destroySession(ctx.req).catch(() => {});
     const cookieValue = await createSession({
       did: devAccount.did,
       handle: devAccount.handle,
     });
+    // Mint the replacement before deleting the current row. A transient DB
+    // failure must not sign the person out of the account they already had.
+    try {
+      await destroySession(ctx.req);
+    } catch (error) {
+      return appviewUnavailable("oauth switch session rotation", error);
+    }
     return browserHandoffResponse(next ?? "/account", {
       json: wantsJson,
       headers: switchedSessionHeaders(buildSessionCookie(cookieValue)),
@@ -194,28 +418,59 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     SWITCH_SESSION_TIMEOUT_MS,
   );
   if (!oauthSession) {
-    return redirectToReauth(ctx.req, target.handle, next);
+    return redirectToReauth(
+      ctx.req,
+      target.did,
+      next,
+      capabilities,
+      intent,
+      action,
+      targetName,
+      chooseAnotherAccount,
+    );
   }
-
-  /** Drop the previous app session row (if any) so we don't leak
-   *  rows in the table — the cookie itself is overwritten below. */
-  await destroySession(ctx.req).catch(() => {});
+  if (
+    !hasOAuthCapabilities(
+      grantedScopeForSession(oauthSession),
+      capabilities,
+    )
+  ) {
+    return redirectToReauth(
+      ctx.req,
+      target.did,
+      next,
+      capabilities,
+      intent,
+      action,
+      targetName,
+      chooseAnotherAccount,
+    );
+  }
 
   const cookieValue = await createSession({
     did: oauthSession.did,
     handle: oauthSession.handle,
   });
+  /** Drop the previous app session row only after its replacement exists.
+   *  The response cookie points at the new row. */
+  try {
+    await destroySession(ctx.req);
+  } catch (error) {
+    return appviewUnavailable("oauth switch session rotation", error);
+  }
   const accountType = await getEffectiveAccountType(oauthSession.did).catch(
     () => null,
   );
 
   return browserHandoffResponse(
     next ??
-      (accountType === "project"
-        ? "/apps/manage"
-        : accountType === "user"
-        ? "/account"
-        : "/account/type"),
+      (intent === "project" && accountType !== "project"
+        ? "/account?upgrade=app"
+        : (accountType === "project"
+          ? "/apps/manage"
+          : accountType === "user"
+          ? "/account"
+          : "/account/type")),
     {
       json: wantsJson,
       headers: switchedSessionHeaders(buildSessionCookie(cookieValue)),

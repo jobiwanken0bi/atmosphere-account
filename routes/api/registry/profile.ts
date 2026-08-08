@@ -11,7 +11,9 @@
  */
 import { define } from "../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
-import { loadSession } from "../../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../../lib/oauth.ts";
+import { oauthReauthorizationUrl } from "../../../lib/oauth-action.ts";
+import type { OAuthCapability } from "../../../lib/oauth-scopes.ts";
 import {
   deleteProfileRecord,
   deleteRecord,
@@ -55,6 +57,11 @@ import {
   publishCommunityAppProfileFromProfileRecord,
 } from "../../../lib/community-app-profile.ts";
 import { resolveAppListingWriteTarget } from "../../../lib/app-listing-lifecycle.ts";
+import { appProfileWriteCapabilities } from "../../../lib/profile-write-capabilities.ts";
+import { isJsonMediaType, isSafeRelativePath } from "../../../lib/security.ts";
+import { isAtprotoTid } from "../../../lib/tid.ts";
+import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import { matchesRasterImageSignature } from "../../../lib/raster-image-security.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
@@ -86,6 +93,7 @@ const SCREENSHOT_MIME_TYPES = new Set([
 ]);
 const BANNER_MIME_TYPES = SCREENSHOT_MIME_TYPES;
 const JSON_BODY_TOO_LARGE = Symbol("jsonBodyTooLarge");
+const MAX_PROFILE_COLLECTION_INPUTS = 128;
 
 async function tryPublishCommunityProfile(input: {
   did: string;
@@ -187,6 +195,8 @@ interface ProfileFormPayload {
   screenshotUploads?: { dataBase64: string; mimeType: string }[];
   /** Create a distinct ATStore listing instead of updating the first one. */
   createNewListing?: boolean;
+  /** Client-stable TID used to make a distinct listing retry idempotent. */
+  createListingRkey?: string;
   /** Existing ATStore record to update when this DID owns several apps. */
   atstoreListingUri?: string | null;
 }
@@ -291,10 +301,68 @@ function normalizeLinksPayload(input: unknown): LinkEntry[] {
   return out;
 }
 
+/** The profile endpoint has a deliberately large byte budget for image
+ * uploads. Bound JSON collection cardinality separately so that budget cannot
+ * be turned into million-item normalization loops. */
+export function profileCollectionBoundsErrorForTest(
+  body: ProfileFormPayload,
+): string | null {
+  const collections: Array<[string, unknown, number]> = [
+    ["categories", body.categories, MAX_PROFILE_COLLECTION_INPUTS],
+    ["subcategories", body.subcategories, MAX_PROFILE_COLLECTION_INPUTS],
+    ["links", body.links, MAX_PROFILE_COLLECTION_INPUTS],
+    [
+      "lexicons.produces",
+      body.lexicons?.produces,
+      MAX_PROFILE_COLLECTION_INPUTS,
+    ],
+    [
+      "lexicons.consumes",
+      body.lexicons?.consumes,
+      MAX_PROFILE_COLLECTION_INPUTS,
+    ],
+    [
+      "accountIndicators",
+      body.accountIndicators,
+      MAX_PROFILE_COLLECTION_INPUTS,
+    ],
+    ["screenshots", body.screenshots, MAX_PROFILE_COLLECTION_INPUTS],
+    ["screenshotUploads", body.screenshotUploads, SCREENSHOT_MAX_COUNT],
+  ];
+  for (const [field, value, limit] of collections) {
+    if (Array.isArray(value) && value.length > limit) {
+      return `${field}: too many items`;
+    }
+  }
+  return null;
+}
+
+export function profileCreateListingKeyErrorForTest(
+  createNewListing: unknown,
+  createListingRkey: unknown,
+): string | null {
+  if (
+    createNewListing != null && typeof createNewListing !== "boolean"
+  ) return "invalid app listing creation request";
+  if (
+    createListingRkey != null && typeof createListingRkey !== "string"
+  ) return "invalid app listing creation key";
+  const rkey = typeof createListingRkey === "string"
+    ? createListingRkey.trim()
+    : "";
+  if (createNewListing === true) {
+    return rkey && isAtprotoTid(rkey)
+      ? null
+      : "invalid app listing creation key";
+  }
+  return rkey ? "unexpected app listing creation key" : null;
+}
+
 async function readJsonBodyLimited<T>(
   req: Request,
   maxBytes: number,
 ): Promise<T | null | typeof JSON_BODY_TOO_LARGE> {
+  if (!isJsonMediaType(req.headers.get("content-type"))) return null;
   const contentLength = Number(req.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     return JSON_BODY_TOO_LARGE;
@@ -304,15 +372,19 @@ async function readJsonBodyLimited<T>(
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => {});
-      return JSON_BODY_TOO_LARGE;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return JSON_BODY_TOO_LARGE;
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } finally {
+    reader.releaseLock();
   }
 
   const bytes = new Uint8Array(total);
@@ -391,17 +463,71 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "registry-profile-write",
+      capacity: 12,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
+    const body = await readJsonBodyLimited<ProfileFormPayload>(
+      ctx.req,
+      PROFILE_JSON_MAX_BYTES,
+    );
+    if (body === JSON_BODY_TOO_LARGE) {
+      return new Response("request body too large", { status: 413 });
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response("invalid JSON body", { status: 400 });
+    }
+    const collectionBoundsError = profileCollectionBoundsErrorForTest(body);
+    if (collectionBoundsError) {
+      return new Response(collectionBoundsError, { status: 400 });
+    }
+
+    if (
+      body.atstoreListingUri != null &&
+      typeof body.atstoreListingUri !== "string"
+    ) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    const requestedAtstoreTarget = body.atstoreListingUri
+      ? ownedAtstoreTarget(body.atstoreListingUri, user.did)
+      : null;
+    if (body.atstoreListingUri && !requestedAtstoreTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    const creationKeyError = profileCreateListingKeyErrorForTest(
+      body.createNewListing,
+      body.createListingRkey,
+    );
+    if (creationKeyError) {
+      return new Response(creationKeyError, { status: 400 });
+    }
+    const requestedCreateRkey = typeof body.createListingRkey === "string"
+      ? body.createListingRkey.trim()
+      : null;
+
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
-    if (accountType !== "project") {
-      return new Response("project account required", { status: 403 });
+    const targetedAtstoreWrite = !!requestedAtstoreTarget;
+    if (
+      accountType !== "project" && body.createNewListing !== true &&
+      !targetedAtstoreWrite
+    ) {
+      return new Response("owned app listing required", { status: 403 });
     }
 
-    const session = await loadSession(user.did);
+    const requiredCapabilities = appProfileWriteCapabilities(body);
+    const session = await getSessionForCapabilities(
+      user.did,
+      requiredCapabilities,
+    );
     if (!session) {
-      return new Response("OAuth session expired, please sign in again", {
-        status: 401,
+      return appReauthRequired({
+        capabilities: requiredCapabilities,
+        name: trimOrNull(body.name) ?? "your app",
+        next: safeReauthNext(ctx.url),
       });
     }
 
@@ -415,8 +541,10 @@ export const handler = define.handlers({
      * later republish would face the report queue afresh, which is
      * fine).
      */
-    const existing = await getProfileByDid(user.did, { includeTakenDown: true })
-      .catch(() => null);
+    const existing = await getProfileByDid(user.did, {
+      includeTakenDown: true,
+      profileType: "project",
+    }).catch(() => null);
     if (existing?.takedownStatus === "taken_down") {
       return new Response(
         "This app listing has been taken down by an Atmosphere admin. " +
@@ -425,17 +553,13 @@ export const handler = define.handlers({
       );
     }
 
-    const body = await readJsonBodyLimited<ProfileFormPayload>(
-      ctx.req,
-      PROFILE_JSON_MAX_BYTES,
-    );
-    if (body === JSON_BODY_TOO_LARGE) {
-      return new Response("request body too large", { status: 413 });
-    }
-    if (!body) return new Response("invalid JSON body", { status: 400 });
-
     let avatar = body.avatar ?? undefined;
     if (body.avatarUpload?.dataBase64) {
+      if (!SCREENSHOT_MIME_TYPES.has(body.avatarUpload.mimeType)) {
+        return new Response("avatar must be png, jpeg, or webp", {
+          status: 400,
+        });
+      }
       let bytes: Uint8Array;
       try {
         bytes = decodeBase64Limited(
@@ -446,6 +570,12 @@ export const handler = define.handlers({
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
         return new Response(m, { status: 400 });
+      }
+      if (!matchesRasterImageSignature(bytes, body.avatarUpload.mimeType)) {
+        return new Response(
+          "avatar contents do not match the selected image type",
+          { status: 400 },
+        );
       }
       try {
         avatar = await uploadBlob(
@@ -484,6 +614,12 @@ export const handler = define.handlers({
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
         return new Response(m, { status: 400 });
+      }
+      if (!matchesRasterImageSignature(bytes, body.bannerUpload.mimeType)) {
+        return new Response(
+          "banner contents do not match the selected image type",
+          { status: 400 },
+        );
       }
       try {
         banner = await uploadBlob(
@@ -615,6 +751,13 @@ export const handler = define.handlers({
       });
     }
     for (const upload of uploads) {
+      if (
+        !upload || typeof upload !== "object" ||
+        typeof upload.dataBase64 !== "string" ||
+        typeof upload.mimeType !== "string"
+      ) {
+        return new Response("invalid screenshot upload", { status: 400 });
+      }
       if (!SCREENSHOT_MIME_TYPES.has(upload.mimeType)) {
         return new Response("screenshots must be png, jpeg, or webp", {
           status: 400,
@@ -630,6 +773,12 @@ export const handler = define.handlers({
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
         return new Response(m, { status: 400 });
+      }
+      if (!matchesRasterImageSignature(bytes, upload.mimeType)) {
+        return new Response(
+          "screenshot contents do not match the selected image type",
+          { status: 400 },
+        );
       }
       try {
         const image = await uploadBlob(
@@ -709,12 +858,6 @@ export const handler = define.handlers({
       });
     }
 
-    const requestedAtstoreTarget = body.atstoreListingUri
-      ? ownedAtstoreTarget(body.atstoreListingUri, user.did)
-      : null;
-    if (body.atstoreListingUri && !requestedAtstoreTarget) {
-      return new Response("invalid app listing target", { status: 400 });
-    }
     const targetedAtstore = requestedAtstoreTarget
       ? await getRecordPublic(
         session.pdsUrl,
@@ -733,8 +876,24 @@ export const handler = define.handlers({
     if (requestedAtstoreTarget && !targetedAtstore) {
       return new Response("app listing target not found", { status: 404 });
     }
+    const createRetryRecord = body.createNewListing === true &&
+        requestedCreateRkey
+      ? await getRecordPublic(
+        session.pdsUrl,
+        user.did,
+        ATSTORE_LISTING_NSID,
+        requestedCreateRkey,
+      ).then((record) =>
+        record
+          ? {
+            ...record,
+            rkey: requestedCreateRkey,
+          }
+          : null
+      ).catch(() => null)
+      : null;
     const existingAtstore = body.createNewListing === true
-      ? null
+      ? createRetryRecord
       : targetedAtstore ?? await findExistingAtstoreListingForProfile(
         user.did,
         session.pdsUrl,
@@ -755,6 +914,9 @@ export const handler = define.handlers({
           record: validation.value,
           existingRecord: existingAtstore,
           createDistinctListing: body.createNewListing === true,
+          rkeyOverride: body.createNewListing === true
+            ? requestedCreateRkey
+            : null,
         });
         const communityResult = body.createNewListing === true
           ? null
@@ -889,30 +1051,55 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "registry-profile-delete",
+      capacity: 12,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
+    const requestedListings = ctx.url.searchParams.getAll("listing");
+    if (requestedListings.length > 1) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    const requestedListing = requestedListings[0] ?? null;
+    // Reject an explicit foreign or malformed repository target before asking
+    // the account to grant app-writing access. The capability prompt must not
+    // precede the ownership decision for a target named by the request.
+    const requestedTarget = requestedListing
+      ? ownedAtstoreTarget(requestedListing, user.did)
+      : null;
+    if (requestedListing && !requestedTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
-    if (accountType !== "project") {
-      return new Response("project account required", { status: 403 });
+    if (accountType !== "project" && !requestedListing) {
+      return new Response("owned app listing required", { status: 403 });
     }
 
-    const session = await loadSession(user.did);
-    if (!session) return new Response("OAuth session expired", { status: 401 });
+    const requiredCapabilities = ["app"] as const;
+    const session = await getSessionForCapabilities(
+      user.did,
+      requiredCapabilities,
+    );
+    if (!session) {
+      return appReauthRequired({
+        capabilities: requiredCapabilities,
+        name: "your app",
+        next: safeReauthNext(ctx.url),
+      });
+    }
 
-    const requestedListing = ctx.url.searchParams.get("listing");
-    if (requestedListing) {
-      const target = ownedAtstoreTarget(requestedListing, user.did);
-      if (!target) {
-        return new Response("invalid app listing target", { status: 400 });
-      }
+    if (requestedTarget) {
       try {
         await deleteRecord(
           user.did,
           session.pdsUrl,
           ATSTORE_LISTING_NSID,
-          target.rkey,
+          requestedTarget.rkey,
         );
-        await deleteAppRecord(target.uri);
+        await deleteAppRecord(requestedTarget.uri);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return new Response(`ATStore listing delete failed: ${message}`, {
@@ -962,7 +1149,11 @@ export const handler = define.handlers({
       );
       await deleteAppRecord(communityAppProfileAtUri(user.did));
     } catch (err) {
-      console.warn("[registry] community app profile delete skipped:", err);
+      console.error("[registry] community app profile delete failed:", err);
+      return new Response(
+        "The app could not be fully removed from its account host. Try again.",
+        { status: 502 },
+      );
     }
 
     /** Mirror the delete in our local index so /explore stops listing it
@@ -973,6 +1164,10 @@ export const handler = define.handlers({
       await deleteAppRecord(atmosphereProfileAtUri(user.did));
     } catch (err) {
       console.error("[registry] inline delete-from-index failed:", err);
+      return new Response(
+        "The app was removed from its account host, but the directory could not confirm the removal. Try again.",
+        { status: 503 },
+      );
     }
 
     return new Response(JSON.stringify({ ok: true }), {
@@ -999,4 +1194,31 @@ function appviewProxyError(err: unknown): Response {
     status: 503,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+function appReauthRequired(input: {
+  capabilities: readonly OAuthCapability[];
+  name: string;
+  next?: string;
+}): Response {
+  return new Response(
+    JSON.stringify({
+      error: "reauth_required",
+      reauthUrl: oauthReauthorizationUrl({
+        next: input.next ?? "/apps/manage",
+        action: "app",
+        capabilities: input.capabilities,
+        name: input.name,
+      }),
+    }),
+    {
+      status: 403,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    },
+  );
+}
+
+function safeReauthNext(url: URL): string | undefined {
+  const next = url.searchParams.get("next");
+  return next && isSafeRelativePath(next) ? next : undefined;
 }

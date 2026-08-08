@@ -42,7 +42,10 @@ Deno.test("browser handoff document keeps the callback in a safe link", async ()
   assertEquals(response.status, 200);
   assertEquals(response.headers.get("cache-control"), "no-store");
   assertEquals(response.headers.get("referrer-policy"), "no-referrer");
-  assertEquals(html.includes('src="/login-handoff.js"'), true);
+  assertEquals(
+    html.includes('src="/login-handoff.js?__frsh_c='),
+    true,
+  );
   assertEquals(
     html.includes(
       'href="https://app.example/callback?state=one&amp;selection_token=a%22b&lt;c&gt;"',

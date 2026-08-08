@@ -6,11 +6,24 @@ import {
   isExampleOAuthConfigured,
   startExampleAtprotoOAuth,
 } from "../../../../lib/example-atproto-oauth.ts";
+import { singleSearchValue } from "../../../../lib/oauth-request-input.ts";
+import { buildOAuthFlowBindingCookie } from "../../../../lib/oauth-flow-binding.ts";
+
+const MAX_EXAMPLE_OAUTH_START_QUERY_BYTES = 8_192;
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const handle = ctx.url.searchParams.get("handle");
-    const did = ctx.url.searchParams.get("did");
+    if (ctx.url.search.length > MAX_EXAMPLE_OAUTH_START_QUERY_BYTES) {
+      return new Response("request URL too large", { status: 414 });
+    }
+    let handle: string | null;
+    let did: string | null;
+    try {
+      handle = singleSearchValue(ctx.url.searchParams, "handle");
+      did = singleSearchValue(ctx.url.searchParams, "did");
+    } catch {
+      return new Response("invalid selected account", { status: 400 });
+    }
     const loginHint = exampleOAuthLoginHint({
       handle,
       did,
@@ -49,18 +62,28 @@ export const handler = define.handlers({
       );
     }
     try {
-      const { redirectUrl } = await startExampleAtprotoOAuth(
-        ctx.url.origin,
-        loginHint,
+      const { redirectUrl, state, browserBinding } =
+        await startExampleAtprotoOAuth(
+          ctx.url.origin,
+          loginHint,
+        );
+      const headers = new Headers({
+        location: redirectUrl,
+        "cache-control": "no-store",
+      });
+      headers.append(
+        "set-cookie",
+        buildOAuthFlowBindingCookie(state, browserBinding),
       );
       return new Response(null, {
         status: 303,
-        headers: { location: redirectUrl },
+        headers,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return new Response(`example OAuth start failed: ${message}`, {
+      console.warn("[example-oauth] start failed:", err);
+      return new Response("example OAuth start failed", {
         status: 400,
+        headers: { "cache-control": "no-store" },
       });
     }
   },

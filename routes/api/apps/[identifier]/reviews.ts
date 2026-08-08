@@ -9,16 +9,34 @@ import {
   upsertAppReview,
 } from "../../../../lib/app-directory.ts";
 import { enrichAppMirroredReviews } from "../../../../lib/app-review-display.ts";
-import { ATSTORE_REVIEW_NSID } from "../../../../lib/app-lexicons.ts";
+import {
+  type AppReviewDraft,
+  ATSTORE_REVIEW_NSID,
+  parseAtstoreReview,
+} from "../../../../lib/app-lexicons.ts";
 import { ensureAtstoreReviewerProfile } from "../../../../lib/atstore-profile.ts";
-import { getValidSession } from "../../../../lib/oauth.ts";
-import { putRecord } from "../../../../lib/pds.ts";
-import { createAtprotoTid } from "../../../../lib/tid.ts";
-import { rejectLargeRequest } from "../../../../lib/security.ts";
+import { appReviewRkeyForWrite } from "../../../../lib/app-review-write.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+} from "../../../../lib/oauth.ts";
+import {
+  getRecordPublic,
+  isPdsScopeMissingError,
+  putRecord,
+} from "../../../../lib/pds.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../lib/security.ts";
+import { hasOAuthCapabilities } from "../../../../lib/oauth-scopes.ts";
+import { appReviewReauthorizationUrl } from "../../../../lib/app-interaction-reauth.ts";
 
 interface ReviewPayload {
   rating?: unknown;
   body?: unknown;
+  rkey?: unknown;
 }
 
 const MAX_REVIEW_REQUEST_BYTES = 16_384;
@@ -73,12 +91,20 @@ export const handler = define.handlers({
       return jsonError(400, "cannot_review_self");
     }
 
-    const session = await getValidSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
-
-    const body = await ctx.req.json().catch(() => null) as
-      | ReviewPayload
-      | null;
+    let body: ReviewPayload | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_REVIEW_REQUEST_BYTES,
+      ) as ReviewPayload | null;
+    } catch (error) {
+      return jsonError(
+        error instanceof RequestBodyTooLargeError ? 413 : 400,
+        error instanceof RequestBodyTooLargeError
+          ? "request_body_too_large"
+          : "invalid_body",
+      );
+    }
     if (!body) return jsonError(400, "invalid_body");
 
     const rating = parseRating(body.rating);
@@ -86,17 +112,72 @@ export const handler = define.handlers({
     const text = normalizeReviewText(body.body);
     if (text == null) return jsonError(400, "body_too_long");
 
-    await ensureAtstoreReviewerProfile({
-      did: user.did,
-      handle: user.handle,
-      pdsUrl: session.pdsUrl,
-    }).catch((err) => {
-      console.warn("[apps/reviews] could not ensure ATStore profile:", err);
-    });
+    let existing = await getOwnAppReview(app.id, user.did).catch(() => null);
+    const rkey = appReviewRkeyForWrite(existing?.rkey, body.rkey);
+    if (!rkey) return jsonError(400, "invalid_review_rkey");
 
-    const existing = await getOwnAppReview(app.id, user.did).catch(() => null);
+    const session = await getValidSession(user.did);
+    if (!session) {
+      return reauthorizationRequired(
+        user.handle,
+        app,
+        existing ? "review_manage" : "review",
+      );
+    }
+
+    if (!existing) {
+      const remote = await readRemoteAppReview(
+        session.pdsUrl,
+        user.did,
+        rkey,
+        app.atstoreListingUri,
+      ).catch(() => "unavailable" as const);
+      if (remote === "unavailable") {
+        return jsonError(502, "review_lookup_failed");
+      }
+      if (remote === "conflict") {
+        return jsonError(409, "review_record_conflict");
+      }
+      if (remote) {
+        await upsertAppReview(remote);
+        if (remote.rating === rating && remote.body === text) {
+          return jsonResponse(200, {
+            ok: true,
+            uri: remote.uri,
+            cid: remote.cid,
+          });
+        }
+        existing = {
+          uri: remote.uri,
+          rkey: remote.rkey,
+          rating: remote.rating,
+          body: remote.body,
+          createdAt: remote.createdAt,
+          updatedAt: remote.updatedAt,
+        };
+      }
+    }
+
+    const capability = existing ? "review_manage" as const : "review" as const;
+    if (!hasOAuthCapabilities(grantedScopeForSession(session), [capability])) {
+      return reauthorizationRequired(
+        user.handle,
+        app,
+        capability,
+      );
+    }
+
+    if (!existing) {
+      await ensureAtstoreReviewerProfile({
+        did: user.did,
+        handle: user.handle,
+        pdsUrl: session.pdsUrl,
+      }).catch((err) => {
+        console.warn("[apps/reviews] could not ensure ATStore profile:", err);
+      });
+    }
+
     const now = Date.now();
-    const rkey = existing?.rkey ?? createAtprotoTid();
     const createdAt = existing?.createdAt
       ? new Date(existing.createdAt).toISOString()
       : new Date(now).toISOString();
@@ -115,6 +196,13 @@ export const handler = define.handlers({
       record,
     ).catch((err) => err instanceof Error ? err : new Error(String(err)));
     if (result instanceof Error) {
+      if (isPdsScopeMissingError(result)) {
+        return reauthorizationRequired(
+          user.handle,
+          app,
+          capability,
+        );
+      }
       return jsonResponse(502, {
         error: "put_record_failed",
         detail: result.message,
@@ -171,6 +259,43 @@ function jsonResponse(
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+async function readRemoteAppReview(
+  pdsUrl: string,
+  did: string,
+  rkey: string,
+  subject: string,
+): Promise<AppReviewDraft | "conflict" | null> {
+  const record = await getRecordPublic(
+    pdsUrl,
+    did,
+    ATSTORE_REVIEW_NSID,
+    rkey,
+  );
+  if (!record) return null;
+  const review = parseAtstoreReview({
+    ...record,
+    repoDid: did,
+    rkey,
+  });
+  return review?.subject === subject ? review : "conflict";
+}
+
+function reauthorizationRequired(
+  handle: string,
+  app: { slug: string; name: string },
+  capability: "review" | "review_manage",
+): Response {
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: appReviewReauthorizationUrl(
+      app.slug,
+      app.name,
+      capability,
+    ),
+    handle,
+  });
 }
 
 function appviewProxyError(err: unknown): Response {

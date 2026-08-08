@@ -15,15 +15,20 @@
  * marks, so a small rewrite pass is plenty.
  */
 
-const SCRIPT_TAG_RE = /<script\b[\s\S]*?<\/script\s*>/gi;
-const SCRIPT_SELFCLOSE_RE = /<script\b[^>]*\/>/gi;
-const FOREIGN_OBJECT_RE = /<foreignObject\b[\s\S]*?<\/foreignObject\s*>/gi;
-const FOREIGN_OBJECT_SELFCLOSE_RE = /<foreignObject\b[^>]*\/>/gi;
-const STYLE_TAG_RE = /<style\b[\s\S]*?<\/style\s*>/gi;
+const SCRIPT_TAG_RE =
+  /<(?:[a-z_][\w.-]*:)?script\b[\s\S]*?<\/(?:[a-z_][\w.-]*:)?script\s*>/gi;
+const SCRIPT_SELFCLOSE_RE = /<(?:[a-z_][\w.-]*:)?script\b[^>]*\/>/gi;
+const FOREIGN_OBJECT_RE =
+  /<(?:[a-z_][\w.-]*:)?foreignObject\b[\s\S]*?<\/(?:[a-z_][\w.-]*:)?foreignObject\s*>/gi;
+const FOREIGN_OBJECT_SELFCLOSE_RE =
+  /<(?:[a-z_][\w.-]*:)?foreignObject\b[^>]*\/>/gi;
+const STYLE_TAG_RE =
+  /<(?:[a-z_][\w.-]*:)?style\b[\s\S]*?<\/(?:[a-z_][\w.-]*:)?style\s*>/gi;
 const COMMENT_RE = /<!--[\s\S]*?-->/g;
 const PI_RE = /<\?[\s\S]*?\?>/g;
 const DOCTYPE_RE = /<!DOCTYPE[\s\S]*?>/gi;
-const ON_HANDLER_ATTR_RE = / on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const ON_HANDLER_ATTR_RE =
+  /\s+on[a-z][\w:.-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
 
 /**
  * Match `href`/`xlink:href` attributes. We replace the attribute value
@@ -32,7 +37,7 @@ const ON_HANDLER_ATTR_RE = / on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
  * `vbscript:`, plain `data:text/html`, etc.
  */
 const HREF_ATTR_RE =
-  /\s(?:xlink:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+  /\s(?:[a-z_][\w.-]*:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
 
 function safeHref(value: string): boolean {
   const v = value.trim().toLowerCase();

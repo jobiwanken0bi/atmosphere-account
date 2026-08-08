@@ -20,6 +20,7 @@ import {
 import { putRecord } from "../../../lib/pds.ts";
 import { getValidSession } from "../../../lib/oauth.ts";
 import { ATMOSPHERE_DID } from "../../../lib/env.ts";
+import { readAdminJsonRequest } from "../../../lib/admin-request.ts";
 
 interface PayloadEntry {
   did?: unknown;
@@ -36,15 +37,18 @@ export const handler = define.handlers({
       return jsonError(500, "atmosphere_did_unset", "Set ATMOSPHERE_DID");
     }
 
-    const body = await ctx.req.json().catch(() => null) as
-      | { entries?: PayloadEntry[] }
-      | null;
-    if (!body || !Array.isArray(body.entries)) {
+    const parsed = await readAdminJsonRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.value as { entries?: PayloadEntry[] };
+    if (!Array.isArray(body.entries)) {
       return jsonError(400, "invalid_body");
     }
 
     const entries: { did: string; badges?: string[]; position?: number }[] = [];
     for (const [i, raw] of body.entries.entries()) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return jsonError(400, `invalid_entry_at_${i}`);
+      }
       const did = typeof raw.did === "string" ? raw.did.trim() : "";
       if (!did.startsWith("did:")) {
         return jsonError(400, `invalid_did_at_${i}`);

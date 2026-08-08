@@ -32,6 +32,7 @@ import {
 import { devPickerAccountForDid } from "../../../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../../../lib/env.ts";
 import { clearPasskeyManagementCookie } from "../../../../lib/passkey-management.ts";
+import { passkeyAuthorizationUrl } from "../../../../lib/passkey-authorization.ts";
 
 const MAX_BODY_BYTES = 96_000;
 
@@ -125,13 +126,17 @@ export const handler = define.handlers({
         handle: linkedAccount.handle,
         pdsUrl: linkedAccount.pdsUrl,
       });
-      await destroySession(ctx.req).catch(() => {});
       const sessionCookie = buildSessionCookie(
         await createSession({
           did: linkedAccount.did,
           handle: linkedAccount.handle,
         }),
       );
+      // Replacement creation happens first, but the old SID must be revoked
+      // before the new account cookie is delivered. A failed rotation returns
+      // an error through the outer handler and leaves the current session in
+      // place instead of keeping two identities active.
+      await destroySession(ctx.req);
       const headers = new Headers({
         "cache-control": "no-store",
         "content-type": "application/json; charset=utf-8",
@@ -160,12 +165,9 @@ function buildRelinkUrl(
   did: string,
   request: Parameters<typeof loginRequestToPath>[0],
 ): string {
-  const params = new URLSearchParams({
-    handle: did,
-    next: loginRequestToPath(request),
+  return passkeyAuthorizationUrl(did, loginRequestToPath(request), {
     continuation: "login_selection",
   });
-  return `/oauth/login?${params.toString()}`;
 }
 
 async function readVerificationInput(req: Request): Promise<{

@@ -14,6 +14,7 @@ import {
 import { devPickerAccountForDid } from "../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../lib/env.ts";
 import { passkeyRelyingPartyForRequest } from "../../lib/passkey-rp.ts";
+import { passkeyAuthorizationUrl } from "../../lib/passkey-authorization.ts";
 
 const MAX_BODY_BYTES = 8_192;
 
@@ -28,7 +29,7 @@ export const handler = define.handlers({
     if (
       (!ticket || ticket.did !== user.did) &&
       !isDevPasskeyAccount(user.did, user.handle)
-    ) return authError(user.handle, 403);
+    ) return authError(user, 403);
     const passkeys = await listPasskeys(user.did).catch(() => null);
     return passkeys
       ? json({ passkeys: passkeys.map(passkeyJson) })
@@ -45,7 +46,7 @@ export const handler = define.handlers({
     if (
       (!ticket || ticket.did !== user.did) &&
       !isDevPasskeyAccount(user.did, user.handle)
-    ) return authError(user.handle, 403);
+    ) return authError(user, 403);
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "passkey-management-delete",
       capacity: 12,
@@ -110,8 +111,11 @@ function passkeyJson(passkey: PasskeySummary) {
   };
 }
 
-function authError(handle: string | null, status: number): Response {
-  const redirectUrl = handle ? managementReauthUrl(handle) : null;
+function authError(
+  account: { did: string; handle: string } | null,
+  status: number,
+): Response {
+  const redirectUrl = account ? managementReauthUrl(account) : null;
   return json({
     error: status === 401
       ? "Sign in with your account host to manage passkeys."
@@ -120,10 +124,11 @@ function authError(handle: string | null, status: number): Response {
   }, status);
 }
 
-function managementReauthUrl(handle: string): string {
-  const next = `/passkeys?handle=${encodeURIComponent(handle)}`;
-  const params = new URLSearchParams({ handle, next });
-  return `/oauth/login?${params.toString()}`;
+function managementReauthUrl(account: { did: string; handle: string }): string {
+  const next = `/passkeys?handle=${encodeURIComponent(account.handle)}`;
+  return passkeyAuthorizationUrl(account.did, next, {
+    targetName: account.handle,
+  });
 }
 
 function isDevPasskeyAccount(did: string, handle: string): boolean {

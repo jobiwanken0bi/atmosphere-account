@@ -18,12 +18,31 @@ import {
 import { inferHostNetworkLocation } from "../../lib/host-location-inference.ts";
 import type { BlobRef } from "../../lib/lexicons.ts";
 import { publishHostRecords } from "../../lib/host-records.ts";
-import { loadSession } from "../../lib/oauth.ts";
-import { getBskyProfile, uploadBlob } from "../../lib/pds.ts";
+import {
+  getSessionForCapabilities,
+  type SessionData,
+} from "../../lib/oauth.ts";
+import {
+  oauthReauthorizationUrl,
+  oauthSigninUrl,
+} from "../../lib/oauth-action.ts";
+import {
+  getBskyProfile,
+  isPdsScopeMissingError,
+  PdsBlobUploadError,
+  uploadBlob,
+} from "../../lib/pds.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
-import { rejectLargeRequest } from "../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
-import { hostSelfServiceClaimPolicy } from "../../lib/host-claim-proof.ts";
+import {
+  hostSelfServiceClaimPolicy,
+  isLocalDevHostClaim,
+} from "../../lib/host-claim-proof.ts";
 import { type AppListing } from "../../lib/app-directory.ts";
 import {
   establishDirectoryEntityLinkFromIntent,
@@ -36,6 +55,7 @@ import {
   resolveBoundAppHostLinkIntent,
   type ResolvedAppHostLinkIntent,
 } from "../../lib/app-host-link-intent.ts";
+import { oauthAddAccountHref } from "./oauth-entry.ts";
 
 interface RegisterValues {
   host: string;
@@ -105,13 +125,27 @@ export const handler = define.handlers({
         ctx.state.user?.did ?? null,
       );
     }
-    if (!ctx.state.user) return redirectToSignin(ctx.url);
+    if (!ctx.state.user) {
+      return redirectToSignin(ctx.url, hostHint || "an account host");
+    }
     const linkContext = await loadLinkContext(
       ctx.url.searchParams.get("link_intent"),
       hostHint,
       ctx.state.user.did,
     );
     if (linkContext instanceof Response) return linkContext;
+    if (
+      !isLocalDevHostClaim(hostHint) &&
+      !await getSessionForCapabilities(ctx.state.user.did, ["host"], {
+        quiet: true,
+      })
+    ) {
+      return redirectToAuthorization(
+        ctx.url,
+        ["host"],
+        hostHint || linkContext?.app.name || "an account host",
+      );
+    }
     const prefill = await buildRegisterPrefill(
       ctx.state.user,
       ctx.url,
@@ -134,7 +168,12 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
-    if (!ctx.state.user) return redirectToSignin(ctx.url);
+    if (!ctx.state.user) {
+      return redirectToSignin(
+        ctx.url,
+        textValue(ctx.url.searchParams.get("host")) || "an account host",
+      );
+    }
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "host-registration",
       capacity: 12,
@@ -143,7 +182,20 @@ export const handler = define.handlers({
     if (limited) return limited;
     const large = rejectLargeRequest(ctx.req, MAX_HOST_REGISTER_FORM_BYTES);
     if (large) return large;
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_HOST_REGISTER_FORM_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid host form",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const values = valuesFromForm(form);
     const requestedLinkIntent = textValue(form?.get("linkIntent"));
     if (hostSelfServiceClaimPolicy(values.host) !== "local-dev") {
@@ -159,7 +211,8 @@ export const handler = define.handlers({
       ctx.state.user.did,
     );
     if (linkContext instanceof Response) return linkContext;
-    if (textValue(form?.get("action")) === "infer_location") {
+    const action = textValue(form?.get("action"));
+    if (action === "infer_location") {
       const inferred = await inferHostNetworkLocation({
         host: values.host,
         serviceEndpoint: values.serviceEndpoint,
@@ -176,6 +229,31 @@ export const handler = define.handlers({
         values,
         "",
         { status: 200 },
+        linkContext,
+      );
+    }
+    const requiredCapabilities = fileFromForm(form?.get("avatarUpload"))
+      ? ["host", "media"] as const
+      : ["host"] as const;
+    const session = await getSessionForCapabilities(
+      ctx.state.user.did,
+      requiredCapabilities,
+      { quiet: true },
+    );
+    const localDevFixture = isLocalDevHostClaim(values.host);
+    if (!session && !localDevFixture) {
+      return redirectToAuthorization(
+        ctx.url,
+        requiredCapabilities,
+        values.displayName || values.host || "an account host",
+      );
+    }
+    if (!session && fileFromForm(form?.get("avatarUpload"))) {
+      return await renderRegisterError(
+        ctx,
+        values,
+        "Local .test fixtures need a real OAuth-backed account before they can upload an avatar.",
+        {},
         linkContext,
       );
     }
@@ -199,10 +277,19 @@ export const handler = define.handlers({
     }
     const profilePublication = await publishHostProfileFromForm(
       ctx.state.user,
+      session,
       validation.input,
       form,
     );
     if (!profilePublication.ok) {
+      if (profilePublication.reauthorization) {
+        return redirectToAuthorization(
+          ctx.url,
+          requiredCapabilities,
+          values.displayName || values.host,
+          true,
+        );
+      }
       return await renderRegisterError(
         ctx,
         values,
@@ -271,13 +358,55 @@ function appviewUnavailable(scope: string, err: unknown): Response {
   });
 }
 
-function redirectToSignin(url: URL): Response {
-  const signin = new URL("/signin", url.origin);
-  signin.searchParams.set("next", `${url.pathname}${url.search}`);
+function redirectToSignin(url: URL, name: string): Response {
+  return redirectToAuthorization(url, ["host"], name);
+}
+
+function redirectToAuthorization(
+  url: URL,
+  capabilities: readonly ("host" | "media")[],
+  name: string,
+  force = false,
+): Response {
   return new Response(null, {
     status: 303,
-    headers: { location: `${signin.pathname}${signin.search}` },
+    headers: {
+      location: hostRegistrationAuthorizationHref(
+        url,
+        capabilities,
+        name,
+        force,
+      ),
+    },
   });
+}
+
+export function hostRegistrationAuthorizationHref(
+  url: URL,
+  capabilities: readonly ("host" | "media")[],
+  name: string,
+  force = false,
+): string {
+  const buildUrl = force ? oauthReauthorizationUrl : oauthSigninUrl;
+  return buildUrl({
+    next: `${url.pathname}${url.search}`,
+    action: "host_manage",
+    capabilities,
+    name,
+  });
+}
+
+export function hostRegistrationAddAccountHref(
+  next: string,
+  name: string,
+): string {
+  return oauthAddAccountHref(
+    hostRegistrationAuthorizationHref(
+      new URL(next, "https://atmosphereaccount.invalid"),
+      ["host"],
+      name,
+    ),
+  );
 }
 
 async function redirectLegacyRegistrationToDetectedClaim(
@@ -460,7 +589,9 @@ async function buildRegisterPrefill(
   linkedApp: AppListing | null = null,
 ): Promise<{ values: RegisterValues; hasOAuthSession: boolean }> {
   const values = valuesFromUrl(url);
-  const session = await loadSession(user.did).catch(() => null);
+  const session = await getSessionForCapabilities(user.did, ["host"], {
+    quiet: true,
+  }).catch(() => null);
   const bsky = session
     ? await getBskyProfile(session.pdsUrl, user.did).catch(() => null)
     : null;
@@ -548,7 +679,9 @@ async function renderRegisterError(
   linkContext: HostRegistrationLinkContext | null = null,
 ): Promise<Response> {
   const session = ctx.state.user
-    ? await loadSession(ctx.state.user.did).catch(() => null)
+    ? await getSessionForCapabilities(ctx.state.user.did, ["host"], {
+      quiet: true,
+    }).catch(() => null)
     : null;
   return ctx.render(
     <RegisterHostPage
@@ -564,6 +697,7 @@ async function renderRegisterError(
 
 async function publishHostProfileFromForm(
   user: { did: string; handle: string },
+  session: SessionData | null,
   values: ValidAccountHostRegistrationInput,
   form: FormData | null,
 ): Promise<
@@ -573,18 +707,10 @@ async function publishHostProfileFromForm(
     serviceRecordUri: string | null;
     serviceRecordCid: string | null;
   }
-  | { ok: false; message: string }
+  | { ok: false; message: string; reauthorization?: boolean }
 > {
-  const session = await loadSession(user.did).catch(() => null);
   const avatarFile = fileFromForm(form?.get("avatarUpload"));
   if (!session) {
-    if (avatarFile) {
-      return {
-        ok: false,
-        message:
-          "Sign in again before uploading a host avatar. Image uploads publish to the host account's PDS.",
-      };
-    }
     return {
       ok: true,
       avatarUrl: values.avatarUrl,
@@ -592,7 +718,6 @@ async function publishHostProfileFromForm(
       serviceRecordCid: null,
     };
   }
-
   const bsky = await getBskyProfile(session.pdsUrl, user.did).catch(() => null);
   let avatar: BlobRef | undefined = bsky?.avatar ?? undefined;
   let avatarUrl = avatar?.ref?.$link
@@ -619,7 +744,11 @@ async function publishHostProfileFromForm(
       }`;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return { ok: false, message: `Host avatar upload failed: ${message}` };
+      return {
+        ok: false,
+        message: `Host avatar upload failed: ${message}`,
+        reauthorization: isHostAuthorizationError(err),
+      };
     }
   }
 
@@ -657,8 +786,16 @@ async function publishHostProfileFromForm(
       ok: false,
       message:
         `Host record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
+      reauthorization: isHostAuthorizationError(err),
     };
   }
+}
+
+function isHostAuthorizationError(value: unknown): boolean {
+  if (isPdsScopeMissingError(value)) return true;
+  if (value instanceof PdsBlobUploadError && value.status === 403) return true;
+  return value instanceof Error &&
+    /(?:ScopeMissingError|failed: HTTP 403)/i.test(value.message);
 }
 
 function fileFromForm(
@@ -726,13 +863,12 @@ function RegisterHostPage(
               {linkContext && (
                 <a
                   class="text-link-button"
-                  href={`/oauth/add-account?next=${
-                    encodeURIComponent(
-                      `/hosts/register?link_intent=${
-                        encodeURIComponent(linkContext.intentToken)
-                      }&host=${encodeURIComponent(values.host)}`,
-                    )
-                  }`}
+                  href={hostRegistrationAddAccountHref(
+                    `/hosts/register?link_intent=${
+                      encodeURIComponent(linkContext.intentToken)
+                    }&host=${encodeURIComponent(values.host)}`,
+                    values.displayName || values.host || "an account host",
+                  )}
                 >
                   Use another account to register this host
                 </a>

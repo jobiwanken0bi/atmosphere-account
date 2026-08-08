@@ -56,7 +56,19 @@ function redirectTo(url: string, status = 302): Response {
   });
 }
 
+export function usesSeparateLoginDomain(
+  site = siteOrigin(),
+  login = loginOrigin(),
+): boolean {
+  return site !== login;
+}
+
 export const loginDomainMiddleware = define.middleware((ctx) => {
+  // Local and self-hosted deployments may intentionally serve both surfaces
+  // from one origin. In that layout there is no separate login host to police,
+  // and redirecting an ordinary page to the same origin would loop forever.
+  if (!usesSeparateLoginDomain()) return ctx.next();
+
   const origin = trustedRequestOrigin(ctx.url, ctx.req.headers);
 
   if (

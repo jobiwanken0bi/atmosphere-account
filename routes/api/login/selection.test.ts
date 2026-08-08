@@ -2,6 +2,7 @@ import type { AtmosphereSelectionClaims } from "../../../lib/atmosphere-login-sd
 import type { LoginApp } from "../../../lib/atmosphere-login.ts";
 import {
   canOriginReadSelectionVerification,
+  hasCompleteSelectionBinding,
   selectionCorsHeaders,
   verifySelectionBinding,
 } from "./selection.ts";
@@ -64,6 +65,21 @@ Deno.test("verifySelectionBinding accepts matching expected values", () => {
       expectedState: "state-123",
     }),
     null,
+  );
+});
+
+Deno.test("selection verification requires every caller-retained binding", () => {
+  const complete = {
+    token: "token",
+    expectedIssuer: "https://atmosphereaccount.com",
+    expectedClientId: "https://app.example.com/oauth/client-metadata.json",
+    expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
+    expectedState: "state-123",
+  };
+  assertEquals(hasCompleteSelectionBinding(complete), true);
+  assertEquals(
+    hasCompleteSelectionBinding({ ...complete, expectedState: null }),
+    false,
   );
 });
 

@@ -7,13 +7,24 @@ import {
   getOwnAppFavorite,
   upsertAppFavorite,
 } from "../../../../lib/app-directory.ts";
-import { ATSTORE_FAVORITE_NSID } from "../../../../lib/app-lexicons.ts";
-import { getValidSession } from "../../../../lib/oauth.ts";
 import {
+  type AppFavoriteDraft,
+  ATSTORE_FAVORITE_NSID,
+  parseAtstoreFavorite,
+} from "../../../../lib/app-lexicons.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+} from "../../../../lib/oauth.ts";
+import {
+  createRecord,
   deleteRecord,
+  getRecordPublic,
   isPdsScopeMissingError,
-  putRecord,
 } from "../../../../lib/pds.ts";
+import { hasOAuthCapabilities } from "../../../../lib/oauth-scopes.ts";
+import type { FavoriteResumeIntent } from "../../../../lib/favorite-resume.ts";
+import { appFavoriteReauthorizationUrl } from "../../../../lib/app-interaction-reauth.ts";
 
 export const handler = define.handlers({
   POST: withRateLimit(async (ctx) => {
@@ -42,30 +53,74 @@ export const handler = define.handlers({
     if (existing) return jsonResponse(200, { ok: true, uri: existing.uri });
 
     const session = await getValidSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    if (!session) {
+      return reauthorizationRequired(
+        user.handle,
+        app,
+        "save",
+      );
+    }
 
     const now = Date.now();
     // Mirror ATStore's deterministic one-record-per-listing toggle. If an
     // ATStore-created favorite is already indexed above, its original rkey is
     // preserved instead.
     const rkey = app.id;
+    const remote = await readRemoteFavorite(
+      session.pdsUrl,
+      user.did,
+      rkey,
+      app.atstoreListingUri,
+    ).catch(() => "unavailable" as const);
+    if (remote === "unavailable") {
+      return jsonError(502, "favorite_lookup_failed");
+    }
+    if (remote === "conflict") {
+      return jsonError(409, "favorite_record_conflict");
+    }
+    if (remote) return await indexFavorite(remote);
+
+    if (
+      !hasOAuthCapabilities(grantedScopeForSession(session), ["favorite"])
+    ) {
+      return reauthorizationRequired(
+        user.handle,
+        app,
+        "save",
+      );
+    }
+
     const record = {
       subject: app.atstoreListingUri,
       createdAt: new Date(now).toISOString(),
     };
-    const result = await putRecord(
+    const result = await createRecord(
       user.did,
       session.pdsUrl,
       ATSTORE_FAVORITE_NSID,
-      rkey,
       record,
+      rkey,
     ).catch((err) => err instanceof Error ? err : new Error(String(err)));
     if (result instanceof Error) {
       if (isPdsScopeMissingError(result)) {
-        return reauthorizationRequired(user.handle, app.slug);
+        return reauthorizationRequired(
+          user.handle,
+          app,
+          "save",
+        );
       }
+      const recovered = await readRemoteFavorite(
+        session.pdsUrl,
+        user.did,
+        rkey,
+        app.atstoreListingUri,
+      ).catch(() => null);
+      if (recovered === "conflict") {
+        return jsonError(409, "favorite_record_conflict");
+      }
+      if (recovered) return await indexFavorite(recovered);
       return jsonResponse(502, {
-        error: "put_record_failed",
+        error: "create_record_failed",
       });
     }
     const uri = result.uri ||
@@ -97,11 +152,42 @@ export const handler = define.handlers({
     if (!app || !app.atstoreListingUri) {
       return jsonError(404, "shared_app_record_not_found");
     }
-    const existing = await getOwnAppFavorite(app.id, user.did);
-    if (!existing) return jsonResponse(200, { ok: true, removed: false });
-
+    let existing = await getOwnAppFavorite(app.id, user.did);
     const session = await getValidSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    if (
+      !session ||
+      !hasOAuthCapabilities(grantedScopeForSession(session), ["favorite"])
+    ) {
+      return reauthorizationRequired(
+        user.handle,
+        app,
+        "remove",
+      );
+    }
+
+    if (!existing) {
+      const remote = await readRemoteFavorite(
+        session.pdsUrl,
+        user.did,
+        app.id,
+        app.atstoreListingUri,
+      ).catch(() => "unavailable" as const);
+      if (remote === "unavailable") {
+        return jsonError(502, "favorite_lookup_failed");
+      }
+      if (remote === "conflict") {
+        return jsonError(409, "favorite_record_conflict");
+      }
+      if (!remote) {
+        return jsonResponse(200, { ok: true, removed: false });
+      }
+      await upsertAppFavorite(remote);
+      existing = {
+        uri: remote.uri,
+        rkey: remote.rkey,
+        createdAt: remote.createdAt,
+      };
+    }
 
     const deleted = await deleteRecord(
       user.did,
@@ -113,7 +199,11 @@ export const handler = define.handlers({
     );
     if (deleted) {
       if (isPdsScopeMissingError(deleted)) {
-        return reauthorizationRequired(user.handle, app.slug);
+        return reauthorizationRequired(
+          user.handle,
+          app,
+          "remove",
+        );
       }
       return jsonResponse(502, {
         error: "delete_record_failed",
@@ -135,12 +225,49 @@ function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
 }
 
-function reauthorizationRequired(handle: string, identifier: string): Response {
-  const next = `/apps/${encodeURIComponent(identifier)}`;
-  const params = new URLSearchParams({ handle, next });
+async function readRemoteFavorite(
+  pdsUrl: string,
+  did: string,
+  rkey: string,
+  subject: string,
+): Promise<AppFavoriteDraft | "conflict" | null> {
+  const record = await getRecordPublic(
+    pdsUrl,
+    did,
+    ATSTORE_FAVORITE_NSID,
+    rkey,
+  );
+  if (!record) return null;
+  const favorite = parseAtstoreFavorite({
+    ...record,
+    repoDid: did,
+    rkey,
+  });
+  return favorite?.subject === subject ? favorite : "conflict";
+}
+
+async function indexFavorite(favorite: AppFavoriteDraft): Promise<Response> {
+  await upsertAppFavorite(favorite);
+  return jsonResponse(200, {
+    ok: true,
+    uri: favorite.uri,
+    cid: favorite.cid,
+  });
+}
+
+function reauthorizationRequired(
+  handle: string,
+  app: { slug: string; name: string },
+  intent: FavoriteResumeIntent,
+): Response {
   return jsonResponse(403, {
     error: "reauth_required",
-    reauthUrl: `/oauth/login?${params.toString()}`,
+    reauthUrl: appFavoriteReauthorizationUrl(
+      app.slug,
+      app.name,
+      intent,
+    ),
+    handle,
   });
 }
 

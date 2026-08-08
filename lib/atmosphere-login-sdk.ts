@@ -43,6 +43,7 @@ export interface VerifyAtmosphereSelectionOptions {
 }
 
 const DEFAULT_MAX_TOKEN_AGE_SEC = 5 * 60;
+const MAX_SELECTION_TOKEN_BYTES = 8 * 1024;
 
 export function parseAtmosphereSelectionClaims(
   value: Record<string, unknown>,
@@ -82,6 +83,13 @@ export function parseAtmosphereSelectionClaims(
 export async function verifyAtmosphereSelectionToken(
   options: VerifyAtmosphereSelectionOptions,
 ): Promise<AtmosphereSelectionVerificationResult> {
+  if (
+    typeof options.token !== "string" ||
+    new TextEncoder().encode(options.token).byteLength >
+      MAX_SELECTION_TOKEN_BYTES
+  ) {
+    return { ok: false, error: "invalid token" };
+  }
   const verified = await verifyEs256(options.token, options.publicJwk).catch(
     () => null,
   );

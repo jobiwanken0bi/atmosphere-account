@@ -25,6 +25,8 @@ import {
   createProxyClientKey,
   PROXY_CLIENT_KEY_HEADER,
 } from "./proxy-client-key.ts";
+import { isJsonMediaType, readResponseTextWithLimit } from "./security.ts";
+import { safeBrowserNavigationUrl } from "./browser-navigation.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -33,6 +35,11 @@ const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
 const DEFAULT_APPVIEW_FETCH_TIMEOUT_MS = 5000;
 const MIN_APPVIEW_FETCH_TIMEOUT_MS = 1000;
 const MAX_APPVIEW_HANDOFF_BODY_BYTES = 64 * 1024;
+const DEFAULT_APPVIEW_REQUEST_BODY_BYTES = 256 * 1024;
+const PROFILE_APPVIEW_REQUEST_BODY_BYTES = 36_000_000;
+const ACCOUNT_PROFILE_APPVIEW_REQUEST_BODY_BYTES = 1_064_000;
+const MAX_APPVIEW_HTML_BYTES = 4 * 1024 * 1024;
+const MAX_APPVIEW_JSON_BYTES = 4 * 1024 * 1024;
 const APPVIEW_ASSET_PROXY_PREFIX = "/_appview/assets/";
 const APPVIEW_ASSET_SOURCE_PREFIX = "/assets/";
 
@@ -344,12 +351,17 @@ export async function proxyAppviewResponse(
 ): Promise<Response | null> {
   const remote = appviewBaseUrl();
   if (!remote) return null;
-  const url = new URL(pathWithSearch, remote);
+  const url = appviewTargetUrl(remote, pathWithSearch);
   if (currentUrl && url.origin === currentUrl.origin) return null;
   const res = await fetch(url, {
     headers: await appviewJsonHeaders(requestHeaders),
+    redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
+  if (isRedirectResponse(res)) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error("appview JSON request returned a redirect");
+  }
   const headers = proxiedHeaders(res.headers, { page: false });
   return new Response(res.body, {
     status: res.status,
@@ -364,7 +376,10 @@ export async function proxyAppviewPageResponse(
 ): Promise<Response | null> {
   const remote = appviewBaseUrl();
   if (!remote) return null;
-  const url = new URL(`${currentUrl.pathname}${currentUrl.search}`, remote);
+  const url = appviewTargetUrl(
+    remote,
+    `${currentUrl.pathname}${currentUrl.search}`,
+  );
   if (url.origin === currentUrl.origin) return null;
   const bodyless = request.method === "GET" || request.method === "HEAD";
   const requestBody = await appviewProxyRequestBody(
@@ -387,8 +402,15 @@ export async function proxyAppviewPageResponse(
   const headers = proxiedHeaders(res.headers, { page: true });
 
   const location = headers.get("location");
-  if (location) {
-    headers.set("location", rewriteAppviewUrl(location, remote, currentUrl));
+  if (location || isRedirectResponse(res)) {
+    const rewritten = location
+      ? rewriteAppviewUrl(location, remote, currentUrl)
+      : null;
+    if (!rewritten) {
+      await res.body?.cancel().catch(() => {});
+      return unsafeAppviewRedirectResponse(false);
+    }
+    headers.set("location", rewritten);
   }
 
   const contentType = headers.get("content-type") ?? "";
@@ -400,7 +422,9 @@ export async function proxyAppviewPageResponse(
     });
   }
 
-  const body = rewriteAppviewHtml(await res.text(), remote, currentUrl);
+  const bounded = await readResponseTextWithLimit(res, MAX_APPVIEW_HTML_BYTES);
+  if (!bounded.ok) throw new Error(`appview HTML ${bounded.error}`);
+  const body = rewriteAppviewHtml(bounded.text, remote, currentUrl);
   headers.delete("content-encoding");
   headers.delete("etag");
   return new Response(body, {
@@ -416,7 +440,10 @@ export async function proxyAppviewApiResponse(
 ): Promise<Response | null> {
   const remote = appviewBaseUrl();
   if (!remote) return null;
-  const url = new URL(`${currentUrl.pathname}${currentUrl.search}`, remote);
+  const url = appviewTargetUrl(
+    remote,
+    `${currentUrl.pathname}${currentUrl.search}`,
+  );
   if (url.origin === currentUrl.origin) return null;
   const bodyless = request.method === "GET" || request.method === "HEAD";
   const requestBody = await appviewProxyRequestBody(
@@ -434,8 +461,15 @@ export async function proxyAppviewApiResponse(
   });
   const headers = proxiedHeaders(res.headers, { page: false });
   const location = headers.get("location");
-  if (location) {
-    headers.set("location", rewriteAppviewUrl(location, remote, currentUrl));
+  if (location || isRedirectResponse(res)) {
+    const rewritten = location
+      ? rewriteAppviewUrl(location, remote, currentUrl)
+      : null;
+    if (!rewritten) {
+      await res.body?.cancel().catch(() => {});
+      return unsafeAppviewRedirectResponse(true);
+    }
+    headers.set("location", rewritten);
   }
   return new Response(res.body, {
     status: res.status,
@@ -456,20 +490,17 @@ async function appviewProxyRequestBody(
   bodyless: boolean,
 ): Promise<BodyInit | undefined> {
   if (bodyless) return undefined;
+  const maxBytes = appviewRequestBodyLimit(currentUrl.pathname);
+  rejectDeclaredAppviewBodySize(request, maxBytes);
   if (!shouldBufferAppviewRequestBody(currentUrl.pathname)) {
-    return request.body ?? undefined;
+    return request.body
+      ? limitedRequestBodyStream(request.body, maxBytes)
+      : undefined;
   }
   if (request.headers.get("x-atmosphere-login-bodyless") === "1") {
     return undefined;
   }
 
-  const declaredLength = Number(request.headers.get("content-length"));
-  if (
-    Number.isFinite(declaredLength) &&
-    declaredLength > MAX_APPVIEW_HANDOFF_BODY_BYTES
-  ) {
-    throw new AppviewProxyBodyTooLargeError();
-  }
   if (!request.body) return undefined;
 
   const reader = request.body.getReader();
@@ -495,6 +526,52 @@ async function appviewProxyRequestBody(
   return body;
 }
 
+function appviewRequestBodyLimit(pathname: string): number {
+  if (pathname === "/api/registry/profile") {
+    return PROFILE_APPVIEW_REQUEST_BODY_BYTES;
+  }
+  if (pathname === "/api/account/profile") {
+    return ACCOUNT_PROFILE_APPVIEW_REQUEST_BODY_BYTES;
+  }
+  if (shouldBufferAppviewRequestBody(pathname)) {
+    return MAX_APPVIEW_HANDOFF_BODY_BYTES;
+  }
+  return DEFAULT_APPVIEW_REQUEST_BODY_BYTES;
+}
+
+function rejectDeclaredAppviewBodySize(
+  request: Request,
+  maxBytes: number,
+): void {
+  const raw = request.headers.get("content-length");
+  if (!raw) return;
+  if (!/^\d{1,12}$/.test(raw)) throw new AppviewProxyBodyTooLargeError();
+  const declaredLength = Number(raw);
+  if (!Number.isSafeInteger(declaredLength) || declaredLength > maxBytes) {
+    throw new AppviewProxyBodyTooLargeError();
+  }
+}
+
+function limitedRequestBodyStream(
+  source: ReadableStream<Uint8Array>,
+  maxBytes: number,
+): ReadableStream<Uint8Array> {
+  let total = 0;
+  return source.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        total += chunk.byteLength;
+        if (total > maxBytes) {
+          await source.cancel().catch(() => {});
+          controller.error(new AppviewProxyBodyTooLargeError());
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+}
+
 export function shouldBufferAppviewRequestBodyForTest(
   pathname: string,
 ): boolean {
@@ -507,6 +584,17 @@ export async function appviewProxyRequestBodyForTest(
 ): Promise<BodyInit | undefined> {
   const bodyless = request.method === "GET" || request.method === "HEAD";
   return await appviewProxyRequestBody(currentUrl, request, bodyless);
+}
+
+export function appviewRequestBodyLimitForTest(pathname: string): number {
+  return appviewRequestBodyLimit(pathname);
+}
+
+export function appviewTargetUrlForTest(
+  remote: string,
+  pathWithSearch: string,
+): URL {
+  return appviewTargetUrl(remote, pathWithSearch);
 }
 
 export async function listPublicAccountHosts(
@@ -774,12 +862,46 @@ function rewriteAppviewUrl(
   value: string,
   remote: string,
   currentUrl: URL,
-): string {
-  const remoteBase = appviewBaseUrlForRewrite(remote);
-  if (value.startsWith(remoteBase)) {
-    return `${currentUrl.origin}${value.slice(remoteBase.length)}`;
+): string | null {
+  try {
+    const remoteUrl = new URL(remote);
+    const target = new URL(value, remoteUrl);
+    const candidate = target.origin === remoteUrl.origin
+      ? `${currentUrl.origin}${target.pathname}${target.search}${target.hash}`
+      : target.toString();
+    return safeBrowserNavigationUrl(candidate, currentUrl.toString());
+  } catch {
+    return null;
   }
-  return value;
+}
+
+export function rewriteAppviewUrlForTest(
+  value: string,
+  remote: string,
+  currentUrl: URL,
+): string | null {
+  return rewriteAppviewUrl(value, remote, currentUrl);
+}
+
+function isRedirectResponse(response: Response): boolean {
+  return response.status >= 300 && response.status < 400;
+}
+
+function unsafeAppviewRedirectResponse(api: boolean): Response {
+  return new Response(
+    api
+      ? JSON.stringify({ error: "appview_unsafe_redirect" })
+      : "This page returned an unsafe redirect.",
+    {
+      status: 502,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": api
+          ? "application/json; charset=utf-8"
+          : "text/plain; charset=utf-8",
+      },
+    },
+  );
 }
 
 function appviewBaseUrlForRewrite(remote: string): string {
@@ -791,15 +913,31 @@ async function fetchAppviewJson<T>(
   path: string,
   requestHeaders?: Headers,
 ): Promise<T> {
-  const url = new URL(path, baseUrl);
+  const url = appviewTargetUrl(baseUrl, path);
   const res = await fetch(url, {
     headers: await appviewJsonHeaders(requestHeaders),
+    redirect: "manual",
     signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`appview request failed: HTTP ${res.status}`);
   }
-  return await res.json() as T;
+  if (!isJsonMediaType(res.headers.get("content-type"))) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error("appview returned a non-JSON response");
+  }
+  const bounded = await readResponseTextWithLimit(res, MAX_APPVIEW_JSON_BYTES);
+  if (!bounded.ok) throw new Error(`appview JSON ${bounded.error}`);
+  return JSON.parse(bounded.text) as T;
+}
+
+function appviewTargetUrl(remote: string, pathWithSearch: string): URL {
+  const target = new URL(remote);
+  const path = new URL(pathWithSearch, "https://appview-path.invalid");
+  target.pathname = path.pathname;
+  target.search = path.search;
+  target.hash = "";
+  return target;
 }
 
 async function appviewJsonHeaders(
