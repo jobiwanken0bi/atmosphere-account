@@ -172,8 +172,8 @@ export const handler = define.handlers({
         did: user.did,
         handle: user.handle,
         pdsUrl: session.pdsUrl,
-      }).catch((err) => {
-        console.warn("[apps/reviews] could not ensure ATStore profile:", err);
+      }).catch(() => {
+        console.warn("[apps/reviews] could not ensure ATStore profile");
       });
     }
 

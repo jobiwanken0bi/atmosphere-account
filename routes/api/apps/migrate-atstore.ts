@@ -137,8 +137,8 @@ export const handler = define.handlers({
         communityProfileUri: community.uri,
         communityProfileCid: community.cid,
       });
-    } catch (err) {
-      console.error("[shared-record-migration] putRecord failed:", err);
+    } catch {
+      console.error("[shared-record-migration] putRecord failed");
       return jsonResponse(502, {
         error: "publish_failed",
       });

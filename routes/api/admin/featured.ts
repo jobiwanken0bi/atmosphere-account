@@ -85,8 +85,8 @@ export const handler = define.handlers({
         "self",
         record as unknown as Record<string, unknown>,
       );
-    } catch (err) {
-      console.error("[admin] featured directory publish failed:", err);
+    } catch {
+      console.error("[admin] featured directory publish failed");
       return jsonError(502, "put_record_failed");
     }
 

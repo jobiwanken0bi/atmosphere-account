@@ -111,8 +111,8 @@ async function tryPublishCommunityProfile(input: {
       ...input,
       existingRecord: existing,
     });
-  } catch (err) {
-    console.warn("[registry] community app profile publish skipped:", err);
+  } catch {
+    console.warn("[registry] community app profile publish skipped");
     return null;
   }
 }
@@ -585,8 +585,8 @@ export const handler = define.handlers({
           bytes,
           body.avatarUpload.mimeType,
         );
-      } catch (err) {
-        console.warn("[registry] avatar blob upload failed:", err);
+      } catch {
+        console.warn("[registry] avatar blob upload failed");
         return new Response("avatar upload failed", { status: 502 });
       }
     }
@@ -630,8 +630,8 @@ export const handler = define.handlers({
           bytes,
           body.bannerUpload.mimeType,
         );
-      } catch (err) {
-        console.warn("[registry] banner blob upload failed:", err);
+      } catch {
+        console.warn("[registry] banner blob upload failed");
         return new Response("banner upload failed", { status: 502 });
       }
       // Pre-generate the 1200×630 JPEG for the og:image cache. This runs
@@ -713,8 +713,8 @@ export const handler = define.handlers({
       }
       try {
         return await uploadBlob(userDid, pdsUrl, cleaned, "image/svg+xml");
-      } catch (err) {
-        console.warn(`[registry] ${label} blob upload failed:`, err);
+      } catch {
+        console.warn("[registry] SVG icon blob upload failed");
         return new Response(`${label} upload failed`, { status: 502 });
       }
     }
@@ -791,8 +791,8 @@ export const handler = define.handlers({
           upload.mimeType,
         );
         screenshots.push({ image });
-      } catch (err) {
-        console.warn("[registry] screenshot blob upload failed:", err);
+      } catch {
+        console.warn("[registry] screenshot blob upload failed");
         return new Response("screenshot upload failed", { status: 502 });
       }
     }
@@ -967,8 +967,8 @@ export const handler = define.handlers({
         session.pdsUrl,
         validation.value,
       );
-    } catch (err) {
-      console.warn("[registry] profile record publish failed:", err);
+    } catch {
+      console.warn("[registry] profile record publish failed");
       return new Response("profile record publish failed", { status: 502 });
     }
 
@@ -1103,8 +1103,8 @@ export const handler = define.handlers({
           requestedTarget.rkey,
         );
         await deleteAppRecord(requestedTarget.uri);
-      } catch (err) {
-        console.warn("[registry] ATStore listing delete failed:", err);
+      } catch {
+        console.warn("[registry] ATStore listing delete failed");
         return new Response("ATStore listing delete failed", {
           status: 502,
         });
@@ -1117,8 +1117,8 @@ export const handler = define.handlers({
 
     try {
       await deleteProfileRecord(user.did, session.pdsUrl);
-    } catch (err) {
-      console.warn("[registry] profile record delete failed:", err);
+    } catch {
+      console.warn("[registry] profile record delete failed");
       return new Response("profile record delete failed", { status: 502 });
     }
 
@@ -1136,8 +1136,8 @@ export const handler = define.handlers({
         );
         await deleteAppRecord(existingAtstore.uri);
       }
-    } catch (err) {
-      console.warn("[registry] legacy ATStore listing delete failed:", err);
+    } catch {
+      console.warn("[registry] legacy ATStore listing delete failed");
       return new Response("ATStore listing delete failed", {
         status: 502,
       });
@@ -1151,8 +1151,8 @@ export const handler = define.handlers({
         "self",
       );
       await deleteAppRecord(communityAppProfileAtUri(user.did));
-    } catch (err) {
-      console.error("[registry] community app profile delete failed:", err);
+    } catch {
+      console.error("[registry] community app profile delete failed");
       return new Response(
         "The app could not be fully removed from its account host. Try again.",
         { status: 502 },
