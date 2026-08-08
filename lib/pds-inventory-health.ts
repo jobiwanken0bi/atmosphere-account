@@ -33,7 +33,7 @@ export interface PdsInventoryFreshness {
     complete: boolean;
     startedAt: string;
     completedAt: string | null;
-    error: string | null;
+    error: "inventory_scan_failed" | null;
   } | null;
 }
 
@@ -164,7 +164,12 @@ export function calculatePdsInventoryFreshness(input: {
         completedAt: input.latest.completedAt == null
           ? null
           : new Date(input.latest.completedAt).toISOString(),
-        error: input.latest.error,
+        // The stored error is retained for operators, but it can contain
+        // upstream response text, URLs, or infrastructure details. Readiness
+        // consumers only need a stable indication that the attempt failed.
+        error: input.latest.status === "failed"
+          ? "inventory_scan_failed"
+          : null,
       }
       : null,
   };

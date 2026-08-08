@@ -16,8 +16,8 @@ Deno.test("create-account hosts must enable direct OAuth creation", () => {
   const base = {
     ...listSeededAccountHostFallback()[0],
     signupStatus: "open" as const,
-    signupUrl: "https://host.example/signup",
-    serviceEndpoint: "https://host.example",
+    signupUrl: "https://host.example.com/signup",
+    serviceEndpoint: "https://host.example.com",
     capabilitiesJson: JSON.stringify([{
       id: HOST_CAPABILITY_OAUTH_ACCOUNT_CREATION,
       status: "account.atmosphere.host.defs#capabilitySupported",
@@ -54,7 +54,7 @@ Deno.test("create-account hosts must enable direct OAuth creation", () => {
   assertEquals(
     isCreateAccountHostEligible({
       ...base,
-      signupUrl: "http://host.example/signup",
+      signupUrl: "http://host.example.com/signup",
     }, now),
     false,
   );
@@ -63,7 +63,7 @@ Deno.test("create-account hosts must enable direct OAuth creation", () => {
 Deno.test("OAuth account creation requires an explicit supported capability", () => {
   const base = {
     ...listSeededAccountHostFallback()[0],
-    serviceEndpoint: "https://host.example",
+    serviceEndpoint: "https://host.example.com",
     capabilitiesJson: JSON.stringify([{
       id: HOST_CAPABILITY_OAUTH_ACCOUNT_CREATION,
       status: "account.atmosphere.host.defs#capabilitySupported",

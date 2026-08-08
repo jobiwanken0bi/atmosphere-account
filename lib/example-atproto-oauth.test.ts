@@ -4,6 +4,7 @@ import {
 } from "./atmosphere-login-sdk.ts";
 import {
   buildExampleAppSessionCookie,
+  buildExampleLoginState,
   buildExampleOAuthStartPath,
   createMemorySelectionReplayStore,
   exampleAtmosphereLoginCallbackUri,
@@ -14,6 +15,7 @@ import {
   exampleAtprotoOAuthClientId,
   isExampleLocalDevSelection,
   readExampleAppSession,
+  readExampleLoginState,
 } from "./example-atproto-oauth.ts";
 import { generateEs256KeyPair, signEs256 } from "./jose.ts";
 
@@ -181,4 +183,21 @@ Deno.test("example app session cookie is separate and readable", async () => {
   assertEquals(session.handle, "user.example");
   assertEquals(session.pdsUrl, "https://bsky.social");
   assertEquals(session.oauthMode, "dev_simulated");
+});
+
+Deno.test("example relying app retains state in a host-only signed cookie", async () => {
+  const created = await buildExampleLoginState();
+  const cookiePair = created.cookie.split(";")[0];
+  const request = new Request(
+    `https://app.example/examples/atmosphere-login/callback?state=${created.state}`,
+    { headers: { cookie: cookiePair } },
+  );
+  assertEquals(
+    await readExampleLoginState(request, created.state),
+    created.state,
+  );
+  assertEquals(
+    await readExampleLoginState(request, "x".repeat(32)),
+    null,
+  );
 });

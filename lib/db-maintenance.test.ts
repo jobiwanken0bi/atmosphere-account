@@ -6,7 +6,7 @@ function assertEquals(actual: unknown, expected: unknown): void {
   if (a !== e) throw new Error(`Expected ${e}, got ${a}`);
 }
 
-Deno.test("database maintenance removes expired replay keys using second timestamps", async () => {
+Deno.test("database maintenance preserves refresh sessions while removing expired replay keys", async () => {
   const now = 1_700_000_000_500;
   const calls: Array<{ sql: string; args: unknown[] }> = [];
   const client = {
@@ -16,7 +16,6 @@ Deno.test("database maintenance removes expired replay keys using second timesta
       const args = typeof query === "string" ? [] : query.args ?? [];
       calls.push({ sql, args });
       if (/oauth_state/i.test(sql)) return { rowsAffected: 1 };
-      if (/oauth_session/i.test(sql)) return { rowsAffected: 2 };
       if (/app_session/i.test(sql)) return { rowsAffected: 3 };
       if (/login_selection_replay/i.test(sql)) return { rowsAffected: 4 };
       if (/login_picker_intent/i.test(sql)) return { rowsAffected: 5 };
@@ -38,7 +37,7 @@ Deno.test("database maintenance removes expired replay keys using second timesta
 
   assertEquals(result, {
     expiredOauthStates: 1,
-    expiredOauthSessions: 2,
+    expiredOauthSessions: 0,
     expiredAppSessions: 3,
     expiredLoginSelectionReplays: 4,
     expiredLoginPickerIntents: 5,
@@ -55,6 +54,10 @@ Deno.test("database maintenance removes expired replay keys using second timesta
   assertEquals(
     calls.find((call) => /passkey_ceremony/i.test(call.sql))?.args,
     [now],
+  );
+  assertEquals(
+    calls.filter((call) => /DELETE FROM oauth_session/i.test(call.sql)).length,
+    0,
   );
   assertEquals(
     calls.filter((call) => /PRAGMA optimize/i.test(call.sql)).length,

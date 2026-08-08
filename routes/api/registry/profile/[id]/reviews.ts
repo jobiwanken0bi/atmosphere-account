@@ -7,8 +7,15 @@
 import { define } from "../../../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../../../lib/appview-client.ts";
 import { withRateLimit } from "../../../../../lib/rate-limit.ts";
-import { loadSession } from "../../../../../lib/oauth.ts";
-import { putReviewRecord } from "../../../../../lib/pds.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+} from "../../../../../lib/oauth.ts";
+import {
+  getRecordPublic,
+  isPdsScopeMissingError,
+  putReviewRecord,
+} from "../../../../../lib/pds.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
@@ -24,10 +31,17 @@ import {
   validateReviewRating,
 } from "../../../../../lib/reviews.ts";
 import {
+  REVIEW_NSID,
   type ReviewRecord,
   validateReview,
 } from "../../../../../lib/lexicons.ts";
-import { rejectLargeRequest } from "../../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../../lib/security.ts";
+import { hasOAuthCapabilities } from "../../../../../lib/oauth-scopes.ts";
+import { oauthReauthorizationUrl } from "../../../../../lib/oauth-action.ts";
 
 interface ReviewPayload {
   rating?: unknown;
@@ -87,12 +101,20 @@ export const handler = define.handlers({
     if (target.did === user.did) return jsonError(400, "cannot_review_self");
     if (target.profileType !== "project") return jsonError(400, "not_project");
 
-    const session = await loadSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
-
-    const body = await ctx.req.json().catch(() => null) as
-      | ReviewPayload
-      | null;
+    let body: ReviewPayload | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_REVIEW_REQUEST_BYTES,
+      ) as ReviewPayload | null;
+    } catch (error) {
+      return jsonError(
+        error instanceof RequestBodyTooLargeError ? 413 : 400,
+        error instanceof RequestBodyTooLargeError
+          ? "request_body_too_large"
+          : "invalid_body",
+      );
+    }
     if (!body) return jsonError(400, "invalid_body");
 
     const rating = validateReviewRating(body.rating);
@@ -102,10 +124,75 @@ export const handler = define.handlers({
     if (reviewBody == null) return jsonError(400, "body_too_long");
 
     const existing = await getOwnReview(target.did, user.did).catch(() => null);
-    const now = new Date();
     const rkey = existing?.reviewRkey ?? await reviewRkeyForTarget(target.did);
-    const createdAt = existing
-      ? new Date(existing.createdAt).toISOString()
+    let hasExistingReview = !!existing;
+    let existingCreatedAt = existing?.createdAt ?? null;
+    const session = await getValidSession(user.did);
+    if (!session) {
+      return reauthorizationRequired(
+        user.handle,
+        target.handle,
+        hasExistingReview ? "legacy_review_manage" : "legacy_review",
+      );
+    }
+
+    if (!existing) {
+      const remote = await readRemoteLegacyReview(
+        session.pdsUrl,
+        user.did,
+        rkey,
+        target.did,
+      ).catch(() => "unavailable" as const);
+      if (remote === "unavailable") {
+        return jsonError(502, "review_lookup_failed");
+      }
+      if (remote === "conflict") {
+        return jsonError(409, "review_record_conflict");
+      }
+      if (remote) {
+        const recovered = await createOrUpdateReview({
+          targetDid: target.did,
+          reviewerDid: user.did,
+          reviewUri: remote.uri,
+          reviewCid: remote.cid,
+          reviewRkey: rkey,
+          rating: remote.record.rating,
+          body: remote.record.body ?? "",
+          createdAt: Date.parse(remote.record.createdAt) || Date.now(),
+          updatedAt:
+            Date.parse(remote.record.updatedAt ?? remote.record.createdAt) ||
+            Date.now(),
+        });
+        if (
+          remote.record.rating === rating &&
+          (remote.record.body ?? "") === reviewBody
+        ) {
+          const summary = await getReviewSummary(target.did);
+          return jsonResponse(200, {
+            ok: true,
+            review: recovered,
+            summary,
+          });
+        }
+        hasExistingReview = true;
+        existingCreatedAt = recovered.createdAt;
+      }
+    }
+
+    const capability = hasExistingReview
+      ? "legacy_review_manage" as const
+      : "legacy_review" as const;
+    if (!hasOAuthCapabilities(grantedScopeForSession(session), [capability])) {
+      return reauthorizationRequired(
+        user.handle,
+        target.handle,
+        capability,
+      );
+    }
+
+    const now = new Date();
+    const createdAt = existingCreatedAt
+      ? new Date(existingCreatedAt).toISOString()
       : now.toISOString();
     const record: ReviewRecord = {
       subject: target.did,
@@ -128,6 +215,13 @@ export const handler = define.handlers({
       validation.value,
     ).catch((err) => err instanceof Error ? err : new Error(String(err)));
     if (result instanceof Error) {
+      if (isPdsScopeMissingError(result)) {
+        return reauthorizationRequired(
+          user.handle,
+          target.handle,
+          capability,
+        );
+      }
       return jsonResponse(502, {
         error: "put_record_failed",
         detail: result.message,
@@ -176,6 +270,53 @@ function jsonResponse(
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+async function readRemoteLegacyReview(
+  pdsUrl: string,
+  reviewerDid: string,
+  rkey: string,
+  targetDid: string,
+): Promise<
+  | { uri: string; cid: string; record: ReviewRecord }
+  | "conflict"
+  | null
+> {
+  const remote = await getRecordPublic(
+    pdsUrl,
+    reviewerDid,
+    REVIEW_NSID,
+    rkey,
+  );
+  if (!remote) return null;
+  const validation = validateReview(remote.value);
+  if (!validation.ok || !validation.value) return "conflict";
+  const expectedSubjectUri =
+    `at://${targetDid}/com.atmosphereaccount.registry.profile/self`;
+  if (
+    validation.value.subject !== targetDid ||
+    (validation.value.subjectUri !== undefined &&
+      validation.value.subjectUri !== expectedSubjectUri)
+  ) return "conflict";
+  return { uri: remote.uri, cid: remote.cid, record: validation.value };
+}
+
+function reauthorizationRequired(
+  handle: string,
+  target: string,
+  action: "legacy_review" | "legacy_review_manage",
+): Response {
+  const next = `/apps/${encodeURIComponent(target)}?review=compose`;
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: oauthReauthorizationUrl({
+      next,
+      action,
+      capabilities: [action],
+      name: target,
+    }),
+    handle,
+  });
 }
 
 function appviewProxyError(err: unknown): Response {

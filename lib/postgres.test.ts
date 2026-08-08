@@ -121,3 +121,40 @@ Deno.test("Postgres pool rejects invalid maximum sizes", () => {
     }
   }
 });
+
+Deno.test("external Postgres connections verify TLS certificates", () => {
+  for (
+    const connectionString of [
+      "postgres://user:secret@db.example.com/app",
+      "postgres://user:secret@db.example.com/app?sslmode=require",
+      "postgres://user:secret@db.example.com/app?sslmode=verify-full",
+    ]
+  ) {
+    const options = postgresPoolOptions(connectionString, "3", "");
+    if (
+      !options.ssl || options.ssl.rejectUnauthorized !== true
+    ) {
+      throw new Error(`expected verified TLS for ${connectionString}`);
+    }
+  }
+});
+
+Deno.test("Postgres TLS verification requires an explicit opt-out", () => {
+  const insecure = postgresPoolOptions(
+    "postgres://user:secret@db.example.com/app",
+    "3",
+    "no-verify",
+  );
+  if (!insecure.ssl || insecure.ssl.rejectUnauthorized !== false) {
+    throw new Error("expected explicit no-verify mode to retain TLS");
+  }
+
+  const privateNetwork = postgresPoolOptions(
+    "postgres://user:secret@postgres.railway.internal/app",
+    "3",
+    "",
+  );
+  if (privateNetwork.ssl !== false) {
+    throw new Error("expected Railway private networking to omit TLS");
+  }
+});

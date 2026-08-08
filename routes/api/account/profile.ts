@@ -16,7 +16,9 @@ import {
 } from "../../../lib/bsky-clients.ts";
 import { devPickerAccountForDid } from "../../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../../lib/env.ts";
-import { loadSession } from "../../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../../lib/oauth.ts";
+import { oauthReauthorizationUrl } from "../../../lib/oauth-action.ts";
+import type { OAuthCapability } from "../../../lib/oauth-scopes.ts";
 import {
   getBskyProfile,
   getProfileRecord,
@@ -30,7 +32,14 @@ import {
 import { type ProfileRecord, validateProfile } from "../../../lib/lexicons.ts";
 import { getProfileByDid, upsertProfile } from "../../../lib/registry.ts";
 import { normalizeProfileWebsiteUrl } from "../../../lib/user-profile-links.ts";
-import { rejectLargeRequest } from "../../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
+import { userProfileWriteCapabilities } from "../../../lib/profile-write-capabilities.ts";
+import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import { matchesRasterImageSignature } from "../../../lib/raster-image-security.ts";
 
 const AVATAR_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const AVATAR_MAX_BYTES = 1_000_000;
@@ -48,6 +57,12 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "account-profile-write",
+      capacity: 20,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
@@ -55,7 +70,20 @@ export const handler = define.handlers({
       return new Response("user account required", { status: 403 });
     }
 
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_PROFILE_FORM_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid profile form",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const displayName = String(form?.get("displayName") ?? "").trim();
     const bio = String(form?.get("bio") ?? "").trim();
     const rawClient = form?.get("bskyClientId");
@@ -80,14 +108,19 @@ export const handler = define.handlers({
       return new Response("avatar must be under 1 MB", { status: 400 });
     }
 
+    const requiredCapabilities = userProfileWriteCapabilities(!!avatarFile);
     const [session, appUser, existingProfile] = await Promise.all([
-      loadSession(user.did),
+      getSessionForCapabilities(user.did, requiredCapabilities),
       getAppUser(user.did),
       getProfileByDid(user.did, { profileType: "user" }).catch(() => null),
     ]);
     const devAccount = IS_DEV ? devPickerAccountForDid(user.did) : null;
-    if (!appUser || (!session && !devAccount)) {
-      return new Response("session not found", { status: 401 });
+    if (!appUser) return new Response("account not found", { status: 401 });
+    if (!session && !devAccount) {
+      return profileReauthRequired({
+        capabilities: requiredCapabilities,
+        name: displayName || user.handle,
+      });
     }
     const profilePdsUrl = session?.pdsUrl ?? devAccount!.pdsUrl!;
     const clientId = typeof rawClient === "string"
@@ -149,6 +182,12 @@ export const handler = define.handlers({
       }
       try {
         const bytes = new Uint8Array(await avatarFile.arrayBuffer());
+        if (!matchesRasterImageSignature(bytes, avatarFile.type)) {
+          return new Response(
+            "avatar contents do not match the selected image type",
+            { status: 400 },
+          );
+        }
         avatar = await uploadBlob(
           user.did,
           session.pdsUrl,
@@ -269,4 +308,25 @@ function fileFromForm(
   value: FormDataEntryValue | null | undefined,
 ): File | null {
   return value instanceof File && value.size > 0 ? value : null;
+}
+
+function profileReauthRequired(input: {
+  capabilities: readonly OAuthCapability[];
+  name: string;
+}): Response {
+  return new Response(
+    JSON.stringify({
+      error: "reauth_required",
+      reauthUrl: oauthReauthorizationUrl({
+        next: "/account",
+        action: "profile",
+        capabilities: input.capabilities,
+        name: input.name,
+      }),
+    }),
+    {
+      status: 403,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    },
+  );
 }

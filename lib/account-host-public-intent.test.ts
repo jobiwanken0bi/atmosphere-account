@@ -74,21 +74,50 @@ Deno.test("PDS public intent distinguishes open providers from personal and unma
 });
 
 Deno.test("PDS public intent accepts explicit same-origin signup CTAs", async () => {
-  const result = await fetchPdsPublicSignupPage("https://host.example", {
-    fetchImpl: (() =>
-      Promise.resolve(
+  let redirect: RequestRedirect | undefined;
+  const result = await fetchPdsPublicSignupPage("https://host.social", {
+    fetchImpl: ((_input, init) => {
+      redirect = init?.redirect;
+      return Promise.resolve(
         new Response(
-          `<a href="https://elsewhere.example/register">Register</a>
+          `<a href="https://elsewhere.social/register">Register</a>
            <a class="primary" href="/app/register"><span>Join This Server</span></a>`,
           { headers: { "content-type": "text/html; charset=utf-8" } },
         ),
-      )) as typeof fetch,
+      );
+    }) as typeof fetch,
   });
 
   assertEquals(result, {
-    signupUrl: "https://host.example/app/register",
+    signupUrl: "https://host.social/app/register",
     label: "Join This Server",
   });
+  assertEquals(redirect, "manual");
+});
+
+Deno.test("PDS public signup probes refuse redirects and oversized pages", async () => {
+  for (
+    const response of [
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://127.0.0.1/private" },
+      }),
+      new Response("x".repeat(96_001), {
+        headers: { "content-type": "text/html" },
+      }),
+      new Response('<a href="/register">Register</a>', {
+        headers: { "content-type": "application/json" },
+      }),
+    ]
+  ) {
+    const result = await fetchPdsPublicSignupPage("https://host.social", {
+      fetchImpl: (() =>
+        Promise.resolve(
+          response,
+        )) as typeof fetch,
+    });
+    assertEquals(result, null);
+  }
 });
 
 Deno.test("public-host enrichment persists unclaimed provider evidence without listing one-user PDSes", async () => {
@@ -113,12 +142,12 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
     )`);
     for (
       const [host, count, verification] of [
-        ["open.example", 10, "observed"],
-        ["managed-invites.example", 8, "observed"],
-        ["private-invites.example", 5, "observed"],
-        ["tranquil.example", 13, "observed"],
-        ["personal.example", 1, "observed"],
-        ["claimed.example", 10, "claimed"],
+        ["open.social", 10, "observed"],
+        ["managed-invites.social", 8, "observed"],
+        ["private-invites.social", 5, "observed"],
+        ["tranquil.social", 13, "observed"],
+        ["personal.social", 1, "observed"],
+        ["claimed.social", 10, "claimed"],
       ] as const
     ) {
       await db.execute({
@@ -135,9 +164,9 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
           observed_account_count, observed_active_account_count
         ) VALUES (?, ?, ?, 'manual', ?, ?)`,
       args: [
-        "published.example",
-        "https://published.example",
-        "at://did:plc:publisher/account.atmosphere.host.service/published.example",
+        "published.social",
+        "https://published.social",
+        "at://did:plc:publisher/account.atmosphere.host.service/published.social",
         7,
         7,
       ],
@@ -151,7 +180,7 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
           const url = new URL(String(input));
           const host = url.hostname;
           if (url.pathname === "/") {
-            const html = host === "tranquil.example"
+            const html = host === "tranquil.social"
               ? `<a href="/app/register">Join This Server</a>`
               : `<a href="/app/login">Log in</a>`;
             return Promise.resolve(
@@ -160,9 +189,9 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
               }),
             );
           }
-          const managed = host === "managed-invites.example";
-          const privateInvites = host === "private-invites.example";
-          const tranquil = host === "tranquil.example";
+          const managed = host === "managed-invites.social";
+          const privateInvites = host === "private-invites.social";
+          const tranquil = host === "tranquil.social";
           return Promise.resolve(
             new Response(
               JSON.stringify({
@@ -195,49 +224,49 @@ Deno.test("public-host enrichment persists unclaimed provider evidence without l
     );
     assertEquals(result.rows, [
       {
-        host: "claimed.example",
+        host: "claimed.social",
         signup_status: "unknown",
         public_intent_status: "unknown",
         public_intent_source: null,
         public_intent_checked_at: null,
       },
       {
-        host: "managed-invites.example",
+        host: "managed-invites.social",
         signup_status: "invite_required",
         public_intent_status: "detected",
         public_intent_source: "pds_managed_invites",
         public_intent_checked_at: 1_000_000,
       },
       {
-        host: "open.example",
+        host: "open.social",
         signup_status: "open",
         public_intent_status: "detected",
         public_intent_source: "pds_open_signup",
         public_intent_checked_at: 1_000_000,
       },
       {
-        host: "personal.example",
+        host: "personal.social",
         signup_status: "unknown",
         public_intent_status: "unknown",
         public_intent_source: null,
         public_intent_checked_at: null,
       },
       {
-        host: "private-invites.example",
+        host: "private-invites.social",
         signup_status: "unknown",
         public_intent_status: "not_detected",
         public_intent_source: null,
         public_intent_checked_at: 1_000_000,
       },
       {
-        host: "published.example",
+        host: "published.social",
         signup_status: "open",
         public_intent_status: "detected",
         public_intent_source: "pds_open_signup",
         public_intent_checked_at: 1_000_000,
       },
       {
-        host: "tranquil.example",
+        host: "tranquil.social",
         signup_status: "invite_required",
         public_intent_status: "detected",
         public_intent_source: "pds_managed_invites",

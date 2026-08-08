@@ -3,6 +3,7 @@ import Nav from "../../../components/Nav.tsx";
 import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import HostMark from "../../../components/hosts/HostMark.tsx";
+import OwnerManagementLink from "../../../components/OwnerManagementLink.tsx";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import {
@@ -43,6 +44,15 @@ import {
   resolveBoundAppHostLinkIntent,
   type ResolvedAppHostLinkIntent,
 } from "../../../lib/app-host-link-intent.ts";
+import { oauthSigninUrl } from "../../../lib/oauth-action.ts";
+import { getSessionForCapabilities } from "../../../lib/oauth.ts";
+import { oauthAddAccountHref } from "../oauth-entry.ts";
+import {
+  readFormDataRequestWithLimit,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
+
+const MAX_HOST_CLAIM_BODY_BYTES = 32_768;
 
 type ClaimState =
   | "ready"
@@ -70,6 +80,7 @@ interface ClaimPageProps {
   previewUrl: string | null;
   directoryListing: boolean;
   detectedLookup: boolean;
+  hostAuthorized: boolean;
 }
 
 interface HostClaimLinkContext {
@@ -117,12 +128,20 @@ export const handler = define.handlers({
           previewUrl={null}
           directoryListing
           detectedLookup={false}
+          hostAuthorized={false}
         />,
         { status: 404 },
       );
     }
     if (!ctx.state.user) {
-      return redirectToSignin(host.host, ctx.url);
+      return redirectToSignin(host, ctx.url);
+    }
+    if (
+      !await getSessionForCapabilities(ctx.state.user.did, ["identity"], {
+        quiet: true,
+      })
+    ) {
+      return redirectToSignin(host, ctx.url);
     }
     const linkContext = await loadLinkContext(ctx.url, host.host);
     if (linkContext instanceof Response) return linkContext;
@@ -162,7 +181,14 @@ export const handler = define.handlers({
       return new Response("Host not found.", { status: 404 });
     }
     if (!ctx.state.user) {
-      return redirectToSignin(host.host, ctx.url);
+      return redirectToSignin(host, ctx.url);
+    }
+    if (
+      !await getSessionForCapabilities(ctx.state.user.did, ["identity"], {
+        quiet: true,
+      })
+    ) {
+      return redirectToSignin(host, ctx.url);
     }
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "host-claim-update",
@@ -172,7 +198,20 @@ export const handler = define.handlers({
     if (limited) return limited;
     const linkContext = await loadLinkContext(ctx.url, host.host);
     if (linkContext instanceof Response) return linkContext;
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_HOST_CLAIM_BODY_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "Request too large."
+          : "Invalid request.",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const action = textValue(form?.get("action"));
     const listingSelection = readDirectoryListingSelection(form);
     const directoryListing = listingSelection ??
@@ -304,14 +343,13 @@ export const handler = define.handlers({
           result.host,
           ctx.state.user.did,
           linkContext,
+          { claimed: true },
         );
       }
       return new Response(null, {
         status: 303,
         headers: {
-          location: `/hosts/${
-            encodeURIComponent(result.host.host)
-          }/manage?claimed=1`,
+          location: hostClaimDetailHref(result.host, { claimed: true }),
           "set-cookie": clearHostClaimTokenCookie(host.host),
         },
       });
@@ -361,6 +399,7 @@ async function completeAppHostLink(
   host: AccountHost,
   currentHostDid: string,
   linkContext: HostClaimLinkContext,
+  options: { claimed?: boolean } = {},
 ): Promise<Response> {
   const linked = await establishDirectoryEntityLinkFromIntent({
     intent: linkContext.intent,
@@ -369,9 +408,11 @@ async function completeAppHostLink(
     console.error("[host-claim] app connection completion failed:", error);
     return { ok: false as const };
   });
-  const location = linked.ok
-    ? `/hosts/${encodeURIComponent(host.host)}/manage?linked=1`
-    : `/hosts/${encodeURIComponent(host.host)}/manage?linkError=1`;
+  const location = hostClaimDetailHref(host, {
+    claimed: options.claimed,
+    linked: linked.ok,
+    linkError: !linked.ok,
+  });
   return new Response(null, {
     status: 303,
     headers: {
@@ -379,6 +420,18 @@ async function completeAppHostLink(
       "set-cookie": clearHostClaimTokenCookie(host.host),
     },
   });
+}
+
+export function hostClaimDetailHref(
+  host: Pick<AccountHost, "host">,
+  outcome: { claimed?: boolean; linked?: boolean; linkError?: boolean },
+): string {
+  const query = new URLSearchParams();
+  if (outcome.claimed) query.set("claimed", "1");
+  if (outcome.linked) query.set("linked", "1");
+  if (outcome.linkError) query.set("linkError", "1");
+  const search = query.toString();
+  return `/hosts/${encodeURIComponent(host.host)}${search ? `?${search}` : ""}`;
 }
 
 function appviewUnavailable(scope: string, err: unknown): Response {
@@ -407,9 +460,12 @@ async function buildClaimPageProps(
     detectedLookup?: boolean;
   } = {},
 ): Promise<ClaimPageProps> {
-  const [claim, authority] = await Promise.all([
+  const [claim, authority, hostSession] = await Promise.all([
     getAccountHostClaim(host.host).catch(() => null),
     resolveAccountHostClaimAuthority(host).catch(() => null),
+    getSessionForCapabilities(user.did, ["host"], { quiet: true }).catch(
+      () => null,
+    ),
   ]);
   const verifiedClaimOwnerDid = claim
     ? await verifiedAccountHostOwnerDid(host, claim).catch(() => null)
@@ -473,16 +529,36 @@ async function buildClaimPageProps(
     previewUrl: feedback.previewUrl ?? null,
     directoryListing: feedback.directoryListing ?? true,
     detectedLookup: feedback.detectedLookup ?? false,
+    hostAuthorized: Boolean(hostSession),
   };
 }
 
-function redirectToSignin(host: string, url: URL): Response {
-  const next = `/hosts/${encodeURIComponent(host)}/claim${url.search}`;
-  const signin = new URL("/signin", url.origin);
-  signin.searchParams.set("next", next);
+function redirectToSignin(host: AccountHost, url: URL): Response {
   return new Response(null, {
     status: 303,
-    headers: { location: `${signin.pathname}${signin.search}` },
+    headers: { location: hostClaimAuthorizationHref(host, url) },
+  });
+}
+
+export function hostClaimAuthorizationHref(
+  host: Pick<AccountHost, "host" | "displayName">,
+  url: URL,
+): string {
+  return hostClaimAuthorizationHrefForNext(
+    host,
+    `/hosts/${encodeURIComponent(host.host)}/claim${url.search}`,
+  );
+}
+
+function hostClaimAuthorizationHrefForNext(
+  host: Pick<AccountHost, "displayName">,
+  next: string,
+): string {
+  return oauthSigninUrl({
+    next,
+    action: "host_claim",
+    capabilities: ["identity"],
+    name: host.displayName,
   });
 }
 
@@ -503,6 +579,7 @@ function HostClaimPage(props: ClaimPageProps) {
     previewUrl,
     directoryListing,
     detectedLookup,
+    hostAuthorized,
   } = props;
   return (
     <div id="page-top">
@@ -561,6 +638,8 @@ function HostClaimPage(props: ClaimPageProps) {
                       previewUrl={previewUrl}
                       directoryListing={directoryListing}
                       detectedLookup={detectedLookup}
+                      hostAuthorized={hostAuthorized}
+                      account={account}
                     />
                   </>
                 )
@@ -598,6 +677,8 @@ function ClaimBody(
     previewUrl,
     directoryListing,
     detectedLookup,
+    hostAuthorized,
+    account,
   }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
@@ -613,6 +694,8 @@ function ClaimBody(
     previewUrl: string | null;
     directoryListing: boolean;
     detectedLookup: boolean;
+    hostAuthorized: boolean;
+    account: ReturnType<typeof buildAccountMenuProps>;
   },
 ) {
   if (state === "claimed-by-you") {
@@ -633,12 +716,11 @@ function ClaimBody(
             {host.operatorListingOptIn === false ? "off" : "on"}
           </strong>.
         </p>
-        <a
-          class="text-link-button"
-          href={`/hosts/${encodeURIComponent(host.host)}/manage`}
-        >
-          Manage public listing
-        </a>
+        <ClaimedHostManagementLink
+          host={host}
+          authorized={hostAuthorized}
+          account={account}
+        />
         {linkContext && (
           <form method="POST">
             <input type="hidden" name="action" value="connect_app" />
@@ -665,7 +747,7 @@ function ClaimBody(
           <a
             class="directory-register-button host-claim-secondary-action"
             href={switchAccountHref(
-              host.host,
+              host,
               linkContext,
               directoryListing,
               detectedLookup,
@@ -742,16 +824,15 @@ function ClaimBody(
         {tokenFailure === "account_mismatch" && token && (
           <a
             class="directory-register-button host-claim-secondary-action"
-            href={`/oauth/add-account?next=${
-              encodeURIComponent(
-                claimPathForContext(
-                  host.host,
-                  linkContext,
-                  directoryListing,
-                  detectedLookup,
-                ),
-              )
-            }`}
+            href={hostClaimAddAccountHref(
+              host,
+              claimPathForContext(
+                host.host,
+                linkContext,
+                directoryListing,
+                detectedLookup,
+              ),
+            )}
           >
             <span class="directory-register-button-icon" aria-hidden="true">
               +
@@ -771,7 +852,7 @@ function ClaimBody(
           <a
             class="text-link-button"
             href={switchAccountHref(
-              host.host,
+              host,
               linkContext,
               directoryListing,
               detectedLookup,
@@ -837,16 +918,15 @@ function ClaimBody(
         </p>
         <a
           class="directory-register-button host-claim-secondary-action"
-          href={`/oauth/add-account?next=${
-            encodeURIComponent(
-              claimPathForContext(
-                host.host,
-                linkContext,
-                directoryListing,
-                detectedLookup,
-              ),
-            )
-          }`}
+          href={hostClaimAddAccountHref(
+            host,
+            claimPathForContext(
+              host.host,
+              linkContext,
+              directoryListing,
+              detectedLookup,
+            ),
+          )}
         >
           <span class="directory-register-button-icon" aria-hidden="true">
             +
@@ -873,7 +953,7 @@ function ClaimBody(
         <a
           class="directory-register-button host-claim-secondary-action"
           href={switchAccountHref(
-            host.host,
+            host,
             linkContext,
             directoryListing,
             detectedLookup,
@@ -883,6 +963,31 @@ function ClaimBody(
         </a>
       )}
     </div>
+  );
+}
+
+export function ClaimedHostManagementLink(
+  {
+    host,
+    authorized,
+    account,
+  }: {
+    host: Pick<AccountHost, "host" | "displayName">;
+    authorized: boolean;
+    account: ReturnType<typeof buildAccountMenuProps>;
+  },
+) {
+  return (
+    <OwnerManagementLink
+      authorized={authorized}
+      kind="host"
+      destinationHref={`/hosts/${encodeURIComponent(host.host)}/manage`}
+      targetName={host.displayName}
+      label="Manage public listing"
+      className="text-link-button"
+      rememberedAccounts={account.rememberedAccounts}
+      initialHandle={account.user?.handle}
+    />
   );
 }
 
@@ -938,22 +1043,30 @@ function claimPathForContext(
   return `${path}?${search}`;
 }
 
+export function hostClaimAddAccountHref(
+  host: Pick<AccountHost, "host" | "displayName">,
+  next: string,
+): string {
+  return oauthAddAccountHref(
+    hostClaimAuthorizationHrefForNext(host, next),
+  );
+}
+
 function switchAccountHref(
-  host: string,
+  host: Pick<AccountHost, "host" | "displayName">,
   linkContext: HostClaimLinkContext | null,
   directoryListing: boolean,
   detectedLookup: boolean,
 ): string {
-  return `/oauth/add-account?next=${
-    encodeURIComponent(
-      claimPathForContext(
-        host,
-        linkContext,
-        directoryListing,
-        detectedLookup,
-      ),
-    )
-  }`;
+  return hostClaimAddAccountHref(
+    host,
+    claimPathForContext(
+      host.host,
+      linkContext,
+      directoryListing,
+      detectedLookup,
+    ),
+  );
 }
 
 const HOST_CLAIM_TOKEN_COOKIE = "atmo_host_claim_token";

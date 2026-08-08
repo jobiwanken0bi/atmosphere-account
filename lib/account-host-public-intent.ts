@@ -119,18 +119,31 @@ export async function fetchPdsPublicSignupPage(
   if (!endpoint) return null;
   const root = new URL("/", endpoint);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const requestedTimeout = options.timeoutMs ?? PUBLIC_SIGNUP_PAGE_TIMEOUT_MS;
+  const timeoutMs = Number.isFinite(requestedTimeout)
+    ? Math.min(30_000, Math.max(500, Math.floor(requestedTimeout)))
+    : PUBLIC_SIGNUP_PAGE_TIMEOUT_MS;
   try {
     const response = await fetchImpl(root, {
       headers: { accept: "text/html,application/xhtml+xml" },
-      signal: AbortSignal.timeout(
-        Math.max(500, options.timeoutMs ?? PUBLIC_SIGNUP_PAGE_TIMEOUT_MS),
-      ),
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      return null;
+    }
     const contentType = response.headers.get("content-type")?.toLowerCase() ??
       "";
-    if (!contentType.includes("text/html")) return null;
+    if (
+      !contentType.includes("text/html") &&
+      !contentType.includes("application/xhtml+xml")
+    ) {
+      await response.body?.cancel().catch(() => {});
+      return null;
+    }
     if (response.url && new URL(response.url).origin !== root.origin) {
+      await response.body?.cancel().catch(() => {});
       return null;
     }
     const body = await readResponseTextWithLimit(

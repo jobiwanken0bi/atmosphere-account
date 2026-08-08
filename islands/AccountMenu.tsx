@@ -1,7 +1,8 @@
 import { useSignal } from "@preact/signals";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useId, useRef } from "preact/hooks";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import { useT } from "../i18n/mod.ts";
+import { clearPendingBrowserActionsForOtherOwners } from "../lib/pending-browser-action.ts";
 
 interface RememberedAccount {
   did: string;
@@ -96,6 +97,9 @@ function SignedOutMenu(
   const open = useSignal(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const popupId = `account-menu-popup-${
+    useId().replace(/[^a-zA-Z0-9_-]/g, "")
+  }`;
 
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
@@ -125,8 +129,9 @@ function SignedOutMenu(
         ref={triggerRef}
         type="button"
         class="account-menu-trigger account-menu-trigger--signed-out"
-        aria-haspopup="menu"
-        aria-expanded={open.value}
+        aria-haspopup="dialog"
+        aria-expanded={open.value ? "true" : "false"}
+        aria-controls={popupId}
         aria-label={t.menuLabel}
         onClick={() => {
           open.value = !open.value;
@@ -137,7 +142,12 @@ function SignedOutMenu(
       </button>
 
       {open.value && (
-        <div class="account-menu-popup glass" role="menu">
+        <div
+          id={popupId}
+          class="account-menu-popup glass"
+          role="dialog"
+          aria-label={t.menuLabel}
+        >
           <div class="account-menu-header">
             <span class="account-menu-header-label">
               {t.signedOut}
@@ -158,7 +168,6 @@ function SignedOutMenu(
           <a
             href="/signin"
             class="account-menu-item account-menu-item-add"
-            role="menuitem"
             onClick={() => {
               open.value = false;
             }}
@@ -187,6 +196,13 @@ function SignedInMenu(
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const popupId = `account-menu-popup-${
+    useId().replace(/[^a-zA-Z0-9_-]/g, "")
+  }`;
+
+  useEffect(() => {
+    void clearPendingBrowserActionsForOtherOwners(user.did).catch(() => {});
+  }, [user.did]);
 
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
@@ -218,8 +234,9 @@ function SignedInMenu(
         ref={triggerRef}
         type="button"
         class="account-menu-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open.value}
+        aria-haspopup="dialog"
+        aria-expanded={open.value ? "true" : "false"}
+        aria-controls={popupId}
         aria-label={t.menuLabel}
         onClick={() => {
           open.value = !open.value;
@@ -242,7 +259,12 @@ function SignedInMenu(
       </button>
 
       {open.value && (
-        <div class="account-menu-popup glass" role="menu">
+        <div
+          id={popupId}
+          class="account-menu-popup glass"
+          role="dialog"
+          aria-label={t.menuLabel}
+        >
           <div class="account-menu-header">
             <span class="account-menu-header-label">
               {t.signedInAs}
@@ -260,7 +282,6 @@ function SignedInMenu(
           <a
             href="/account"
             class="account-menu-item"
-            role="menuitem"
             onClick={() => {
               open.value = false;
             }}
@@ -270,12 +291,20 @@ function SignedInMenu(
           <a
             href="/account/reviews"
             class="account-menu-item"
-            role="menuitem"
             onClick={() => {
               open.value = false;
             }}
           >
             {t.manageReviews}
+          </a>
+          <a
+            href="/account/products"
+            class="account-menu-item"
+            onClick={() => {
+              open.value = false;
+            }}
+          >
+            {t.managedProducts}
           </a>
           <form
             method="POST"
@@ -285,7 +314,6 @@ function SignedInMenu(
             <button
               type="submit"
               class="account-menu-item account-menu-item-danger"
-              role="menuitem"
             >
               {t.signOut}
             </button>
@@ -310,9 +338,8 @@ function SignedInMenu(
             />
           ))}
           {
-            /* POST so the server can clear the live session and route
-           *  the browser to /signin even when the user is currently
-           *  signed in (a normal /signin GET would redirect to /account). */
+            /* POST is the explicit no-JS account-choice action. The server
+             * keeps this session active while the chooser is open. */
           }
           <form
             method="POST"
@@ -322,7 +349,6 @@ function SignedInMenu(
             <button
               type="submit"
               class="account-menu-item account-menu-item-add"
-              role="menuitem"
             >
               <span class="account-menu-add-glyph" aria-hidden="true">+</span>
               {t.addAccount}
@@ -345,7 +371,7 @@ function SwitchRow(
   { account, switchLabel, forgetLabel, forgetConfirm }: SwitchRowProps,
 ) {
   return (
-    <div class="account-menu-switch-row" role="none">
+    <div class="account-menu-switch-row">
       <form
         method="POST"
         action="/oauth/switch"
@@ -355,7 +381,6 @@ function SwitchRow(
         <button
           type="submit"
           class="account-menu-item account-menu-switch-btn"
-          role="menuitem"
           aria-label={switchLabel}
           title={switchLabel}
         >

@@ -1,11 +1,11 @@
 import { useSignal } from "@preact/signals";
+import { createPortal } from "preact/compat";
+import { useId } from "preact/hooks";
 import { useDialog } from "../lib/use-dialog.ts";
 
 interface Props {
   /** Handle or DID of the profile being reported. The API accepts both. */
   targetId: string;
-  /** Whether the viewer is signed in (controls the modal copy). */
-  signedIn: boolean;
   copy: {
     button: string;
     modalTitle: string;
@@ -16,6 +16,7 @@ interface Props {
     submit: string;
     submitting: string;
     cancel: string;
+    done: string;
     sentTitle: string;
     sentBody: string;
     duplicate: string;
@@ -35,6 +36,23 @@ const REASONS: Array<keyof Props["copy"]["reasons"]> = [
   "other",
 ];
 
+/** Public report failures must never surface API codes, proxy HTML, or other
+ * implementation detail in the non-technical profile UI. */
+export function reportProfileFailureMessage(friendlyMessage: string): string {
+  return friendlyMessage;
+}
+
+export function reportProfileSubmissionResult(
+  payload: unknown,
+): "ok" | "duplicate" | "error" {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return "error";
+  }
+  const result = payload as Record<string, unknown>;
+  if (result.ok !== true) return "error";
+  return result.deduped === true ? "duplicate" : "ok";
+}
+
 /**
  * Mounted on /explore/<handle>. Opens a modal where any visitor can
  * submit a moderation report against the profile. Stays in island form
@@ -42,6 +60,10 @@ const REASONS: Array<keyof Props["copy"]["reasons"]> = [
  * trigger is a single small button so the JS payload is minimal.
  */
 export default function ReportProfileButton({ targetId, copy }: Props) {
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const dialogTitleId = `report-profile-title-${id}`;
+  const dialogBodyId = `report-profile-body-${id}`;
+  const reasonName = `report-profile-reason-${id}`;
   const open = useSignal(false);
   const reason = useSignal<keyof Props["copy"]["reasons"]>("not_a_project");
   const details = useSignal("");
@@ -49,6 +71,7 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
   const status = useSignal<
     | { kind: "idle" }
     | { kind: "ok" }
+    | { kind: "duplicate" }
     | { kind: "error"; text: string }
   >({ kind: "idle" });
 
@@ -80,15 +103,27 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
         },
       );
       if (!r.ok) {
-        const text = await r.text();
-        status.value = { kind: "error", text: text || copy.error };
+        // Consume the body so the connection can be reused, but do not show
+        // untrusted server text in this public, non-technical UI.
+        await r.text().catch(() => "");
+        status.value = {
+          kind: "error",
+          text: reportProfileFailureMessage(copy.error),
+        };
         return;
       }
-      status.value = { kind: "ok" };
-    } catch (err) {
+      const payload = await r.json().catch(() => null);
+      const result = reportProfileSubmissionResult(payload);
+      status.value = result === "error"
+        ? {
+          kind: "error",
+          text: reportProfileFailureMessage(copy.error),
+        }
+        : { kind: result };
+    } catch {
       status.value = {
         kind: "error",
-        text: err instanceof Error ? err.message : copy.error,
+        text: reportProfileFailureMessage(copy.error),
       };
     } finally {
       submitting.value = false;
@@ -109,7 +144,7 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
         </button>
       </div>
 
-      {open.value && (
+      {open.value && createPortal(
         <div
           class="modal-backdrop"
           onClick={(e) => {
@@ -121,23 +156,33 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="report-profile-title"
+            aria-labelledby={dialogTitleId}
+            aria-describedby={dialogBodyId}
             tabIndex={-1}
           >
             <div class="modal-header">
-              <h2 id="report-profile-title" class="modal-title">
+              <h2 id={dialogTitleId} class="modal-title">
                 {copy.modalTitle}
               </h2>
-              <p class="modal-body-text">{copy.modalBody}</p>
+              <p id={dialogBodyId} class="modal-body-text">{copy.modalBody}</p>
             </div>
 
-            {status.value.kind === "ok"
+            {status.value.kind === "ok" || status.value.kind === "duplicate"
               ? (
                 <>
-                  <p class="report-modal-status report-modal-status--ok">
-                    <strong>{copy.sentTitle}</strong>
+                  <p
+                    class="report-modal-status report-modal-status--ok"
+                    role="status"
+                  >
+                    <strong>
+                      {status.value.kind === "duplicate"
+                        ? copy.duplicate
+                        : copy.sentTitle}
+                    </strong>
                   </p>
-                  <p class="modal-body-text">{copy.sentBody}</p>
+                  {status.value.kind === "ok" && (
+                    <p class="modal-body-text">{copy.sentBody}</p>
+                  )}
                   <div
                     class="report-modal-actions"
                     style={{ marginTop: "1rem" }}
@@ -147,7 +192,7 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                       class="profile-form-button-primary"
                       onClick={close}
                     >
-                      {copy.cancel}
+                      {copy.done}
                     </button>
                   </div>
                 </>
@@ -160,7 +205,7 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                       <label key={r} class="report-modal-radio">
                         <input
                           type="radio"
-                          name="report-reason"
+                          name={reasonName}
                           value={r}
                           checked={reason.value === r}
                           onChange={() =>
@@ -194,7 +239,7 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                       class="report-modal-status report-modal-status--error"
                       role="alert"
                     >
-                      {copy.error}: {status.value.text}
+                      {status.value.text}
                     </p>
                   )}
 
@@ -222,7 +267,8 @@ export default function ReportProfileButton({ targetId, copy }: Props) {
                 </>
               )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

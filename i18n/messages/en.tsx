@@ -17,10 +17,10 @@ const en = {
   meta: {
     title: "Atmosphere Account — The last social account you’ll ever need.",
     description:
-      "Your Atmosphere account is your passport to a growing ecosystem of apps. One account, all your data, your choice.",
+      "Already use Bluesky, Blacksky, Spark, Tangled, or another AT Protocol service? You already have an Atmosphere account.",
     ogTitle: "Atmosphere Account",
     ogDescription:
-      "The last social account you’ll ever need. One account for all your apps.",
+      "You may already have one account for a growing open ecosystem of apps.",
     ogImageAlt: "Atmosphere Account — sky, glass clouds, and hero headline",
   },
 
@@ -41,6 +41,7 @@ const en = {
         "Sign in with your Atmosphere account to publish an app listing.",
       hostedBy: (host: string): string => `Hosted by ${host}`,
       manageAccount: "Manage account",
+      managedProducts: "Managed products",
       manageProfile: "Manage app listing",
       manageReviews: "Your reviews",
       viewProfile: "View app listing",
@@ -79,10 +80,10 @@ const en = {
       ),
       (): VNode => (
         <>
-          Your <strong>Atmosphere Account</strong>{" "}
-          is your passport to this entire ecosystem. One account unlocks every
-          app — no more creating new logins, no more losing your stuff when you
-          switch. Sign in once, and you’re home everywhere.
+          Already use Bluesky, Blacksky, Spark, Tangled, or another AT Protocol
+          service? <strong>You already have an Atmosphere account.</strong>{" "}
+          You don’t need to create anything here; use that same account across
+          compatible Atmosphere apps.
         </>
       ),
       (): VNode => (
@@ -647,9 +648,7 @@ const en = {
     create: {
       eyebrow: "Add to Apps",
       headline: "Register an app",
-      body:
-        "Sign in with the app’s Atmosphere account. New app listings publish as shared ATStore records so reviews, favorites, and discovery can work across compatible directories.",
-      signInLabel: "Sign in with your Atmosphere handle",
+      signInLabel: "Atmosphere handle",
       handlePlaceholder: "yourhandle.com",
       signIn: "Sign in",
       configError:
@@ -1001,6 +1000,7 @@ const en = {
     submit: "Send report",
     submitting: "Sending…",
     cancel: "Cancel",
+    done: "Close",
     sentTitle: "Report sent",
     sentBody: "Thanks. An admin will review it shortly.",
     duplicate:
@@ -1047,23 +1047,12 @@ const en = {
     saveError: "Could not save your profile.",
     cancel: "Cancel",
     done: "Done",
-    viewProject: "View project",
+    viewProject: "View app",
     delete: "Delete review",
+    confirmDelete: "Delete this review? This can’t be undone.",
     deleting: "Deleting…",
     deleted: "Review deleted.",
     error: "Couldn’t update the review",
-    upgrade: {
-      button: "Register an app",
-      modalTitle: "Is this account a project?",
-      modalBody:
-        "Choosing yes converts this account into a project profile and unlocks the project dashboard. If this isn’t your project’s account,",
-      signInWithProjectLink: "sign in with your project’s account here",
-      signInWithProjectSuffix: ".",
-      yes: "Yes, convert this account",
-      cancel: "Cancel",
-      submitting: "Converting…",
-      error: "Couldn’t convert this account.",
-    },
   },
 
   userProfile: {
@@ -1089,9 +1078,9 @@ const en = {
     },
     composer: {
       heading: "Write a review",
-      modalBody: "Rate this project and add a short note for other people.",
-      signedOut: "Sign in to rate and review this project.",
-      ownerNote: "You can’t review your own project.",
+      modalBody: "Rate this app and add a short note for other people.",
+      signedOut: "Sign in to rate and review this app.",
+      ownerNote: "You can’t review your own app.",
       ratingLabel: "Rating",
       bodyLabel: "Review (optional)",
       bodyPlaceholder: "What should other people know?",
@@ -1116,13 +1105,14 @@ const en = {
     },
     app: {
       sharedRecordPending:
-        "Reviews will be available after this app moves to the shared app record.",
+        "Reviews will appear after this app moves to the new listing format.",
       likeCount: (count: number): string =>
         `${count.toLocaleString()} like${count === 1 ? "" : "s"}`,
       like: {
         like: "Like",
         unlike: "Unlike this app",
         signIn: "Sign in to like this app",
+        cancel: "Cancel",
         error: "Couldn’t update your like. Please try again.",
         countOne: "{count} like",
         countMany: "{count} likes",
@@ -1140,16 +1130,16 @@ const en = {
     report: {
       button: "Report review",
       modalTitle: "Report this review",
-      modalBody: "Send a report to the Atmosphere admins.",
+      modalBody: "Tell Atmosphere about a problem with this review.",
       reasonLabel: "What’s wrong?",
       detailsLabel: "Add details (optional)",
       detailsPlaceholder: "Anything we should know?",
       submit: "Send report",
       submitting: "Sending…",
       cancel: "Cancel",
+      done: "Close",
       sentTitle: "Report sent",
-      sentBody: "Thanks. An admin will review it shortly.",
-      signInRequired: "Sign in to report reviews.",
+      sentBody: "Thanks. We’ll review it shortly.",
       error: "Couldn’t send the report. Please try again.",
       reasons: {
         harmful: "Harmful or hateful content",
@@ -1162,6 +1152,8 @@ const en = {
       button: "Respond as developer",
       updateButton: "Edit developer response",
       deleteButton: "Delete response",
+      confirmDelete: "Delete this developer response? This can’t be undone.",
+      bodyLabel: "Developer response",
       placeholder: "Add a short developer response…",
       submit: "Save response",
       submitting: "Saving…",

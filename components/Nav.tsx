@@ -3,8 +3,8 @@ import AccountMenu from "../islands/AccountMenu.tsx";
 
 interface NavProps {
   /**
-   * Account state for the global account control. Omitted callers render a
-   * signed-out button so the nav remains usable on static-ish pages.
+   * Account state for the global account control. Anonymous callers render
+   * only the public destinations; authenticated callers also get their menu.
    */
   account?: {
     user: { did: string; handle: string } | null;
@@ -70,16 +70,18 @@ export default function Nav(
             {t.nav.apps}
           </a>
         </div>
-        <div class="nav-account">
-          <AccountMenu
-            user={accountProps.user}
-            accountType={accountProps.accountType ?? null}
-            avatarUrl={accountProps.avatarUrl ?? null}
-            publicProfileHandle={accountProps.publicProfileHandle ?? null}
-            accountHost={accountProps.accountHost ?? null}
-            rememberedAccounts={accountProps.rememberedAccounts ?? []}
-          />
-        </div>
+        {accountProps.user && (
+          <div class="nav-account">
+            <AccountMenu
+              user={accountProps.user}
+              accountType={accountProps.accountType ?? null}
+              avatarUrl={accountProps.avatarUrl ?? null}
+              publicProfileHandle={accountProps.publicProfileHandle ?? null}
+              accountHost={accountProps.accountHost ?? null}
+              rememberedAccounts={accountProps.rememberedAccounts ?? []}
+            />
+          </div>
+        )}
       </div>
     </nav>
   );

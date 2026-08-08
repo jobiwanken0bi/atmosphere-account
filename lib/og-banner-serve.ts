@@ -5,11 +5,16 @@
 import type { ProfileRow } from "./registry.ts";
 import { getOgJpeg, storeOgJpeg } from "./registry.ts";
 import { fetchBlobPublic } from "./pds.ts";
-import { coverJpeg } from "./image-processing.ts";
+import {
+  matchesRasterImageSignature,
+  readRasterImageBytesWithLimit,
+  safeRasterImageMime,
+} from "./raster-image-security.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
 const JPEG_QUALITY = 85;
+const MAX_BANNER_BYTES = 3_000_000;
 
 /** Copy only the bytes covered by `u` into a standalone ArrayBuffer for Response. */
 function u8ToExactArrayBuffer(u: Uint8Array): ArrayBuffer {
@@ -33,6 +38,8 @@ const JPEG_HEADERS = {
   "content-type": "image/jpeg",
   "cache-control": CACHE_CONTROL,
   "content-disposition": "inline",
+  "content-security-policy": "default-src 'none'; sandbox",
+  "x-content-type-options": "nosniff",
   "access-control-allow-origin": "*",
   "cross-origin-resource-policy": "cross-origin",
 } as const;
@@ -75,8 +82,16 @@ export async function buildOgBannerResponse(
   }
   if (!upstream.ok) return null;
 
-  const buf = new Uint8Array(await upstream.arrayBuffer());
+  const contentType = safeRasterImageMime(profile.bannerMime) ??
+    safeRasterImageMime(upstream.headers.get("content-type"));
+  const buf = await readRasterImageBytesWithLimit(upstream, MAX_BANNER_BYTES);
+  if (!buf || !contentType || !matchesRasterImageSignature(buf, contentType)) {
+    return null;
+  }
   try {
+    // Sharp/libvips is intentionally lazy: cached OG images and ordinary API
+    // requests should not pay its native startup and resident-memory cost.
+    const { coverJpeg } = await import("./image-processing.ts");
     const jpeg = await coverJpeg(buf, OG_W, OG_H, JPEG_QUALITY);
     storeOgJpeg(profile.did, jpeg).catch((err) =>
       console.warn("[og-banner] failed to cache og_jpeg:", err)
@@ -84,15 +99,15 @@ export async function buildOgBannerResponse(
     return jpegResponse(jpeg, `${profile.bannerCid}-og`);
   } catch (err) {
     console.warn("[og-banner] resize failed, serving raw bytes:", err);
-    const ct = upstream.headers.get("content-type") ??
-      profile.bannerMime ?? "application/octet-stream";
     return new Response(u8ToExactArrayBuffer(buf), {
       status: 200,
       headers: {
-        "content-type": ct,
+        "content-type": contentType,
         "content-length": String(buf.byteLength),
         "cache-control": CACHE_CONTROL,
         "content-disposition": "inline",
+        "content-security-policy": "default-src 'none'; sandbox",
+        "x-content-type-options": "nosniff",
         "access-control-allow-origin": "*",
         "cross-origin-resource-policy": "cross-origin",
         "etag": profile.bannerCid,

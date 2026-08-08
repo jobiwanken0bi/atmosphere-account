@@ -1,4 +1,8 @@
 import { define } from "../../../utils.ts";
+import { singleSearchValue } from "../../../lib/oauth-request-input.ts";
+
+const MAX_EXAMPLE_CALLBACK_QUERY_BYTES = 16_384;
+import { asset } from "fresh/runtime";
 import Nav from "../../../components/Nav.tsx";
 import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
@@ -11,10 +15,12 @@ import {
 import { loginPickerOriginForRequest } from "../../../lib/atmosphere-origins.ts";
 import {
   buildExampleOAuthStartPath,
+  clearExampleLoginStateCookie,
   exampleAtmosphereLoginVerifiedReturnUri,
   exampleSelectionReplayStore,
   isExampleAtmosphereLoginPopupCallback,
   isExampleAtmosphereLoginPopupHandoff,
+  readExampleLoginState,
 } from "../../../lib/example-atproto-oauth.ts";
 
 interface Check {
@@ -43,9 +49,30 @@ interface PopupCompletionProps {
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const token = ctx.url.searchParams.get("selection_token")?.trim() || null;
-    const clientId = ctx.url.searchParams.get("client_id")?.trim() || null;
-    const state = ctx.url.searchParams.get("state")?.trim() || null;
+    if (ctx.url.search.length > MAX_EXAMPLE_CALLBACK_QUERY_BYTES) {
+      return new Response("callback URL is too large", {
+        status: 414,
+        headers: { "cache-control": "no-store" },
+      });
+    }
+    let token: string | null;
+    let clientId: string | null;
+    let state: string | null;
+    try {
+      token = singleSearchValue(ctx.url.searchParams, "selection_token")
+        ?.trim() || null;
+      clientId = singleSearchValue(ctx.url.searchParams, "client_id")?.trim() ||
+        null;
+      state = singleSearchValue(ctx.url.searchParams, "state")?.trim() || null;
+    } catch {
+      return new Response("invalid callback parameters", {
+        status: 400,
+        headers: { "cache-control": "no-store" },
+      });
+    }
+    const expectedState = state
+      ? await readExampleLoginState(ctx.req, state).catch(() => null)
+      : null;
     const expectedReturnUri = exampleAtmosphereLoginVerifiedReturnUri(ctx.url);
     const verified = token ? await verifyLoginSelectionToken(token) : null;
     const decoded = token ? decodeSelectionTokenUnsafe(token) : null;
@@ -53,6 +80,7 @@ export const handler = define.handlers({
       verified,
       clientId,
       state,
+      expectedState,
       expectedReturnUri,
     });
     const allPassed = checks.length > 0 && checks.every((check) => check.ok);
@@ -60,55 +88,64 @@ export const handler = define.handlers({
     const isPopup = isExampleAtmosphereLoginPopupCallback(ctx.url);
     const isPopupHandoff = isExampleAtmosphereLoginPopupHandoff(ctx.url);
     const pickerOrigin = loginPickerOriginForRequest(ctx.url);
-    if (token && allPassed && verified && !inspect) {
+    if (token && allPassed && verified && expectedState && !inspect) {
       if (isPopup && !isPopupHandoff) {
-        return ctx.render(
-          <PopupCompletionPage
-            clientId={clientId ?? verified.aud}
-            sdkSrc={new URL("/atmosphere-login.js", pickerOrigin).toString()}
-            handle={verified.handle}
-          />,
+        return clearExampleStateResponse(
+          await ctx.render(
+            <PopupCompletionPage
+              clientId={clientId ?? verified.aud}
+              sdkSrc={new URL("/atmosphere-login.js", pickerOrigin).toString()}
+              handle={verified.handle}
+            />,
+          ),
+          expectedState,
         );
       }
       const consumed = await verifyLoginSelectionTokenDetailed(token, {
         expectedAudience: clientId ?? undefined,
-        expectedState: state ?? undefined,
+        expectedState,
         expectedReturnUri,
         replayStore: exampleSelectionReplayStore,
       });
       if (!consumed.ok) {
-        return ctx.render(
-          <CallbackPage
-            account={buildAccountMenuProps(ctx.state)}
-            token={token}
-            decoded={decoded}
-            verified={verified}
-            checks={[
-              ...checks.filter((check) => check.label !== "Replay key"),
-              {
-                label: "Replay key",
-                ok: false,
-                detail: consumed.error === "replayed token"
-                  ? "This selection was already used. Restart the picker flow."
-                  : consumed.error,
-              },
-            ]}
-            expectedReturnUri={expectedReturnUri}
-            clientId={clientId}
-            state={state}
-            continueHref={null}
-          />,
+        return clearExampleStateResponse(
+          await ctx.render(
+            <CallbackPage
+              account={buildAccountMenuProps(ctx.state)}
+              token={token}
+              decoded={decoded}
+              verified={verified}
+              checks={[
+                ...checks.filter((check) => check.label !== "Replay key"),
+                {
+                  label: "Replay key",
+                  ok: false,
+                  detail: consumed.error === "replayed token"
+                    ? "This selection was already used. Restart the picker flow."
+                    : consumed.error,
+                },
+              ]}
+              expectedReturnUri={expectedReturnUri}
+              clientId={clientId}
+              state={state}
+              continueHref={null}
+            />,
+          ),
+          expectedState,
         );
       }
-      return new Response(null, {
-        status: 303,
-        headers: {
-          location: buildExampleOAuthStartPath({
-            handle: consumed.claims.handle,
-            did: consumed.claims.sub,
-          }),
-        },
-      });
+      return clearExampleStateResponse(
+        new Response(null, {
+          status: 303,
+          headers: {
+            location: buildExampleOAuthStartPath({
+              handle: consumed.claims.handle,
+              did: consumed.claims.sub,
+            }),
+          },
+        }),
+        expectedState,
+      );
     }
     ctx.state.pageMeta = {
       title: "Atmosphere Login Reference Callback",
@@ -277,7 +314,10 @@ function PopupCompletionPage(
         </p>
       </div>
       <script src={sdkSrc} defer></script>
-      <script src="/example-atmosphere-login-popup-callback.js" defer>
+      <script
+        src={asset("/example-atmosphere-login-popup-callback.js")}
+        defer
+      >
       </script>
     </div>
   );
@@ -287,9 +327,10 @@ function buildChecks(input: {
   verified: Awaited<ReturnType<typeof verifyLoginSelectionToken>>;
   clientId: string | null;
   state: string | null;
+  expectedState: string | null;
   expectedReturnUri: string;
 }): Check[] {
-  const { verified, clientId, state, expectedReturnUri } = input;
+  const { verified, clientId, state, expectedState, expectedReturnUri } = input;
   if (!verified) {
     return [{
       label: "Signature and expiry",
@@ -313,9 +354,12 @@ function buildChecks(input: {
     },
     {
       label: "State",
-      ok: Boolean(state && verified.state === state),
+      ok: Boolean(
+        expectedState && state === expectedState &&
+          verified.state === expectedState,
+      ),
       detail: `Expected ${
-        state ?? "missing state"
+        expectedState ?? "state retained by this app"
       }, token has ${verified.state}.`,
     },
     {
@@ -332,6 +376,15 @@ function buildChecks(input: {
       }. This reference app consumes it before starting app OAuth.`,
     },
   ];
+}
+
+function clearExampleStateResponse(
+  response: Response,
+  state: string,
+): Response {
+  const cookie = clearExampleLoginStateCookie(state);
+  if (cookie) response.headers.append("set-cookie", cookie);
+  return response;
 }
 
 function callbackHandoffHref(url: URL): string {

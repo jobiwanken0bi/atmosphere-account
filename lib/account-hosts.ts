@@ -18,8 +18,17 @@ import {
   type HostContactEmailVerificationFailureReason,
   prepareHostContactEmailChallenge,
 } from "./host-claim-email.ts";
-import { resolveIdentity as resolveAtprotoIdentity } from "./identity.ts";
-import { isPrivateNetworkUrl } from "./security.ts";
+import {
+  isDid,
+  isHandle,
+  resolveIdentity as resolveAtprotoIdentity,
+} from "./identity.ts";
+import {
+  isJsonMediaType,
+  isPrivateNetworkUrl,
+  readResponseTextWithLimit,
+} from "./security.ts";
+import { escapeSqlLikePattern } from "./sql-pattern.ts";
 
 export type HostSignupStatus =
   | "open"
@@ -875,13 +884,22 @@ async function fetchHostProfile(handle: string): Promise<HostProfile | null> {
   url.searchParams.set("actor", handle);
   const res = await fetch(url.toString(), {
     headers: { accept: "application/json" },
+    redirect: "manual",
     signal: AbortSignal.timeout(3500),
   });
   if (res.status === 400 || res.status === 404) return null;
   if (!res.ok) throw new Error(`host profile HTTP ${res.status}`);
-  const json = await res.json() as Record<string, unknown>;
+  if (!isJsonMediaType(res.headers.get("content-type"))) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error("host profile returned a non-JSON response");
+  }
+  const body = await readResponseTextWithLimit(res, 256 * 1024);
+  if (!body.ok) throw new Error(`host profile ${body.error}`);
+  const json = JSON.parse(body.text) as Record<string, unknown>;
   const did = typeof json.did === "string" ? json.did : "";
-  const resolvedHandle = typeof json.handle === "string" ? json.handle : "";
+  const resolvedHandle = typeof json.handle === "string"
+    ? json.handle.toLowerCase()
+    : "";
   const displayName = typeof json.displayName === "string" &&
       json.displayName.trim()
     ? json.displayName.trim().slice(0, 80)
@@ -890,9 +908,17 @@ async function fetchHostProfile(handle: string): Promise<HostProfile | null> {
       json.description.trim()
     ? json.description.trim().slice(0, 600)
     : null;
-  const avatarUrl = typeof json.avatar === "string" ? json.avatar : null;
-  if (!did || !resolvedHandle) return null;
+  const avatarUrl = typeof json.avatar === "string"
+    ? normalizeAccountHostPublicHttpsUrl(json.avatar)
+    : null;
+  if (!isDid(did) || !isHandle(resolvedHandle)) return null;
   return { did, handle: resolvedHandle, displayName, description, avatarUrl };
+}
+
+export async function fetchHostProfileForTest(
+  handle: string,
+): Promise<HostProfile | null> {
+  return await fetchHostProfile(handle);
 }
 
 function hostNeedsProfileRefresh(host: AccountHost, ts: number): boolean {
@@ -2736,9 +2762,9 @@ export async function listAccountHostDirectory(
     const query = opts.query?.trim();
     if (query) {
       filters.push(
-        `(lower(account_host.display_name) LIKE ? OR lower(account_host.host) LIKE ? OR lower(account_host.description) LIKE ? OR lower(COALESCE(account_host.profile_handle, '')) LIKE ? OR lower(COALESCE(account_host.data_location, '')) LIKE ? OR lower(COALESCE(account_host.inferred_location, '')) LIKE ?)`,
+        `(lower(account_host.display_name) LIKE ? ESCAPE '!' OR lower(account_host.host) LIKE ? ESCAPE '!' OR lower(account_host.description) LIKE ? ESCAPE '!' OR lower(COALESCE(account_host.profile_handle, '')) LIKE ? ESCAPE '!' OR lower(COALESCE(account_host.data_location, '')) LIKE ? ESCAPE '!' OR lower(COALESCE(account_host.inferred_location, '')) LIKE ? ESCAPE '!')`,
       );
-      const like = `%${query.toLowerCase()}%`;
+      const like = `%${escapeSqlLikePattern(query.toLowerCase())}%`;
       args.push(like, like, like, like, like, like);
     }
     if (opts.verificationStatus && opts.verificationStatus !== "all") {

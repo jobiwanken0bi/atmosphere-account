@@ -17,6 +17,7 @@ import {
   takedownProfile,
 } from "../../../../../lib/registry.ts";
 import { resolveOpenReportsForTarget } from "../../../../../lib/reports.ts";
+import { readAdminJsonRequest } from "../../../../../lib/admin-request.ts";
 
 const MAX_REASON_LEN = 500;
 
@@ -28,15 +29,13 @@ export const handler = define.handlers({
     const did = decodeURIComponent(ctx.params.did);
     if (!did.startsWith("did:")) return jsonError(400, "invalid_did");
 
-    const body = await ctx.req.json().catch(() => null) as
-      | { reason?: unknown; notes?: unknown }
-      | null;
-    const rawReason = typeof body?.reason === "string"
-      ? body.reason.trim()
-      : "";
+    const parsed = await readAdminJsonRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.value;
+    const rawReason = typeof body.reason === "string" ? body.reason.trim() : "";
     if (!rawReason) return jsonError(400, "missing_reason");
     const reason = rawReason.slice(0, MAX_REASON_LEN);
-    const notes = typeof body?.notes === "string"
+    const notes = typeof body.notes === "string"
       ? body.notes.trim().slice(0, 1000) || null
       : null;
 
@@ -50,8 +49,8 @@ export const handler = define.handlers({
     try {
       await takedownProfile(did, reason, gate.did);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "takedown_failed", m);
+      console.error("[admin] profile takedown failed:", err);
+      return jsonError(500, "takedown_failed");
     }
 
     /** Best-effort auto-resolve. We don't fail the whole request if
@@ -81,9 +80,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

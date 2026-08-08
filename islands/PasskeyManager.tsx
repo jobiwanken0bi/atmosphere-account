@@ -1,5 +1,16 @@
 import { startRegistration } from "@simplewebauthn/browser";
 import { useEffect, useState } from "preact/hooks";
+import {
+  PASSKEY_OAUTH_ACTION,
+  PASSKEY_OAUTH_CAPABILITIES,
+  passkeyAuthorizationUrl,
+} from "../lib/passkey-authorization.ts";
+import {
+  type ContextualReauthorization,
+  contextualReauthorization,
+} from "../lib/reauth-required.ts";
+import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
+import { isPlainLinkActivation } from "../lib/link-activation.ts";
 
 type RegistrationOptionsJSON = Parameters<
   typeof startRegistration
@@ -41,6 +52,7 @@ export default function PasskeyManager(
   const [success, setSuccess] = useState<string | null>(null);
   const [needsReconfirmation, setNeedsReconfirmation] = useState(false);
   const [recoveryUrl, setRecoveryUrl] = useState<string | null>(null);
+  const [reconfirmationOpen, setReconfirmationOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +92,7 @@ export default function PasskeyManager(
     setSuccess(null);
     setNeedsReconfirmation(false);
     setRecoveryUrl(null);
+    setReconfirmationOpen(false);
   };
 
   const createPasskey = async () => {
@@ -171,6 +184,9 @@ export default function PasskeyManager(
       });
       const payload = await readJsonObject(response);
       if (!response.ok) throw managementApiError(response, payload);
+      if (!passkeyMutationSucceeded(payload)) {
+        throw new Error("The passkey could not be removed.");
+      }
       setPasskeys((current) =>
         current.filter((item) => item.credentialId !== credentialId)
       );
@@ -182,6 +198,10 @@ export default function PasskeyManager(
       setDeletingId(null);
     }
   };
+
+  const reconfirmation = needsReconfirmation
+    ? passkeyManagementReauthorization(account.handle, returnTo)
+    : null;
 
   return (
     <div class="passkey-manager">
@@ -221,11 +241,11 @@ export default function PasskeyManager(
 
       <p class="passkey-manager-explainer">
         A passkey lets Face ID, Touch ID, your device passcode, or a security
-        key confirm this account during universal sign in. A new app or new
-        access request can still open your account host's authorization screen.
+        key confirm this account. Some apps may still ask you to approve access
+        with your account host.
       </p>
 
-      {(message || success) && (
+      {((message && !needsReconfirmation) || success) && (
         <div
           class={`passkey-feedback ${
             message ? "passkey-feedback--error" : "passkey-feedback--success"
@@ -238,119 +258,142 @@ export default function PasskeyManager(
       )}
 
       {needsReconfirmation && (
-        <div class="passkey-reconfirm">
+        <div class="passkey-reconfirm" role="alert">
           <div>
             <strong>Verify with your account host</strong>
             <p>
-              Passkey changes require a recent ATProto OAuth sign-in for this
-              account.
+              Confirm this account before changing passkeys.
             </p>
           </div>
-          {recoveryUrl
-            ? (
-              <a class="passkey-secondary-button" href={recoveryUrl}>
-                Reconfirm account
-              </a>
-            )
-            : (
-              <form method="post" action="/oauth/login">
-                <input type="hidden" name="handle" value={account.handle} />
-                <input type="hidden" name="next" value={returnTo} />
-                <button type="submit" class="passkey-secondary-button">
-                  Reconfirm account
-                </button>
-              </form>
+          <a
+            class="passkey-secondary-button"
+            href={passkeyReconfirmationHref(
+              recoveryUrl,
+              account.did,
+              account.handle,
+              returnTo,
             )}
+            aria-haspopup="dialog"
+            aria-expanded={reconfirmationOpen ? "true" : "false"}
+            onClick={(event) => {
+              if (!isPlainLinkActivation(event)) return;
+              event.preventDefault();
+              setReconfirmationOpen(true);
+            }}
+          >
+            Reconfirm account
+          </a>
         </div>
       )}
 
-      <div class="passkey-list-heading">
-        <h2>Your passkeys</h2>
-        {!loading && (
-          <span>
-            {passkeys.length === 1
-              ? "1 passkey"
-              : `${passkeys.length} passkeys`}
-          </span>
-        )}
-      </div>
+      {reconfirmationOpen && reconfirmation && (
+        <ContextualReauthorizationDialog
+          authorization={reconfirmation}
+          currentDid={account.did}
+          currentHandle={account.handle}
+          closeLabel="Cancel"
+          restrictToCurrentAccount
+          onClose={() => setReconfirmationOpen(false)}
+        />
+      )}
 
-      {loading
-        ? <div class="passkey-empty" role="status">Loading passkeys…</div>
-        : passkeys.length === 0
-        ? (
-          <div class="passkey-empty">
-            <span class="passkey-empty-icon" aria-hidden="true">
-              <KeyIcon />
-            </span>
-            <div>
-              <strong>No passkeys yet</strong>
-              <p>
-                Create one when you are ready. Nothing will open until you
-                choose the button above.
-              </p>
-            </div>
+      {!needsReconfirmation && (
+        <>
+          <div class="passkey-list-heading">
+            <h2>Your passkeys</h2>
+            {!loading && (
+              <span>
+                {passkeys.length === 1
+                  ? "1 passkey"
+                  : `${passkeys.length} passkeys`}
+              </span>
+            )}
           </div>
-        )
-        : (
-          <div class="passkey-list">
-            {passkeys.map((passkey) => {
-              const confirming = confirmDeleteId === passkey.credentialId;
-              const deleting = deletingId === passkey.credentialId;
-              return (
-                <article class="passkey-row" key={passkey.credentialId}>
-                  <span class="passkey-row-icon" aria-hidden="true">
-                    <KeyIcon />
-                  </span>
-                  <div class="passkey-row-copy">
-                    <strong>{passkeyLabel(passkey)}</strong>
-                    <span>{passkeyMetadata(passkey)}</span>
-                    {passkey.lastUsedAt && (
-                      <small>Last used {formatDate(passkey.lastUsedAt)}</small>
-                    )}
-                  </div>
-                  <div class="passkey-row-actions">
-                    {confirming
-                      ? (
-                        <>
-                          <span>Remove this passkey?</span>
-                          <button
-                            type="button"
-                            class="passkey-delete-button is-confirm"
-                            disabled={deleting || needsReconfirmation}
-                            onClick={() => deletePasskey(passkey.credentialId)}
-                          >
-                            {deleting ? "Removing…" : "Remove"}
-                          </button>
-                          <button
-                            type="button"
-                            class="passkey-delete-button"
-                            disabled={deleting}
-                            onClick={() => setConfirmDeleteId(null)}
-                          >
-                            Keep
-                          </button>
-                        </>
-                      )
-                      : (
-                        <button
-                          type="button"
-                          class="passkey-delete-button"
-                          disabled={needsReconfirmation}
-                          onClick={() =>
-                            setConfirmDeleteId(passkey.credentialId)}
-                        >
-                          Remove
-                        </button>
-                      )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
+
+          {loading
+            ? <div class="passkey-empty" role="status">Loading passkeys…</div>
+            : passkeys.length === 0
+            ? (
+              <div class="passkey-empty">
+                <span class="passkey-empty-icon" aria-hidden="true">
+                  <KeyIcon />
+                </span>
+                <div>
+                  <strong>No passkeys yet</strong>
+                  <p>
+                    Create one when you are ready. Nothing will open until you
+                    choose the button above.
+                  </p>
+                </div>
+              </div>
+            )
+            : (
+              <div class="passkey-list">
+                {passkeys.map((passkey) => {
+                  const confirming = confirmDeleteId === passkey.credentialId;
+                  const deleting = deletingId === passkey.credentialId;
+                  return (
+                    <article class="passkey-row" key={passkey.credentialId}>
+                      <span class="passkey-row-icon" aria-hidden="true">
+                        <KeyIcon />
+                      </span>
+                      <div class="passkey-row-copy">
+                        <strong>{passkeyLabel(passkey)}</strong>
+                        <span>{passkeyMetadata(passkey)}</span>
+                        {passkey.lastUsedAt && (
+                          <small>
+                            Last used {formatDate(passkey.lastUsedAt)}
+                          </small>
+                        )}
+                      </div>
+                      <div class="passkey-row-actions">
+                        {confirming
+                          ? (
+                            <>
+                              <span>Remove this passkey?</span>
+                              <button
+                                type="button"
+                                class="passkey-delete-button is-confirm"
+                                disabled={deleting}
+                                onClick={() =>
+                                  deletePasskey(passkey.credentialId)}
+                              >
+                                {deleting ? "Removing…" : "Remove"}
+                              </button>
+                              <button
+                                type="button"
+                                class="passkey-delete-button"
+                                disabled={deleting}
+                                onClick={() => setConfirmDeleteId(null)}
+                              >
+                                Keep
+                              </button>
+                            </>
+                          )
+                          : (
+                            <button
+                              type="button"
+                              class="passkey-delete-button"
+                              onClick={() =>
+                                setConfirmDeleteId(passkey.credentialId)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+        </>
+      )}
     </div>
   );
+}
+
+export function passkeyMutationSucceeded(payload: JsonObject): boolean {
+  return payload.ok === true;
 }
 
 class PasskeyManagementApiError extends Error {
@@ -363,6 +406,30 @@ class PasskeyManagementApiError extends Error {
     this.status = status;
     this.recoveryUrl = recoveryUrl;
   }
+}
+
+export function passkeyManagementReauthorization(
+  handle: string,
+  returnTo: string,
+): ContextualReauthorization | null {
+  return contextualReauthorization({
+    returnTo,
+    action: PASSKEY_OAUTH_ACTION,
+    capabilities: PASSKEY_OAUTH_CAPABILITIES,
+    targetName: handle,
+  });
+}
+
+/** The API recovery URL is treated as untrusted browser input. Only its
+ * presence is useful for identifying a permission failure; the no-JS link is
+ * rebuilt locally from the account and return path already rendered here. */
+export function passkeyReconfirmationHref(
+  _recoveryUrl: string | null,
+  did: string,
+  handle: string,
+  returnTo: string,
+): string {
+  return passkeyAuthorizationUrl(did, returnTo, { targetName: handle });
 }
 
 function managementApiError(
@@ -389,14 +456,7 @@ function friendlyManagementError(
   recoveryUrl: string | null;
 } {
   if (error instanceof PasskeyManagementApiError) {
-    const needsReconfirmation = error.status === 401 || error.status === 403;
-    return {
-      message: needsReconfirmation
-        ? "Reconfirm this account before viewing or changing its passkeys."
-        : error.message,
-      needsReconfirmation,
-      recoveryUrl: error.recoveryUrl,
-    };
+    return passkeyManagementFailure(error.status, error.recoveryUrl);
   }
   if (error instanceof Error) {
     if (error.name === "NotAllowedError" || error.name === "AbortError") {
@@ -441,11 +501,30 @@ function friendlyManagementError(
     }
   }
   return {
-    message: error instanceof Error
-      ? error.message
-      : "The passkey request could not be completed.",
+    message: "The passkey request could not be completed. Please try again.",
     needsReconfirmation: false,
     recoveryUrl: null,
+  };
+}
+
+export function passkeyManagementFailure(
+  status: number,
+  recoveryUrl: string | null,
+): {
+  message: string;
+  needsReconfirmation: boolean;
+  recoveryUrl: string | null;
+} {
+  const needsReconfirmation = status === 401 ||
+    (status === 403 && recoveryUrl !== null);
+  return {
+    message: needsReconfirmation
+      ? "Reconfirm this account before viewing or changing its passkeys."
+      : status === 403
+      ? "Passkeys are not available on this account address."
+      : "The passkey request could not be completed. Please try again.",
+    needsReconfirmation,
+    recoveryUrl,
   };
 }
 

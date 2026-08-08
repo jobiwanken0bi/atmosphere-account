@@ -28,6 +28,12 @@ export const IS_HOSTED_RUNTIME = !!(safeGet("DENO_DEPLOYMENT_ID") ??
 const RAW_SITE_URL = safeGet("FRESH_PUBLIC_SITE_URL");
 const RAW_LOGIN_SITE_URL = safeGet("FRESH_PUBLIC_LOGIN_URL") ??
   safeGet("LOGIN_SITE_URL");
+const EXPLICIT_PRODUCTION = safeGet("DENO_ENV") === "production";
+const CANONICAL_SITE_ORIGIN = "https://atmosphereaccount.com";
+
+function isCanonicalSiteOrigin(value: string): boolean {
+  return value === CANONICAL_SITE_ORIGIN;
+}
 
 /** atproto / RFC 8252 forbid `localhost` as a redirect host for confidential
  *  clients (only loopback IPs like 127.0.0.1 are allowed, and even then only
@@ -46,7 +52,11 @@ function isLocalhostUrl(u: string | undefined): boolean {
 
 export const SITE_URL: string = (() => {
   if (RAW_SITE_URL && !(IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_SITE_URL))) {
-    return RAW_SITE_URL;
+    return validatedPublicOrigin(
+      "FRESH_PUBLIC_SITE_URL",
+      RAW_SITE_URL,
+      IS_HOSTED_RUNTIME || EXPLICIT_PRODUCTION,
+    );
   }
   if (IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_SITE_URL)) {
     console.warn(
@@ -64,7 +74,11 @@ export const LOGIN_SITE_URL: string = (() => {
     RAW_LOGIN_SITE_URL &&
     !(IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_LOGIN_SITE_URL))
   ) {
-    return RAW_LOGIN_SITE_URL;
+    return validatedPublicOrigin(
+      "FRESH_PUBLIC_LOGIN_URL/LOGIN_SITE_URL",
+      RAW_LOGIN_SITE_URL,
+      IS_HOSTED_RUNTIME || EXPLICIT_PRODUCTION,
+    );
   }
   if (IS_HOSTED_RUNTIME && isLocalhostUrl(RAW_LOGIN_SITE_URL)) {
     console.warn(
@@ -77,8 +91,8 @@ export const LOGIN_SITE_URL: string = (() => {
 })();
 
 export const IS_DEV = !IS_HOSTED_RUNTIME &&
-  safeGet("DENO_ENV") !== "production" &&
-  (!RAW_SITE_URL || !SITE_URL.startsWith("https://atmosphereaccount.com"));
+  !EXPLICIT_PRODUCTION &&
+  (!RAW_SITE_URL || !isCanonicalSiteOrigin(SITE_URL));
 
 export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");
 export const OAUTH_PUBLIC_JWK = safeGet("OAUTH_PUBLIC_JWK");
@@ -92,11 +106,69 @@ export const HOST_CLAIM_EMAIL_FROM = safeGet("HOST_CLAIM_EMAIL_FROM");
 
 function hostedSecret(key: string, devFallback: string): string {
   const value = safeGet(key);
-  if (value) return value;
-  if (IS_HOSTED_RUNTIME || safeGet("DENO_ENV") === "production") {
+  if (value) {
+    return validateSecretStrength(
+      key,
+      value,
+      IS_HOSTED_RUNTIME || EXPLICIT_PRODUCTION,
+    );
+  }
+  if (IS_HOSTED_RUNTIME || EXPLICIT_PRODUCTION) {
     throw new Error(`${key} is required in hosted/production environments.`);
   }
   return devFallback;
+}
+
+function validateSecretStrength(
+  key: string,
+  value: string,
+  production: boolean,
+): string {
+  if (production && new TextEncoder().encode(value).byteLength < 32) {
+    throw new Error(`${key} must contain at least 32 bytes in production.`);
+  }
+  return value;
+}
+
+function validatedPublicOrigin(
+  key: string,
+  value: string,
+  production: boolean,
+): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${key} must be an absolute HTTP(S) origin.`);
+  }
+  if (
+    url.username || url.password ||
+    (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash
+  ) {
+    throw new Error(`${key} must not contain credentials, a path, or a query.`);
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && !production)) {
+    throw new Error(`${key} must use HTTPS in production.`);
+  }
+  return url.origin;
+}
+
+export function validateSecretStrengthForTest(
+  value: string,
+  production: boolean,
+): string {
+  return validateSecretStrength("TEST_SECRET", value, production);
+}
+
+export function validatedPublicOriginForTest(
+  value: string,
+  production: boolean,
+): string {
+  return validatedPublicOrigin("TEST_ORIGIN", value, production);
+}
+
+export function isCanonicalSiteOriginForTest(value: string): boolean {
+  return isCanonicalSiteOrigin(value);
 }
 
 export function sessionSecret(): string {

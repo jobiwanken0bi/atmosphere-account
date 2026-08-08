@@ -4,9 +4,15 @@ import {
   isDid,
   resolveDidDocument,
 } from "../../../lib/identity.ts";
-import { fitWebp } from "../../../lib/image-processing.ts";
+import { fetchBlobPublic } from "../../../lib/pds.ts";
+import {
+  hasImageSignature,
+  isValidAtprotoBlobCid,
+  verifyAtprotoBlobCid,
+} from "../../../lib/atproto-blob-security.ts";
+import { withRateLimit } from "../../../lib/rate-limit.ts";
+import { readResponseBytesWithLimit } from "../../../lib/security.ts";
 
-const CID_RE = /^[a-zA-Z0-9]+$/;
 const MAX_PROXY_BLOB_BYTES = 8_000_000;
 const ALLOWED_IMAGE_WIDTHS = new Set([320, 640, 800, 1200]);
 const RESIZED_IMAGE_QUALITY = 82;
@@ -19,7 +25,7 @@ const SAFE_IMAGE_MIME_TYPES = new Set([
 ]);
 
 export const handler = define.handlers({
-  async GET(ctx) {
+  GET: withRateLimit(async (ctx) => {
     const did = ctx.url.searchParams.get("did")?.trim() ?? "";
     const cid = ctx.url.searchParams.get("cid")?.trim() ?? "";
     const fallbackDid = ctx.url.searchParams.get("fallbackDid")?.trim() ?? "";
@@ -28,47 +34,73 @@ export const handler = define.handlers({
     const maxWidth = ALLOWED_IMAGE_WIDTHS.has(requestedWidth)
       ? requestedWidth
       : null;
-    if (!isDid(did) || !cid || !CID_RE.test(cid)) {
-      return new Response("invalid blob reference", { status: 400 });
+    if (!isDid(did) || !isValidAtprotoBlobCid(cid)) {
+      return errorResponse("invalid blob reference", 400);
     }
     const hasFallback = !!fallbackDid || !!fallbackCid;
     if (
       hasFallback &&
-      (!isDid(fallbackDid) || !fallbackCid || !CID_RE.test(fallbackCid))
+      (!isDid(fallbackDid) || !isValidAtprotoBlobCid(fallbackCid))
     ) {
-      return new Response("invalid fallback blob reference", { status: 400 });
+      return errorResponse("invalid fallback blob reference", 400);
     }
     try {
       let upstream = await fetchAtprotoBlob(did, cid);
       let usedFallback = false;
       if ((!upstream?.ok || !upstream.body) && hasFallback) {
+        await upstream?.body?.cancel().catch(() => {});
         upstream = await fetchAtprotoBlob(fallbackDid, fallbackCid);
         usedFallback = true;
       }
-      if (!upstream) return new Response("blob not found", { status: 404 });
+      if (!upstream) return errorResponse("blob not found", 404);
       if (!upstream.ok || !upstream.body) {
-        return new Response("blob not found", { status: upstream.status });
+        await upstream.body?.cancel().catch(() => {});
+        return errorResponse("blob not found", 404);
       }
       const contentLength = Number(upstream.headers.get("content-length"));
       if (
         Number.isFinite(contentLength) && contentLength > MAX_PROXY_BLOB_BYTES
       ) {
-        return new Response("blob too large", { status: 413 });
+        await upstream.body.cancel().catch(() => {});
+        return errorResponse("blob too large", 413);
       }
       const contentType =
         upstream.headers.get("content-type")?.split(";")[0]?.trim()
           .toLowerCase() ?? "application/octet-stream";
       if (!SAFE_IMAGE_MIME_TYPES.has(contentType)) {
-        return new Response("unsupported blob type", { status: 415 });
+        await upstream.body.cancel().catch(() => {});
+        return errorResponse("unsupported blob type", 415);
       }
-      const bytes = new Uint8Array(await upstream.arrayBuffer());
-      if (bytes.byteLength > MAX_PROXY_BLOB_BYTES) {
-        return new Response("blob too large", { status: 413 });
+      const bounded = await readResponseBytesWithLimit(
+        upstream,
+        MAX_PROXY_BLOB_BYTES,
+      );
+      if (!bounded.ok) {
+        return errorResponse(
+          bounded.error === "response too large"
+            ? "blob too large"
+            : "blob unavailable",
+          bounded.error === "response too large" ? 413 : 502,
+        );
       }
+      const bytes = bounded.bytes;
+      const expectedCid = usedFallback ? fallbackCid : cid;
+      if (!await verifyAtprotoBlobCid(expectedCid, bytes)) {
+        return errorResponse("blob integrity check failed", 502);
+      }
+      if (!hasImageSignature(bytes, contentType)) {
+        return errorResponse("blob content does not match its image type", 415);
+      }
+      const cacheControl = usedFallback
+        ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+        : "public, max-age=86400, s-maxage=31536000, immutable";
       let responseBytes = bytes;
       let responseType = contentType;
       if (maxWidth) {
         try {
+          const { fitWebp } = await import(
+            "../../../lib/image-processing.ts"
+          );
           responseBytes = await fitWebp(
             bytes,
             maxWidth,
@@ -79,23 +111,52 @@ export const handler = define.handlers({
           console.warn("[atproto-blob] resize failed; serving original:", err);
         }
       }
-      return new Response(responseBytes, {
+      const responseBody = new Uint8Array(responseBytes.byteLength);
+      responseBody.set(responseBytes);
+      return new Response(responseBody, {
         status: 200,
-        headers: {
-          "content-type": responseType,
-          "cache-control": usedFallback
-            ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
-            : "public, max-age=86400, s-maxage=31536000, immutable",
-          "content-disposition": `inline; filename="atproto-blob"`,
-          "content-security-policy": "default-src 'none'; sandbox",
-          "x-content-type-options": "nosniff",
-        },
+        headers: blobResponseHeaders({
+          contentType: responseType,
+          cacheControl,
+          contentLength: responseBytes.byteLength,
+        }),
       });
     } catch {
-      return new Response("blob not found", { status: 404 });
+      return errorResponse("blob not found", 404);
     }
-  },
+  }, {
+    scope: "atproto-blob",
+    capacity: 120,
+    refillMs: 60_000,
+  }),
 });
+
+function blobResponseHeaders(input: {
+  contentType: string;
+  cacheControl: string;
+  contentLength: number;
+}): HeadersInit {
+  return {
+    "content-type": input.contentType,
+    "content-length": String(input.contentLength),
+    "cache-control": input.cacheControl,
+    "content-disposition": `inline; filename="atproto-blob"`,
+    "content-security-policy": "default-src 'none'; sandbox",
+    "cross-origin-resource-policy": "same-origin",
+    "x-content-type-options": "nosniff",
+  };
+}
+
+function errorResponse(message: string, status: number): Response {
+  return new Response(message, {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
 
 async function fetchAtprotoBlob(
   did: string,
@@ -103,14 +164,12 @@ async function fetchAtprotoBlob(
 ): Promise<Response | null> {
   try {
     const pdsUrl = findPdsEndpoint(await resolveDidDocument(did));
-    const url = new URL(
-      `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.sync.getBlob`,
-    );
-    url.searchParams.set("did", did);
-    url.searchParams.set("cid", cid);
-    return await fetch(url.toString(), {
-      headers: { accept: "*/*" },
-      signal: AbortSignal.timeout(10_000),
+    return await fetchBlobPublic(pdsUrl, did, cid).then(async (response) => {
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel().catch(() => {});
+        return null;
+      }
+      return response;
     });
   } catch {
     return null;

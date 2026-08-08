@@ -22,6 +22,15 @@ interface Props {
   onSaved?: () => void;
 }
 
+function userProfileResponseWasSaved(response: Response): boolean {
+  if (!response.ok || !response.redirected || !response.url) return false;
+  try {
+    return new URL(response.url).pathname === "/account";
+  } catch {
+    return false;
+  }
+}
+
 export default function UserBskyClientPicker(
   {
     displayName: initialDisplayName,
@@ -55,6 +64,7 @@ export default function UserBskyClientPicker(
   const active = getBskyClient(selected.value);
   const onSubmit = async (event: Event) => {
     event.preventDefault();
+    if (submitting.value) return;
     submitting.value = true;
     message.value = null;
     const form = event.currentTarget as HTMLFormElement;
@@ -64,15 +74,15 @@ export default function UserBskyClientPicker(
         body: new FormData(form),
       });
       if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(text || errorLabel);
+        throw new Error(errorLabel);
       }
+      if (!userProfileResponseWasSaved(response)) throw new Error(errorLabel);
       message.value = { kind: "ok", text: savedLabel };
       onSaved?.();
-    } catch (err) {
+    } catch {
       message.value = {
         kind: "error",
-        text: err instanceof Error ? err.message : errorLabel,
+        text: errorLabel,
       };
     } finally {
       submitting.value = false;
@@ -227,7 +237,7 @@ export default function UserBskyClientPicker(
         {message.value && (
           <span
             class={`profile-form-status profile-form-status--${message.value.kind}`}
-            role="status"
+            role={message.value.kind === "error" ? "alert" : "status"}
           >
             {message.value.text}
           </span>

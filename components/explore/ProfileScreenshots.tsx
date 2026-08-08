@@ -1,4 +1,5 @@
 import type { ProfileRow } from "../../lib/registry.ts";
+import { asset } from "fresh/runtime";
 
 interface Props {
   profile: ProfileRow;
@@ -56,7 +57,10 @@ export default function ProfileScreenshots({ profile }: Props) {
         )}
       </div>
       {hasMultipleScreenshots && (
-        <script type="module" src="/profile-screenshot-carousel.js" />
+        <script
+          type="module"
+          src={asset("/profile-screenshot-carousel.js")}
+        />
       )}
     </section>
   );

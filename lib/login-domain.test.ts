@@ -1,4 +1,7 @@
-import { isAllowedLoginHostPathForTest } from "./login-domain.ts";
+import {
+  isAllowedLoginHostPathForTest,
+  usesSeparateLoginDomain,
+} from "./login-domain.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -27,4 +30,21 @@ Deno.test("login domain still redirects ordinary app pages", () => {
   assertEquals(isAllowedLoginHostPathForTest("/apps"), false);
   assertEquals(isAllowedLoginHostPathForTest("/account"), false);
   assertEquals(isAllowedLoginHostPathForTest("/hosts/bsky.network"), false);
+});
+
+Deno.test("single-origin deployments do not enforce login-host routing", () => {
+  assertEquals(
+    usesSeparateLoginDomain(
+      "http://127.0.0.1:5173",
+      "http://127.0.0.1:5173",
+    ),
+    false,
+  );
+  assertEquals(
+    usesSeparateLoginDomain(
+      "https://atmosphereaccount.com",
+      "https://login.atmosphereaccount.com",
+    ),
+    true,
+  );
 });

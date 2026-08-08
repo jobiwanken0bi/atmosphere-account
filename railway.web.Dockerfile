@@ -26,4 +26,4 @@ RUN deno task build
 
 ENV DENO_ENV=production
 
-CMD ["sh", "-c", "deno serve -A --host 0.0.0.0 --port ${PORT:-8000} _fresh/server.js"]
+CMD ["sh", "-c", "deno serve --cached-only --frozen --no-prompt --allow-read=/app --allow-net --allow-env --allow-sys --allow-ffi=/app/node_modules --host 0.0.0.0 --port ${PORT:-8000} _fresh/server.js"]

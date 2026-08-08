@@ -45,6 +45,31 @@ async function assertRejects(
   throw new Error("Expected promise to reject");
 }
 
+async function rejectionMessage(fn: () => Promise<unknown>): Promise<string> {
+  try {
+    await fn();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error("Expected promise to reject");
+}
+
+async function captureConsoleErrors<T>(
+  fn: () => Promise<T>,
+): Promise<{ result: T; output: string }> {
+  const original = console.error;
+  const calls: unknown[][] = [];
+  console.error = (...args: unknown[]) => calls.push(args);
+  try {
+    return {
+      result: await fn(),
+      output: calls.map((args) => args.map(String).join(" ")).join("\n"),
+    };
+  } finally {
+    console.error = original;
+  }
+}
+
 function memoryStore(): HostContactEmailChallengeStore & {
   records: Map<string, HostContactEmailChallengeRecord>;
 } {
@@ -115,11 +140,14 @@ const user = { did: "did:plc:operator", handle: "operator.example" };
 function describeServerFetch(email = "Ops@Example.Social"): typeof fetch {
   return ((_input: URL | Request | string, _init?: RequestInit) =>
     Promise.resolve(
-      new Response(JSON.stringify({
-        did: "did:web:pds.example.social",
-        availableUserDomains: ["example.social"],
-        contact: { email },
-      })),
+      new Response(
+        JSON.stringify({
+          did: "did:web:pds.example.social",
+          availableUserDomains: ["example.social"],
+          contact: { email },
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
     )) as typeof fetch;
 }
 
@@ -247,23 +275,28 @@ Deno.test("database challenge reservations lock, count, and insert in one unit",
 
 Deno.test("failed contact-email delivery releases its reserved slot", async () => {
   const store = memoryStore();
-  const result = await requestHostContactEmailChallenge(
-    target,
-    user,
-    "https://atmosphere.example",
-    "/hosts/pds.example.social/claim",
-    {
-      now: 6_000,
-      store,
-      fetchImpl: describeServerFetch(),
-      fingerprintSecret: "test-secret",
-      delivery: {
-        send: () => Promise.reject(new Error("mailbox unavailable")),
+  const secret = "smtp-response-secret";
+  const { result, output } = await captureConsoleErrors(() =>
+    requestHostContactEmailChallenge(
+      target,
+      user,
+      "https://atmosphere.example",
+      "/hosts/pds.example.social/claim",
+      {
+        now: 6_000,
+        store,
+        fetchImpl: describeServerFetch(),
+        fingerprintSecret: "test-secret",
+        delivery: {
+          send: () => Promise.reject(new Error(secret)),
+        },
       },
-    },
+    )
   );
   assertEquals(result, { ok: false, reason: "delivery_failed" });
   assertEquals(store.records.size, 0);
+  assertEquals(output.includes(secret), false);
+  assert(output.includes("reason=%s delivery_error"));
 });
 
 Deno.test("contact-email setup sees a newly announced address immediately", async () => {
@@ -272,10 +305,13 @@ Deno.test("contact-email setup sees a newly announced address immediately", asyn
   const fetchImpl = ((_input: URL | Request | string, _init?: RequestInit) => {
     calls += 1;
     return Promise.resolve(
-      new Response(JSON.stringify({
-        did: "did:web:pds.example.social",
-        contact: email ? { email } : {},
-      })),
+      new Response(
+        JSON.stringify({
+          did: "did:web:pds.example.social",
+          contact: email ? { email } : {},
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
     );
   }) as typeof fetch;
 
@@ -630,6 +666,41 @@ Deno.test("Comail delivery accepts the live success shape with omitted rejection
   });
 });
 
+Deno.test("Comail delivery failures omit upstream bodies and network errors", async () => {
+  const secret = "upstream-mail-token-and-response-body";
+  const input = {
+    to: "ops@example.social",
+    host: "pds.example.social",
+    displayName: "Example Social",
+    claimantHandle: "operator.example",
+    verificationUrl: "https://atmosphere.example/verify?token=secret",
+  };
+  const config = {
+    apiKey: "atmos_test_key",
+    senderDid: "did:plc:atmosphere",
+    from: "claims@atmosphere.example",
+  };
+
+  const responseFailure = await rejectionMessage(() =>
+    createComailHostContactEmailDelivery({
+      ...config,
+      fetchImpl: (() =>
+        Promise.resolve(new Response(secret, { status: 502 }))) as typeof fetch,
+    }).send(input)
+  );
+  assertEquals(responseFailure, "Comail returned HTTP 502");
+  assertEquals(responseFailure.includes(secret), false);
+
+  const networkFailure = await rejectionMessage(() =>
+    createComailHostContactEmailDelivery({
+      ...config,
+      fetchImpl: (() => Promise.reject(new Error(secret))) as typeof fetch,
+    }).send(input)
+  );
+  assertEquals(networkFailure, "Comail request failed");
+  assertEquals(networkFailure.includes(secret), false);
+});
+
 Deno.test("Comail delivery rejects malformed and oversized 200 responses", async () => {
   for (
     const { response, expected } of [
@@ -642,7 +713,7 @@ Deno.test("Comail delivery rejects malformed and oversized 200 responses", async
           status: 200,
           headers: { "content-length": "16001" },
         }),
-        expected: "unreadable success response: response too large",
+        expected: "invalid success response",
       },
     ]
   ) {

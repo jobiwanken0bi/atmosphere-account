@@ -268,6 +268,7 @@ const comparisonHost = await registerAccountHost({
     "An independent account host that keeps identities and data online for people using Atmosphere apps.",
   dataLocation: "United States",
   homepageUrl: "https://harbor-host.test",
+  serviceEndpoint: "https://harbor-host.test",
   signupUrl: "https://harbor-host.test/join",
   accountManagementUrl: "https://harbor-host.test/account",
   supportUrl: "https://harbor-host.test/support",

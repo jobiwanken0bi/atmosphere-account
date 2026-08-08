@@ -1,13 +1,14 @@
 import { define } from "../../../utils.ts";
 import { appviewBaseUrl } from "../../../lib/appview-client.ts";
 import { checkDbHealth } from "../../../lib/db.ts";
-import { IS_DEV } from "../../../lib/env.ts";
 import { runtimeRelease } from "../../../lib/release.ts";
 import { getWorkerLeaseStatus } from "../../../lib/worker-lease.ts";
 import { getPdsInventoryFreshness } from "../../../lib/pds-inventory-health.ts";
+import { readResponseTextWithLimit } from "../../../lib/security.ts";
 
 const INDEXER_LEASE = "jetstream-indexer";
 const READINESS_SUCCESS_CACHE_MS = 2_000;
+const MAX_APPVIEW_READINESS_BYTES = 256 * 1024;
 
 interface ReadinessResult {
   body: Record<string, unknown>;
@@ -35,7 +36,7 @@ export const handler = define.handlers({
         };
       }
       return readinessJson(result, "miss");
-    } catch (err) {
+    } catch {
       return json(
         {
           ok: false,
@@ -43,7 +44,6 @@ export const handler = define.handlers({
           release: runtimeRelease(),
           database: { ok: false },
           error: "readiness_check_failed",
-          ...(IS_DEV && err instanceof Error ? { detail: err.message } : {}),
           timestamp: new Date().toISOString(),
         },
         { status: 503 },
@@ -99,37 +99,202 @@ async function appviewReadiness(
   fetchImpl: typeof fetch = fetch,
 ): Promise<ReadinessResult> {
   const url = new URL("/api/health/ready", appview);
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.username || url.password
+  ) {
+    throw new Error("invalid appview readiness URL");
+  }
   const res = await fetchImpl(url, {
     headers: { accept: "application/json" },
+    redirect: "manual",
     signal: AbortSignal.timeout(5000),
   });
-  const rawBody = await res.json().catch(() => ({
-    ok: false,
-    error: "invalid_appview_readiness_response",
-  }));
-  const body = isRecord(rawBody)
-    ? rawBody
-    : { ok: false, error: "invalid_appview_readiness_response" };
-  const { release: appviewRelease, ...bodyWithoutRelease } = body;
+  const contentType = res.headers.get("content-type");
+  let rawBody: unknown = null;
+  let validJsonObject = false;
+  if (isJsonMediaType(contentType)) {
+    const bounded = await readResponseTextWithLimit(
+      res,
+      MAX_APPVIEW_READINESS_BYTES,
+    );
+    if (bounded.ok) {
+      try {
+        rawBody = JSON.parse(bounded.text);
+        validJsonObject = isRecord(rawBody);
+      } catch {
+        // Keep the fail-closed invalid response value.
+      }
+    }
+  } else {
+    await res.body?.cancel().catch(() => {});
+  }
+  const body = validJsonObject && isRecord(rawBody) ? rawBody : { ok: false };
+  const appviewRelease = publicAppviewRelease(body.release);
   const appviewOk = res.ok && body.ok === true;
+  const publicBody = publicAppviewReadinessBody(body);
+  if (!validJsonObject) {
+    publicBody.error = "invalid_appview_readiness_response";
+  } else if (!appviewOk) {
+    publicBody.error = "appview_readiness_failed";
+  }
   return {
     status: appviewOk ? 200 : 503,
     body: {
-      ...bodyWithoutRelease,
+      ...publicBody,
       service: "atmosphere-account-web-shell",
       release: runtimeRelease(),
       appview: {
         ok: appviewOk,
         url: appview,
-        release: isRecord(appviewRelease) ? appviewRelease : null,
+        release: appviewRelease,
       },
       timestamp: new Date().toISOString(),
     },
   };
 }
 
+function publicAppviewReadinessBody(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ok: body.ok === true };
+  const database = publicDatabaseHealth(body.database);
+  if (database) result.database = database;
+  const indexer = publicIndexerHealth(body.indexer);
+  if (indexer) result.indexer = indexer;
+  const pdsInventory = publicPdsInventoryHealth(body.pdsInventory);
+  if (pdsInventory) result.pdsInventory = pdsInventory;
+  if (typeof body.degraded === "boolean") result.degraded = body.degraded;
+  return result;
+}
+
+function publicDatabaseHealth(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const result: Record<string, unknown> = { ok: value.ok === true };
+  const latencyMs = finiteNonNegativeNumber(value.latencyMs);
+  if (latencyMs !== null) result.latencyMs = latencyMs;
+  if (
+    value.databaseKind === "file" || value.databaseKind === "remote" ||
+    value.databaseKind === "neon" || value.databaseKind === "postgres"
+  ) result.databaseKind = value.databaseKind;
+  if (
+    value.backend === "turso" || value.backend === "neon" ||
+    value.backend === "postgres"
+  ) result.backend = value.backend;
+  return result;
+}
+
+function publicIndexerHealth(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const result: Record<string, unknown> = {
+    present: value.present === true,
+    fresh: value.fresh === true,
+  };
+  const heartbeatAt = publicIsoTimestamp(value.heartbeatAt);
+  if (heartbeatAt) result.heartbeatAt = heartbeatAt;
+  const expiresAt = publicIsoTimestamp(value.expiresAt);
+  if (expiresAt) result.expiresAt = expiresAt;
+  return result;
+}
+
+function publicPdsInventoryHealth(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const result: Record<string, unknown> = {
+    present: value.present === true,
+    fresh: value.fresh === true,
+  };
+  if (value.error != null) {
+    result.error = "inventory_freshness_unavailable";
+  }
+  for (const key of ["maxAgeMs", "ageMs", "pages", "instanceCount"] as const) {
+    if (value[key] === null) {
+      result[key] = null;
+      continue;
+    }
+    const number = finiteNonNegativeNumber(value[key]);
+    if (number !== null) result[key] = number;
+  }
+  const completedAt = publicIsoTimestamp(value.completedAt);
+  result.completedAt = completedAt;
+  const scanId = publicOpaqueIdentifier(value.scanId);
+  result.scanId = scanId;
+
+  if (isRecord(value.latestAttempt)) {
+    const attempt = value.latestAttempt;
+    const status = attempt.status === "running" ||
+        attempt.status === "succeeded" || attempt.status === "failed"
+      ? attempt.status
+      : null;
+    if (status) {
+      result.latestAttempt = {
+        status,
+        complete: attempt.complete === true,
+        startedAt: publicIsoTimestamp(attempt.startedAt),
+        completedAt: publicIsoTimestamp(attempt.completedAt),
+        error: status === "failed" ? "inventory_scan_failed" : null,
+      };
+    }
+  } else if (value.latestAttempt === null) {
+    result.latestAttempt = null;
+  }
+  return result;
+}
+
+function publicAppviewRelease(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const runtimes = new Set([
+    "deno-deploy",
+    "railway",
+    "vercel",
+    "fly",
+    "local",
+    "other",
+  ]);
+  if (typeof value.runtime !== "string" || !runtimes.has(value.runtime)) {
+    return null;
+  }
+  return {
+    runtime: value.runtime,
+    deploymentId: publicOpaqueIdentifier(value.deploymentId),
+    service: publicOpaqueIdentifier(value.service),
+    gitSha: typeof value.gitSha === "string" &&
+        /^[0-9a-f]{7,40}$/i.test(value.gitSha)
+      ? value.gitSha.toLowerCase().slice(0, 12)
+      : null,
+    gitBranch: publicOpaqueIdentifier(value.gitBranch),
+  };
+}
+
+function finiteNonNegativeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
+function publicIsoTimestamp(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > 40) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  return new Date(timestamp).toISOString();
+}
+
+function publicOpaqueIdentifier(value: unknown): string | null {
+  if (
+    typeof value !== "string" || value.length < 1 || value.length > 128 ||
+    !/^[A-Za-z0-9._:/@-]+$/.test(value)
+  ) return null;
+  return value;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isJsonMediaType(value: string | null): boolean {
+  const mediaType = (value ?? "").split(";", 1)[0].trim().toLowerCase();
+  return mediaType === "application/json" || mediaType.endsWith("+json");
 }
 
 function readinessJson(

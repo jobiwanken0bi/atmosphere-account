@@ -7,7 +7,8 @@ import { getMessages } from "../../i18n/mod.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getEffectiveAccountType } from "../../lib/account-types.ts";
+import { isSafeRelativePath } from "../../lib/security.ts";
+import { authActionCopy } from "../../lib/oauth-action-copy.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -25,44 +26,18 @@ export default define.page(async function ExploreCreate(ctx) {
   return await renderExploreCreate(ctx);
 });
 
-async function renderExploreCreate(
+function renderExploreCreate(
   ctx: PageProps<unknown, State>,
 ) {
   const t = getMessages(ctx.state.locale).explore;
+  const actionCopy = authActionCopy("app", "your app");
   const user = ctx.state.user;
   const rawNext = ctx.url.searchParams.get("next");
-  const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
-    ? rawNext
-    : null;
-  const rawIntent = ctx.url.searchParams.get("intent");
-  const intent: "user" | "project" | undefined =
-    rawIntent === "project" || rawIntent === "user" ? rawIntent : undefined;
-
+  const next = isSafeRelativePath(rawNext) ? rawNext : null;
   if (user) {
-    const accountType = await getEffectiveAccountType(user.did).catch(() =>
-      null
-    );
-    /**
-     * Already signed in:
-     *  - Project account → straight to manage.
-     *  - User account that hit "Register an app" → bounce to account
-     *    home with the upgrade modal pre-opened so they can either
-     *    convert this account or sign in with a different one.
-     *  - User account otherwise → their reviews dashboard.
-     *  - Unknown legacy state → user dashboard (callback now always
-     *    sets a type, so this branch should be unreachable).
-     */
-    let location: string;
-    if (accountType === "project") {
-      location = next ?? "/apps/manage";
-    } else if (accountType === "user" && intent === "project") {
-      location = "/account?upgrade=app";
-    } else {
-      location = next ?? "/account";
-    }
     return new Response(null, {
       status: 303,
-      headers: { location },
+      headers: { location: next ?? "/apps/manage?new=1" },
     }) as unknown as preact.JSX.Element;
   }
 
@@ -80,7 +55,7 @@ async function renderExploreCreate(
           <div class="container" style={{ maxWidth: "640px" }}>
             <p class="text-eyebrow">{t.create.eyebrow}</p>
             <h1 class="text-section">{t.create.headline}</h1>
-            <p class="text-body mt-2">{t.create.body}</p>
+            <p class="text-body mt-2">{actionCopy.signInBody}</p>
             <div
               class="glass"
               style={{
@@ -95,8 +70,11 @@ async function renderExploreCreate(
               {isOAuthConfigured()
                 ? (
                   <SignInForm
-                    returnTo={next ?? undefined}
-                    intent={intent}
+                    returnTo={next ?? "/apps/manage?new=1"}
+                    intent="project"
+                    capabilities={["app"]}
+                    action="app"
+                    targetName="your app"
                     rememberedAccounts={account.rememberedAccounts}
                   />
                 )

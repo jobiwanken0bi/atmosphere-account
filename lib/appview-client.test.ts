@@ -3,11 +3,14 @@ import {
   appviewFetchTimeoutMs,
   appviewJsonHeadersForTest,
   appviewProxyRequestBodyForTest,
+  appviewRequestBodyLimitForTest,
   appviewRequestHeadersForTest,
+  appviewTargetUrlForTest,
   hostDirectoryResultForHosts,
   isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
   rewriteAppviewHtmlForTest,
+  rewriteAppviewUrlForTest,
   seededHostDetailFallback,
   shouldBufferAppviewRequestBodyForTest,
   shouldProxyAppviewAssetForTest,
@@ -571,4 +574,89 @@ Deno.test("account handoff proxy rejects oversized streamed bodies", async () =>
     rejected = true;
   }
   assertEquals(rejected, true);
+});
+
+Deno.test("appview proxy bounds every streamed request body by route", async () => {
+  assertEquals(
+    appviewRequestBodyLimitForTest("/api/account/type"),
+    256 * 1024,
+  );
+  assertEquals(
+    appviewRequestBodyLimitForTest("/api/account/profile"),
+    1_064_000,
+  );
+  assertEquals(
+    appviewRequestBodyLimitForTest("/api/registry/profile"),
+    36_000_000,
+  );
+
+  const url = new URL("https://atmosphereaccount.com/api/account/type");
+  const request = new Request(url, {
+    method: "POST",
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(200_000));
+        controller.enqueue(new Uint8Array(100_000));
+        controller.close();
+      },
+    }),
+  });
+  const body = await appviewProxyRequestBodyForTest(url, request);
+  let rejected = false;
+  try {
+    await new Response(body).arrayBuffer();
+  } catch {
+    rejected = true;
+  }
+  assertEquals(rejected, true);
+});
+
+Deno.test("appview target construction cannot escape the configured origin", () => {
+  const target = appviewTargetUrlForTest(
+    "https://appview.internal",
+    "//attacker.example/collect?cookie=1",
+  );
+  assertEquals(target.origin, "https://appview.internal");
+  assertEquals(target.pathname, "/collect");
+  assertEquals(target.search, "?cookie=1");
+});
+
+Deno.test("appview redirects preserve OAuth HTTPS while rejecting active or private targets", () => {
+  const current = new URL("https://atmosphereaccount.com/oauth/callback");
+  assertEquals(
+    rewriteAppviewUrlForTest(
+      "/account?ok=1",
+      "https://appview.internal",
+      current,
+    ),
+    "https://atmosphereaccount.com/account?ok=1",
+  );
+  assertEquals(
+    rewriteAppviewUrlForTest(
+      "https://pds.example.com/oauth/authorize",
+      "https://appview.internal",
+      current,
+    ),
+    "https://pds.example.com/oauth/authorize",
+  );
+  for (
+    const value of [
+      "javascript:alert(1)",
+      "data:text/html,hello",
+      "https://user:secret@example.com/",
+      "https://127.0.0.1/admin",
+      "https://appview.internal.evil.example.com/collect",
+    ]
+  ) {
+    const rewritten = rewriteAppviewUrlForTest(
+      value,
+      "https://appview.internal",
+      current,
+    );
+    if (value.includes("internal.evil")) {
+      assertEquals(rewritten, value);
+    } else {
+      assertEquals(rewritten, null);
+    }
+  }
 });

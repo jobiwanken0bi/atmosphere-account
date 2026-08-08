@@ -29,10 +29,12 @@ COPY utils.ts ./utils.ts
 # Same flag at build time (cache) and runtime (run); without it at
 # runtime, Deno re-checks `nodeModulesDir: manual` and refuses to use
 # the node_modules we just created.
-RUN deno cache --node-modules-dir=auto worker/indexer.ts scripts/migrate-db.ts
+RUN deno install --frozen \
+  && deno cache --node-modules-dir=auto worker/indexer.ts scripts/migrate-db.ts
 
 ENV DENO_ENV=production
 
-# -A grants the network/env/read perms the indexer needs (WebSocket to
-# Jetstream, HTTPS to PDSes, env vars for DB creds, file: DB in dev).
-CMD ["deno", "run", "-A", "--node-modules-dir=auto", "worker/indexer.ts"]
+# The hosted worker needs network, environment, source reads, OS metadata, and
+# the native database/image modules. It does not need subprocess or filesystem
+# write access. Cached-only startup prevents dependency downloads at runtime.
+CMD ["deno", "run", "--cached-only", "--frozen", "--no-prompt", "--allow-read=/app", "--allow-net", "--allow-env", "--allow-sys", "--allow-ffi=/app/node_modules", "--node-modules-dir=auto", "worker/indexer.ts"]

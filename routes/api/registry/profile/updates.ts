@@ -7,7 +7,8 @@
 import { define } from "../../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../../lib/appview-client.ts";
 import { getEffectiveAccountType } from "../../../../lib/account-types.ts";
-import { loadSession } from "../../../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../../../lib/oauth.ts";
+import { oauthReauthorizationUrl } from "../../../../lib/oauth-action.ts";
 import { deleteUpdateRecord, putUpdateRecord } from "../../../../lib/pds.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import {
@@ -18,7 +19,11 @@ import {
   upsertProfileUpdate,
 } from "../../../../lib/profile-updates.ts";
 import { type UpdateRecord, validateUpdate } from "../../../../lib/lexicons.ts";
-import { rejectLargeRequest } from "../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../lib/security.ts";
 
 interface UpdatePayload {
   rkey?: unknown;
@@ -49,10 +54,10 @@ export const handler = define.handlers({
     if (accountType !== "project") return jsonError(403, "project_required");
 
     const [session, profile] = await Promise.all([
-      loadSession(user.did),
+      getSessionForCapabilities(user.did, ["app"]),
       getProfileByDid(user.did, { includeTakenDown: true }).catch(() => null),
     ]);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    if (!session) return appReauthRequired(profile?.name);
     if (!profile || profile.profileType !== "project") {
       return jsonError(403, "project_profile_required");
     }
@@ -60,9 +65,20 @@ export const handler = define.handlers({
       return jsonError(403, "profile_taken_down");
     }
 
-    const payload = await ctx.req.json().catch(() => null) as
-      | UpdatePayload
-      | null;
+    let payload: UpdatePayload | null;
+    try {
+      payload = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_PROFILE_UPDATE_BODY_BYTES,
+      ) as UpdatePayload | null;
+    } catch (error) {
+      return jsonError(
+        error instanceof RequestBodyTooLargeError ? 413 : 400,
+        error instanceof RequestBodyTooLargeError
+          ? "request_body_too_large"
+          : "invalid_body",
+      );
+    }
     if (!payload) return jsonError(400, "invalid_body");
 
     const rkey = typeof payload.rkey === "string" && payload.rkey.trim()
@@ -143,8 +159,8 @@ export const handler = define.handlers({
     );
     if (accountType !== "project") return jsonError(403, "project_required");
 
-    const session = await loadSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    const session = await getSessionForCapabilities(user.did, ["app"]);
+    if (!session) return appReauthRequired();
 
     const url = new URL(ctx.req.url);
     const rkey = url.searchParams.get("rkey")?.trim();
@@ -178,4 +194,16 @@ function jsonError(status: number, code: string): Response {
 function appviewProxyError(err: unknown): Response {
   console.warn("[api/registry/profile/updates] appview proxy failed:", err);
   return jsonResponse(503, { error: "appview_unavailable" });
+}
+
+function appReauthRequired(name = "your app"): Response {
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: oauthReauthorizationUrl({
+      next: "/apps/manage",
+      action: "app",
+      capabilities: ["app"],
+      name,
+    }),
+  });
 }

@@ -1,10 +1,14 @@
 import { define } from "../../../../utils.ts";
 import {
   type LoginRequest,
+  LoginRequestError,
   readLoginRequest,
   resolveLoginAppForRequest,
 } from "../../../../lib/atmosphere-login.ts";
-import { createPasskeyAuthenticationOptions } from "../../../../lib/passkeys.ts";
+import {
+  createPasskeyAuthenticationOptions,
+  PasskeyError,
+} from "../../../../lib/passkeys.ts";
 import { passkeyRelyingPartyForRequest } from "../../../../lib/passkey-rp.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
 import {
@@ -48,10 +52,8 @@ export const handler = define.handlers({
         options: result.options,
       });
     } catch (error) {
-      return jsonError(
-        error,
-        error instanceof RequestBodyTooLargeError ? 413 : 400,
-      );
+      const failure = publicPasskeyAuthenticationOptionsFailure(error);
+      return json(failure.body, failure.status);
     }
   },
 });
@@ -86,11 +88,11 @@ function loginRequestFromJson(
 
 async function readJsonObject(req: Request): Promise<Record<string, unknown>> {
   if (!(req.headers.get("content-type") ?? "").includes("application/json")) {
-    throw new Error("Passkey request must use JSON.");
+    throw new InvalidPasskeyOptionsRequestError();
   }
   const value = await readJsonRequestWithLimit(req, MAX_BODY_BYTES);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Invalid passkey request.");
+    throw new InvalidPasskeyOptionsRequestError();
   }
   return value as Record<string, unknown>;
 }
@@ -105,9 +107,67 @@ function json(value: unknown, status = 200): Response {
   });
 }
 
-function jsonError(error: unknown, status: number): Response {
-  const message = error instanceof Error
-    ? error.message
-    : "Passkey request failed.";
-  return json({ error: message }, status);
+class InvalidPasskeyOptionsRequestError extends Error {}
+
+export function publicPasskeyAuthenticationOptionsFailure(
+  error: unknown,
+): PublicPasskeyFailure {
+  if (error instanceof RequestBodyTooLargeError) {
+    return passkeyFailure(
+      413,
+      "request_body_too_large",
+      "Passkey request is too large.",
+    );
+  }
+  if (error instanceof InvalidPasskeyOptionsRequestError) {
+    return passkeyFailure(
+      400,
+      "invalid_passkey_request",
+      "Passkey request is invalid.",
+    );
+  }
+  if (error instanceof LoginRequestError) {
+    if (error.status >= 500) {
+      return unavailablePasskeyFailure(
+        "Passkey sign in is temporarily unavailable.",
+      );
+    }
+    return passkeyFailure(
+      error.status === 403 ? 403 : 400,
+      error.status === 403
+        ? "login_request_not_allowed"
+        : "invalid_login_request",
+      error.status === 403
+        ? "This app cannot use this sign-in request."
+        : "Passkey sign-in request is invalid.",
+    );
+  }
+  if (error instanceof PasskeyError && error.code === "invalid_input") {
+    return passkeyFailure(
+      400,
+      "invalid_passkey_request",
+      "Passkey request is invalid.",
+    );
+  }
+  return unavailablePasskeyFailure(
+    "Passkey sign in is temporarily unavailable.",
+  );
+}
+
+interface PublicPasskeyFailure {
+  status: number;
+  body: { error: string; code: string; retryable: boolean };
+}
+
+function unavailablePasskeyFailure(message: string): PublicPasskeyFailure {
+  return passkeyFailure(503, "passkey_service_unavailable", message, true);
+}
+
+function passkeyFailure(
+  status: number,
+  code: string,
+  error: string,
+  retryable = false,
+): PublicPasskeyFailure {
+  return { status, body: { error, code, retryable } };
 }

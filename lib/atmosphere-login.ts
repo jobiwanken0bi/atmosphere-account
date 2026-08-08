@@ -376,11 +376,15 @@ function appFromClientId(clientId: string): LoginApp {
 }
 
 export function readLoginRequest(url: URL): LoginRequest {
-  const clientId = url.searchParams.get("client_id")?.trim();
-  const returnUri = url.searchParams.get("return_uri")?.trim() ??
-    url.searchParams.get("redirect_uri")?.trim();
-  const state = url.searchParams.get("state")?.trim();
-  const scope = url.searchParams.get("scope")?.trim() || null;
+  const clientId = singleLoginRequestValue(url, "client_id")?.trim();
+  const returnUriValue = singleLoginRequestValue(url, "return_uri");
+  const redirectUriValue = singleLoginRequestValue(url, "redirect_uri");
+  if (returnUriValue !== null && redirectUriValue !== null) {
+    throw new LoginRequestError("use only one return URI parameter");
+  }
+  const returnUri = (returnUriValue ?? redirectUriValue)?.trim();
+  const state = singleLoginRequestValue(url, "state")?.trim();
+  const scope = singleLoginRequestValue(url, "scope")?.trim() || null;
   if (!clientId) throw new LoginRequestError("missing client_id");
   if (!returnUri) throw new LoginRequestError("missing return_uri");
   if (!state) throw new LoginRequestError("missing state");
@@ -397,6 +401,14 @@ export function readLoginRequest(url: URL): LoginRequest {
     throw new LoginRequestError("scope is too long");
   }
   return { clientId, returnUri, state, scope };
+}
+
+function singleLoginRequestValue(url: URL, key: string): string | null {
+  const values = url.searchParams.getAll(key);
+  if (values.length > 1) {
+    throw new LoginRequestError(`duplicate ${key}`);
+  }
+  return values[0] ?? null;
 }
 
 export function loginRequestToPath(req: LoginRequest): string {

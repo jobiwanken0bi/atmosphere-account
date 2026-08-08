@@ -7,6 +7,7 @@
 import { define } from "../../../../../utils.ts";
 import { requireAdminApi } from "../../../../../lib/admin.ts";
 import { resolveReport } from "../../../../../lib/reports.ts";
+import { readAdminJsonRequest } from "../../../../../lib/admin-request.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -17,22 +18,22 @@ export const handler = define.handlers({
     if (!Number.isFinite(id) || id <= 0) {
       return jsonError(400, "invalid_id");
     }
-    const body = await ctx.req.json().catch(() => null) as
-      | { action?: unknown; notes?: unknown }
-      | null;
-    const action = body?.action;
+    const parsed = await readAdminJsonRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.value;
+    const action = body.action;
     if (action !== "actioned" && action !== "dismissed") {
       return jsonError(400, "invalid_action");
     }
-    const notes = typeof body?.notes === "string"
+    const notes = typeof body.notes === "string"
       ? body.notes.trim().slice(0, 1000) || null
       : null;
 
     try {
       await resolveReport(id, gate.did, action, notes);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "resolve_failed", m);
+      console.error("[admin] report resolution failed:", err);
+      return jsonError(500, "resolve_failed");
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -41,9 +42,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

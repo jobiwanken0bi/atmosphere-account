@@ -183,6 +183,29 @@ Deno.test("fetchHostDashboardManifest does not follow host-controlled redirects"
   assertEquals(result.status, 302);
 });
 
+Deno.test("host manifest fetches require JSON without leaking network errors", async () => {
+  const wrongType = await fetchHostDashboardManifest("example.host", {
+    fetchImpl: () =>
+      Promise.resolve(
+        new Response("<html></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+  });
+  assertEquals(wrongType.ok, false);
+  assertEquals(wrongType.issues[0]?.message, "Manifest response must be JSON.");
+
+  const failed = await fetchHostDashboardManifest("example.host", {
+    fetchImpl: () => Promise.reject(new Error("secret resolver detail")),
+  });
+  assertEquals(failed.ok, false);
+  assertEquals(failed.issues[0]?.message, "Could not fetch manifest.");
+  assertEquals(
+    JSON.stringify(failed).includes("secret resolver detail"),
+    false,
+  );
+});
+
 Deno.test("buildHostDashboardState uses honest fallback capability states", () => {
   const dashboard = buildHostDashboardState({ host: host() });
 

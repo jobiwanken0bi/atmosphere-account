@@ -1,5 +1,6 @@
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useState } from "preact/hooks";
+import { safeBrowserNavigationUrl } from "../lib/browser-navigation.ts";
 
 type AuthenticationOptionsJSON = Parameters<
   typeof startAuthentication
@@ -89,11 +90,15 @@ export default function PasskeyLogin(
       if (!verifyResponse.ok) {
         throw apiError(verifyResponse, verifyPayload, fallbackHref);
       }
-      if (typeof verifyPayload.redirectUrl !== "string") {
+      const destination = safeBrowserNavigationUrl(
+        verifyPayload.redirectUrl,
+        globalThis.location.href,
+      );
+      if (!destination) {
         throw new Error("Passkey sign in did not return a destination.");
       }
 
-      globalThis.location.assign(verifyPayload.redirectUrl);
+      globalThis.location.assign(destination);
     } catch (error) {
       const friendly = friendlyPasskeyError(error);
       setMessage(friendly.message);
@@ -162,11 +167,16 @@ function apiError(
     : typeof payload.message === "string"
     ? payload.message
     : "Passkey sign in could not be completed.";
-  const responseRecoveryUrl = typeof payload.redirectUrl === "string"
-    ? payload.redirectUrl
-    : null;
+  const responseRecoveryUrl = safeBrowserNavigationUrl(
+    payload.redirectUrl,
+    globalThis.location.href,
+  );
+  const safeFallbackHref = safeBrowserNavigationUrl(
+    fallbackHref,
+    globalThis.location.href,
+  );
   const recoveryUrl = response.status === 401 || response.status === 403
-    ? responseRecoveryUrl ?? fallbackHref ?? null
+    ? responseRecoveryUrl ?? safeFallbackHref
     : responseRecoveryUrl;
   return new PasskeyApiError(message, response.status, recoveryUrl);
 }

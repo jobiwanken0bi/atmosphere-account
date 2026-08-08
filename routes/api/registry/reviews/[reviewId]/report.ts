@@ -12,7 +12,11 @@ import {
   REVIEW_REPORT_REASONS,
   type ReviewReportReason,
 } from "../../../../../lib/reviews.ts";
-import { rejectLargeRequest } from "../../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../../lib/security.ts";
 
 interface ReportPayload {
   reason?: unknown;
@@ -39,9 +43,20 @@ export const handler = define.handlers({
       return jsonError(404, "not_found");
     }
 
-    const body = await ctx.req.json().catch(() => null) as
-      | ReportPayload
-      | null;
+    let body: ReportPayload | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_REPORT_REQUEST_BYTES,
+      ) as ReportPayload | null;
+    } catch (error) {
+      return jsonError(
+        error instanceof RequestBodyTooLargeError ? 413 : 400,
+        error instanceof RequestBodyTooLargeError
+          ? "request_body_too_large"
+          : "invalid_body",
+      );
+    }
     if (!body) return jsonError(400, "invalid_body");
 
     const reason = typeof body.reason === "string" ? body.reason : "";

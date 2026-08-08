@@ -1,4 +1,5 @@
 import { define } from "../utils.ts";
+import { asset } from "fresh/runtime";
 import Nav from "../components/Nav.tsx";
 import Footer from "../components/Footer.tsx";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
@@ -19,6 +20,8 @@ import { hostFriendlyProfile, hostPdsDomain } from "../lib/host-friendly.ts";
 import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
 import { hostDetailHref } from "../lib/host-directory-navigation.ts";
 import { getMessages } from "../i18n/mod.ts";
+import ContextualSignInLink from "../islands/ContextualSignInLink.tsx";
+import { oauthSigninUrl } from "../lib/oauth-action.ts";
 
 export default define.page(async function HostsPage(ctx) {
   const copy = getMessages(ctx.state.locale).hostsDirectory;
@@ -33,10 +36,11 @@ export default define.page(async function HostsPage(ctx) {
   const { hosts: visibleHosts } = result;
   const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
   const directoryReturnTo = hostDirectoryHref(input, result.page);
+  const account = buildAccountMenuProps(ctx.state);
   return (
     <div id="page-top">
       <div class="content-layer">
-        <Nav account={buildAccountMenuProps(ctx.state)} active="hosts" />
+        <Nav account={account} active="hosts" />
         <section class="hosts-section">
           <div class="container hosts-container">
             <header class="hosts-header">
@@ -237,11 +241,11 @@ export default define.page(async function HostsPage(ctx) {
                 copy={copy}
               />
             )}
-            <DirectoryHiddenHostCta copy={copy} />
+            <DirectoryHiddenHostCta copy={copy} account={account} />
           </div>
         </section>
         <Footer variant="compact" />
-        <script type="module" src="/hosts-filter-menu.js" />
+        <script type="module" src={asset("/hosts-filter-menu.js")} />
       </div>
     </div>
   );
@@ -363,19 +367,49 @@ function activeFilterCount(input: HostDirectoryInput): number {
     Number(input.verificationStatus !== "all");
 }
 
-function DirectoryHiddenHostCta({ copy }: { copy: HostsDirectoryCopy }) {
+function DirectoryHiddenHostCta(
+  { copy, account }: {
+    copy: HostsDirectoryCopy;
+    account: ReturnType<typeof buildAccountMenuProps>;
+  },
+) {
   return (
     <aside class="directory-hidden-host-cta">
       <div>
         <h2>{copy.missingHostTitle}</h2>
         <p>{copy.missingHostCopy}</p>
       </div>
-      <a href="/hosts/claim" class="directory-register-button">
-        <span>{copy.claimDetectedHost}</span>
-        <span aria-hidden="true">→</span>
-      </a>
+      {account.user
+        ? (
+          <a href="/hosts/claim" class="directory-register-button">
+            <span>{copy.claimDetectedHost}</span>
+            <span aria-hidden="true">→</span>
+          </a>
+        )
+        : (
+          <ContextualSignInLink
+            href={detectedHostClaimSigninHref()}
+            returnTo="/hosts/claim"
+            action="host_claim"
+            capabilities={["identity"]}
+            targetName="your account host"
+            label={copy.claimDetectedHost}
+            className="directory-register-button"
+            trailingArrow
+            rememberedAccounts={account.rememberedAccounts}
+          />
+        )}
     </aside>
   );
+}
+
+function detectedHostClaimSigninHref(): string {
+  return oauthSigninUrl({
+    next: "/hosts/claim",
+    action: "host_claim",
+    capabilities: ["identity"],
+    name: "your account host",
+  });
 }
 
 type HostsDirectoryCopy = ReturnType<typeof getMessages>["hostsDirectory"];

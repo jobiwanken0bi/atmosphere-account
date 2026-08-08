@@ -77,6 +77,29 @@ export interface ComailHostContactEmailDeliveryConfig {
   fetchImpl?: typeof fetch;
 }
 
+type ComailDeliveryFailureReason =
+  | "request_failed"
+  | "invalid_response"
+  | "recipient_not_accepted"
+  | "http_error";
+
+class ComailDeliveryError extends Error {
+  readonly status: number | null;
+
+  constructor(
+    readonly reason: ComailDeliveryFailureReason,
+    status: number | null = null,
+  ) {
+    const safeStatus = typeof status === "number" &&
+        Number.isInteger(status) && status >= 100 && status <= 599
+      ? status
+      : null;
+    super(comailDeliveryFailureMessage(reason, safeStatus));
+    this.name = "ComailDeliveryError";
+    this.status = safeStatus;
+  }
+}
+
 export interface HostContactEmailAvailability {
   available: boolean;
   maskedEmail: string | null;
@@ -269,8 +292,8 @@ export async function requestHostContactEmailChallenge(
   } catch (error) {
     await store.remove(tokenHash).catch(() => undefined);
     console.error(
-      `[host-claim] email delivery failed for ${target.host}:`,
-      error,
+      "[host-claim] email delivery failed reason=%s",
+      error instanceof ComailDeliveryError ? error.reason : "delivery_error",
     );
     return { ok: false, reason: "delivery_failed" };
   }
@@ -506,32 +529,35 @@ export function createComailHostContactEmailDelivery(
   const fetchImpl = config.fetchImpl ?? fetch;
   return {
     async send(input) {
-      const response = await fetchImpl(COMAIL_ENDPOINT, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${config.apiKey}`,
-          "content-type": "application/json",
-          "x-atmos-did": config.senderDid,
-        },
-        body: JSON.stringify({
-          from: config.from,
-          to: input.to,
-          subject: `Verify management of ${input.host}`,
-          text: emailText(input),
-          html: emailHtml(input),
-          category: "verification",
-        }),
-        signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
-      });
+      let response: Response;
+      try {
+        response = await fetchImpl(COMAIL_ENDPOINT, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${config.apiKey}`,
+            "content-type": "application/json",
+            "x-atmos-did": config.senderDid,
+          },
+          body: JSON.stringify({
+            from: config.from,
+            to: input.to,
+            subject: `Verify management of ${input.host}`,
+            text: emailText(input),
+            html: emailHtml(input),
+            category: "verification",
+          }),
+          signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
+        });
+      } catch {
+        throw new ComailDeliveryError("request_failed");
+      }
       const body = await readResponseTextWithLimit(
         response,
         DELIVERY_RESPONSE_MAX_BYTES,
       );
       if (response.ok) {
         if (!body.ok) {
-          throw new Error(
-            `Comail returned an unreadable success response: ${body.error}`,
-          );
+          throw new ComailDeliveryError("invalid_response", response.status);
         }
         const result = parseComailDeliveryResult(body.text);
         if (
@@ -541,15 +567,30 @@ export function createComailHostContactEmailDelivery(
             recipient.toLowerCase() === input.to.toLowerCase()
           )
         ) return;
-        throw new Error(
-          "Comail returned success without accepting the intended recipient",
+        throw new ComailDeliveryError(
+          "recipient_not_accepted",
+          response.status,
         );
       }
-      throw new Error(
-        `Comail returned ${response.status}${body.ok ? `: ${body.text}` : ""}`,
-      );
+      throw new ComailDeliveryError("http_error", response.status);
     },
   };
+}
+
+function comailDeliveryFailureMessage(
+  reason: ComailDeliveryFailureReason,
+  status: number | null,
+): string {
+  if (reason === "request_failed") return "Comail request failed";
+  if (reason === "invalid_response") {
+    return "Comail returned an invalid success response";
+  }
+  if (reason === "recipient_not_accepted") {
+    return "Comail returned success without accepting the intended recipient";
+  }
+  return status === null
+    ? "Comail returned an error response"
+    : `Comail returned HTTP ${status}`;
 }
 
 function parseComailDeliveryResult(

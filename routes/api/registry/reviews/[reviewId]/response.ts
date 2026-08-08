@@ -13,7 +13,11 @@ import {
   normalizeReviewResponseBody,
   upsertReviewResponse,
 } from "../../../../../lib/reviews.ts";
-import { rejectLargeRequest } from "../../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../../lib/security.ts";
 
 interface ResponsePayload {
   body?: unknown;
@@ -32,9 +36,20 @@ export const handler = define.handlers({
     const gate = await ownerGate(ctx.params.reviewId, ctx.state.user?.did);
     if (!gate.ok) return gate.response;
 
-    const body = await ctx.req.json().catch(() => null) as
-      | ResponsePayload
-      | null;
+    let body: ResponsePayload | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_REVIEW_RESPONSE_REQUEST_BYTES,
+      ) as ResponsePayload | null;
+    } catch (error) {
+      return jsonError(
+        error instanceof RequestBodyTooLargeError ? 413 : 400,
+        error instanceof RequestBodyTooLargeError
+          ? "request_body_too_large"
+          : "invalid_body",
+      );
+    }
     const responseBody = normalizeReviewResponseBody(body?.body);
     if (!responseBody) return jsonError(400, "invalid_body");
 

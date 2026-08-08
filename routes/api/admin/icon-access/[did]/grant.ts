@@ -22,8 +22,8 @@ export const handler = define.handlers({
       const ok = await grantIconAccess(did, gate.did);
       if (!ok) return jsonError(404, "profile_not_found");
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "grant_failed", m);
+      console.error("[admin] icon-access grant failed:", err);
+      return jsonError(500, "grant_failed");
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -32,9 +32,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

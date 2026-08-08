@@ -8,6 +8,11 @@ import SignInForm from "../../islands/SignInForm.tsx";
 import UserMicroblogViewerButton from "../../islands/UserMicroblogViewerButton.tsx";
 import UserProfileEditButton from "../../islands/UserProfileEditButton.tsx";
 import UpgradeToProjectModal from "../../islands/UpgradeToProjectModal.tsx";
+import ConfirmedActionForm, {
+  disconnectAppConfirmation,
+  forgetAccountConfirmation,
+} from "../../islands/ConfirmedActionForm.tsx";
+import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getAppUser } from "../../lib/account-types.ts";
@@ -25,15 +30,21 @@ import {
   buildHostAccountRoute,
   type HostAccountRouteState,
 } from "../../lib/host-account-routing.ts";
-import { isOAuthConfigured } from "../../lib/oauth.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+  isOAuthConfigured,
+} from "../../lib/oauth.ts";
+import { hasOAuthCapabilities } from "../../lib/oauth-scopes.ts";
 import type { RememberedAccount } from "../../lib/remembered-accounts.ts";
 import { getProfileMicroblogViewer } from "../../lib/bsky-clients.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { effectiveUserProfile } from "../../lib/user-profile-source.ts";
 import { IS_DEV, loginOrigin } from "../../lib/env.ts";
+import { isSafeRelativePath } from "../../lib/security.ts";
 
 function safeNext(raw: string | null): string | null {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
+  if (!raw || !isSafeRelativePath(raw)) return null;
   return raw;
 }
 
@@ -51,15 +62,14 @@ function safeHandle(raw: string | null): string | undefined {
 
 const APP_UPGRADE_COPY = {
   button: "Register an app",
-  modalTitle: "Use this account as an app profile?",
+  modalTitle: "Register an app with this account?",
   modalBody:
-    "This sets up the current Atmosphere account as an app profile and opens the app management tools. If this app should use a different account,",
-  signInWithProjectLink: "sign in with that app's account here",
-  signInWithProjectSuffix: ".",
-  yes: "Yes, create app profile",
+    "This account will represent the app. You’ll approve access to publish and manage its profile and listing.",
+  signInWithProjectLink: "Use a different account",
+  yes: "Continue to app registration",
   cancel: "Cancel",
-  submitting: "Creating app profile…",
-  error: "Couldn't create the app profile.",
+  submitting: "Opening sign-in…",
+  error: "Couldn’t start sign-in. Please try again.",
 };
 
 export const handler = define.handlers({
@@ -103,14 +113,15 @@ async function AccountPage(
               <p class="text-eyebrow">Manage account</p>
               <h1 class="text-section">Sign in to manage your account</h1>
               <p class="text-body mt-2">
-                See which Atmosphere account you are using, where it is hosted,
-                and the apps you have continued into with Atmosphere.
+                View your profile, connected apps, and security settings.
               </p>
               <div class="glass signin-page-card">
                 {isOAuthConfigured()
                   ? (
                     <SignInForm
                       returnTo={next}
+                      capabilities={["identity"]}
+                      action="account"
                       rememberedAccounts={account.rememberedAccounts}
                       initialHandle={initialHandle}
                     />
@@ -155,8 +166,21 @@ async function AccountPage(
   const managesHost = managedHosts.length > 0;
   const isAppAccount = ctx.state.accountType === "project";
   const managesApps = isAppAccount || managedApps.length > 0;
-  const autoOpenAppUpgrade = upgradeIntent === "app" && !isAppAccount;
-  const showAdvancedDetails = isAppAccount || managesHost;
+  const managementSession = isAppAccount || primaryManagedHost
+    ? await getValidSession(user.did, { quiet: true }).catch(() => null)
+    : null;
+  const managementScope = managementSession
+    ? grantedScopeForSession(managementSession)
+    : null;
+  const appAuthorized = hasOAuthCapabilities(managementScope, ["app"]);
+  const hostAuthorized = hasOAuthCapabilities(managementScope, ["host"]);
+  const legacyAppTargetName =
+    managedApps.find((app) =>
+      app.legacyProfileDid === user.did ||
+      (!app.atstoreListingUri && app.profileDid === user.did)
+    )?.name ?? displayName;
+  const autoOpenAppUpgrade = upgradeIntent === "app";
+  const showAdvancedDetails = managesApps || managesHost;
   const rememberedAccounts = account.rememberedAccounts;
   const hasKnownHost = Boolean(accountHost?.displayName);
   const hostedBy = accountHost?.displayName ?? "Account host not detected";
@@ -200,26 +224,25 @@ async function AccountPage(
             <header class="account-dashboard-page-head">
               <div class="account-dashboard-page-head-row">
                 <h1>Account home</h1>
-                {!isAppAccount && (
-                  <div class="account-dashboard-page-head-action">
-                    <UserMicroblogViewerButton
-                      selectedClientId={appUser?.bskyClientId ?? null}
-                      visible={appUser?.bskyButtonVisible ?? true}
-                    />
-                  </div>
-                )}
+                <div class="account-dashboard-page-head-action">
+                  <UserMicroblogViewerButton
+                    selectedClientId={appUser?.bskyClientId ?? null}
+                    visible={appUser?.bskyButtonVisible ?? true}
+                    currentDid={user.did}
+                    currentHandle={user.handle}
+                    rememberedAccounts={rememberedAccounts}
+                  />
+                </div>
               </div>
-              {!isAppAccount && (
-                <UpgradeToProjectModal
-                  initiallyOpen={autoOpenAppUpgrade}
-                  showTrigger={false}
-                  copy={APP_UPGRADE_COPY}
-                />
-              )}
+              <UpgradeToProjectModal
+                initiallyOpen={autoOpenAppUpgrade}
+                showTrigger={false}
+                currentHandle={user.handle}
+                rememberedAccounts={rememberedAccounts}
+                copy={APP_UPGRADE_COPY}
+              />
               <p>
-                Your home base for Atmosphere. See your handle, your account
-                host, saved accounts on this browser, and apps you have opened
-                with Continue with Atmosphere.
+                Manage your profile, connected apps, and account security.
               </p>
             </header>
 
@@ -264,42 +287,49 @@ async function AccountPage(
                       <span>Manage products</span>
                     </a>
                   )}
-                  {isAppAccount
-                    ? (
-                      <a
-                        href="/apps/manage"
-                        class="account-dashboard-button account-dashboard-button--secondary"
-                      >
-                        <AccountIcon name="edit" />
-                        <span>Edit app profile</span>
-                      </a>
-                    )
-                    : (
-                      <ProfileSourcePanel
-                        profileUrl={publicProfileUrl}
-                        profileViewerName={microblogViewer.name}
-                        displayName={displayName}
-                        bio={effectiveProfile.bio}
-                        avatarUrl={avatarUrl}
-                        microblogVisible={appUser?.bskyButtonVisible ?? true}
-                        websiteUrl={effectiveProfile.websiteUrl}
-                        websiteVisible={effectiveProfile.hasAtmosphereProfile
-                          ? Boolean(effectiveProfile.websiteUrl)
-                          : appUser?.websiteVisible ?? false}
-                        hasAtmosphereProfile={effectiveProfile
-                          .hasAtmosphereProfile}
-                      />
-                    )}
+                  {isAppAccount && (
+                    <OwnerManagementLink
+                      authorized={appAuthorized}
+                      kind="app"
+                      destinationHref="/apps/manage"
+                      targetName={legacyAppTargetName}
+                      label="Edit app profile"
+                      className="account-dashboard-button account-dashboard-button--secondary"
+                      leadingIcon="edit"
+                      rememberedAccounts={rememberedAccounts}
+                      initialHandle={user.handle}
+                    />
+                  )}
+                  <ProfileSourcePanel
+                    did={user.did}
+                    currentHandle={user.handle}
+                    rememberedAccounts={rememberedAccounts}
+                    profileUrl={publicProfileUrl}
+                    profileViewerName={microblogViewer.name}
+                    displayName={displayName}
+                    bio={effectiveProfile.bio}
+                    avatarUrl={avatarUrl}
+                    microblogVisible={appUser?.bskyButtonVisible ?? true}
+                    websiteUrl={effectiveProfile.websiteUrl}
+                    websiteVisible={effectiveProfile.hasAtmosphereProfile
+                      ? Boolean(effectiveProfile.websiteUrl)
+                      : appUser?.websiteVisible ?? false}
+                    hasAtmosphereProfile={effectiveProfile.hasAtmosphereProfile}
+                  />
                   {managesHost && primaryManagedHost && (
-                    <a
-                      href={`/hosts/${
+                    <OwnerManagementLink
+                      authorized={hostAuthorized}
+                      kind="host"
+                      destinationHref={`/hosts/${
                         encodeURIComponent(primaryManagedHost.host)
                       }/manage`}
-                      class="account-dashboard-button account-dashboard-button--secondary"
-                    >
-                      <AccountIcon name="host" />
-                      <span>Manage host profile</span>
-                    </a>
+                      targetName={primaryManagedHost.displayName}
+                      label="Manage host profile"
+                      className="account-dashboard-button account-dashboard-button--secondary"
+                      leadingIcon="host"
+                      rememberedAccounts={rememberedAccounts}
+                      initialHandle={user.handle}
+                    />
                   )}
                 </div>
               </div>
@@ -358,7 +388,7 @@ async function AccountPage(
                 >
                   <ApplicationsPanel
                     connections={loginConnections}
-                    showDeveloperAction={isAppAccount}
+                    showDeveloperAction
                   />
                 </DashboardSection>
               </div>
@@ -375,9 +405,9 @@ async function AccountPage(
                   <div>
                     <strong>Faster account confirmation</strong>
                     <p>
-                      A passkey can replace a repeated ATProto OAuth sign-in at
-                      the account picker. Your account host may still ask you to
-                      approve a new app or new access.
+                      A passkey lets you confirm this account without signing in
+                      again. Your account host may still ask you to approve a
+                      new app or feature.
                     </p>
                   </div>
                   <a
@@ -445,6 +475,9 @@ export default define.page(AccountPage);
 
 function ProfileSourcePanel(
   {
+    did,
+    currentHandle,
+    rememberedAccounts,
     profileUrl,
     profileViewerName,
     displayName,
@@ -455,6 +488,9 @@ function ProfileSourcePanel(
     websiteVisible,
     hasAtmosphereProfile,
   }: {
+    did: string;
+    currentHandle: string;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
     profileUrl: string;
     profileViewerName: string;
     displayName: string;
@@ -491,6 +527,9 @@ function ProfileSourcePanel(
       </div>
       <div class="account-dashboard-actions">
         <UserProfileEditButton
+          did={did}
+          currentHandle={currentHandle}
+          rememberedAccounts={rememberedAccounts}
           displayName={displayName}
           bio={bio}
           avatarUrl={avatarUrl}
@@ -503,7 +542,7 @@ function ProfileSourcePanel(
           title={hasAtmosphereProfile
             ? "Edit your Atmosphere profile"
             : "Create your Atmosphere profile"}
-          description="This profile travels with your Atmosphere account. Your microblog profile remains separate."
+          description="This profile travels with your Atmosphere account. It won’t change your microblog profile."
           nameLabel="Name"
           namePlaceholder="Your name"
           bioLabel="Bio"
@@ -716,20 +755,14 @@ function ApplicationsPanel(
                 </span>
               </span>
             </a>
-            <form
-              method="post"
+            <ConfirmedActionForm
               action="/account/apps/disconnect"
-              class="account-dashboard-app-actions"
-            >
-              <input
-                type="hidden"
-                name="client_id"
-                value={connection.clientId}
-              />
-              <button type="submit" class="account-dashboard-mini-button">
-                Remove
-              </button>
-            </form>
+              fields={{ client_id: connection.clientId }}
+              label="Remove"
+              confirmation={disconnectAppConfirmation(connection.appName)}
+              formClass="account-dashboard-app-actions"
+              ariaLabel={`Remove ${connection.appName} from connected apps`}
+            />
           </article>
         ))}
       </div>
@@ -801,12 +834,16 @@ function RememberedAccountsPanel(
                     </button>
                   </form>
                 )}
-              <form method="post" action="/oauth/forget">
-                <input type="hidden" name="did" value={account.did} />
-                <button type="submit" class="account-dashboard-mini-button">
-                  Remove
-                </button>
-              </form>
+              <ConfirmedActionForm
+                action="/oauth/forget"
+                fields={{ did: account.did }}
+                label="Remove"
+                confirmation={forgetAccountConfirmation(
+                  account.handle,
+                  isCurrent,
+                )}
+                ariaLabel={`Remove @${account.handle} from saved accounts`}
+              />
             </div>
           </article>
         );

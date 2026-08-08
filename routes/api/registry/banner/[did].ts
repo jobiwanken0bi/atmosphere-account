@@ -13,6 +13,11 @@ import { define } from "../../../../utils.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import { fetchBlobPublic } from "../../../../lib/pds.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
+import { secureRasterImageProxyResponse } from "../../../../lib/raster-image-security.ts";
+
+const MAX_BANNER_BYTES = 3_000_000;
+const CACHE_CONTROL =
+  "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400";
 
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
@@ -30,22 +35,15 @@ export const handler = define.handlers({
       if (!upstream.ok) {
         return new Response("not found", { status: 404 });
       }
-      const headers = new Headers();
-      headers.set(
-        "content-type",
-        upstream.headers.get("content-type") ??
-          profile.bannerMime ??
-          "image/jpeg",
-      );
-      headers.set(
-        "cache-control",
-        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
-      );
-      headers.set("etag", profile.bannerCid);
-      headers.set("content-disposition", "inline");
-      headers.set("access-control-allow-origin", "*");
-      headers.set("cross-origin-resource-policy", "cross-origin");
-      return new Response(upstream.body, { status: 200, headers });
+      return await secureRasterImageProxyResponse(upstream, {
+        cid: profile.bannerCid,
+        declaredMime: profile.bannerMime,
+        maxBytes: MAX_BANNER_BYTES,
+        cacheControl: CACHE_CONTROL,
+        etag: profile.bannerCid,
+        filename: "atmosphere-banner",
+        crossOrigin: true,
+      });
     } catch (err) {
       console.warn("[banner] proxy error:", err);
       return new Response("upstream error", { status: 502 });

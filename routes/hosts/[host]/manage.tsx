@@ -3,6 +3,7 @@ import Nav from "../../../components/Nav.tsx";
 import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import HostMark from "../../../components/hosts/HostMark.tsx";
+import HostProfileSaveButton from "../../../islands/HostProfileSaveButton.tsx";
 import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
@@ -31,13 +32,35 @@ import {
   publishHostServiceRecord,
 } from "../../../lib/host-records.ts";
 import type { BlobRef } from "../../../lib/lexicons.ts";
-import { loadSession } from "../../../lib/oauth.ts";
-import { getBskyProfile, uploadBlob } from "../../../lib/pds.ts";
+import {
+  getSessionForCapabilities,
+  type SessionData,
+} from "../../../lib/oauth.ts";
+import {
+  oauthReauthorizationUrl,
+  oauthSigninUrl,
+} from "../../../lib/oauth-action.ts";
+import {
+  getBskyProfile,
+  isPdsScopeMissingError,
+  PdsBlobUploadError,
+  PdsRecordWriteError,
+  uploadBlob,
+} from "../../../lib/pds.ts";
 import {
   isPrivateNetworkUrl,
+  readFormDataRequestWithLimit,
   rejectLargeRequest,
+  RequestBodyTooLargeError,
 } from "../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import {
+  hasHostProfileResumeMarker,
+  hostProfileResumePath,
+  withoutHostProfileResumeMarker,
+} from "../../../lib/host-profile-resume.ts";
+import { isLocalDevHostClaim } from "../../../lib/host-claim-proof.ts";
+import { oauthAddAccountHref } from "../oauth-entry.ts";
 
 type ManageState =
   | "ready"
@@ -68,7 +91,7 @@ type HostPublishResult =
     serviceRecordUri?: string | null;
     serviceRecordCid?: string | null;
   }
-  | { ok: false; message: string };
+  | { ok: false; message: string; reauthorization?: boolean };
 
 interface ManageFormValues {
   displayName: string;
@@ -99,7 +122,7 @@ interface HostManagePageProps {
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("host manage page", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -120,12 +143,27 @@ export const handler = define.handlers({
         { status: 404 },
       );
     }
-    if (!ctx.state.user) return redirectToSignin(host.host, ctx.url);
+    if (!ctx.state.user) return redirectToSignin(host, ctx.url);
     const claim = await getAccountHostClaim(host.host).catch(() => null);
     const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
       null
     );
     const state = manageStateForUser(claim, ownerDid, ctx.state.user.did);
+    if (hasHostProfileResumeMarker(ctx.url) && state !== "ready") {
+      return new Response(null, {
+        status: 303,
+        headers: { location: withoutHostProfileResumeMarker(ctx.url) },
+      });
+    }
+    if (
+      state === "ready" &&
+      !isLocalDevHostClaim(host.host) &&
+      !await getSessionForCapabilities(ctx.state.user.did, ["host"], {
+        quiet: true,
+      })
+    ) {
+      return redirectToAuthorization(host, ctx.url, ["host"]);
+    }
     return ctx.render(
       <HostManagePage
         host={host}
@@ -150,7 +188,7 @@ export const handler = define.handlers({
 
   async POST(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("host manage update", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -181,7 +219,11 @@ export const handler = define.handlers({
         { status: 404 },
       );
     }
-    if (!ctx.state.user) return redirectToSignin(host.host, ctx.url);
+    if (!ctx.state.user) {
+      return requestAcceptsJson(ctx.req)
+        ? hostProfileJsonResponse(401, { error: "not_authenticated" })
+        : redirectToSignin(host, ctx.url);
+    }
 
     const claim = await getAccountHostClaim(host.host).catch(() => null);
     const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
@@ -203,9 +245,61 @@ export const handler = define.handlers({
       );
     }
 
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_HOST_MANAGE_FORM_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid host form",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const values = valuesFromForm(form, host);
     const action = textValue(form?.get("action"));
+    const hostProfileJson = action === "save_profile" &&
+      requestAcceptsJson(ctx.req);
+    const requiredCapabilities = action === "save_profile" &&
+        fileFromForm(form?.get("avatarUpload"))
+      ? ["host", "media"] as const
+      : ["host"] as const;
+    const session = await getSessionForCapabilities(
+      ctx.state.user.did,
+      requiredCapabilities,
+      { quiet: true },
+    );
+    const localDevFixture = isLocalDevHostClaim(host.host);
+    if (!session && !localDevFixture) {
+      if (hostProfileJson) {
+        return hostProfileReauthorizationResponse(
+          host,
+          ctx.url,
+          requiredCapabilities,
+        );
+      }
+      return redirectToAuthorization(host, ctx.url, requiredCapabilities);
+    }
+    if (!session && fileFromForm(form?.get("avatarUpload"))) {
+      const message =
+        "Local .test fixtures need a real OAuth-backed account before they can upload an avatar.";
+      if (hostProfileJson) return hostProfileErrorResponse(422, message);
+      return ctx.render(
+        <HostManagePage
+          host={host}
+          claim={claim}
+          state="ready"
+          account={account}
+          values={values}
+          validation={null}
+          error={message}
+        />,
+        { status: 422 },
+      );
+    }
     if (action === "save_listing") {
       const listed = form?.get("directory_listing") === "1";
       const updated = await updateAccountHostDirectoryListing(
@@ -239,11 +333,30 @@ export const handler = define.handlers({
     if (action === "save_profile") {
       const publication = await publishManagedHostProfile(
         ctx.state.user,
+        session,
         host,
         values,
         form,
       );
       if (!publication.ok) {
+        if (publication.reauthorization) {
+          if (hostProfileJson) {
+            return hostProfileReauthorizationResponse(
+              host,
+              ctx.url,
+              requiredCapabilities,
+            );
+          }
+          return redirectToAuthorization(
+            host,
+            ctx.url,
+            requiredCapabilities,
+            true,
+          );
+        }
+        if (hostProfileJson) {
+          return hostProfileErrorResponse(422, publication.message);
+        }
         return ctx.render(
           <HostManagePage
             host={host}
@@ -281,14 +394,18 @@ export const handler = define.handlers({
             serviceRecordCid: publication.serviceRecordCid ?? null,
           }, ctx.state.user.did);
         }
-        return new Response(null, {
-          status: 303,
-          headers: {
-            location: `/hosts/${
-              encodeURIComponent(result.host.host)
-            }?managed=1`,
-          },
-        });
+        const redirectUrl = `/hosts/${
+          encodeURIComponent(result.host.host)
+        }?managed=1`;
+        return hostProfileJson
+          ? hostProfileJsonResponse(200, { ok: true, redirectUrl })
+          : new Response(null, {
+            status: 303,
+            headers: { location: redirectUrl },
+          });
+      }
+      if (hostProfileJson) {
+        return hostProfileErrorResponse(422, result.message);
       }
       return ctx.render(
         <HostManagePage
@@ -358,6 +475,7 @@ export const handler = define.handlers({
     if (settingsAction === "save" && (!manifestUrl || validation?.ok)) {
       const publication = await publishManagedHostService(
         ctx.state.user,
+        session,
         host,
         values,
         serviceEndpoint,
@@ -365,6 +483,9 @@ export const handler = define.handlers({
         supportUrl,
       );
       if (!publication.ok) {
+        if (publication.reauthorization) {
+          return redirectToAuthorization(host, ctx.url, ["host"], true);
+        }
         return ctx.render(
           <HostManagePage
             host={host}
@@ -415,8 +536,8 @@ export const handler = define.handlers({
   },
 });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(): Response {
+  console.error("[appview] host management proxy failed");
   return new Response("Host management is temporarily unavailable.", {
     status: 503,
     headers: {
@@ -428,23 +549,13 @@ function appviewUnavailable(scope: string, err: unknown): Response {
 
 async function publishManagedHostProfile(
   user: { did: string; handle: string },
+  session: SessionData | null,
   host: AccountHost,
   values: ManageFormValues,
   form: FormData | null,
 ): Promise<HostPublishResult> {
-  const session = await loadSession(user.did).catch(() => null);
   const avatarFile = fileFromForm(form?.get("avatarUpload"));
-  if (!session) {
-    if (avatarFile) {
-      return {
-        ok: false,
-        message:
-          "Sign in again before uploading a host avatar. Image uploads publish to the host account's PDS.",
-      };
-    }
-    return { ok: true };
-  }
-
+  if (!session) return { ok: true };
   const bsky = await getBskyProfile(session.pdsUrl, user.did).catch(() => null);
   let avatar: BlobRef | undefined = bsky?.avatar ?? undefined;
   let avatarUrl: string | undefined;
@@ -486,24 +597,19 @@ async function publishManagedHostProfile(
       serviceRecordCid: records.service.cid,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      message:
-        `Host record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
-    };
+    return managedHostPublishFailure("profile", err);
   }
 }
 
 async function publishManagedHostService(
   user: { did: string; handle: string },
+  session: SessionData | null,
   host: AccountHost,
   values: ManageFormValues,
   serviceEndpoint: string | null,
   accountManagementUrl: string | null,
   supportUrl: string | null,
 ): Promise<HostPublishResult> {
-  const session = await loadSession(user.did).catch(() => null);
   if (!session) return { ok: true };
   try {
     const endpoint = serviceEndpoint || session.pdsUrl;
@@ -527,12 +633,7 @@ async function publishManagedHostService(
       serviceRecordCid: service.cid,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      message:
-        `Host service record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
-    };
+    return managedHostPublishFailure("settings", err);
   }
 }
 
@@ -542,7 +643,7 @@ async function uploadHostAvatar(
   file: File,
 ): Promise<
   | { ok: true; avatar: BlobRef; avatarUrl: string }
-  | { ok: false; message: string }
+  | { ok: false; message: string; reauthorization?: boolean }
 > {
   if (!HOST_AVATAR_MIME_TYPES.has(file.type)) {
     return { ok: false, message: "Host avatar must be PNG, JPEG, or WebP." };
@@ -561,9 +662,30 @@ async function uploadHostAvatar(
       }`,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, message: `Host avatar upload failed: ${message}` };
+    return managedHostPublishFailure("avatar", err);
   }
+}
+
+export function managedHostPublishFailure(
+  operation: "profile" | "settings" | "avatar",
+  error: unknown,
+): { ok: false; message: string; reauthorization: boolean } {
+  const message = operation === "profile"
+    ? "We couldn't publish the host profile. Try again."
+    : operation === "settings"
+    ? "We couldn't publish the host settings. Try again."
+    : "We couldn't upload the host avatar. Try again.";
+  return {
+    ok: false,
+    message,
+    reauthorization: isHostAuthorizationError(error),
+  };
+}
+
+function isHostAuthorizationError(value: unknown): boolean {
+  if (isPdsScopeMissingError(value)) return true;
+  if (value instanceof PdsBlobUploadError && value.status === 403) return true;
+  return value instanceof PdsRecordWriteError && value.status === 403;
 }
 
 function fileFromForm(
@@ -631,6 +753,9 @@ function HostManagePage(props: HostManagePageProps) {
                       error={error}
                       notice={notice ?? null}
                       dashboard={dashboard}
+                      activeDid={account.user?.did ?? ""}
+                      currentHandle={account.user?.handle ?? ""}
+                      rememberedAccounts={account.rememberedAccounts}
                     />
                   </>
                 )
@@ -653,7 +778,19 @@ function HostManagePage(props: HostManagePageProps) {
 }
 
 function ManageBody(
-  { host, claim, state, values, validation, error, notice, dashboard }: {
+  {
+    host,
+    claim,
+    state,
+    values,
+    validation,
+    error,
+    notice,
+    dashboard,
+    activeDid,
+    currentHandle,
+    rememberedAccounts,
+  }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
     state: ManageState;
@@ -662,6 +799,9 @@ function ManageBody(
     error: string | null;
     notice: string | null;
     dashboard: ReturnType<typeof buildHostDashboardState>;
+    activeDid: string;
+    currentHandle: string;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
   },
 ) {
   if (state === "not-claimed") {
@@ -720,9 +860,10 @@ function ManageBody(
         </p>
         <a
           class="directory-register-button host-claim-secondary-action"
-          href={`/oauth/add-account?next=${
-            encodeURIComponent(`/hosts/${encodeURIComponent(host.host)}/manage`)
-          }`}
+          href={managedHostAddAccountHref(
+            host,
+            `/hosts/${encodeURIComponent(host.host)}/manage`,
+          )}
         >
           <span>Use another account</span>
         </a>
@@ -1028,14 +1169,13 @@ function ManageBody(
             </div>
           </div>
           <div class="host-manage-actions">
-            <button
-              class="directory-register-button host-manage-save"
-              type="submit"
-              name="action"
-              value="save_profile"
-            >
-              <span>Save host profile</span>
-            </button>
+            <HostProfileSaveButton
+              did={activeDid}
+              host={host.host}
+              targetName={host.displayName}
+              currentHandle={currentHandle}
+              rememberedAccounts={rememberedAccounts}
+            />
           </div>
         </form>
       </section>
@@ -1280,14 +1420,89 @@ function manageStateError(state: ManageState): string | null {
   return null;
 }
 
-function redirectToSignin(host: string, url: URL): Response {
-  const next = `/hosts/${encodeURIComponent(host)}/manage`;
-  const signin = new URL("/signin", url.origin);
-  signin.searchParams.set("next", next);
+function redirectToSignin(host: AccountHost, url: URL): Response {
+  return redirectToAuthorization(host, url, ["host"]);
+}
+
+function redirectToAuthorization(
+  host: AccountHost,
+  url: URL,
+  capabilities: readonly ("host" | "media")[],
+  force = false,
+): Response {
+  const next = `${url.pathname}${url.search}`;
   return new Response(null, {
     status: 303,
-    headers: { location: `${signin.pathname}${signin.search}` },
+    headers: {
+      location: managedHostAuthorizationHref(host, next, capabilities, force),
+    },
   });
+}
+
+function hostProfileReauthorizationResponse(
+  host: AccountHost,
+  url: URL,
+  capabilities: readonly ("host" | "media")[],
+): Response {
+  return hostProfileJsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: hostProfileReauthorizationHref(
+      host,
+      hostProfileResumePath(url),
+      capabilities,
+    ),
+  });
+}
+
+export function hostProfileReauthorizationHref(
+  host: Pick<AccountHost, "displayName">,
+  next: string,
+  capabilities: readonly ("host" | "media")[],
+): string {
+  return managedHostAuthorizationHref(host, next, capabilities, true);
+}
+
+function hostProfileErrorResponse(status: number, detail: string): Response {
+  return hostProfileJsonResponse(status, {
+    error: "host_profile_save_failed",
+    detail,
+  });
+}
+
+function hostProfileJsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+    },
+  });
+}
+
+function requestAcceptsJson(request: Request): boolean {
+  return request.headers.get("accept")?.includes("application/json") ?? false;
+}
+
+export function managedHostAuthorizationHref(
+  host: Pick<AccountHost, "displayName">,
+  next: string,
+  capabilities: readonly ("host" | "media")[] = ["host"],
+  force = false,
+): string {
+  const buildUrl = force ? oauthReauthorizationUrl : oauthSigninUrl;
+  return buildUrl({
+    next,
+    action: "host_manage",
+    capabilities,
+    name: host.displayName,
+  });
+}
+
+export function managedHostAddAccountHref(
+  host: Pick<AccountHost, "displayName">,
+  next: string,
+): string {
+  return oauthAddAccountHref(managedHostAuthorizationHref(host, next));
 }
 
 function valuesFromHost(host: AccountHost): ManageFormValues {

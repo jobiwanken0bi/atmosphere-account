@@ -42,7 +42,10 @@ Deno.test("browser handoff document keeps the callback in a safe link", async ()
   assertEquals(response.status, 200);
   assertEquals(response.headers.get("cache-control"), "no-store");
   assertEquals(response.headers.get("referrer-policy"), "no-referrer");
-  assertEquals(html.includes('src="/login-handoff.js"'), true);
+  assertEquals(
+    html.includes('src="/login-handoff.js?__frsh_c='),
+    true,
+  );
   assertEquals(
     html.includes(
       'href="https://app.example/callback?state=one&amp;selection_token=a%22b&lt;c&gt;"',
@@ -52,14 +55,37 @@ Deno.test("browser handoff document keeps the callback in a safe link", async ()
 });
 
 Deno.test("browser handoff errors match the requested response mode", async () => {
-  const json = browserHandoffError("try again", 429, true, {
-    "retry-after": "30",
-  });
+  const json = browserHandoffError(
+    "Too many account picker attempts. Try again soon.",
+    429,
+    true,
+    {
+      "retry-after": "30",
+    },
+  );
   assertEquals(json.status, 429);
-  assertEquals(await json.json(), { error: "try again" });
+  assertEquals(await json.json(), {
+    error: "Too many account picker attempts. Try again soon.",
+  });
   assertEquals(json.headers.get("retry-after"), "30");
 
-  const native = browserHandoffError("not available", 403, false);
-  assertEquals(native.status, 403);
-  assertEquals(await native.text(), "not available");
+  const native = browserHandoffError(
+    "database failed at /srv/private/session.ts:42",
+    500,
+    false,
+  );
+  assertEquals(native.status, 500);
+  assertEquals(
+    await native.text(),
+    "Unable to continue. Return to the app and try again.",
+  );
+
+  const privateJson = browserHandoffError(
+    "upstream returned token=secret-value\n    at private.ts:42",
+    500,
+    true,
+  );
+  assertEquals(await privateJson.json(), {
+    error: "Unable to continue. Return to the app and try again.",
+  });
 });

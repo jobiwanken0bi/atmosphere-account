@@ -31,6 +31,10 @@ interface AppDiscoverySplitProps {
   fresh: AppListing[];
 }
 
+interface AppDirectoryAvailabilityProps {
+  hasCards: boolean;
+}
+
 function appHref(app: AppListing): string {
   return `/apps/${encodeURIComponent(app.slug)}`;
 }
@@ -57,6 +61,22 @@ function signalText(app: AppListing): string | null {
     return `${app.favoriteCount} ${app.favoriteCount === 1 ? "like" : "likes"}`;
   }
   return null;
+}
+
+export function AppDirectoryAvailability(
+  { hasCards }: AppDirectoryAvailabilityProps,
+) {
+  if (hasCards) return null;
+  return (
+    <section class="app-showcase-section">
+      <div class="container">
+        <div class="explore-empty glass">
+          <h2 class="text-subsection">Apps aren’t available right now.</h2>
+          <p class="text-body-sm mt-2">Try again in a moment.</p>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function FreshAppCard(

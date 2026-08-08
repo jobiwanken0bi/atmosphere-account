@@ -6,7 +6,7 @@ import AtstoreMigrationButton from "../../islands/AtstoreMigrationButton.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
-import { loadSession } from "../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../lib/oauth.ts";
 import {
   describeRepoCollectionsPublic,
   getBskyProfile,
@@ -25,6 +25,7 @@ import {
 } from "../../lib/atstore-migration.ts";
 import { findExistingCommunityAppProfile } from "../../lib/community-app-profile.ts";
 import {
+  type AppListing,
   getAppListingById,
   getAppListingByIdentifier,
 } from "../../lib/app-directory.ts";
@@ -36,6 +37,15 @@ import {
   listCollectionSuggestions,
 } from "../../lib/collection-catalog.ts";
 import { userControlsAppListing } from "../../lib/directory-entity-links.ts";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+
+export function isEditableRequestedApp(
+  app: AppListing,
+  userDid: string,
+): boolean {
+  return userControlsAppListing(app, userDid) &&
+    Boolean(app.atstoreListingUri?.startsWith(`at://${userDid}/`));
+}
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -44,30 +54,80 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
+    const next = `${ctx.url.pathname}${ctx.url.search}`;
+    const creatingAdditionalApp = ctx.url.searchParams.get("new") === "1";
+    const requestedAppId = ctx.url.searchParams.get("app")?.trim();
     const user = ctx.state.user;
     if (!user) {
       return new Response(null, {
         status: 303,
-        headers: { location: "/apps/create?intent=project" },
+        headers: {
+          location: oauthSigninUrl({
+            next,
+            intent: creatingAdditionalApp ? "project" : undefined,
+            action: "app",
+            capabilities: ["app"],
+            name: "your app",
+          }),
+        },
       });
     }
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
-    if (accountType !== "project") {
-      /**
-       * Signed in with a non-project type. Send users to their dashboard
-       * with the upgrade modal pre-opened so they can either convert
-       * this account or sign in with a different one. Legacy untyped
-       * accounts (which the OAuth callback now always assigns) fall
-       * through to the user dashboard as well.
-       */
+    // `project` remains a compatibility marker for the one legacy app record,
+    // not an authorization role. Any Atmosphere account can create another
+    // ATStore app or manage a listing it owns without converting account type.
+    if (
+      accountType !== "project" && !creatingAdditionalApp && !requestedAppId
+    ) {
       return new Response(null, {
         status: 303,
-        headers: { location: "/account?upgrade=app" },
+        headers: { location: "/account/products" },
       });
     }
-    const creatingAdditionalApp = ctx.url.searchParams.get("new") === "1";
+    // Establish local ownership before asking for repository-wide app write
+    // access. An explicit edit link for an unknown or foreign listing must
+    // fail here instead of using a permission prompt as an oracle—or asking a
+    // non-owner to approve capabilities they cannot use.
+    let requestedManagedApp: AppListing | null = null;
+    if (requestedAppId) {
+      try {
+        requestedManagedApp = await getAppListingById(requestedAppId);
+      } catch (error) {
+        return appviewUnavailable("app management", error);
+      }
+    }
+    if (requestedAppId && !requestedManagedApp) {
+      return new Response("App listing not found.", { status: 404 });
+    }
+    if (
+      requestedManagedApp &&
+      !isEditableRequestedApp(requestedManagedApp, user.did)
+    ) {
+      return new Response("This account cannot manage that app listing.", {
+        status: 403,
+      });
+    }
+    const requiredCapabilities = ["app"] as const;
+    const authorized = await getSessionForCapabilities(
+      user.did,
+      requiredCapabilities,
+      { quiet: true },
+    );
+    if (!authorized) {
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: oauthSigninUrl({
+            next,
+            action: "app",
+            capabilities: requiredCapabilities,
+            name: requestedManagedApp?.name ?? "your app",
+          }),
+        },
+      });
+    }
 
     const t = getMessages(ctx.state.locale);
 
@@ -89,7 +149,7 @@ export const handler = define.handlers({
      *  admin reason instead of pretending no profile exists. */
     const existing = await getProfileByDid(user.did, { includeTakenDown: true })
       .catch(() => null);
-    const session = await loadSession(user.did).catch(() => null);
+    const session = authorized;
     if (existing) {
       const [listing, sourceRecord, remoteAtstore] = await Promise.all([
         getAppListingByIdentifier(existing.handle).catch(() => null),
@@ -219,40 +279,34 @@ export const handler = define.handlers({
       }
     }
 
-    const requestedAppId = ctx.url.searchParams.get("app")?.trim();
-    if (requestedAppId && session) {
-      const candidate = await getAppListingById(requestedAppId).catch(() =>
-        null
-      );
-      const ownedRecordPrefix = `at://${user.did}/`;
-      if (
-        candidate && userControlsAppListing(candidate, user.did) &&
-        candidate.atstoreListingUri?.startsWith(ownedRecordPrefix)
-      ) {
-        const rkey = candidate.atstoreListingUri.split("/").at(-1) ?? "";
-        const record = rkey
-          ? await getRecordPublic(
-            session.pdsUrl,
-            user.did,
-            ATSTORE_LISTING_NSID,
-            rkey,
-          ).catch(() => null)
-          : null;
-        const selectedInitial = record
-          ? initialFromAtstoreRecord(record.value, user.did)
-          : null;
-        if (selectedInitial) {
-          selectedManagedApp = candidate;
-          initial = selectedInitial.initial;
-          initialAvatarUrl = selectedInitial.initialAvatarUrl;
-          initialBannerUrl = selectedInitial.initialBannerUrl;
-          hasAtstoreListing = true;
-          atstoreListingUri = candidate.atstoreListingUri;
-          remoteAtstoreListingUri = null;
-          atstoreMigrationIssues = [];
-          atstoreMigrationPreview = null;
-        }
+    if (requestedManagedApp && session) {
+      const rkey = requestedManagedApp.atstoreListingUri!.split("/").at(-1) ??
+        "";
+      const record = rkey
+        ? await getRecordPublic(
+          session.pdsUrl,
+          user.did,
+          ATSTORE_LISTING_NSID,
+          rkey,
+        ).catch(() => null)
+        : null;
+      const selectedInitial = record
+        ? initialFromAtstoreRecord(record.value, user.did)
+        : null;
+      if (!selectedInitial) {
+        return new Response("The app listing record could not be loaded.", {
+          status: 503,
+        });
       }
+      selectedManagedApp = requestedManagedApp;
+      initial = selectedInitial.initial;
+      initialAvatarUrl = selectedInitial.initialAvatarUrl;
+      initialBannerUrl = selectedInitial.initialBannerUrl;
+      hasAtstoreListing = true;
+      atstoreListingUri = requestedManagedApp.atstoreListingUri;
+      remoteAtstoreListingUri = null;
+      atstoreMigrationIssues = [];
+      atstoreMigrationPreview = null;
     }
 
     /** Surface profile-level takedowns to the owner so they understand
@@ -325,6 +379,7 @@ export const handler = define.handlers({
           "shared-records"}
         managedAppListingId={managedAppListing?.id ?? null}
         createNewListing={creatingAdditionalApp}
+        reauthReturnTo={next}
         takedown={takedown}
         t={t}
       />,
@@ -590,6 +645,7 @@ interface ManagePageProps {
   migrationFocus: boolean;
   managedAppListingId: string | null;
   createNewListing: boolean;
+  reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
   // deno-lint-ignore no-explicit-any
   t: any;
@@ -615,6 +671,7 @@ function ManagePage(
     migrationFocus,
     managedAppListingId,
     createNewListing,
+    reauthReturnTo,
     takedown,
     t,
   }: ManagePageProps,
@@ -718,6 +775,9 @@ function ManagePage(
                   remoteAtstoreListingUri={remoteAtstoreListingUri}
                   atstoreMigrationIssues={atstoreMigrationIssues}
                   atstoreMigrationPreview={atstoreMigrationPreview}
+                  currentDid={user.did}
+                  currentHandle={user.handle}
+                  rememberedAccounts={account.rememberedAccounts}
                 />
               )}
               <CreateProfileForm
@@ -732,6 +792,8 @@ function ManagePage(
                 managedAppIdentifier={managedAppListingId}
                 createNewListing={createNewListing}
                 atstoreListingUri={atstoreListingUri}
+                reauthReturnTo={reauthReturnTo}
+                rememberedAccounts={account.rememberedAccounts}
               />
             </div>
           </div>
@@ -748,11 +810,17 @@ function MigrationSection(
     remoteAtstoreListingUri,
     atstoreMigrationIssues,
     atstoreMigrationPreview,
+    currentDid,
+    currentHandle,
+    rememberedAccounts,
   }: {
     atstoreListingUri: string | null;
     remoteAtstoreListingUri: string | null;
     atstoreMigrationIssues: string[];
     atstoreMigrationPreview: AtstoreMigrationPreview | null;
+    currentDid: string;
+    currentHandle: string;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
   },
 ) {
   return (
@@ -772,6 +840,9 @@ function MigrationSection(
         remoteUri={remoteAtstoreListingUri}
         issues={atstoreMigrationIssues}
         preview={atstoreMigrationPreview}
+        currentDid={currentDid}
+        currentHandle={currentHandle}
+        rememberedAccounts={rememberedAccounts}
       />
     </section>
   );

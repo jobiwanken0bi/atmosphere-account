@@ -117,6 +117,10 @@ const CURSOR_PERSIST_INTERVAL_MS = 5_000;
 const LEASE_NAME = "jetstream-indexer";
 const LEASE_TTL_MS = 45_000;
 const LEASE_RENEW_INTERVAL_MS = 15_000;
+const DEFAULT_MAX_PENDING_EVENTS = 1_000;
+const MAX_PENDING_EVENTS = jetstreamMaxPendingEvents(
+  Deno.env.get("JETSTREAM_MAX_PENDING_EVENTS"),
+);
 
 class LeaseUnavailableError extends Error {
   constructor() {
@@ -142,7 +146,7 @@ let activeSocket: WebSocket | null = null;
 function requestShutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[indexer] received ${signal}; shutting down`);
+  console.log("[indexer] received %s; shutting down", signal);
   try {
     activeSocket?.close(1001, "shutdown");
   } catch {
@@ -158,10 +162,126 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   }
 }
 
-// Lightweight in-memory cache so we don't re-resolve every author's
-// DID document for every event.
-const pdsCache = new Map<string, { pdsUrl: string; expiresAt: number }>();
+interface IndexerIdentity {
+  pdsUrl: string;
+  handle: string | null;
+}
+
+interface IndexerIdentityCacheOptions {
+  ttlMs: number;
+  maxEntries: number;
+  now?: () => number;
+}
+
+/**
+ * Small LRU cache for DID documents used by the serial indexer.
+ *
+ * This deliberately does not serve an expired identity when refresh fails.
+ * A stale PDS endpoint is not merely stale presentation data: after an account
+ * migration it could make us read records from a host the DID no longer names.
+ */
+export class IndexerIdentityCache {
+  private readonly values = new Map<
+    string,
+    { value: IndexerIdentity; expiresAt: number }
+  >();
+  private readonly inFlight = new Map<string, Promise<IndexerIdentity>>();
+  private readonly now: () => number;
+
+  constructor(private readonly options: IndexerIdentityCacheOptions) {
+    this.now = options.now ?? (() => Date.now());
+  }
+
+  get(
+    did: string,
+    load: () => Promise<IndexerIdentity>,
+  ): Promise<IndexerIdentity> {
+    const cached = this.values.get(did);
+    if (cached && cached.expiresAt > this.now()) {
+      this.values.delete(did);
+      this.values.set(did, cached);
+      return Promise.resolve(cached.value);
+    }
+    if (cached) this.values.delete(did);
+
+    const existingLoad = this.inFlight.get(did);
+    if (existingLoad) return existingLoad;
+
+    const refresh = load().then((value) => {
+      this.set(did, value);
+      return value;
+    }).finally(() => {
+      if (this.inFlight.get(did) === refresh) this.inFlight.delete(did);
+    });
+    this.inFlight.set(did, refresh);
+    return refresh;
+  }
+
+  private set(did: string, value: IndexerIdentity): void {
+    const now = this.now();
+    for (const [key, entry] of this.values) {
+      if (entry.expiresAt <= now) this.values.delete(key);
+    }
+    if (
+      !this.values.has(did) &&
+      this.values.size >= this.options.maxEntries
+    ) {
+      const oldest = this.values.keys().next().value;
+      if (oldest) this.values.delete(oldest);
+    }
+    this.values.delete(did);
+    this.values.set(did, {
+      value,
+      expiresAt: now + this.options.ttlMs,
+    });
+  }
+}
+
+// Resolving a DID document yields both values used by the indexer. Keeping them
+// together avoids a second PLC/did:web request for profile and host events.
 const PDS_CACHE_TTL_MS = 30 * 60 * 1000;
+const identityCache = new IndexerIdentityCache({
+  ttlMs: PDS_CACHE_TTL_MS,
+  maxEntries: 4_096,
+});
+
+export function jetstreamMaxPendingEvents(
+  raw: string | null | undefined,
+): number {
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    return DEFAULT_MAX_PENDING_EVENTS;
+  }
+  return Math.min(parsed, 10_000);
+}
+
+export function jetstreamBacklogIsFull(
+  pendingEvents: number,
+  maxPendingEvents: number,
+): boolean {
+  return pendingEvents >= maxPendingEvents;
+}
+
+export interface IndexerFailureLogFields {
+  kind: "public_record_fetch" | "unexpected_error" | "unexpected_value";
+  httpStatus: number | null;
+}
+
+export function indexerFailureLogFields(
+  error: unknown,
+): IndexerFailureLogFields {
+  if (error instanceof PublicRecordFetchError) {
+    const httpStatus = Number.isInteger(error.status) &&
+        error.status >= 100 && error.status <= 599
+      ? error.status
+      : null;
+    return { kind: "public_record_fetch", httpStatus };
+  }
+  return {
+    kind: error instanceof Error ? "unexpected_error" : "unexpected_value",
+    httpStatus: null,
+  };
+}
 
 function handleFromDidDocument(
   doc: { alsoKnownAs?: string[] },
@@ -173,22 +293,29 @@ function handleFromDidDocument(
 async function resolvePdsForDid(
   did: string,
 ): Promise<string> {
-  const cached = pdsCache.get(did);
-  if (cached && cached.expiresAt > Date.now()) return cached.pdsUrl;
-  const doc = await resolveDidDocument(did);
-  const pdsUrl = findPdsEndpoint(doc);
-  pdsCache.set(did, { pdsUrl, expiresAt: Date.now() + PDS_CACHE_TTL_MS });
-  return pdsUrl;
+  return (await resolveIndexerIdentity(did)).pdsUrl;
 }
 
 /** Best-effort handle lookup from the DID document's alsoKnownAs. */
 async function resolveHandleFromDoc(did: string): Promise<string> {
   try {
-    const doc = await resolveDidDocument(did);
-    return handleFromDidDocument(doc) ?? did;
+    return (await resolveIndexerIdentity(did)).handle ?? did;
   } catch {
     return did;
   }
+}
+
+async function resolveIndexerIdentity(did: string): Promise<{
+  pdsUrl: string;
+  handle: string | null;
+}> {
+  return await identityCache.get(did, async () => {
+    const doc = await resolveDidDocument(did);
+    return {
+      pdsUrl: findPdsEndpoint(doc),
+      handle: handleFromDidDocument(doc),
+    };
+  });
 }
 
 async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
@@ -220,7 +347,9 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     record: { ...fetched, rkey: commit.rkey },
     recordRev: commit.rev,
   });
-  if (synced) console.log(`[indexer] upsert profile ${handle} (${event.did})`);
+  if (synced) {
+    console.log("[indexer] upsert profile %s (%s)", handle, event.did);
+  }
 }
 
 async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
@@ -244,14 +373,16 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
   const validation = validateReview(fetched.value);
   if (!validation.ok || !validation.value) {
     console.warn(
-      `[indexer] invalid review from ${event.did}: ${validation.error}`,
+      "[indexer] invalid review from %s: %s",
+      event.did,
+      validation.error,
     );
     return;
   }
   const r = validation.value;
   const target = await getProfileByDid(r.subject).catch(() => null);
   if (!target || target.profileType !== "project") {
-    console.warn(`[indexer] ignoring review for non-project ${r.subject}`);
+    console.warn("[indexer] ignoring review for non-project %s", r.subject);
     return;
   }
   await createOrUpdateReview({
@@ -265,7 +396,7 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log(`[indexer] upsert review ${event.did} -> ${r.subject}`);
+  console.log("[indexer] upsert review %s -> %s", event.did, r.subject);
 }
 
 async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
@@ -277,7 +408,8 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
   const allowedDid = Deno.env.get("ATMOSPHERE_DID");
   if (allowedDid && event.did !== allowedDid) {
     console.warn(
-      `[indexer] ignoring featured write from non-curator ${event.did}`,
+      "[indexer] ignoring featured write from non-curator %s",
+      event.did,
     );
     return;
   }
@@ -298,7 +430,7 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
 
   const validation = validateFeatured(fetched.value);
   if (!validation.ok || !validation.value) {
-    console.warn(`[indexer] invalid featured: ${validation.error}`);
+    console.warn("[indexer] invalid featured: %s", validation.error);
     return;
   }
   await replaceFeatured(
@@ -309,7 +441,8 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
     })),
   );
   console.log(
-    `[indexer] replaced featured directory (${validation.value.entries.length} entries)`,
+    "[indexer] replaced featured directory (%d entries)",
+    validation.value.entries.length,
   );
 }
 
@@ -324,7 +457,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
 
   const project = await getProfileByDid(event.did).catch(() => null);
   if (!project || project.profileType !== "project") {
-    console.warn(`[indexer] ignoring update for non-project ${event.did}`);
+    console.warn("[indexer] ignoring update for non-project %s", event.did);
     return;
   }
 
@@ -340,7 +473,9 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
   const validation = validateUpdate(fetched.value);
   if (!validation.ok || !validation.value) {
     console.warn(
-      `[indexer] invalid update from ${event.did}: ${validation.error}`,
+      "[indexer] invalid update from %s: %s",
+      event.did,
+      validation.error,
     );
     return;
   }
@@ -359,7 +494,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log(`[indexer] upsert update ${event.did}/${commit.rkey}`);
+  console.log("[indexer] upsert update %s/%s", event.did, commit.rkey);
 }
 
 function recordUri(event: JetstreamEvent): string | null {
@@ -399,7 +534,9 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
   } catch (err) {
     if (err instanceof PublicRecordFetchError && isPermanentFetchMiss(err)) {
       console.warn(
-        `[indexer] app record fetch failed permanently for ${uri}: HTTP ${err.status}`,
+        "[indexer] app record fetch failed permanently for %s: HTTP %d",
+        uri,
+        err.status,
       );
       await recordAppRecordFailure({
         uri,
@@ -434,7 +571,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
       value: fetched.value,
     });
     if (!draft) {
-      console.warn(`[indexer] invalid ATStore listing ${uri}`);
+      console.warn("[indexer] invalid ATStore listing %s", uri);
       await recordAppRecordFailure({
         uri,
         collection: commit.collection,
@@ -447,7 +584,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log(`[indexer] upsert app listing ${uri}`);
+    console.log("[indexer] upsert app listing %s", uri);
   } else if (commit.collection === ATSTORE_REVIEW_NSID) {
     const draft = parseAtstoreReview({
       uri,
@@ -516,7 +653,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log(`[indexer] upsert community app ${uri}`);
+    console.log("[indexer] upsert community app %s", uri);
   }
 }
 
@@ -528,7 +665,7 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markHostProtocolRecordDeleted(uri);
-    console.log(`[indexer] deleted host record ${uri}`);
+    console.log("[indexer] deleted host record %s", uri);
     return;
   }
 
@@ -552,9 +689,9 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
     value: fetched.value,
   });
   if (parsed) {
-    console.log(`[indexer] upsert host ${parsed.kind} ${uri}`);
+    console.log("[indexer] upsert host %s %s", parsed.kind, uri);
   } else {
-    console.warn(`[indexer] invalid host record ${uri}`);
+    console.warn("[indexer] invalid host record %s", uri);
   }
 }
 
@@ -591,7 +728,13 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
       await handleAppDirectoryEvent(event);
     }
   } catch (err) {
-    console.error(`[indexer] handler error for ${collection}:`, err);
+    const failure = indexerFailureLogFields(err);
+    console.error(
+      "[indexer] handler failed collection=%s error_kind=%s http_status=%s",
+      COLLECTIONS.includes(collection) ? collection : "unknown",
+      failure.kind,
+      failure.httpStatus ?? "none",
+    );
     throw err;
   }
 }
@@ -618,7 +761,7 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   const cursor = await getJetstreamCursor();
   const url = buildJetstreamUrl(cursor);
   if (logConnectionLifecycle) {
-    console.log(`[indexer] connecting as ${workerId} to ${url}`);
+    console.log("[indexer] connecting as %s to %s", workerId, url);
   }
 
   const ws = new WebSocket(url);
@@ -627,11 +770,12 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   let processedCursor = cursor ?? 0;
   let renewTimer: number | undefined;
   let connectedAt: number | null = null;
+  let processingQueue = Promise.resolve();
 
   try {
     return await new Promise<never>((_, reject) => {
       let stopped = false;
-      let queue = Promise.resolve();
+      let pendingEvents = 0;
 
       const stopWithError = (err: unknown) => {
         if (stopped) return;
@@ -656,19 +800,36 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
       });
       ws.addEventListener("message", (msg) => {
         if (stopped) return;
-        queue = queue.then(async () => {
+        if (jetstreamBacklogIsFull(pendingEvents, MAX_PENDING_EVENTS)) {
+          stopWithError(
+            new Error(
+              `Jetstream event backlog exceeded ${MAX_PENDING_EVENTS}; reconnecting from persisted cursor`,
+            ),
+          );
+          return;
+        }
+        pendingEvents++;
+        processingQueue = processingQueue.then(async () => {
+          if (stopped) return;
           const event = JSON.parse(String(msg.data)) as JetstreamEvent;
           await processEvent(event);
           if (event.time_us > processedCursor) processedCursor = event.time_us;
           if (Date.now() - lastPersistedAt > CURSOR_PERSIST_INTERVAL_MS) {
             lastPersistedAt = Date.now();
-            await setJetstreamCursor(processedCursor).catch((e) =>
-              console.warn("[indexer] cursor persist failed:", e)
+            await setJetstreamCursor(processedCursor).catch(() =>
+              console.warn("[indexer] cursor persist failed")
             );
           }
         }).catch((err) => {
-          console.error("[indexer] message error:", err);
+          const failure = indexerFailureLogFields(err);
+          console.error(
+            "[indexer] message failed error_kind=%s http_status=%s",
+            failure.kind,
+            failure.httpStatus ?? "none",
+          );
           stopWithError(err);
+        }).finally(() => {
+          pendingEvents--;
         });
       });
       ws.addEventListener("close", (ev) => {
@@ -697,8 +858,11 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   } finally {
     if (renewTimer !== undefined) clearInterval(renewTimer);
     if (activeSocket === ws) activeSocket = null;
-    await releaseWorkerLease(LEASE_NAME, workerId).catch((err) => {
-      console.warn("[indexer] lease release failed:", err);
+    // Do not release the distributed lease while an event that already began
+    // may still be writing. Queued events become no-ops once `stopped` is set.
+    await processingQueue.catch(() => {});
+    await releaseWorkerLease(LEASE_NAME, workerId).catch(() => {
+      console.warn("[indexer] lease release failed");
     });
   }
 }
@@ -715,7 +879,7 @@ async function main(): Promise<void> {
     } catch (err) {
       if (shuttingDown) break;
       if (err instanceof LeaseUnavailableError) {
-        console.warn(`[indexer] ${err.message}; retrying soon`);
+        console.warn("[indexer] %s; retrying soon", err.message);
         consecutiveFailures = 0;
       } else if (err instanceof JetstreamDisconnectError) {
         consecutiveFailures = nextReconnectFailureCount({
@@ -735,8 +899,8 @@ async function main(): Promise<void> {
           const message = `[indexer] Jetstream disconnected reason=${
             jetstreamDisconnectReason(err.message)
           } connection_ms=${err.connectedForMs} consecutive_failures=${consecutiveFailures} reconnect_delay_ms=${retryDelayMs} suppressed_reconnects=${suppressedReconnects}`;
-          if (decision.level === "error") console.error(message);
-          else console.info(message);
+          if (decision.level === "error") console.error("%s", message);
+          else console.info("%s", message);
           lastReconnectLoggedAt = now;
           suppressedReconnects = 0;
         } else {
@@ -746,7 +910,12 @@ async function main(): Promise<void> {
       } else {
         consecutiveFailures = Math.min(11, consecutiveFailures + 1);
         retryDelayMs = reconnectDelayMs(consecutiveFailures);
-        console.error("[indexer]", err);
+        const failure = indexerFailureLogFields(err);
+        console.error(
+          "[indexer] worker failed error_kind=%s http_status=%s",
+          failure.kind,
+          failure.httpStatus ?? "none",
+        );
       }
     }
     if (shuttingDown) break;

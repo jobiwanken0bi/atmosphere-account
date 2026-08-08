@@ -97,6 +97,9 @@ async function renderLegacyAppMigrationPage(
                   <SignInForm
                     returnTo={returnTo}
                     intent="project"
+                    capabilities={["app"]}
+                    action="app"
+                    targetName="your app"
                     rememberedAccounts={account.rememberedAccounts}
                   />
                 )

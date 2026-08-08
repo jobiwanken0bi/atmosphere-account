@@ -21,8 +21,12 @@ import {
 } from "../../lib/directory-entity-links.ts";
 import { appImageUrl } from "../../lib/media.ts";
 import { loadManagedAppPortfolio } from "../../lib/managed-products.ts";
-import { loadSession } from "../../lib/oauth.ts";
+import { getValidSession, grantedScopeForSession } from "../../lib/oauth.ts";
+import { hasOAuthCapabilities } from "../../lib/oauth-scopes.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
+import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 
 interface ManagedProductsPageProps {
   account: ReturnType<typeof buildAccountMenuProps>;
@@ -33,6 +37,8 @@ interface ManagedProductsPageProps {
   hostLinks: Record<string, DirectoryEntityAppLink[]>;
   discoveredAtstoreCount: number;
   syncUnavailable: boolean;
+  appAuthorized: boolean;
+  hostAuthorized: boolean;
 }
 
 export const handler = define.handlers({
@@ -45,12 +51,15 @@ export const handler = define.handlers({
     if (!user) {
       return redirect(`/signin?next=${encodeURIComponent(ctx.url.pathname)}`);
     }
-    const session = await loadSession(user.did).catch(() => null);
+    const session = await getValidSession(user.did, { quiet: true }).catch(
+      () => null,
+    );
     const [portfolio, hosts, loginApps] = await Promise.all([
       loadManagedAppPortfolio({ did: user.did, pdsUrl: session?.pdsUrl }),
       listManagedAccountHosts(user.did).catch(() => []),
       listLoginAppsForOwner(user.did).catch(() => []),
     ]);
+    const grantedScope = session ? grantedScopeForSession(session) : null;
     const [appLinkRows, hostLinkRows] = await Promise.all([
       Promise.all(portfolio.apps.map(async (app) => {
         const links = await listDirectoryEntityLinksForApp(app.id).catch(
@@ -75,6 +84,8 @@ export const handler = define.handlers({
         hostLinks={Object.fromEntries(hostLinkRows)}
         discoveredAtstoreCount={portfolio.discoveredAtstoreCount}
         syncUnavailable={portfolio.syncUnavailable}
+        appAuthorized={hasOAuthCapabilities(grantedScope, ["app"])}
+        hostAuthorized={hasOAuthCapabilities(grantedScope, ["host"])}
       />,
     );
   },
@@ -90,6 +101,8 @@ function ManagedProductsPage(props: ManagedProductsPageProps) {
     hostLinks,
     discoveredAtstoreCount,
     syncUnavailable,
+    appAuthorized,
+    hostAuthorized,
   } = props;
   return (
     <div id="page-top">
@@ -140,12 +153,33 @@ function ManagedProductsPage(props: ManagedProductsPageProps) {
                     ATStore records owned by this account.
                   </p>
                 </div>
-                <a
-                  class="profile-form-button-secondary"
-                  href="/apps/manage?new=1"
-                >
-                  Register another app
-                </a>
+                {appAuthorized
+                  ? (
+                    <a
+                      class="profile-form-button-secondary"
+                      href="/apps/manage?new=1"
+                    >
+                      Register another app
+                    </a>
+                  )
+                  : (
+                    <ContextualSignInLink
+                      href={oauthSigninUrl({
+                        next: "/apps/manage?new=1",
+                        action: "app",
+                        capabilities: ["app"],
+                        name: "your app",
+                      })}
+                      returnTo="/apps/manage?new=1"
+                      action="app"
+                      capabilities={["app"]}
+                      targetName="your app"
+                      label="Register another app"
+                      className="profile-form-button-secondary"
+                      rememberedAccounts={account.rememberedAccounts}
+                      initialHandle={account.user?.handle}
+                    />
+                  )}
               </div>
               {apps.length === 0
                 ? (
@@ -159,6 +193,9 @@ function ManagedProductsPage(props: ManagedProductsPageProps) {
                         app={app}
                         links={appLinks[app.id] ?? []}
                         ownerDid={account.user?.did ?? ""}
+                        authorized={appAuthorized}
+                        rememberedAccounts={account.rememberedAccounts}
+                        initialHandle={account.user?.handle}
                       />
                     ))}
                   </div>
@@ -195,6 +232,9 @@ function ManagedProductsPage(props: ManagedProductsPageProps) {
                         key={host.host}
                         host={host}
                         links={hostLinks[host.host] ?? []}
+                        authorized={hostAuthorized}
+                        rememberedAccounts={account.rememberedAccounts}
+                        initialHandle={account.user?.handle}
                       />
                     ))}
                   </div>
@@ -243,11 +283,14 @@ function ManagedProductsPage(props: ManagedProductsPageProps) {
   );
 }
 
-function ManagedAppCard(
-  { app, links, ownerDid }: {
+export function ManagedAppCard(
+  { app, links, ownerDid, authorized, rememberedAccounts, initialHandle }: {
     app: AppListing;
     links: DirectoryEntityAppLink[];
     ownerDid: string;
+    authorized: boolean;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
+    initialHandle?: string;
   },
 ) {
   const icon = appImageUrl(app.iconUrl, "icon");
@@ -285,17 +328,41 @@ function ManagedAppCard(
       )}
       <div class="account-product-actions">
         <a href={`/apps/${encodeURIComponent(app.slug)}`}>View profile</a>
-        {editHref && <a href={editHref}>Edit listing</a>}
-        <a href={`/apps/manage/host?app=${encodeURIComponent(app.id)}`}>
-          {positiveLinks.length > 0 ? "Manage hosting" : "Add a host"}
-        </a>
+        {editHref && (
+          <OwnerManagementLink
+            authorized={authorized}
+            kind="app"
+            destinationHref={editHref}
+            targetName={app.name}
+            label="Edit listing"
+            rememberedAccounts={rememberedAccounts}
+            initialHandle={initialHandle}
+          />
+        )}
+        <OwnerManagementLink
+          authorized={authorized}
+          kind="app"
+          destinationHref={`/apps/manage/host?app=${
+            encodeURIComponent(app.id)
+          }`}
+          targetName={app.name}
+          label={positiveLinks.length > 0 ? "Manage hosting" : "Add a host"}
+          rememberedAccounts={rememberedAccounts}
+          initialHandle={initialHandle}
+        />
       </div>
     </article>
   );
 }
 
-function ManagedHostCard(
-  { host, links }: { host: AccountHost; links: DirectoryEntityAppLink[] },
+export function ManagedHostCard(
+  { host, links, authorized, rememberedAccounts, initialHandle }: {
+    host: AccountHost;
+    links: DirectoryEntityAppLink[];
+    authorized: boolean;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
+    initialHandle?: string;
+  },
 ) {
   const positiveLinks = links.filter((link) =>
     link.relationship !== "host_only"
@@ -322,12 +389,26 @@ function ManagedHostCard(
       )}
       <div class="account-product-actions">
         <a href={`/hosts/${encodeURIComponent(host.host)}`}>View profile</a>
-        <a href={`/hosts/${encodeURIComponent(host.host)}/manage`}>
-          Manage host
-        </a>
-        <a href={`/hosts/${encodeURIComponent(host.host)}/manage/apps`}>
-          Manage apps
-        </a>
+        <OwnerManagementLink
+          authorized={authorized}
+          kind="host"
+          destinationHref={`/hosts/${encodeURIComponent(host.host)}/manage`}
+          targetName={host.displayName}
+          label="Manage host"
+          rememberedAccounts={rememberedAccounts}
+          initialHandle={initialHandle}
+        />
+        <OwnerManagementLink
+          authorized={authorized}
+          kind="host"
+          destinationHref={`/hosts/${
+            encodeURIComponent(host.host)
+          }/manage/apps`}
+          targetName={host.displayName}
+          label="Manage apps"
+          rememberedAccounts={rememberedAccounts}
+          initialHandle={initialHandle}
+        />
       </div>
     </article>
   );
