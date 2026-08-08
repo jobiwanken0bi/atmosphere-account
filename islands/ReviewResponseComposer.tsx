@@ -11,9 +11,9 @@ import {
 } from "../lib/app-interaction-reauth.ts";
 import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
 import {
-  isValidOauthResumeProof,
-  oauthResumeProofValue,
-} from "../lib/oauth-resume-proof.ts";
+  browserResumeMarkerValue,
+  isFreshBrowserResumeMarker,
+} from "../lib/browser-resume-marker.ts";
 import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
 
 interface Props {
@@ -58,7 +58,7 @@ export function reviewResponseResumeProofKey(
   reviewId: number,
   ownerDid: string,
 ): string {
-  return `atmosphere:oauth-resume-proof:review-response:${
+  return `atmosphere:browser-resume-marker:review-response:${
     encodeURIComponent(reviewResponseDraftKey(reviewId, ownerDid))
   }`;
 }
@@ -179,7 +179,7 @@ export default function ReviewResponseComposer(
     }
     if (
       !resume.shouldResume ||
-      !isValidOauthResumeProof(proof, currentDid, draftKey)
+      !isFreshBrowserResumeMarker(proof)
     ) {
       // This also removes a draft left by an abandoned authorization when the
       // owner later returns through an ordinary navigation.
@@ -372,11 +372,7 @@ export default function ReviewResponseComposer(
           restrictToCurrentAccount
           closeLabel={copy.cancel}
           onAuthorizationStart={() => {
-            armReviewResponseResume(
-              resumeProofKey,
-              currentDid,
-              draftKey,
-            );
+            armReviewResponseResume(resumeProofKey);
           }}
           onClose={() => {
             clearReviewResponseDraft(reviewId, currentDid);
@@ -390,15 +386,10 @@ export default function ReviewResponseComposer(
 
 export function armReviewResponseResume(
   proofKey: string,
-  ownerDid: string,
-  draftKey: string,
   storage: Pick<Storage, "setItem"> = globalThis.sessionStorage,
 ): boolean {
   try {
-    storage.setItem(
-      proofKey,
-      oauthResumeProofValue(ownerDid, draftKey),
-    );
+    storage.setItem(proofKey, browserResumeMarkerValue());
     return true;
   } catch {
     return false;

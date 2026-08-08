@@ -84,13 +84,14 @@ export const handler = define.handlers({
       const flowCookie = clearOAuthFlowBindingCookie(state);
       if (flowCookie) headers.append("set-cookie", flowCookie);
       return new Response(null, { status: 303, headers });
-    } catch (err) {
+    } catch {
       await cancelExampleAtprotoOAuth(
         state,
         ctx.url.origin,
         browserBinding,
       ).catch(() => false);
-      console.warn("[example-oauth] callback failed:", err);
+      // OAuth errors can retain private keys and token exchange payloads.
+      console.warn("[example-oauth] callback failed");
       return clearFlowCookie(
         new Response("example callback failed", {
           status: 400,

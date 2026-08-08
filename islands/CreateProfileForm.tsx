@@ -41,9 +41,9 @@ import {
 } from "../lib/app-profile-resume.ts";
 import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
 import {
-  isValidOauthResumeProof,
-  oauthResumeProofValue,
-} from "../lib/oauth-resume-proof.ts";
+  browserResumeMarkerValue,
+  isFreshBrowserResumeMarker,
+} from "../lib/browser-resume-marker.ts";
 import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
 import {
   appProfileWriteCapabilities,
@@ -949,10 +949,7 @@ export default function CreateProfileForm(
     } catch {
       // Fail closed: a return marker without same-tab proof never writes.
     }
-    if (
-      !resume.shouldResume ||
-      !isValidOauthResumeProof(proof, did, pendingPublishKey)
-    ) {
+    if (!resume.shouldResume || !isFreshBrowserResumeMarker(proof)) {
       // This also clears drafts left by an abandoned authorization when the
       // person later reaches the editor through an ordinary navigation.
       void clearPendingBrowserAction(pendingPublishKey).catch(() => {});
@@ -1962,13 +1959,7 @@ export default function CreateProfileForm(
                 disabled={submitting.value}
                 class="profile-form-button-primary"
                 onClick={() => {
-                  if (
-                    !armAppProfileResume(
-                      resumeProofKey,
-                      did,
-                      pendingPublishKey,
-                    )
-                  ) {
+                  if (!armAppProfileResume(resumeProofKey)) {
                     message.value = {
                       kind: "error",
                       text:
@@ -2109,7 +2100,7 @@ export default function CreateProfileForm(
           rememberedAccounts={rememberedAccounts}
           restrictToCurrentAccount
           onAuthorizationStart={() => {
-            armAppProfileResume(resumeProofKey, did, pendingPublishKey);
+            armAppProfileResume(resumeProofKey);
           }}
           onClose={() => {
             reauthorization.value = null;
@@ -2162,15 +2153,10 @@ export async function cancelAppProfileReauthorization(
 
 export function armAppProfileResume(
   proofKey: string,
-  ownerDid: string,
-  pendingKey: string,
   storage: Pick<Storage, "setItem"> = globalThis.sessionStorage,
 ): boolean {
   try {
-    storage.setItem(
-      proofKey,
-      oauthResumeProofValue(ownerDid, pendingKey),
-    );
+    storage.setItem(proofKey, browserResumeMarkerValue());
     return true;
   } catch {
     return false;

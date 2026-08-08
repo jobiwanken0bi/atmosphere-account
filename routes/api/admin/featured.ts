@@ -34,7 +34,7 @@ export const handler = define.handlers({
     if (!gate.ok) return gate.response;
 
     if (!ATMOSPHERE_DID) {
-      return jsonError(500, "atmosphere_did_unset", "Set ATMOSPHERE_DID");
+      return jsonError(500, "atmosphere_did_unset");
     }
 
     const parsed = await readAdminJsonRequest(ctx.req);
@@ -68,16 +68,12 @@ export const handler = define.handlers({
     const record = { entries };
     const validation = validateFeatured(record);
     if (!validation.ok || !validation.value) {
-      return jsonError(400, "invalid_record", validation.error);
+      return jsonError(400, "invalid_record");
     }
 
     const session = await getValidSession(ATMOSPHERE_DID);
     if (!session) {
-      return jsonError(
-        401,
-        "atmosphere_session_missing",
-        "Sign in once with the curator account at /oauth/login first.",
-      );
+      return jsonError(401, "atmosphere_session_missing");
     }
 
     let result: Awaited<ReturnType<typeof putRecord>>;
@@ -90,8 +86,8 @@ export const handler = define.handlers({
         record as unknown as Record<string, unknown>,
       );
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(502, "put_record_failed", m);
+      console.error("[admin] featured directory publish failed:", err);
+      return jsonError(502, "put_record_failed");
     }
 
     return new Response(
@@ -104,9 +100,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

@@ -5,6 +5,7 @@ import {
   findPdsEndpoint,
   isHandle,
   isProductionHandleAllowedForTest,
+  normalizeDnsTxtValueForTest,
   normalizeServiceEndpoint,
   resolveDidDocument,
   resolveHandle,
@@ -162,6 +163,24 @@ Deno.test("resolveHandle prefers DNS and joins split TXT strings", async () => {
     }
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("DNS TXT normalization parses escapes in one bounded pass", () => {
+  const cases = new Map<string, string>([
+    ['"did=did:plc:abc" "123"', "did=did:plc:abc123"],
+    ['"did=did:plc:abc\\04923"', "did=did:plc:abc123"],
+    ['"did=did:plc:abc\\"quoted\\""', 'did=did:plc:abc"quoted"'],
+    ["did=did:plc:plain", "did=did:plc:plain"],
+    ['"unterminated' + "\\".repeat(20_000), ""],
+    ['"too-large\\999"', ""],
+    ['"valid" trailing-junk', ""],
+  ]);
+  for (const [input, expected] of cases) {
+    const actual = normalizeDnsTxtValueForTest(input);
+    if (actual !== expected) {
+      throw new Error(`unexpected TXT normalization for ${input.slice(0, 80)}`);
+    }
   }
 });
 

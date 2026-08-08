@@ -29,6 +29,11 @@ const RAW_SITE_URL = safeGet("FRESH_PUBLIC_SITE_URL");
 const RAW_LOGIN_SITE_URL = safeGet("FRESH_PUBLIC_LOGIN_URL") ??
   safeGet("LOGIN_SITE_URL");
 const EXPLICIT_PRODUCTION = safeGet("DENO_ENV") === "production";
+const CANONICAL_SITE_ORIGIN = "https://atmosphereaccount.com";
+
+function isCanonicalSiteOrigin(value: string): boolean {
+  return value === CANONICAL_SITE_ORIGIN;
+}
 
 /** atproto / RFC 8252 forbid `localhost` as a redirect host for confidential
  *  clients (only loopback IPs like 127.0.0.1 are allowed, and even then only
@@ -87,7 +92,7 @@ export const LOGIN_SITE_URL: string = (() => {
 
 export const IS_DEV = !IS_HOSTED_RUNTIME &&
   !EXPLICIT_PRODUCTION &&
-  (!RAW_SITE_URL || !SITE_URL.startsWith("https://atmosphereaccount.com"));
+  (!RAW_SITE_URL || !isCanonicalSiteOrigin(SITE_URL));
 
 export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");
 export const OAUTH_PUBLIC_JWK = safeGet("OAUTH_PUBLIC_JWK");
@@ -160,6 +165,10 @@ export function validatedPublicOriginForTest(
   production: boolean,
 ): string {
   return validatedPublicOrigin("TEST_ORIGIN", value, production);
+}
+
+export function isCanonicalSiteOriginForTest(value: string): boolean {
+  return isCanonicalSiteOrigin(value);
 }
 
 export function sessionSecret(): string {

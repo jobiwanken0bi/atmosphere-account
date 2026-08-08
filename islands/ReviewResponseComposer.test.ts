@@ -9,7 +9,7 @@ import {
   reviewResponseResumeProofKey,
 } from "./ReviewResponseComposer.tsx";
 import { reviewResponseResumeLocation } from "../lib/app-interaction-reauth.ts";
-import { isValidOauthResumeProof } from "../lib/oauth-resume-proof.ts";
+import { isFreshBrowserResumeMarker } from "../lib/browser-resume-marker.ts";
 
 Deno.test("canceling developer response deletion stops before mutation", () => {
   const seen: string[] = [];
@@ -91,13 +91,13 @@ Deno.test("review response drafts cannot cross accounts", () => {
   );
 });
 
-Deno.test("developer response resume is armed for one account and review", () => {
+Deno.test("developer response resume marker is bound by its account-and-review key", () => {
   const values = new Map<string, string>();
   const ownerDid = "did:plc:alice";
   const draftKey = reviewResponseDraftKey(42, ownerDid);
   const proofKey = reviewResponseResumeProofKey(42, ownerDid);
   assertEquals(
-    armReviewResponseResume(proofKey, ownerDid, draftKey, {
+    armReviewResponseResume(proofKey, {
       setItem(key, value) {
         values.set(key, value);
       },
@@ -105,17 +105,24 @@ Deno.test("developer response resume is armed for one account and review", () =>
     true,
   );
   const proof = values.get(proofKey) ?? null;
-  assertEquals(isValidOauthResumeProof(proof, ownerDid, draftKey), true);
   assertEquals(
-    isValidOauthResumeProof(
-      proof,
-      ownerDid,
-      reviewResponseDraftKey(43, ownerDid),
-    ),
+    isFreshBrowserResumeMarker(proof),
+    true,
+  );
+  assertEquals(
+    proof?.includes(ownerDid),
     false,
   );
   assertEquals(
-    isValidOauthResumeProof(proof, "did:plc:bob", draftKey),
+    proof?.includes(draftKey),
+    false,
+  );
+  assertEquals(
+    proofKey === reviewResponseResumeProofKey(43, ownerDid),
+    false,
+  );
+  assertEquals(
+    proofKey === reviewResponseResumeProofKey(42, "did:plc:bob"),
     false,
   );
 });

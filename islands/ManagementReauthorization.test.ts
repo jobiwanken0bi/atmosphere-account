@@ -139,8 +139,6 @@ Deno.test("management resume proof is armed only when browser storage accepts it
   assertEquals(
     armAppProfileResume(
       "app-proof",
-      "did:plc:alice",
-      "app-profile:pending",
       storage,
     ),
     true,
@@ -148,8 +146,6 @@ Deno.test("management resume proof is armed only when browser storage accepts it
   assertEquals(
     armHostProfileResume(
       "host-proof",
-      "did:plc:alice",
-      "host-profile:pending",
       storage,
     ),
     true,
@@ -163,11 +159,11 @@ Deno.test("management resume proof is armed only when browser storage accepts it
     },
   };
   assertEquals(
-    armAppProfileResume("app-proof", "did:plc:alice", "pending", blocked),
+    armAppProfileResume("app-proof", blocked),
     false,
   );
   assertEquals(
-    armHostProfileResume("host-proof", "did:plc:alice", "pending", blocked),
+    armHostProfileResume("host-proof", blocked),
     false,
   );
 });

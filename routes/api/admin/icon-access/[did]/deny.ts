@@ -35,8 +35,8 @@ export const handler = define.handlers({
     try {
       await denyIconAccess(did, gate.did, reason);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "deny_failed", m);
+      console.error("[admin] icon-access denial failed:", err);
+      return jsonError(500, "deny_failed");
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -45,9 +45,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

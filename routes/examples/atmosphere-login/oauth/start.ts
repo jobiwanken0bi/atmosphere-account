@@ -79,8 +79,9 @@ export const handler = define.handlers({
         status: 303,
         headers,
       });
-    } catch (err) {
-      console.warn("[example-oauth] start failed:", err);
+    } catch {
+      // OAuth errors can retain private client-key material in their causes.
+      console.warn("[example-oauth] start failed");
       return new Response("example OAuth start failed", {
         status: 400,
         headers: { "cache-control": "no-store" },

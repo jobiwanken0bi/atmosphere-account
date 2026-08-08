@@ -222,7 +222,8 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
         409,
       );
     }
-    console.warn("[oauth] account creation start failed:", err);
+    // The thrown OAuth error can retain private client-key material.
+    console.warn("[oauth] account creation start failed");
     return oauthAccountCreationFailureResponse();
   }
 }

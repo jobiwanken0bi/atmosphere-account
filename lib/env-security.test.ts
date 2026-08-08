@@ -1,4 +1,5 @@
 import {
+  isCanonicalSiteOriginForTest,
   validatedPublicOriginForTest,
   validateSecretStrengthForTest,
 } from "./env.ts";
@@ -48,4 +49,21 @@ Deno.test("public origins reject active schemes and ambiguous authority", () => 
     assertThrows(() => validatedPublicOriginForTest(value, true));
   }
   assertThrows(() => validatedPublicOriginForTest("http://example.com", true));
+});
+
+Deno.test("canonical production origin comparison rejects hostname lookalikes", () => {
+  assertEquals(
+    isCanonicalSiteOriginForTest("https://atmosphereaccount.com"),
+    true,
+  );
+  for (
+    const value of [
+      "https://atmosphereaccount.com.evil.example",
+      "https://atmosphereaccount.com@evil.example",
+      "https://atmosphereaccount.com.example",
+      "https://atmosphereaccount.co",
+    ]
+  ) {
+    assertEquals(isCanonicalSiteOriginForTest(value), false);
+  }
 });

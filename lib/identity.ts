@@ -109,17 +109,67 @@ function parseSafeEndpointUrl(endpoint: string): URL {
 }
 
 function normalizeDnsTxtValue(data: string): string {
-  const matches = [...data.matchAll(/"((?:\\.|[^"])*)"/g)];
-  if (matches.length === 0) return data.trim();
-  return matches
-    .map((match) =>
-      match[1].replace(/\\(["\\])/g, "$1").replace(
-        /\\(\d{3})/g,
-        (_, code) => String.fromCharCode(Number(code)),
-      )
-    )
-    .join("")
-    .trim();
+  const trimmed = data.trim();
+  if (!trimmed.startsWith('"')) return trimmed;
+
+  // DNS JSON presents split TXT character-strings as adjacent quoted chunks.
+  // Parse those chunks in one forward pass: the previous nested regexp could
+  // take super-linear time on a long, unterminated escape-heavy answer.
+  let result = "";
+  let position = 0;
+  while (position < trimmed.length) {
+    if (trimmed[position] !== '"') return "";
+    position++;
+    let closed = false;
+    while (position < trimmed.length) {
+      const character = trimmed[position++];
+      if (character === '"') {
+        closed = true;
+        break;
+      }
+      if (character !== "\\") {
+        result += character;
+        continue;
+      }
+      if (position >= trimmed.length) return "";
+
+      const first = trimmed.charCodeAt(position);
+      const second = trimmed.charCodeAt(position + 1);
+      const third = trimmed.charCodeAt(position + 2);
+      if (
+        isAsciiDigitCode(first) && isAsciiDigitCode(second) &&
+        isAsciiDigitCode(third)
+      ) {
+        const code = (first - 0x30) * 100 + (second - 0x30) * 10 +
+          (third - 0x30);
+        if (code > 255) return "";
+        result += String.fromCharCode(code);
+        position += 3;
+      } else {
+        // DNS master-file escaping permits a backslash before a literal.
+        result += trimmed[position++];
+      }
+    }
+    if (!closed) return "";
+    while (position < trimmed.length && isDnsTxtWhitespace(trimmed[position])) {
+      position++;
+    }
+    if (position < trimmed.length && trimmed[position] !== '"') return "";
+  }
+  return result.trim();
+}
+
+function isAsciiDigitCode(code: number): boolean {
+  return code >= 0x30 && code <= 0x39;
+}
+
+function isDnsTxtWhitespace(character: string): boolean {
+  return character === " " || character === "\t" || character === "\r" ||
+    character === "\n";
+}
+
+export function normalizeDnsTxtValueForTest(data: string): string {
+  return normalizeDnsTxtValue(data);
 }
 
 /**

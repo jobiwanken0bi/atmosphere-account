@@ -353,8 +353,10 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       status: 303,
       headers,
     });
-  } catch (err) {
-    console.warn("[oauth] sign-in start failed:", err);
+  } catch {
+    // OAuth failures can retain request/JWK context in their cause chain.
+    // Keep production logs useful without serializing that sensitive object.
+    console.warn("[oauth] sign-in start failed");
     return oauthLoginFailureResponse(wantsJson);
   }
 }

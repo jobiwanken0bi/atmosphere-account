@@ -567,9 +567,10 @@ export const handler = define.handlers({
           AVATAR_MAX_BYTES,
           "avatar",
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response("avatar data is invalid or too large", {
+          status: 400,
+        });
       }
       if (!matchesRasterImageSignature(bytes, body.avatarUpload.mimeType)) {
         return new Response(
@@ -585,8 +586,8 @@ export const handler = define.handlers({
           body.avatarUpload.mimeType,
         );
       } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`avatar upload failed: ${m}`, { status: 502 });
+        console.warn("[registry] avatar blob upload failed:", err);
+        return new Response("avatar upload failed", { status: 502 });
       }
     }
 
@@ -611,9 +612,10 @@ export const handler = define.handlers({
           BANNER_MAX_BYTES,
           "banner",
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response("banner data is invalid or too large", {
+          status: 400,
+        });
       }
       if (!matchesRasterImageSignature(bytes, body.bannerUpload.mimeType)) {
         return new Response(
@@ -629,8 +631,8 @@ export const handler = define.handlers({
           body.bannerUpload.mimeType,
         );
       } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`banner upload failed: ${m}`, { status: 502 });
+        console.warn("[registry] banner blob upload failed:", err);
+        return new Response("banner upload failed", { status: 502 });
       }
       // Pre-generate the 1200×630 JPEG for the og:image cache. This runs
       // after the PDS upload succeeds so a resize failure never blocks saving.
@@ -698,22 +700,22 @@ export const handler = define.handlers({
       let raw: Uint8Array;
       try {
         raw = decodeBase64Limited(upload.dataBase64, ICON_MAX_BYTES, label);
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response(`${label} data is invalid or too large`, {
+          status: 400,
+        });
       }
       let cleaned: Uint8Array;
       try {
         cleaned = sanitizeSvgBytes(raw);
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`invalid svg (${label}): ${m}`, { status: 400 });
+      } catch {
+        return new Response(`invalid svg (${label})`, { status: 400 });
       }
       try {
         return await uploadBlob(userDid, pdsUrl, cleaned, "image/svg+xml");
       } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`${label} upload failed: ${m}`, { status: 502 });
+        console.warn(`[registry] ${label} blob upload failed:`, err);
+        return new Response(`${label} upload failed`, { status: 502 });
       }
     }
 
@@ -770,9 +772,10 @@ export const handler = define.handlers({
           SCREENSHOT_MAX_BYTES,
           "screenshot",
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response("screenshot data is invalid or too large", {
+          status: 400,
+        });
       }
       if (!matchesRasterImageSignature(bytes, upload.mimeType)) {
         return new Response(
@@ -789,8 +792,8 @@ export const handler = define.handlers({
         );
         screenshots.push({ image });
       } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`screenshot upload failed: ${m}`, { status: 502 });
+        console.warn("[registry] screenshot blob upload failed:", err);
+        return new Response("screenshot upload failed", { status: 502 });
       }
     }
 
@@ -944,14 +947,14 @@ export const handler = define.handlers({
           { status: 200, headers: { "content-type": "application/json" } },
         );
       } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        if (m === "missing_icon") {
+        if (err instanceof Error && err.message === "missing_icon") {
           return new Response(
             "ATStore app listings require an app icon/avatar",
             { status: 400 },
           );
         }
-        return new Response(`ATStore listing publish failed: ${m}`, {
+        console.warn("[registry] ATStore listing publish failed:", err);
+        return new Response("ATStore listing publish failed", {
           status: 502,
         });
       }
@@ -965,8 +968,8 @@ export const handler = define.handlers({
         validation.value,
       );
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return new Response(`putRecord failed: ${m}`, { status: 502 });
+      console.warn("[registry] profile record publish failed:", err);
+      return new Response("profile record publish failed", { status: 502 });
     }
 
     /**
@@ -1012,10 +1015,10 @@ export const handler = define.handlers({
         await upsertLegacyProfileAsApp(latest);
       }
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
       console.error("[registry] inline index after putRecord failed:", err);
       return new Response(
-        `App listing saved to your PDS, but indexing it for Apps failed: ${m}. ` +
+        "App listing saved to your account host, but the directory could not " +
+          "confirm the update. " +
           `Press Publish again to retry.`,
         { status: 502 },
       );
@@ -1101,8 +1104,8 @@ export const handler = define.handlers({
         );
         await deleteAppRecord(requestedTarget.uri);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return new Response(`ATStore listing delete failed: ${message}`, {
+        console.warn("[registry] ATStore listing delete failed:", err);
+        return new Response("ATStore listing delete failed", {
           status: 502,
         });
       }
@@ -1115,8 +1118,8 @@ export const handler = define.handlers({
     try {
       await deleteProfileRecord(user.did, session.pdsUrl);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return new Response(`deleteRecord failed: ${m}`, { status: 502 });
+      console.warn("[registry] profile record delete failed:", err);
+      return new Response("profile record delete failed", { status: 502 });
     }
 
     try {
@@ -1134,8 +1137,8 @@ export const handler = define.handlers({
         await deleteAppRecord(existingAtstore.uri);
       }
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return new Response(`ATStore listing delete failed: ${m}`, {
+      console.warn("[registry] legacy ATStore listing delete failed:", err);
+      return new Response("ATStore listing delete failed", {
         status: 502,
       });
     }

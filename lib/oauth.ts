@@ -1417,8 +1417,9 @@ async function refreshSessionIdentity(
       return updated;
     }
     return (await loadSession(session.did)) ?? null;
-  } catch (err) {
-    if (IS_DEV) console.warn("session identity refresh failed:", err);
+  } catch {
+    // Discovery errors can retain authorization/session details in causes.
+    if (IS_DEV) console.warn("session identity refresh failed");
     return session;
   }
 }
@@ -1437,8 +1438,9 @@ export async function getValidSession(
   try {
     session = await refreshSession(session);
     return await refreshSessionIdentity(session);
-  } catch (err) {
-    if (IS_DEV && !options.quiet) console.warn("session refresh failed:", err);
+  } catch {
+    // Refresh errors can include access, refresh, DPoP, or private-key data.
+    if (IS_DEV && !options.quiet) console.warn("session refresh failed");
     return null;
   }
 }

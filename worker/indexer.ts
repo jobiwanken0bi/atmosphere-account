@@ -146,7 +146,7 @@ let activeSocket: WebSocket | null = null;
 function requestShutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[indexer] received ${signal}; shutting down`);
+  console.log("[indexer] received %s; shutting down", signal);
   try {
     activeSocket?.close(1001, "shutdown");
   } catch {
@@ -326,7 +326,9 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     record: { ...fetched, rkey: commit.rkey },
     recordRev: commit.rev,
   });
-  if (synced) console.log(`[indexer] upsert profile ${handle} (${event.did})`);
+  if (synced) {
+    console.log("[indexer] upsert profile %s (%s)", handle, event.did);
+  }
 }
 
 async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
@@ -350,14 +352,16 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
   const validation = validateReview(fetched.value);
   if (!validation.ok || !validation.value) {
     console.warn(
-      `[indexer] invalid review from ${event.did}: ${validation.error}`,
+      "[indexer] invalid review from %s: %s",
+      event.did,
+      validation.error,
     );
     return;
   }
   const r = validation.value;
   const target = await getProfileByDid(r.subject).catch(() => null);
   if (!target || target.profileType !== "project") {
-    console.warn(`[indexer] ignoring review for non-project ${r.subject}`);
+    console.warn("[indexer] ignoring review for non-project %s", r.subject);
     return;
   }
   await createOrUpdateReview({
@@ -371,7 +375,7 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log(`[indexer] upsert review ${event.did} -> ${r.subject}`);
+  console.log("[indexer] upsert review %s -> %s", event.did, r.subject);
 }
 
 async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
@@ -383,7 +387,8 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
   const allowedDid = Deno.env.get("ATMOSPHERE_DID");
   if (allowedDid && event.did !== allowedDid) {
     console.warn(
-      `[indexer] ignoring featured write from non-curator ${event.did}`,
+      "[indexer] ignoring featured write from non-curator %s",
+      event.did,
     );
     return;
   }
@@ -404,7 +409,7 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
 
   const validation = validateFeatured(fetched.value);
   if (!validation.ok || !validation.value) {
-    console.warn(`[indexer] invalid featured: ${validation.error}`);
+    console.warn("[indexer] invalid featured: %s", validation.error);
     return;
   }
   await replaceFeatured(
@@ -415,7 +420,8 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
     })),
   );
   console.log(
-    `[indexer] replaced featured directory (${validation.value.entries.length} entries)`,
+    "[indexer] replaced featured directory (%d entries)",
+    validation.value.entries.length,
   );
 }
 
@@ -430,7 +436,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
 
   const project = await getProfileByDid(event.did).catch(() => null);
   if (!project || project.profileType !== "project") {
-    console.warn(`[indexer] ignoring update for non-project ${event.did}`);
+    console.warn("[indexer] ignoring update for non-project %s", event.did);
     return;
   }
 
@@ -446,7 +452,9 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
   const validation = validateUpdate(fetched.value);
   if (!validation.ok || !validation.value) {
     console.warn(
-      `[indexer] invalid update from ${event.did}: ${validation.error}`,
+      "[indexer] invalid update from %s: %s",
+      event.did,
+      validation.error,
     );
     return;
   }
@@ -465,7 +473,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log(`[indexer] upsert update ${event.did}/${commit.rkey}`);
+  console.log("[indexer] upsert update %s/%s", event.did, commit.rkey);
 }
 
 function recordUri(event: JetstreamEvent): string | null {
@@ -505,7 +513,9 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
   } catch (err) {
     if (err instanceof PublicRecordFetchError && isPermanentFetchMiss(err)) {
       console.warn(
-        `[indexer] app record fetch failed permanently for ${uri}: HTTP ${err.status}`,
+        "[indexer] app record fetch failed permanently for %s: HTTP %d",
+        uri,
+        err.status,
       );
       await recordAppRecordFailure({
         uri,
@@ -540,7 +550,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
       value: fetched.value,
     });
     if (!draft) {
-      console.warn(`[indexer] invalid ATStore listing ${uri}`);
+      console.warn("[indexer] invalid ATStore listing %s", uri);
       await recordAppRecordFailure({
         uri,
         collection: commit.collection,
@@ -553,7 +563,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log(`[indexer] upsert app listing ${uri}`);
+    console.log("[indexer] upsert app listing %s", uri);
   } else if (commit.collection === ATSTORE_REVIEW_NSID) {
     const draft = parseAtstoreReview({
       uri,
@@ -622,7 +632,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log(`[indexer] upsert community app ${uri}`);
+    console.log("[indexer] upsert community app %s", uri);
   }
 }
 
@@ -634,7 +644,7 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markHostProtocolRecordDeleted(uri);
-    console.log(`[indexer] deleted host record ${uri}`);
+    console.log("[indexer] deleted host record %s", uri);
     return;
   }
 
@@ -658,9 +668,9 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
     value: fetched.value,
   });
   if (parsed) {
-    console.log(`[indexer] upsert host ${parsed.kind} ${uri}`);
+    console.log("[indexer] upsert host %s %s", parsed.kind, uri);
   } else {
-    console.warn(`[indexer] invalid host record ${uri}`);
+    console.warn("[indexer] invalid host record %s", uri);
   }
 }
 
@@ -697,7 +707,7 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
       await handleAppDirectoryEvent(event);
     }
   } catch (err) {
-    console.error(`[indexer] handler error for ${collection}:`, err);
+    console.error("[indexer] handler error for %s:", collection, err);
     throw err;
   }
 }
@@ -724,7 +734,7 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   const cursor = await getJetstreamCursor();
   const url = buildJetstreamUrl(cursor);
   if (logConnectionLifecycle) {
-    console.log(`[indexer] connecting as ${workerId} to ${url}`);
+    console.log("[indexer] connecting as %s to %s", workerId, url);
   }
 
   const ws = new WebSocket(url);
@@ -837,7 +847,7 @@ async function main(): Promise<void> {
     } catch (err) {
       if (shuttingDown) break;
       if (err instanceof LeaseUnavailableError) {
-        console.warn(`[indexer] ${err.message}; retrying soon`);
+        console.warn("[indexer] %s; retrying soon", err.message);
         consecutiveFailures = 0;
       } else if (err instanceof JetstreamDisconnectError) {
         consecutiveFailures = nextReconnectFailureCount({
@@ -857,8 +867,8 @@ async function main(): Promise<void> {
           const message = `[indexer] Jetstream disconnected reason=${
             jetstreamDisconnectReason(err.message)
           } connection_ms=${err.connectedForMs} consecutive_failures=${consecutiveFailures} reconnect_delay_ms=${retryDelayMs} suppressed_reconnects=${suppressedReconnects}`;
-          if (decision.level === "error") console.error(message);
-          else console.info(message);
+          if (decision.level === "error") console.error("%s", message);
+          else console.info("%s", message);
           lastReconnectLoggedAt = now;
           suppressedReconnects = 0;
         } else {

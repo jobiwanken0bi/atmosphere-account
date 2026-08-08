@@ -34,7 +34,7 @@ export function appProfilePendingKey(did: string, returnTo: string): string {
 }
 
 export function appProfileResumeProofKey(pendingKey: string): string {
-  return `atmosphere:oauth-resume-proof:app-profile:${
+  return `atmosphere:browser-resume-marker:app-profile:${
     encodeURIComponent(pendingKey)
   }`;
 }

@@ -26,9 +26,9 @@ import {
 } from "../lib/reauth-required.ts";
 import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
 import {
-  isValidOauthResumeProof,
-  oauthResumeProofValue,
-} from "../lib/oauth-resume-proof.ts";
+  browserResumeMarkerValue,
+  isFreshBrowserResumeMarker,
+} from "../lib/browser-resume-marker.ts";
 import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
 
 interface Props {
@@ -185,7 +185,7 @@ export default function HostProfileSaveButton(
     }
     if (
       !resume.shouldResume ||
-      !isValidOauthResumeProof(proof, did, pendingKey)
+      !isFreshBrowserResumeMarker(proof)
     ) {
       // Clear an abandoned draft on a later ordinary visit as well as forged
       // or malformed return markers.
@@ -247,7 +247,7 @@ export default function HostProfileSaveButton(
           rememberedAccounts={rememberedAccounts}
           restrictToCurrentAccount
           onAuthorizationStart={() => {
-            armHostProfileResume(resumeProofKey, did, pendingKey);
+            armHostProfileResume(resumeProofKey);
           }}
           onClose={() => {
             reauthorization.value = null;
@@ -290,15 +290,10 @@ export async function cancelHostProfileReauthorization(
 
 export function armHostProfileResume(
   proofKey: string,
-  ownerDid: string,
-  pendingKey: string,
   storage: Pick<Storage, "setItem"> = globalThis.sessionStorage,
 ): boolean {
   try {
-    storage.setItem(
-      proofKey,
-      oauthResumeProofValue(ownerDid, pendingKey),
-    );
+    storage.setItem(proofKey, browserResumeMarkerValue());
     return true;
   } catch {
     return false;

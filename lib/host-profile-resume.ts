@@ -15,7 +15,7 @@ export function hostProfilePendingKey(did: string, host: string): string {
 }
 
 export function hostProfileResumeProofKey(pendingKey: string): string {
-  return `atmosphere:oauth-resume-proof:host-profile:${
+  return `atmosphere:browser-resume-marker:host-profile:${
     encodeURIComponent(pendingKey)
   }`;
 }

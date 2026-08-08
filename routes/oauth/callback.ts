@@ -402,8 +402,10 @@ export const handler = define.handlers({
       const clearBinding = clearOAuthFlowBindingCookie(state);
       if (clearBinding) headers.append("set-cookie", clearBinding);
       return new Response(null, { status: 303, headers });
-    } catch (err) {
-      console.error("[oauth] callback failed:", err);
+    } catch {
+      // Do not serialize OAuth library errors: their cause chain can include
+      // private client-key material and token exchange payloads.
+      console.error("[oauth] callback failed");
       // `completeCallback` consumes the one-time flow state. Preserve its
       // already-validated action context if later local session/bookkeeping
       // work fails, instead of dropping the person onto a generic account
