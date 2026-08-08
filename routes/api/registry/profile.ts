@@ -953,7 +953,10 @@ export const handler = define.handlers({
             { status: 400 },
           );
         }
-        console.warn("[registry] ATStore listing publish failed:", err);
+        // The OAuth/PDS error can retain private-key or token context. The
+        // public response and server log identify the operation without
+        // serializing that sensitive object.
+        console.warn("[registry] ATStore listing publish failed");
         return new Response("ATStore listing publish failed", {
           status: 502,
         });
