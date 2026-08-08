@@ -1,9 +1,11 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
+  indexerFailureLogFields,
   IndexerIdentityCache,
   jetstreamBacklogIsFull,
   jetstreamMaxPendingEvents,
 } from "./indexer.ts";
+import { PublicRecordFetchError } from "../lib/pds.ts";
 
 Deno.test("indexer backlog limit is bounded and configurable", () => {
   assertEquals(jetstreamMaxPendingEvents(undefined), 1_000);
@@ -17,6 +19,30 @@ Deno.test("indexer backlog limit rejects at the boundary", () => {
   assertEquals(jetstreamBacklogIsFull(999, 1_000), false);
   assertEquals(jetstreamBacklogIsFull(1_000, 1_000), true);
   assertEquals(jetstreamBacklogIsFull(1_001, 1_000), true);
+});
+
+Deno.test("indexer failure log fields omit upstream bodies and error messages", () => {
+  const secret = "pds-response-secret-and-url";
+  const pdsFields = indexerFailureLogFields(
+    new PublicRecordFetchError(502, secret),
+  );
+  assertEquals(pdsFields, {
+    kind: "public_record_fetch",
+    httpStatus: 502,
+  });
+  assertEquals(JSON.stringify(pdsFields).includes(secret), false);
+  assertEquals(indexerFailureLogFields(new Error(secret)), {
+    kind: "unexpected_error",
+    httpStatus: null,
+  });
+  assertEquals(indexerFailureLogFields(secret), {
+    kind: "unexpected_value",
+    httpStatus: null,
+  });
+  assertEquals(
+    indexerFailureLogFields(new PublicRecordFetchError(999, secret)),
+    { kind: "public_record_fetch", httpStatus: null },
+  );
 });
 
 Deno.test("indexer identity cache reuses one DID resolution", async () => {

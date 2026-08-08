@@ -208,11 +208,11 @@ async function main() {
   for (const profile of profiles) {
     try {
       rows.push(await migrateProfile(profile, write));
-    } catch (err) {
-      rows.push(skipped(
-        profile,
-        err instanceof Error ? err.message : String(err),
-      ));
+    } catch {
+      // Never copy exception text into the report: OAuth/session failures can
+      // carry configuration-derived details, and the report is written to the
+      // operator console below.
+      rows.push(skipped(profile, "migration failed"));
     }
   }
   printReport(rows, write);

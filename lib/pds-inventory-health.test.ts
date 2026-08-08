@@ -3,6 +3,7 @@ import {
   DEFAULT_PDS_INVENTORY_MAX_AGE_MS,
   type PdsInventoryScanRecord,
 } from "./pds-inventory-health.ts";
+import { assertEquals } from "jsr:@std/assert@1";
 
 function scan(
   overrides: Partial<PdsInventoryScanRecord> = {},
@@ -57,4 +58,18 @@ Deno.test("PDS inventory freshness expires after the configured window", () => {
   if (stale.fresh || stale.ageMs == null) {
     throw new Error("scan beyond the freshness window should be stale");
   }
+});
+
+Deno.test("PDS inventory freshness never publishes persisted scan errors", () => {
+  const persistedSecret =
+    "relay failed at postgresql://operator:secret@inventory.internal/db";
+  const result = calculatePdsInventoryFreshness({
+    complete: scan(),
+    latest: scan({ status: "failed", complete: false, error: persistedSecret }),
+    now: 3_000,
+    maxAgeMs: DEFAULT_PDS_INVENTORY_MAX_AGE_MS,
+  });
+
+  assertEquals(result.latestAttempt?.error, "inventory_scan_failed");
+  assertEquals(JSON.stringify(result).includes(persistedSecret), false);
 });

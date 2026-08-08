@@ -70,7 +70,7 @@ const PICKER_SELECTION_RATE_LIMIT = {
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("login picker page", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -104,7 +104,7 @@ export const handler = define.handlers({
 
   async POST(ctx) {
     const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("login picker selection", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -172,19 +172,18 @@ export const handler = define.handlers({
         ? browserHandoffDocument(redirectUrl)
         : browserHandoffResponse(redirectUrl, { json: wantsJson });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const status = err instanceof RequestBodyTooLargeError
-        ? 413
-        : err instanceof LoginRequestError
-        ? err.status
-        : 400;
-      return browserHandoffError(message, status, wantsJson);
+      return browserHandoffError(
+        publicLoginPickerMessage(err, true),
+        loginPickerFailureStatus(err, true),
+        wantsJson,
+      );
     }
   },
 });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(): Response {
+  // The proxy error can include the full request URL, including OAuth state.
+  console.error("[appview] login picker proxy failed");
   return new Response("Atmosphere Login is temporarily unavailable.", {
     status: 503,
     headers: {
@@ -268,9 +267,11 @@ async function handleIntentSelection(
       },
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const status = err instanceof LoginRequestError ? err.status : 400;
-    return browserHandoffError(message, status, false);
+    return browserHandoffError(
+      publicLoginPickerMessage(err),
+      loginPickerFailureStatus(err),
+      false,
+    );
   }
 }
 
@@ -367,8 +368,8 @@ async function buildPickerPageProps(
     const createAccountHosts = await listCreateAccountHostOptions({
       app,
       pageSize: 24,
-    }).catch((err) => {
-      console.warn("[login] account host discovery failed:", err);
+    }).catch(() => {
+      console.warn("[login] account host discovery failed");
       return [];
     });
     return {
@@ -387,10 +388,42 @@ async function buildPickerPageProps(
       selectPath: null,
       pickerAccounts: [],
       createAccountHosts: [],
-      error: err instanceof Error ? err.message : String(err),
-      status: err instanceof LoginRequestError ? err.status : 400,
+      error: publicLoginPickerMessage(err),
+      status: loginPickerFailureStatus(err),
     };
   }
+}
+
+const LOGIN_PICKER_FAILURE_MESSAGE =
+  "Unable to continue. Return to the app and try again.";
+
+function publicLoginPickerMessage(
+  error: unknown,
+  allowBodyTooLarge = false,
+): string {
+  return allowBodyTooLarge && error instanceof RequestBodyTooLargeError
+    ? "request body too large"
+    : LOGIN_PICKER_FAILURE_MESSAGE;
+}
+
+function loginPickerFailureStatus(
+  error: unknown,
+  allowBodyTooLarge = false,
+): number {
+  if (allowBodyTooLarge && error instanceof RequestBodyTooLargeError) {
+    return 413;
+  }
+  return error instanceof LoginRequestError ? error.status : 400;
+}
+
+export function publicLoginPickerFailureForTest(error: unknown): {
+  message: string;
+  status: number;
+} {
+  return {
+    message: publicLoginPickerMessage(error, true),
+    status: loginPickerFailureStatus(error, true),
+  };
 }
 
 async function createPickerSelectionPath(

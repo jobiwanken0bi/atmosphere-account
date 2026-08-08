@@ -16,13 +16,16 @@ import {
   hostProfileReauthorizationHref,
   managedHostAddAccountHref,
   managedHostAuthorizationHref,
+  managedHostPublishFailure,
 } from "./[host]/manage.tsx";
 import { detectedHostClaimAuthorizationHref } from "./claim.tsx";
 import {
   hostRegistrationAddAccountHref,
   hostRegistrationAuthorizationHref,
+  hostRegistrationPublishFailure,
 } from "./register.tsx";
 import { hostProfileResumePath } from "../../lib/host-profile-resume.ts";
+import { PdsBlobUploadError, PdsRecordWriteError } from "../../lib/pds.ts";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
 
@@ -213,6 +216,56 @@ Deno.test("host avatar publication adds media to the host capability", () => {
       capabilities: ["host", "media"],
     },
   );
+});
+
+Deno.test("host publishing failures never expose PDS response bodies", () => {
+  const secret = "upstream-secret-body-and-request-id";
+  const recordError = new PdsRecordWriteError(
+    "putRecord",
+    502,
+    secret,
+  );
+  const avatarError = new PdsBlobUploadError(502, secret);
+  const failures = [
+    hostRegistrationPublishFailure("avatar", avatarError),
+    hostRegistrationPublishFailure("record", recordError),
+    managedHostPublishFailure("profile", recordError),
+    managedHostPublishFailure("settings", recordError),
+    managedHostPublishFailure("avatar", avatarError),
+  ];
+
+  assertEquals(
+    failures.map((failure) => failure.message),
+    [
+      "We couldn't upload the host avatar. Try again.",
+      "We couldn't publish this host. Try again.",
+      "We couldn't publish the host profile. Try again.",
+      "We couldn't publish the host settings. Try again.",
+      "We couldn't upload the host avatar. Try again.",
+    ],
+  );
+  assertEquals(
+    failures.some((failure) => JSON.stringify(failure).includes(secret)),
+    false,
+  );
+
+  const permissionFailure = hostRegistrationPublishFailure(
+    "record",
+    new PdsRecordWriteError(
+      "putRecord",
+      403,
+      JSON.stringify({ error: "ScopeMissingError", detail: secret }),
+    ),
+  );
+  assertEquals(permissionFailure.reauthorization, true);
+  assertEquals(permissionFailure.message.includes(secret), false);
+
+  const forgedPermissionText = managedHostPublishFailure(
+    "settings",
+    new Error(`putRecord failed: HTTP 403: ${secret}`),
+  );
+  assertEquals(forgedPermissionText.reauthorization, false);
+  assertEquals(forgedPermissionText.message.includes(secret), false);
 });
 
 Deno.test("host registration account replacement keeps its registration deep link", () => {

@@ -152,7 +152,7 @@ export function readOAuthCallbackParameters(url: URL): {
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("oauth callback", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -491,8 +491,9 @@ function withClearedOAuthFlowBinding(
   return response;
 }
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(): Response {
+  // Proxy errors can include the callback URL and its code, state, and issuer.
+  console.error("[appview] OAuth callback proxy failed");
   return new Response("Sign in callback is temporarily unavailable.", {
     status: 503,
     headers: {

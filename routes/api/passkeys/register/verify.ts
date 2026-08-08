@@ -3,6 +3,7 @@ import { define } from "../../../../utils.ts";
 import { getValidSession } from "../../../../lib/oauth.ts";
 import { readPasskeyManagementTicket } from "../../../../lib/passkey-management.ts";
 import {
+  PasskeyError,
   type PasskeySummary,
   verifyPasskeyRegistration,
 } from "../../../../lib/passkeys.ts";
@@ -63,11 +64,8 @@ export const handler = define.handlers({
       });
       return json({ passkey: passkeyJson(passkey) });
     } catch (error) {
-      return json({
-        error: error instanceof Error
-          ? error.message
-          : "Passkey enrollment could not be completed.",
-      }, error instanceof RequestBodyTooLargeError ? 413 : 400);
+      const failure = publicPasskeyRegistrationFailure(error);
+      return json(failure.body, failure.status);
     }
   },
 });
@@ -85,7 +83,7 @@ async function readVerificationInput(req: Request): Promise<{
   name: string | null;
 }> {
   if (!(req.headers.get("content-type") ?? "").includes("application/json")) {
-    throw new Error("Passkey request must use JSON.");
+    throw new InvalidPasskeyRegistrationRequestError();
   }
   const value = await readJsonRequestWithLimit(req, MAX_BODY_BYTES) as
     | { ceremony?: unknown; response?: unknown; name?: unknown }
@@ -93,7 +91,7 @@ async function readVerificationInput(req: Request): Promise<{
   if (
     !value || typeof value.ceremony !== "string" || !value.response ||
     typeof value.response !== "object" || Array.isArray(value.response)
-  ) throw new Error("Invalid passkey response.");
+  ) throw new InvalidPasskeyRegistrationRequestError();
   return {
     ceremony: value.ceremony,
     response: value.response as RegistrationResponseJSON,
@@ -141,4 +139,61 @@ function json(value: unknown, status = 200): Response {
       "content-type": "application/json; charset=utf-8",
     },
   });
+}
+
+class InvalidPasskeyRegistrationRequestError extends Error {}
+
+export function publicPasskeyRegistrationFailure(
+  error: unknown,
+): PublicPasskeyFailure {
+  if (error instanceof RequestBodyTooLargeError) {
+    return passkeyFailure(
+      413,
+      "request_body_too_large",
+      "Passkey request is too large.",
+    );
+  }
+  if (error instanceof InvalidPasskeyRegistrationRequestError) {
+    return passkeyFailure(
+      400,
+      "invalid_passkey_response",
+      "Passkey response is invalid.",
+    );
+  }
+  if (error instanceof PasskeyError) {
+    if (error.code === "credential_conflict") {
+      return passkeyFailure(
+        409,
+        "passkey_already_registered",
+        "This passkey is already registered.",
+      );
+    }
+    if (error.code !== "ceremony_conflict") {
+      return passkeyFailure(
+        400,
+        "passkey_verification_failed",
+        "Passkey enrollment is invalid or expired.",
+      );
+    }
+  }
+  return passkeyFailure(
+    503,
+    "passkey_enrollment_unavailable",
+    "Passkey enrollment is temporarily unavailable.",
+    true,
+  );
+}
+
+interface PublicPasskeyFailure {
+  status: number;
+  body: { error: string; code: string; retryable: boolean };
+}
+
+function passkeyFailure(
+  status: number,
+  code: string,
+  error: string,
+  retryable = false,
+): PublicPasskeyFailure {
+  return { status, body: { error, code, retryable } };
 }

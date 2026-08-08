@@ -1,7 +1,10 @@
 import { define } from "../../../../utils.ts";
 import { getValidSession } from "../../../../lib/oauth.ts";
 import { readPasskeyManagementTicket } from "../../../../lib/passkey-management.ts";
-import { createPasskeyRegistrationOptions } from "../../../../lib/passkeys.ts";
+import {
+  createPasskeyRegistrationOptions,
+  PasskeyError,
+} from "../../../../lib/passkeys.ts";
 import { passkeyRelyingPartyForRequest } from "../../../../lib/passkey-rp.ts";
 import { passkeyAuthorizationUrl } from "../../../../lib/passkey-authorization.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
@@ -41,10 +44,8 @@ export const handler = define.handlers({
     try {
       await readJsonRequestWithLimit(ctx.req, MAX_BODY_BYTES);
     } catch (error) {
-      if (error instanceof RequestBodyTooLargeError) {
-        return json({ error: error.message }, 413);
-      }
-      return json({ error: "Invalid passkey request." }, 400);
+      const failure = publicPasskeyRegistrationOptionsFailure(error);
+      return json(failure.body, failure.status);
     }
     const oauthSession = await getValidSession(user.did, { quiet: true });
     const linkedAccount = oauthSession ?? (devAccount
@@ -70,11 +71,8 @@ export const handler = define.handlers({
         options: result.options,
       });
     } catch (error) {
-      return json({
-        error: error instanceof Error
-          ? error.message
-          : "Passkey enrollment could not start.",
-      }, 400);
+      const failure = publicPasskeyRegistrationOptionsFailure(error);
+      return json(failure.body, failure.status);
     }
   },
 });
@@ -112,4 +110,43 @@ function json(value: unknown, status = 200): Response {
       "content-type": "application/json; charset=utf-8",
     },
   });
+}
+
+export function publicPasskeyRegistrationOptionsFailure(
+  error: unknown,
+): PublicPasskeyFailure {
+  if (error instanceof RequestBodyTooLargeError) {
+    return passkeyFailure(
+      413,
+      "request_body_too_large",
+      "Passkey request is too large.",
+    );
+  }
+  if (error instanceof PasskeyError && error.code === "invalid_input") {
+    return passkeyFailure(
+      400,
+      "invalid_passkey_request",
+      "Passkey enrollment request is invalid.",
+    );
+  }
+  return passkeyFailure(
+    503,
+    "passkey_enrollment_unavailable",
+    "Passkey enrollment is temporarily unavailable.",
+    true,
+  );
+}
+
+interface PublicPasskeyFailure {
+  status: number;
+  body: { error: string; code: string; retryable: boolean };
+}
+
+function passkeyFailure(
+  status: number,
+  code: string,
+  error: string,
+  retryable = false,
+): PublicPasskeyFailure {
+  return { status, body: { error, code, retryable } };
 }

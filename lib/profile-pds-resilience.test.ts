@@ -113,15 +113,28 @@ Deno.test("transient profile reads retry once but rejected reads do not", async 
 });
 
 Deno.test("profile PDS responses preserve safe retry hints without leaking upstream bodies", async () => {
-  const response = profilePdsFailureResponse(
-    "read",
-    new PdsRecordReadError(429, "private upstream detail", "9"),
-  );
-  assertEquals(response.status, 503);
-  assertEquals(response.headers.get("retry-after"), "9");
-  assertEquals(response.headers.get("x-atmosphere-error-code"), "rate_limited");
-  assertEquals(
-    (await response.text()).includes("private upstream detail"),
-    false,
-  );
+  const logLines: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...values: unknown[]) => {
+    logLines.push(values.map(String).join(" "));
+  };
+  try {
+    const privateDetail = "OAuth_PRIVATE_JWK=private-upstream-detail";
+    const response = profilePdsFailureResponse(
+      "read",
+      new PdsRecordReadError(429, privateDetail, "9"),
+    );
+    assertEquals(response.status, 503);
+    assertEquals(response.headers.get("retry-after"), "9");
+    assertEquals(
+      response.headers.get("x-atmosphere-error-code"),
+      "rate_limited",
+    );
+    assertEquals((await response.text()).includes(privateDetail), false);
+    assertEquals(logLines.length, 1);
+    assertEquals(logLines[0], "[profile] PDS request failed");
+    assertEquals(logLines[0].includes(privateDetail), false);
+  } finally {
+    console.warn = originalWarn;
+  }
 });

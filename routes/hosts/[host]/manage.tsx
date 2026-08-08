@@ -44,6 +44,7 @@ import {
   getBskyProfile,
   isPdsScopeMissingError,
   PdsBlobUploadError,
+  PdsRecordWriteError,
   uploadBlob,
 } from "../../../lib/pds.ts";
 import {
@@ -121,7 +122,7 @@ interface HostManagePageProps {
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("host manage page", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -187,7 +188,7 @@ export const handler = define.handlers({
 
   async POST(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("host manage update", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -535,8 +536,8 @@ export const handler = define.handlers({
   },
 });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(): Response {
+  console.error("[appview] host management proxy failed");
   return new Response("Host management is temporarily unavailable.", {
     status: 503,
     headers: {
@@ -596,13 +597,7 @@ async function publishManagedHostProfile(
       serviceRecordCid: records.service.cid,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      message:
-        `Host record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
-      reauthorization: isHostAuthorizationError(err),
-    };
+    return managedHostPublishFailure("profile", err);
   }
 }
 
@@ -638,13 +633,7 @@ async function publishManagedHostService(
       serviceRecordCid: service.cid,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      message:
-        `Host service record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
-      reauthorization: isHostAuthorizationError(err),
-    };
+    return managedHostPublishFailure("settings", err);
   }
 }
 
@@ -673,20 +662,30 @@ async function uploadHostAvatar(
       }`,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      message: `Host avatar upload failed: ${message}`,
-      reauthorization: isHostAuthorizationError(err),
-    };
+    return managedHostPublishFailure("avatar", err);
   }
+}
+
+export function managedHostPublishFailure(
+  operation: "profile" | "settings" | "avatar",
+  error: unknown,
+): { ok: false; message: string; reauthorization: boolean } {
+  const message = operation === "profile"
+    ? "We couldn't publish the host profile. Try again."
+    : operation === "settings"
+    ? "We couldn't publish the host settings. Try again."
+    : "We couldn't upload the host avatar. Try again.";
+  return {
+    ok: false,
+    message,
+    reauthorization: isHostAuthorizationError(error),
+  };
 }
 
 function isHostAuthorizationError(value: unknown): boolean {
   if (isPdsScopeMissingError(value)) return true;
   if (value instanceof PdsBlobUploadError && value.status === 403) return true;
-  return value instanceof Error &&
-    /(?:ScopeMissingError|failed: HTTP 403)/i.test(value.message);
+  return value instanceof PdsRecordWriteError && value.status === 403;
 }
 
 function fileFromForm(

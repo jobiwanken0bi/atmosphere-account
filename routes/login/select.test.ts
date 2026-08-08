@@ -2,8 +2,11 @@ import type { State } from "../../utils.ts";
 import {
   pickerAccountsForStateForTest,
   pickerSelectionPathForTest,
+  publicLoginPickerFailureForTest,
   readLoginRequestFromInputForTest,
 } from "./select.tsx";
+import { LoginRequestError } from "../../lib/atmosphere-login.ts";
+import { RequestBodyTooLargeError } from "../../lib/security.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -147,4 +150,29 @@ Deno.test("login picker uses a browser-safe compact selection link", async () =>
   assertEquals([...url.searchParams.keys()], ["selection"]);
   assertEquals(url.searchParams.get("selection")?.length, 24);
   assertEquals(path.length < 80, true);
+});
+
+Deno.test("login picker never exposes caught OAuth or signing errors", () => {
+  const privateDetail =
+    "OAUTH_PRIVATE_JWK=private-key at /srv/oauth/signing.ts:42";
+  assertEquals(
+    publicLoginPickerFailureForTest(new Error(privateDetail)),
+    {
+      message: "Unable to continue. Return to the app and try again.",
+      status: 400,
+    },
+  );
+  assertEquals(
+    publicLoginPickerFailureForTest(
+      new LoginRequestError(privateDetail, 404),
+    ),
+    {
+      message: "Unable to continue. Return to the app and try again.",
+      status: 404,
+    },
+  );
+  assertEquals(
+    publicLoginPickerFailureForTest(new RequestBodyTooLargeError()),
+    { message: "request body too large", status: 413 },
+  );
 });

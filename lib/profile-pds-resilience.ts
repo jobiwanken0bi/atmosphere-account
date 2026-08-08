@@ -132,16 +132,13 @@ export function profilePdsFailureResponse(
   error: unknown,
 ): Response {
   const failure = classifyProfilePdsFailure(error, operation);
-  const detail = profilePdsLogDetail(error);
   const log = failure.code === "reconnect_required" ||
       failure.code === "rejected"
     ? console.info
     : console.warn;
-  log(
-    `[profile] PDS ${operation} failed (${failure.code}, outcome=${
-      failure.outcomeUncertain ? "uncertain" : "known"
-    }): ${detail}`,
-  );
+  // Keep exception-derived data out of logs. OAuth/session errors can retain
+  // configuration context even when their public response is already safe.
+  log("[profile] PDS request failed");
 
   const headers = new Headers({
     "cache-control": "no-store",
@@ -184,11 +181,4 @@ function safeRetryAfter(value: string | null): string | null {
   if (/^\d{1,6}$/.test(trimmed)) return trimmed;
   const parsed = Date.parse(trimmed);
   return Number.isFinite(parsed) ? new Date(parsed).toUTCString() : null;
-}
-
-function profilePdsLogDetail(error: unknown): string {
-  const http = pdsHttpError(error);
-  if (http) return `${http.name} status=${http.status}`;
-  if (error instanceof Error) return error.name;
-  return typeof error;
 }

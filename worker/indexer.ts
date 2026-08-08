@@ -262,6 +262,27 @@ export function jetstreamBacklogIsFull(
   return pendingEvents >= maxPendingEvents;
 }
 
+export interface IndexerFailureLogFields {
+  kind: "public_record_fetch" | "unexpected_error" | "unexpected_value";
+  httpStatus: number | null;
+}
+
+export function indexerFailureLogFields(
+  error: unknown,
+): IndexerFailureLogFields {
+  if (error instanceof PublicRecordFetchError) {
+    const httpStatus = Number.isInteger(error.status) &&
+        error.status >= 100 && error.status <= 599
+      ? error.status
+      : null;
+    return { kind: "public_record_fetch", httpStatus };
+  }
+  return {
+    kind: error instanceof Error ? "unexpected_error" : "unexpected_value",
+    httpStatus: null,
+  };
+}
+
 function handleFromDidDocument(
   doc: { alsoKnownAs?: string[] },
 ): string | null {
@@ -707,7 +728,13 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
       await handleAppDirectoryEvent(event);
     }
   } catch (err) {
-    console.error("[indexer] handler error for %s:", collection, err);
+    const failure = indexerFailureLogFields(err);
+    console.error(
+      "[indexer] handler failed collection=%s error_kind=%s http_status=%s",
+      COLLECTIONS.includes(collection) ? collection : "unknown",
+      failure.kind,
+      failure.httpStatus ?? "none",
+    );
     throw err;
   }
 }
@@ -789,12 +816,17 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
           if (event.time_us > processedCursor) processedCursor = event.time_us;
           if (Date.now() - lastPersistedAt > CURSOR_PERSIST_INTERVAL_MS) {
             lastPersistedAt = Date.now();
-            await setJetstreamCursor(processedCursor).catch((e) =>
-              console.warn("[indexer] cursor persist failed:", e)
+            await setJetstreamCursor(processedCursor).catch(() =>
+              console.warn("[indexer] cursor persist failed")
             );
           }
         }).catch((err) => {
-          console.error("[indexer] message error:", err);
+          const failure = indexerFailureLogFields(err);
+          console.error(
+            "[indexer] message failed error_kind=%s http_status=%s",
+            failure.kind,
+            failure.httpStatus ?? "none",
+          );
           stopWithError(err);
         }).finally(() => {
           pendingEvents--;
@@ -829,8 +861,8 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
     // Do not release the distributed lease while an event that already began
     // may still be writing. Queued events become no-ops once `stopped` is set.
     await processingQueue.catch(() => {});
-    await releaseWorkerLease(LEASE_NAME, workerId).catch((err) => {
-      console.warn("[indexer] lease release failed:", err);
+    await releaseWorkerLease(LEASE_NAME, workerId).catch(() => {
+      console.warn("[indexer] lease release failed");
     });
   }
 }
@@ -878,7 +910,12 @@ async function main(): Promise<void> {
       } else {
         consecutiveFailures = Math.min(11, consecutiveFailures + 1);
         retryDelayMs = reconnectDelayMs(consecutiveFailures);
-        console.error("[indexer]", err);
+        const failure = indexerFailureLogFields(err);
+        console.error(
+          "[indexer] worker failed error_kind=%s http_status=%s",
+          failure.kind,
+          failure.httpStatus ?? "none",
+        );
       }
     }
     if (shuttingDown) break;

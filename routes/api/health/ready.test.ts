@@ -130,3 +130,41 @@ Deno.test("appview readiness rejects non-JSON and oversized responses", async ()
     assertEquals((result.body.appview as Record<string, unknown>).ok, false);
   }
 });
+
+Deno.test("appview readiness allowlists health fields and redacts upstream errors", async () => {
+  const upstreamSecret =
+    "database failed at postgresql://operator:secret@appview.internal/db";
+  const result = await appviewReadinessForTest(
+    "https://appview.example",
+    fetchJson({
+      ok: false,
+      error: upstreamSecret,
+      detail: upstreamSecret,
+      arbitrary: upstreamSecret,
+      release: { runtime: "railway", gitSha: "abc1234" },
+      database: { ok: false, error: upstreamSecret },
+      pdsInventory: {
+        present: true,
+        fresh: false,
+        error: upstreamSecret,
+        latestAttempt: {
+          status: "failed",
+          complete: false,
+          startedAt: "2026-08-08T01:00:00.000Z",
+          completedAt: "2026-08-08T01:01:00.000Z",
+          error: upstreamSecret,
+        },
+      },
+    }),
+  );
+
+  assertEquals(result.status, 503);
+  assertEquals(result.body.error, "appview_readiness_failed");
+  assertEquals("detail" in result.body, false);
+  assertEquals("arbitrary" in result.body, false);
+  const inventory = result.body.pdsInventory as Record<string, unknown>;
+  assertEquals(inventory.error, "inventory_freshness_unavailable");
+  const latest = inventory.latestAttempt as Record<string, unknown>;
+  assertEquals(latest.error, "inventory_scan_failed");
+  assertEquals(JSON.stringify(result.body).includes(upstreamSecret), false);
+});
