@@ -185,7 +185,9 @@ function DeveloperAppsPage(
               </div>
               <div>
                 <p class="text-eyebrow">Developer apps</p>
-                <h1 class="text-section">Register apps for Atmosphere Login</h1>
+                <h1 class="text-section">
+                  Register apps for Login with Atmosphere
+                </h1>
                 <p class="text-body mt-2">
                   App registrations are owned by{" "}
                   <AtmosphereHandle handle={handle} />. Production apps must use
@@ -349,7 +351,7 @@ function DeveloperAppsPage(
                   />
                   <ReviewState
                     status="blocked"
-                    body="Apps that cannot use Atmosphere Login."
+                    body="Apps that cannot use Login with Atmosphere."
                   />
                 </section>
               </aside>

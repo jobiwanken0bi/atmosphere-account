@@ -66,13 +66,21 @@ export const handler = define.handlers({
       if (!verified.loginRequest) {
         throw new PasskeyError(
           "ceremony_invalid_or_expired",
-          "Passkey sign in was not bound to an app request.",
+          "Login with Atmosphere was not bound to an app request.",
         );
       }
 
       const request = verified.loginRequest;
       const { app, returnUri } = await resolveLoginAppForRequest(request);
-      const oauthSession = await getValidSession(verified.did, { quiet: true });
+      const remembered = await readRememberedAccountsFromHeader(
+        ctx.req.headers.get("cookie"),
+      );
+      const grantId = ctx.state.user?.did === verified.did
+        ? ctx.state.user.oauthGrantId
+        : remembered.find((account) => account.did === verified.did)?.grantId;
+      const oauthSession = grantId
+        ? await getValidSession(verified.did, { quiet: true, grantId })
+        : null;
       const devAccount = IS_DEV ? devPickerAccountForDid(verified.did) : null;
       const linkedAccount = oauthSession ?? (devAccount
         ? {
@@ -118,18 +126,17 @@ export const handler = define.handlers({
         token,
       });
 
-      const remembered = await readRememberedAccountsFromHeader(
-        ctx.req.headers.get("cookie"),
-      );
       const rememberedCookies = await addRememberedAccountCookies(remembered, {
         did: linkedAccount.did,
         handle: linkedAccount.handle,
         pdsUrl: linkedAccount.pdsUrl,
+        grantId: oauthSession?.grantId,
       });
       const sessionCookie = buildSessionCookie(
         await createSession({
           did: linkedAccount.did,
           handle: linkedAccount.handle,
+          oauthGrantId: oauthSession?.grantId,
         }),
       );
       // Replacement creation happens first, but the old SID must be revoked
@@ -156,7 +163,10 @@ export const handler = define.handlers({
 
 function untrustedOrigin(): Response {
   return json(
-    { error: "Passkeys are unavailable on this sign-in address." },
+    {
+      error:
+        "Passkeys are unavailable for Login with Atmosphere on this address.",
+    },
     403,
   );
 }
@@ -228,5 +238,8 @@ export function publicPasskeyAuthenticationFailure(
       message: "Passkey request is invalid or expired.",
     };
   }
-  return { status: 400, message: "Passkey sign in could not be completed." };
+  return {
+    status: 400,
+    message: "Login with Atmosphere could not be completed.",
+  };
 }

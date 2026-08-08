@@ -9,7 +9,7 @@ import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-    (err) => appviewUnavailable("oauth logout", err),
+    () => appviewUnavailable("oauth logout"),
   );
   if (proxied) return proxied;
 
@@ -32,8 +32,8 @@ export const handler = define.handlers({
     }),
 });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(scope: string): Response {
+  console.error(`[appview] ${scope} proxy failed`);
   return new Response("Signing out is temporarily unavailable.", {
     status: 503,
     headers: {

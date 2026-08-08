@@ -129,7 +129,7 @@ Deno.test("static server helper fails when requested kid is absent", async () =>
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS did not include key current",
+      "Login with Atmosphere JWKS did not include key current",
     );
     return;
   }
@@ -211,7 +211,7 @@ Deno.test("static server helper requires a token kid for token JWKS fetch", asyn
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login selection token did not include a kid",
+      "Login with Atmosphere selection token did not include a kid",
     );
     return;
   }
@@ -287,7 +287,7 @@ Deno.test("static server helper requires a JSON JWKS media type", async () => {
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS response was not JSON",
+      "Login with Atmosphere JWKS response was not JSON",
     );
     return;
   }
@@ -309,7 +309,7 @@ Deno.test("static server helper bounds streamed JWKS bodies", async () => {
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS response was too large",
+      "Login with Atmosphere JWKS response was too large",
     );
     return;
   }
@@ -328,7 +328,7 @@ Deno.test("static server helper times out a stalled JWKS body", async () => {
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS request timed out",
+      "Login with Atmosphere JWKS request timed out",
     );
     return;
   }

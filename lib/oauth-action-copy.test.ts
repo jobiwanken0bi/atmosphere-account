@@ -23,19 +23,22 @@ Deno.test("every OAuth action has concise shared chooser copy", () => {
 
 Deno.test("ordinary actions name the task without permission jargon", () => {
   const review = authActionCopy("review", "Grain");
-  assertEquals(review.title, "Sign in to review Grain");
+  assertEquals(review.title, "Login with Atmosphere");
   assertEquals(
     review.signInBody,
-    "Choose the account that will publish your review.",
+    "Choose the account that will publish your review of Grain.",
   );
 
   const like = authActionCopy("favorite", "Grain");
-  assertEquals(like.title, "Sign in to like Grain");
-  assertEquals(like.signInBody, "Choose the account you want to use.");
+  assertEquals(like.title, "Login with Atmosphere");
+  assertEquals(
+    like.signInBody,
+    "Choose the account you want to use to like Grain.",
+  );
   assertStringIncludes(like.upgradeBody("alice.example"), "like Grain");
 
   const report = authActionCopy("report_review", "Grain");
-  assertEquals(report.title, "Sign in to report this review");
+  assertEquals(report.title, "Login with Atmosphere");
   assertStringIncludes(report.signInBody, "review of Grain");
 
   const relationship = authActionCopy(
@@ -94,7 +97,7 @@ Deno.test("host claim and passkey copy match their actual account choice", () =>
   const hostClaim = authActionCopy("host_claim", "Example Host");
   assertEquals(
     hostClaim.signInBody,
-    "Choose the account that should manage this account host.",
+    "Choose the account that should manage Example Host.",
   );
   assertEquals(hostClaim.signInBody.includes("hosted there"), false);
 

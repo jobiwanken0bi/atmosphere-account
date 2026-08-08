@@ -198,11 +198,16 @@ const FEATURED_CANDIDATE_LIMIT = 18;
 const FEATURED_ROTATION_MS = 1000 * 60 * 60 * 12;
 const SEARCH_CACHE_TTL_MS = 2 * 60 * 1000;
 const SEARCH_CACHE_MAX_ENTRIES = 80;
+const SEARCH_TOTAL_CACHE_MAX_ENTRIES = 80;
 const TAG_SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const searchCache = new Map<
   string,
   { expiresAt: number; result: AppSearchResult }
+>();
+const searchTotalCache = new Map<
+  string,
+  { expiresAt: number; total: number }
 >();
 
 let tagSummaryCache:
@@ -215,6 +220,7 @@ let tagSummaryCache:
 
 export function clearAppDirectorySearchCache(): void {
   searchCache.clear();
+  searchTotalCache.clear();
   tagSummaryCache = null;
 }
 
@@ -258,6 +264,8 @@ function cachedSearchResult(key: string, now = Date.now()) {
     searchCache.delete(key);
     return null;
   }
+  searchCache.delete(key);
+  searchCache.set(key, cached);
   return cached.result;
 }
 
@@ -266,12 +274,54 @@ function rememberSearchResult(
   result: AppSearchResult,
   now = Date.now(),
 ): AppSearchResult {
-  if (searchCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
+  if (searchCache.has(key)) searchCache.delete(key);
+  while (searchCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
     const oldestKey = searchCache.keys().next().value;
-    if (oldestKey) searchCache.delete(oldestKey);
+    if (!oldestKey) break;
+    searchCache.delete(oldestKey);
   }
   searchCache.set(key, { expiresAt: now + SEARCH_CACHE_TTL_MS, result });
   return result;
+}
+
+function searchTotalCacheKey(input: {
+  query?: string;
+  tag?: string | string[];
+}): string {
+  return JSON.stringify({
+    q: trimSearchQuery(input.query),
+    tag: normalizeSearchTags(input.tag),
+  });
+}
+
+function cachedSearchTotal(key: string, now = Date.now()): number | null {
+  const cached = searchTotalCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= now) {
+    searchTotalCache.delete(key);
+    return null;
+  }
+  searchTotalCache.delete(key);
+  searchTotalCache.set(key, cached);
+  return cached.total;
+}
+
+function rememberSearchTotal(
+  key: string,
+  total: number,
+  now = Date.now(),
+): number {
+  if (searchTotalCache.has(key)) searchTotalCache.delete(key);
+  while (searchTotalCache.size >= SEARCH_TOTAL_CACHE_MAX_ENTRIES) {
+    const oldestKey = searchTotalCache.keys().next().value;
+    if (!oldestKey) break;
+    searchTotalCache.delete(oldestKey);
+  }
+  searchTotalCache.set(key, {
+    expiresAt: now + SEARCH_CACHE_TTL_MS,
+    total,
+  });
+  return total;
 }
 
 function safeJson<T>(value: string | null | undefined, fallback: T): T {
@@ -1753,7 +1803,9 @@ export async function searchAppDirectory(input: {
   }
   const { clause, args } = appWhere(input.query, input.tag);
   const result = await withDb(async (c) => {
-    const countPromise = includeTotal
+    const totalCacheKey = searchTotalCacheKey(input);
+    const cachedTotal = includeTotal ? cachedSearchTotal(totalCacheKey) : null;
+    const countPromise = includeTotal && cachedTotal == null
       ? c.execute({
         sql: `
           SELECT COUNT(*) AS n
@@ -1800,7 +1852,12 @@ export async function searchAppDirectory(input: {
       trending,
       fresh,
       total: includeTotal
-        ? Number((count.rows[0] as Record<string, unknown> | undefined)?.n ?? 0)
+        ? cachedTotal ?? rememberSearchTotal(
+          totalCacheKey,
+          Number(
+            (count.rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
+          ),
+        )
         : rows.rows.length,
       page,
       pageSize,

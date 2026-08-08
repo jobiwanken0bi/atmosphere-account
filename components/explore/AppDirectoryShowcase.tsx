@@ -100,6 +100,7 @@ export function FreshAppCard(
     <a
       class={`glass app-fresh-card${compact ? " app-fresh-card--compact" : ""}`}
       href={appHref(app)}
+      data-page-prefetch="intent"
       aria-label={`View ${app.name}`}
     >
       <span class="app-fresh-media" aria-hidden="true">
@@ -187,7 +188,11 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
             <p class="text-eyebrow">Featured</p>
             <h2 class="text-subsection">Start with something good</h2>
           </div>
-          <a class="app-section-link" href="/apps/all?sort=trending">
+          <a
+            class="app-section-link"
+            href="/apps/all?sort=trending"
+            data-page-prefetch="intent"
+          >
             See all
           </a>
         </div>
@@ -197,6 +202,7 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
               leadBannerUrl ? " app-spotlight-card--banner" : ""
             }`}
             href={appHref(lead)}
+            data-page-prefetch="intent"
           >
             <div class="app-spotlight-copy">
               {leadBannerUrl
@@ -333,6 +339,7 @@ export function AppCategoryGrid({ tags }: { tags: AppTagSummary[] }) {
             }`}
             href={appCollectionHref(item.tag)}
             key={item.tag}
+            data-page-prefetch="intent"
           >
             <span class="app-category-icon" aria-hidden="true">
               <ContentVisualIcon
@@ -366,7 +373,11 @@ export function AppCategoryTiles(
             <p class="text-eyebrow">Collections</p>
             <h2 class="text-subsection">Find apps by what they do</h2>
           </div>
-          <a class="app-section-link" href={seeAllHref}>
+          <a
+            class="app-section-link"
+            href={seeAllHref}
+            data-page-prefetch="intent"
+          >
             See all
           </a>
         </div>
@@ -390,7 +401,11 @@ export function AppDiscoverySplit(
                 <p class="text-eyebrow">Popular right now</p>
                 <h2 class="text-subsection">Trending across the Atmosphere</h2>
               </div>
-              <a class="app-section-link" href="/apps/all?sort=trending">
+              <a
+                class="app-section-link"
+                href="/apps/all?sort=trending"
+                data-page-prefetch="intent"
+              >
                 See all
               </a>
             </div>
@@ -409,6 +424,7 @@ export function AppDiscoverySplit(
                     class="glass app-ranked-row"
                     href={appHref(app)}
                     key={app.id}
+                    data-page-prefetch="intent"
                   >
                     <span class="app-ranked-index">
                       {String(index + 1).padStart(2, "0")}
@@ -459,7 +475,11 @@ export function AppDiscoverySplit(
                 <p class="text-eyebrow">New and noteworthy</p>
                 <h2 class="text-subsection">Fresh apps just added</h2>
               </div>
-              <a class="app-section-link" href="/apps/all?sort=newest">
+              <a
+                class="app-section-link"
+                href="/apps/all?sort=newest"
+                data-page-prefetch="intent"
+              >
                 See all
               </a>
             </div>

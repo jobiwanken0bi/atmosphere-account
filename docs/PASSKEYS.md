@@ -1,7 +1,7 @@
-# Passkeys in Atmosphere Login
+# Passkeys in Login with Atmosphere
 
 This document is the design and security contract for passkey-assisted account
-selection in Atmosphere Login.
+selection in Login with Atmosphere.
 
 ## Decision
 
@@ -14,7 +14,7 @@ The supported flow is:
 
 ```text
 relying app
-  -> Atmosphere Login picker
+  -> Login with Atmosphere picker
   -> Atmosphere passkey assertion
   -> short-lived account-selection token
   -> relying app verifies the selection
@@ -31,7 +31,7 @@ still belong to the PDS/entryway authorization server.
 
 There are three distinct relying relationships:
 
-1. The user authenticates to Atmosphere Login with a WebAuthn credential.
+1. The user authenticates to Login with Atmosphere with a WebAuthn credential.
 2. Atmosphere gives the relying app a signed, audience-bound account-selection
    token.
 3. The app obtains its own OAuth grant from the account's authoritative

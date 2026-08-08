@@ -118,7 +118,7 @@ function authError(
   const redirectUrl = account ? managementReauthUrl(account) : null;
   return json({
     error: status === 401
-      ? "Sign in with your account host to manage passkeys."
+      ? "Use Login with Atmosphere through your account host to manage passkeys."
       : "Reconfirm with your account host to change passkeys.",
     ...(redirectUrl ? { redirectUrl } : {}),
   }, status);

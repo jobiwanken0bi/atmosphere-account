@@ -67,7 +67,9 @@ export default function PasskeyLogin(
         typeof optionsPayload.ceremony !== "string" ||
         !isJsonObject(optionsPayload.options)
       ) {
-        throw new Error("Passkey sign in returned an invalid response.");
+        throw new Error(
+          "Login with Atmosphere returned an invalid passkey response.",
+        );
       }
 
       const credential = await startAuthentication({
@@ -95,7 +97,9 @@ export default function PasskeyLogin(
         globalThis.location.href,
       );
       if (!destination) {
-        throw new Error("Passkey sign in did not return a destination.");
+        throw new Error(
+          "Login with Atmosphere did not return a destination.",
+        );
       }
 
       globalThis.location.assign(destination);
@@ -166,7 +170,7 @@ function apiError(
     ? payload.error
     : typeof payload.message === "string"
     ? payload.message
-    : "Passkey sign in could not be completed.";
+    : "Login with Atmosphere could not be completed.";
   const responseRecoveryUrl = safeBrowserNavigationUrl(
     payload.redirectUrl,
     globalThis.location.href,
@@ -204,7 +208,8 @@ function friendlyPasskeyError(
     }
     if (error.name === "SecurityError") {
       return {
-        message: "Passkeys are not available on this sign-in address.",
+        message:
+          "Passkeys are not available for Login with Atmosphere on this address.",
         recoveryUrl: null,
       };
     }
@@ -212,7 +217,7 @@ function friendlyPasskeyError(
   return {
     message: error instanceof Error
       ? error.message
-      : "Passkey sign in could not be completed.",
+      : "Login with Atmosphere could not be completed.",
     recoveryUrl: null,
   };
 }

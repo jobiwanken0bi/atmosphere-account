@@ -160,7 +160,7 @@ export default function PasskeyManager(
         ...current.filter((item) => item.credentialId !== passkey.credentialId),
       ]);
       setPasskeyName("");
-      setSuccess("Passkey added. You can now use it in universal sign in.");
+      setSuccess("Passkey added. You can now use it in Login with Atmosphere.");
     } catch (error) {
       applyError(error);
     } finally {
@@ -207,7 +207,7 @@ export default function PasskeyManager(
     <div class="passkey-manager">
       <div class="passkey-manager-intro">
         <div>
-          <p class="text-eyebrow">Universal sign in</p>
+          <p class="text-eyebrow">Login with Atmosphere</p>
           <strong>Passkey settings</strong>
         </div>
       </div>

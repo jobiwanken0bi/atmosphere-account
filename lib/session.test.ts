@@ -1,4 +1,7 @@
-import { shouldHydrateAccountDetails } from "./session.ts";
+import {
+  bindAppSessionGrantForClient,
+  shouldHydrateAccountDetails,
+} from "./session.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -40,4 +43,49 @@ Deno.test("session details fully hydrate inside the appview origin", () => {
 
 Deno.test("session details keep full hydration for dev-only local helpers", () => {
   assertEquals(shouldHydrateAccountDetails("/dev/account-demo", true), true);
+});
+
+Deno.test("app sessions bind only grants owned by the same DID", async () => {
+  const calls: Array<{ sql: string; args: unknown[] }> = [];
+  await bindAppSessionGrantForClient(
+    {
+      execute(query) {
+        calls.push(query);
+        return Promise.resolve({ rowsAffected: 1 });
+      },
+    },
+    "session-a",
+    {
+      did: "did:plc:alice",
+      oauthGrantId: "grant-a",
+    },
+  );
+  assertEquals(calls.length, 1);
+  assertEquals(
+    calls[0].sql.includes("WHERE grant_id = ? AND did = ?"),
+    true,
+  );
+  assertEquals(
+    JSON.stringify(calls[0].args),
+    JSON.stringify(["session-a", "grant-a", "did:plc:alice"]),
+  );
+});
+
+Deno.test("app session binding fails closed when the grant is absent", async () => {
+  let failed = false;
+  try {
+    await bindAppSessionGrantForClient(
+      {
+        execute: () => Promise.resolve({ rowsAffected: 0 }),
+      },
+      "session-a",
+      {
+        did: "did:plc:alice",
+        oauthGrantId: "grant-other",
+      },
+    );
+  } catch {
+    failed = true;
+  }
+  assertEquals(failed, true);
 });

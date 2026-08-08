@@ -34,11 +34,10 @@ const en = {
     protocol: "Protocol",
     account: {
       menuLabel: "Account menu",
-      signedInAs: "Signed in as",
-      signedOut: "Signed out",
-      signIn: "Sign in",
-      signInHint:
-        "Sign in with your Atmosphere account to publish an app listing.",
+      signedInAs: "Current account",
+      signedOut: "No account selected",
+      signIn: "Login with Atmosphere",
+      signInHint: "Use Login with Atmosphere to publish an app listing.",
       hostedBy: (host: string): string => `Hosted by ${host}`,
       manageAccount: "Manage account",
       managedProducts: "Managed products",
@@ -53,7 +52,7 @@ const en = {
       addAccount: "Add another account",
       forget: "Forget",
       forgetConfirm: (handle: string): string =>
-        `Forget @${handle} on this device? You’ll need to sign in again to switch back.`,
+        `Forget @${handle} on this device? You’ll need to use Login with Atmosphere again to switch back.`,
     },
   },
 
@@ -80,17 +79,17 @@ const en = {
       ),
       (): VNode => (
         <>
-          Already use Bluesky, Blacksky, Spark, Tangled, or another AT Protocol
-          service? <strong>You already have an Atmosphere account.</strong>{" "}
-          You don’t need to create anything here; use that same account across
-          compatible Atmosphere apps.
+          Your <strong>Atmosphere Account</strong>{" "}
+          is your passport to this entire ecosystem. One account unlocks every
+          app — no more creating new logins, no more losing your stuff when you
+          switch. Sign in once, and you’re home everywhere.
         </>
       ),
       (): VNode => (
         <>
           The Atmosphere isn’t owned or controlled by any single big-tech
-          company. This isn’t just another “Sign in with Google”, it’s an{" "}
-          <strong>open social web</strong>.
+          company. This isn’t just another “Sign in with Google”,{" "}
+          <strong>it’s an open social internet</strong>.
         </>
       ),
     ],
@@ -113,7 +112,7 @@ const en = {
   onePlace: {
     heading: "Everything in one place.",
     body:
-      "All your stuff — from every Atmosphere app you use — lives in your one Atmosphere account. Sign in anywhere, pick up right where you left off.",
+      "All your stuff — from every Atmosphere app you use — lives in your one Atmosphere account. Use Login with Atmosphere anywhere and pick up right where you left off.",
     examplesLabel:
       "A few examples — there’s no fixed list. New apps bring new kinds of data, all in one place.",
     items: [
@@ -175,8 +174,8 @@ const en = {
         <>
           Apps such as Bluesky {blueskyLink}{" "}
           are also account hosts. When you sign up, they create an account for
-          you and host your data. Some apps are only apps: you sign in with an
-          account hosted somewhere else.
+          you and host your data. Some apps are only apps: use Login with
+          Atmosphere with an account hosted somewhere else.
         </>
       ),
       blueskyAriaLabel: "Bluesky website",
@@ -197,7 +196,7 @@ const en = {
       eyebrow: "Your handle travels with you",
       body:
         "By default, your handle ends with your account host, like @you.bsky.social or @you.sprk.so. If you have your own domain, you can use that instead, like @you.com.",
-      demoButton: "Continue with Atmosphere",
+      demoButton: "Login with Atmosphere",
       demoAriaLabel:
         "Animated examples of handles on different account hosts and a custom domain",
       examples: [
@@ -381,12 +380,12 @@ const en = {
   developerResources: {
     heading: "For developers.",
     intro:
-      "Building an Atmosphere app? Let your users know they can sign in with their Atmosphere account.",
-    badgeAlt: "Sign in with your Atmosphere Account",
+      "Building an Atmosphere app? Add Login with Atmosphere so people can use their existing account.",
+    badgeAlt: "Login with Atmosphere",
     downloadBadge: "Download badge (SVG)",
     downloadLogo: "Download logo (SVG)",
     badgeFootnote:
-      "Add this badge to your sign-in page to help users understand the Atmosphere.",
+      "Add this badge to your login page to help people recognize Login with Atmosphere.",
     lottieHeading: "Atmosphere Lottie animation",
     lottieIntro:
       "The original Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
@@ -395,7 +394,7 @@ const en = {
     icons: {
       heading: "Project SVG icons",
       intro:
-        "Current verified project icons for developers building sign-in flows, app showcases, and directory experiences. This list follows profile updates automatically.",
+        "Current verified project icons for developers building Login with Atmosphere flows, app showcases, and directory experiences. This list follows profile updates automatically.",
       searchLabel: "Search icons",
       searchPlaceholder: "Search by project or handle",
       downloadZip: "Download all SVGs (ZIP)",
@@ -419,7 +418,7 @@ const en = {
     api: {
       heading: "Profile API",
       intro:
-        "Pull registry profiles into your app — sign-in flows, discovery, info pages. All endpoints are public, JSON, and cached at the edge. Soft-rate-limited at ~60 requests per minute per IP.",
+        "Pull registry profiles into your app — Login with Atmosphere flows, discovery, info pages. All endpoints are public, JSON, and cached at the edge. Soft-rate-limited at ~60 requests per minute per IP.",
       tabs: {
         profile: "By handle / DID",
         search: "Search",
@@ -509,7 +508,7 @@ const en = {
           method: "GET",
           path: "/api/registry/icon/:did",
           summary:
-            "Optional vector icon (SVG) provided by the project for developer use — sign-in badges, app showcases, programmatic listings. Sanitised on upload and served with strict CSP + nosniff so it’s safe to embed via <img src>. Returns 404 when the project hasn’t supplied an icon.",
+            "Optional vector icon (SVG) provided by the project for developer use — Login with Atmosphere badges, app showcases, programmatic listings. Sanitised on upload and served with strict CSP + nosniff so it’s safe to embed via <img src>. Returns 404 when the project hasn’t supplied an icon.",
           cache: "public, max-age=3600, s-maxage=86400",
         },
       },
@@ -650,7 +649,7 @@ const en = {
       headline: "Register an app",
       signInLabel: "Atmosphere handle",
       handlePlaceholder: "yourhandle.com",
-      signIn: "Sign in",
+      signIn: "Login with Atmosphere",
       configError:
         "OAuth isn’t configured on this deployment yet. Try again shortly.",
       previewLoading: "Looking up account…",
@@ -1079,7 +1078,7 @@ const en = {
     composer: {
       heading: "Write a review",
       modalBody: "Rate this app and add a short note for other people.",
-      signedOut: "Sign in to rate and review this app.",
+      signedOut: "Login with Atmosphere to rate and review this app.",
       ownerNote: "You can’t review your own app.",
       ratingLabel: "Rating",
       bodyLabel: "Review (optional)",
@@ -1090,7 +1089,7 @@ const en = {
       update: "Update review",
       submitting: "Saving…",
       delete: "Delete review",
-      signIn: "Sign in",
+      signIn: "Login with Atmosphere",
       cancel: "Cancel",
       saved: "Review saved.",
       deleted: "Review deleted.",
@@ -1111,7 +1110,7 @@ const en = {
       like: {
         like: "Like",
         unlike: "Unlike this app",
-        signIn: "Sign in to like this app",
+        signIn: "Login with Atmosphere to like this app",
         cancel: "Cancel",
         error: "Couldn’t update your like. Please try again.",
         countOne: "{count} like",
@@ -1164,12 +1163,14 @@ const en = {
 
   oauth: {
     errors: {
-      generic: "Something went wrong with the sign-in flow. Please try again.",
+      generic:
+        "Something went wrong with Login with Atmosphere. Please try again.",
       handleUnknown:
         "We couldn’t resolve that handle. Check the spelling and try again.",
       asUnreachable:
         "Your account’s authorization server is unreachable right now.",
-      sessionExpired: "Your session has expired. Please sign in again.",
+      sessionExpired:
+        "Your session has expired. Please use Login with Atmosphere again.",
     },
   },
 } as const;

@@ -320,8 +320,8 @@ async function withTimeout<T>(
 
 async function handle(ctx: { req: Request }): Promise<Response> {
   const url = new URL(ctx.req.url);
-  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch((err) =>
-    appviewUnavailable("oauth switch", err)
+  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch(() =>
+    appviewUnavailable("oauth switch")
   );
   if (proxied) return proxied;
 
@@ -400,8 +400,8 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     // failure must not sign the person out of the account they already had.
     try {
       await destroySession(ctx.req);
-    } catch (error) {
-      return appviewUnavailable("oauth switch session rotation", error);
+    } catch {
+      return appviewUnavailable("oauth switch session rotation");
     }
     return browserHandoffResponse(next ?? "/account", {
       json: wantsJson,
@@ -414,7 +414,12 @@ async function handle(ctx: { req: Request }): Promise<Response> {
    *  unreachable) bounce to /oauth/login with a login_hint so the
    *  user gets a one-step re-auth instead of a confusing error. */
   const oauthSession = await withTimeout(
-    getValidSession(did, { quiet: true }).catch(() => null),
+    (target.grantId
+      ? getValidSession(did, {
+        quiet: true,
+        grantId: target.grantId,
+      })
+      : Promise.resolve(null)).catch(() => null),
     SWITCH_SESSION_TIMEOUT_MS,
   );
   if (!oauthSession) {
@@ -450,13 +455,14 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   const cookieValue = await createSession({
     did: oauthSession.did,
     handle: oauthSession.handle,
+    oauthGrantId: oauthSession.grantId,
   });
   /** Drop the previous app session row only after its replacement exists.
    *  The response cookie points at the new row. */
   try {
     await destroySession(ctx.req);
-  } catch (error) {
-    return appviewUnavailable("oauth switch session rotation", error);
+  } catch {
+    return appviewUnavailable("oauth switch session rotation");
   }
   const accountType = await getEffectiveAccountType(oauthSession.did).catch(
     () => null,
@@ -480,8 +486,8 @@ async function handle(ctx: { req: Request }): Promise<Response> {
 
 export const handler = define.handlers({ POST: handle });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(scope: string): Response {
+  console.error(`[appview] ${scope} proxy failed`);
   return new Response("Account switching is temporarily unavailable.", {
     status: 503,
     headers: {

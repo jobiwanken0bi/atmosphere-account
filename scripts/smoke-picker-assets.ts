@@ -255,7 +255,7 @@ export async function main(): Promise<void> {
   assertContains(pickerHtml, ">Atmosphere</span>", "picker HTML");
   assertNotContains(
     pickerHtml,
-    "Continue with Atmosphere...",
+    "Login with Atmosphere...",
     "picker HTML",
   );
   assertContains(pickerHtml, "SignInForm", "picker island boot script");

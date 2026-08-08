@@ -13,10 +13,13 @@ import { readRememberedAccounts } from "./remembered-accounts.ts";
 import { getEffectiveAccountType } from "./account-types.ts";
 import { lookupAccountHost, lookupAccountHostHint } from "./account-hosts.ts";
 import { loadSession } from "./oauth.ts";
+import { withOAuthGrantContext } from "./oauth-grant-context.ts";
 
 export interface SessionUser {
   did: string;
   handle: string;
+  oauthGrantId?: string | null;
+  appSessionId?: string;
 }
 
 const SESSION_COOKIE = "atmo_sid";
@@ -45,9 +48,41 @@ export async function createSession(user: SessionUser): Promise<string> {
         `INSERT INTO app_session (id, did, handle, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
       args: [sid, user.did, user.handle, Date.now(), expiresAt],
     });
+    if (user.oauthGrantId) {
+      try {
+        await bindAppSessionGrantForClient(c, sid, user);
+      } catch (error) {
+        await c.execute({
+          sql: `DELETE FROM app_session WHERE id = ?`,
+          args: [sid],
+        }).catch(() => {});
+        throw error;
+      }
+    }
   });
   const sig = await hmacSign(sessionSecret(), sid);
   return `${sid}.${sig}`;
+}
+
+export async function bindAppSessionGrantForClient(
+  c: {
+    execute: (query: { sql: string; args: unknown[] }) => Promise<{
+      rowsAffected?: number | bigint;
+    }>;
+  },
+  sessionId: string,
+  user: Pick<SessionUser, "did" | "oauthGrantId">,
+): Promise<void> {
+  if (!user.oauthGrantId) return;
+  const binding = await c.execute({
+    sql: `INSERT INTO app_session_grant (session_id, grant_id)
+      SELECT ?, grant_id FROM oauth_grant
+      WHERE grant_id = ? AND did = ?`,
+    args: [sessionId, user.oauthGrantId, user.did],
+  });
+  if (Number(binding.rowsAffected ?? 0) !== 1) {
+    throw new Error("OAuth grant does not belong to the app session");
+  }
 }
 
 /**
@@ -73,19 +108,37 @@ async function readSessionCookie(req: Request): Promise<SessionUser | null> {
 
   return await withDb(async (c) => {
     const r = await c.execute({
-      sql: `SELECT did, handle, expires_at FROM app_session WHERE id = ?`,
+      sql: `SELECT s.did, s.handle, s.expires_at, g.grant_id
+        FROM app_session s
+        LEFT JOIN app_session_grant g ON g.session_id = s.id
+        WHERE s.id = ?`,
       args: [sid],
     });
     if (r.rows.length === 0) return null;
     const row = r.rows[0] as Record<string, unknown>;
     if (Number(row.expires_at) < Date.now()) {
       await c.execute({
+        sql: `DELETE FROM app_session_grant WHERE session_id = ?`,
+        args: [sid],
+      });
+      await c.execute({
         sql: `DELETE FROM app_session WHERE id = ?`,
         args: [sid],
       });
       return null;
     }
-    return { did: String(row.did), handle: String(row.handle) };
+    const user: SessionUser = {
+      did: String(row.did),
+      handle: String(row.handle),
+    };
+    Object.defineProperties(user, {
+      oauthGrantId: {
+        value: typeof row.grant_id === "string" ? row.grant_id : null,
+        enumerable: false,
+      },
+      appSessionId: { value: sid, enumerable: false },
+    });
+    return user;
   });
 }
 
@@ -97,6 +150,10 @@ export async function destroySession(req: Request): Promise<void> {
   const ok = await hmacVerify(sessionSecret(), sid, sig);
   if (!ok) return;
   await withDb(async (c) => {
+    await c.execute({
+      sql: `DELETE FROM app_session_grant WHERE session_id = ?`,
+      args: [sid],
+    });
     await c.execute({
       sql: `DELETE FROM app_session WHERE id = ?`,
       args: [sid],
@@ -164,45 +221,61 @@ export const sessionMiddleware = define.middleware(async (ctx) => {
   );
   try {
     ctx.state.user = await readSessionCookie(ctx.req);
-    const rememberedAccounts = await rememberedAccountsPromise;
-    ctx.state.rememberedAccounts = rememberedAccounts;
-
-    if (
-      ctx.state.user &&
-      shouldHydrateAccountDetails(
-        ctx.url.pathname,
-        isAppviewConfigured(),
-        isAppviewOrigin(ctx.url.origin),
-      )
-    ) {
-      const accountTypePromise = getEffectiveAccountType(ctx.state.user.did)
-        .catch(() => null);
-      const accountHostPromise = loadSession(ctx.state.user.did)
-        .then((oauthSession) =>
-          oauthSession ? lookupAccountHost(oauthSession.pdsUrl) : null
-        )
-        .catch(() => null);
-      const [accountType, accountHost] = await Promise.all([
-        accountTypePromise,
-        accountHostPromise,
-      ]);
-      ctx.state.accountType = accountType;
-      ctx.state.accountHost = accountHost;
-    } else {
-      const remembered = ctx.state.user
-        ? rememberedAccounts.find((account) =>
-          account.did === ctx.state.user?.did
-        )
-        : null;
-      ctx.state.accountType = null;
-      ctx.state.accountHost = lookupAccountHostHint(remembered?.pdsUrl);
-    }
   } catch (err) {
     if (IS_DEV) console.warn("session read failed:", err);
     ctx.state.user = null;
-    ctx.state.accountType = null;
-    ctx.state.accountHost = null;
-    ctx.state.rememberedAccounts = await rememberedAccountsPromise;
   }
-  return await ctx.next();
+
+  const run = async () => {
+    try {
+      const rememberedAccounts = await rememberedAccountsPromise;
+      ctx.state.rememberedAccounts = rememberedAccounts;
+
+      if (
+        ctx.state.user &&
+        shouldHydrateAccountDetails(
+          ctx.url.pathname,
+          isAppviewConfigured(),
+          isAppviewOrigin(ctx.url.origin),
+        )
+      ) {
+        const accountTypePromise = getEffectiveAccountType(ctx.state.user.did)
+          .catch(() => null);
+        const accountHostPromise = loadSession(ctx.state.user.did)
+          .then((oauthSession) =>
+            oauthSession ? lookupAccountHost(oauthSession.pdsUrl) : null
+          )
+          .catch(() => null);
+        const [accountType, accountHost] = await Promise.all([
+          accountTypePromise,
+          accountHostPromise,
+        ]);
+        ctx.state.accountType = accountType;
+        ctx.state.accountHost = accountHost;
+      } else {
+        const remembered = ctx.state.user
+          ? rememberedAccounts.find((account) =>
+            account.did === ctx.state.user?.did
+          )
+          : null;
+        ctx.state.accountType = null;
+        ctx.state.accountHost = lookupAccountHostHint(remembered?.pdsUrl);
+      }
+    } catch (err) {
+      if (IS_DEV) console.warn("session hydration failed:", err);
+      ctx.state.user = null;
+      ctx.state.accountType = null;
+      ctx.state.accountHost = null;
+      ctx.state.rememberedAccounts = await rememberedAccountsPromise;
+    }
+    return await ctx.next();
+  };
+
+  if (ctx.state.user?.appSessionId) {
+    return await withOAuthGrantContext({
+      appSessionId: ctx.state.user.appSessionId,
+      grantId: ctx.state.user.oauthGrantId ?? null,
+    }, run);
+  }
+  return await run();
 });

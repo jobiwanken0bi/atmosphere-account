@@ -29,6 +29,7 @@ export default function ProfileCard({ profile }: Props) {
   return (
     <a
       href={`/apps/${encodeURIComponent(profile.handle)}`}
+      data-page-prefetch="intent"
       class="glass profile-card"
     >
       <div class="profile-card-avatar">

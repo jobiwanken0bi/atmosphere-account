@@ -31,6 +31,7 @@ import {
   plainJsonRecord,
   singleFormString,
 } from "../../lib/oauth-request-input.ts";
+import { IS_DEV } from "../../lib/env.ts";
 
 const MAX_FORGET_BODY_BYTES = 8_192;
 
@@ -52,8 +53,8 @@ async function readDid(req: Request): Promise<string | null> {
 
 async function handle(ctx: { req: Request }): Promise<Response> {
   const url = new URL(ctx.req.url);
-  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch((err) =>
-    appviewUnavailable("oauth forget", err)
+  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch(() =>
+    appviewUnavailable("oauth forget")
   );
   if (proxied) return proxied;
 
@@ -81,7 +82,10 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   // value here would let an anonymous caller revoke another account's stored
   // refresh grant. Require proof that this browser either owns the active app
   // session or carries the signed remembered-account entry for the target.
-  if (!canForgetOAuthSession(did, sessionUser, remembered)) {
+  const grantId = oauthGrantForForget(did, sessionUser, remembered);
+  if (
+    !grantId && !(IS_DEV && canForgetOAuthSession(did, sessionUser, remembered))
+  ) {
     return new Response("account not remembered on this device", {
       status: 403,
       headers: { "cache-control": "no-store" },
@@ -91,7 +95,7 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   // SQL deletion is already idempotent. A database failure is different from
   // an absent row: do not remove the browser's only visible account control
   // while silently leaving its durable refresh grant active server-side.
-  if (!await revokeOAuthSessionForForget(did)) {
+  if (grantId && !await revokeOAuthSessionForForget(did, grantId)) {
     return new Response("Removing this account is temporarily unavailable.", {
       status: 503,
       headers: {
@@ -127,19 +131,40 @@ async function handle(ctx: { req: Request }): Promise<Response> {
 
 export function canForgetOAuthSession(
   did: string,
-  sessionUser: { did: string } | null,
-  remembered: readonly Pick<RememberedAccount, "did">[],
+  sessionUser: Pick<SessionUserForForget, "did" | "oauthGrantId"> | null,
+  remembered: readonly Pick<RememberedAccount, "did" | "grantId">[],
 ): boolean {
-  return sessionUser?.did === did ||
+  return oauthGrantForForget(did, sessionUser, remembered) !== null ||
+    sessionUser?.did === did ||
     remembered.some((account) => account.did === did);
+}
+
+type SessionUserForForget = {
+  did: string;
+  oauthGrantId?: string | null;
+};
+
+export function oauthGrantForForget(
+  did: string,
+  sessionUser: SessionUserForForget | null,
+  remembered: readonly Pick<RememberedAccount, "did" | "grantId">[],
+): string | null {
+  if (sessionUser?.did === did && sessionUser.oauthGrantId) {
+    return sessionUser.oauthGrantId;
+  }
+  return remembered.find((account) => account.did === did)?.grantId ?? null;
 }
 
 export async function revokeOAuthSessionForForget(
   did: string,
-  revoke: (did: string) => Promise<void> = deleteSession,
+  grantId: string,
+  revoke: (
+    did: string,
+    options: { grantId: string },
+  ) => Promise<void> = deleteSession,
 ): Promise<boolean> {
   try {
-    await revoke(did);
+    await revoke(did, { grantId });
     return true;
   } catch {
     return false;
@@ -160,8 +185,8 @@ export async function destroyActiveAppSessionForForget(
 
 export const handler = define.handlers({ POST: handle });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(scope: string): Response {
+  console.error(`[appview] ${scope} proxy failed`);
   return new Response("Removing this account is temporarily unavailable.", {
     status: 503,
     headers: {

@@ -259,6 +259,20 @@ const SCHEMA_STATEMENTS: string[] = [
     value TEXT NOT NULL,
     expires_at INTEGER NOT NULL
   )`,
+  /**
+   * OAuth grants are browser-session scoped. `oauth_session` remains only as
+   * a legacy migration source for installations created before grant IDs were
+   * introduced; new authorization and refresh writes use this table.
+   */
+  `CREATE TABLE IF NOT EXISTS oauth_grant (
+    grant_id TEXT PRIMARY KEY,
+    did TEXT NOT NULL,
+    purpose TEXT NOT NULL DEFAULT 'browser',
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS oauth_key (
     kid TEXT PRIMARY KEY,
     jwk TEXT NOT NULL,
@@ -270,6 +284,10 @@ const SCHEMA_STATEMENTS: string[] = [
     handle TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_session_grant (
+    session_id TEXT PRIMARY KEY,
+    grant_id TEXT NOT NULL
   )`,
   /**
    * WebAuthn user handles are stable, opaque RP-local identifiers. Keeping the
@@ -299,7 +317,7 @@ const SCHEMA_STATEMENTS: string[] = [
   /**
    * Short-lived, one-use WebAuthn ceremonies. Only the hash of the opaque
    * browser token is persisted. Authentication ceremonies may carry a
-   * previously validated Atmosphere Login request for the final handoff.
+   * previously validated Login with Atmosphere request for the final handoff.
    */
   `CREATE TABLE IF NOT EXISTS passkey_ceremony (
     code_hash TEXT PRIMARY KEY,
@@ -771,7 +789,7 @@ const SCHEMA_STATEMENTS: string[] = [
     updated_by TEXT
   )`,
   /**
-   * Off-protocol Atmosphere Login control-plane tables. They currently share
+   * Off-protocol Login with Atmosphere control-plane tables. They currently share
    * Railway Postgres with the appview read model, but they are not indexed
    * AT Protocol records and should not be treated as rebuildable projection
    * data. Keep durable writes appview/Railway-owned; the Deno public shell
@@ -801,7 +819,7 @@ const SCHEMA_STATEMENTS: string[] = [
     updated_at INTEGER NOT NULL
   )`,
   /**
-   * Audit/read model for accounts selected through Atmosphere Login. This
+   * Audit/read model for accounts selected through Login with Atmosphere. This
    * is not proof that the destination app completed OAuth; it records that
    * the user chose this account for that app via the universal picker.
    */
@@ -815,7 +833,7 @@ const SCHEMA_STATEMENTS: string[] = [
     PRIMARY KEY (client_id, did)
   )`,
   /**
-   * Durable replay protection for Atmosphere Login selection tokens. Rows are
+   * Durable replay protection for Login with Atmosphere selection tokens. Rows are
    * tiny and expire with the token, giving reference/relying app flows a
    * multi-instance-safe way to reject repeated `jti` values.
    */
@@ -938,6 +956,9 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS rate_limit_bucket_reset ON rate_limit_bucket(reset_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_state_expires ON oauth_state(expires_at)`,
   `CREATE INDEX IF NOT EXISTS oauth_session_expires ON oauth_session(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS oauth_grant_did ON oauth_grant(did, purpose)`,
+  `CREATE INDEX IF NOT EXISTS oauth_grant_updated ON oauth_grant(updated_at)`,
+  `CREATE INDEX IF NOT EXISTS app_session_grant_id ON app_session_grant(grant_id)`,
   `CREATE INDEX IF NOT EXISTS app_session_expires ON app_session(expires_at)`,
   `CREATE INDEX IF NOT EXISTS passkey_credential_did ON passkey_credential(did, revoked_at)`,
   `CREATE INDEX IF NOT EXISTS passkey_ceremony_expires ON passkey_ceremony(expires_at)`,

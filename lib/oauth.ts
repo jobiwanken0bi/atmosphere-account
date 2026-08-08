@@ -49,6 +49,8 @@ import {
 import type { OAuthAction } from "./oauth-action.ts";
 import { hasValidLoginSelectionContinuationBinding } from "./oauth-continuation.ts";
 import { readResponseTextWithLimit } from "./security.ts";
+import { currentOAuthGrantContext } from "./oauth-grant-context.ts";
+import { decryptStoredSecret, encryptStoredSecret } from "./secret-storage.ts";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
@@ -82,6 +84,10 @@ export interface OAuthClientOptions {
   /** Context retained only to explain a partial/conflicting grant on retry. */
   action?: OAuthAction;
   targetName?: string;
+  /** Server-derived browser grant to upgrade. Never accept this from a form
+   * or query parameter; routes derive it from the active or signed remembered
+   * account. */
+  grantId?: string;
 }
 
 interface OAuthClientConfig {
@@ -242,9 +248,13 @@ interface FlowState {
   action?: OAuthAction;
   targetName?: string;
   asNonce?: string;
+  /** Browser/device grant being created or upgraded. */
+  grantId?: string;
 }
 
 export interface SessionData {
+  /** Opaque browser/device grant identifier. Legacy fixtures may omit it. */
+  grantId?: string;
   did: string;
   handle: string;
   pdsUrl: string;
@@ -332,6 +342,10 @@ async function buildClientAssertion(
 /* ---------------- DB-backed flow + session storage ---------------- */
 
 async function saveFlowState(state: FlowState): Promise<void> {
+  const value = await encryptStoredSecret(
+    JSON.stringify(state),
+    `oauth_state:${state.state}`,
+  );
   await withDb(async (c) => {
     await c.execute({
       sql: `INSERT INTO oauth_state (key, value, expires_at)
@@ -339,7 +353,7 @@ async function saveFlowState(state: FlowState): Promise<void> {
          ON CONFLICT(key) DO UPDATE SET
            value = excluded.value,
            expires_at = excluded.expires_at`,
-      args: [state.state, JSON.stringify(state), Date.now() + STATE_TTL_MS],
+      args: [state.state, value, Date.now() + STATE_TTL_MS],
     });
   });
 }
@@ -359,7 +373,22 @@ async function loadFlowState(stateKey: string): Promise<FlowState | null> {
       });
       return null;
     }
-    return JSON.parse(row.value as string) as FlowState;
+    const stored = String(row.value);
+    const decrypted = await decryptStoredSecret(
+      stored,
+      `oauth_state:${stateKey}`,
+    );
+    if (decrypted.needsUpgrade) {
+      const upgraded = await encryptStoredSecret(
+        decrypted.plaintext,
+        `oauth_state:${stateKey}`,
+      );
+      await c.execute({
+        sql: `UPDATE oauth_state SET value = ? WHERE key = ? AND value = ?`,
+        args: [upgraded, stateKey, stored],
+      });
+    }
+    return JSON.parse(decrypted.plaintext) as FlowState;
   });
 }
 
@@ -374,59 +403,238 @@ async function deleteFlowState(stateKey: string): Promise<void> {
 
 interface StoredSession {
   session: SessionData;
-  serialized: string;
+  grantId: string;
+  storedValue: string;
 }
 
-async function loadStoredSession(did: string): Promise<StoredSession | null> {
+export interface OAuthSessionLookupOptions {
+  grantId?: string | null;
+  quiet?: boolean;
+}
+
+const storedValueBySession = new WeakMap<SessionData, string>();
+
+function requestedGrantId(options: OAuthSessionLookupOptions): string | null {
+  if (options.grantId) return options.grantId;
+  return currentOAuthGrantContext()?.grantId ?? null;
+}
+
+export function requestedGrantIdForTest(
+  options: OAuthSessionLookupOptions = {},
+): string | null {
+  return requestedGrantId(options);
+}
+
+async function legacyGrantId(did: string): Promise<string> {
+  return `legacy_${(await sha256B64u(`oauth-grant:${did}`)).slice(0, 32)}`;
+}
+
+async function loadGrantRow(
+  c: {
+    execute: (query: { sql: string; args: unknown[] }) => Promise<{
+      rows: unknown[];
+      rowsAffected?: number | bigint;
+    }>;
+  },
+  did: string,
+  grantId: string,
+): Promise<StoredSession | null> {
+  const result = await c.execute({
+    sql: `SELECT value FROM oauth_grant WHERE grant_id = ? AND did = ?`,
+    args: [grantId, did],
+  });
+  if (result.rows.length === 0) return null;
+  const storedValue = String(
+    (result.rows[0] as Record<string, unknown>).value,
+  );
+  const decrypted = await decryptStoredSecret(
+    storedValue,
+    `oauth_grant:${grantId}`,
+  );
+  let currentStoredValue = storedValue;
+  if (decrypted.needsUpgrade) {
+    const upgraded = await encryptStoredSecret(
+      decrypted.plaintext,
+      `oauth_grant:${grantId}`,
+    );
+    const changed = await c.execute({
+      sql: `UPDATE oauth_grant SET value = ?, updated_at = ?
+        WHERE grant_id = ? AND did = ? AND value = ?`,
+      args: [upgraded, Date.now(), grantId, did, storedValue],
+    });
+    if (Number(changed.rowsAffected ?? 0) === 1) currentStoredValue = upgraded;
+  }
+  const session = JSON.parse(decrypted.plaintext) as SessionData;
+  session.grantId = grantId;
+  storedValueBySession.set(session, currentStoredValue);
+  return { session, grantId, storedValue: currentStoredValue };
+}
+
+async function migrateLegacySession(
+  c: Parameters<typeof loadGrantRow>[0],
+  did: string,
+  appSessionId: string | null,
+): Promise<StoredSession | null> {
+  if (!legacyGrantMigrationPurpose(appSessionId)) {
+    // Pre-grant-ID browser sessions all shared one DID row. Reusing it would
+    // preserve that cross-device coupling, so browsers reconnect once and
+    // receive independent grants. Only explicit service callers may migrate.
+    return null;
+  }
+  const legacy = await c.execute({
+    sql: `SELECT value, expires_at FROM oauth_session WHERE did = ?`,
+    args: [did],
+  });
+  if (legacy.rows.length === 0) return null;
+  const row = legacy.rows[0] as Record<string, unknown>;
+  const legacyValue = String(row.value);
+  const decrypted = await decryptStoredSecret(
+    legacyValue,
+    `oauth_session:${did}`,
+  );
+  const grantId = await legacyGrantId(did);
+  const session = JSON.parse(decrypted.plaintext) as SessionData;
+  session.grantId = grantId;
+  const encrypted = await encryptStoredSecret(
+    JSON.stringify(session),
+    `oauth_grant:${grantId}`,
+  );
+  const now = Date.now();
+  await c.execute({
+    sql: `INSERT INTO oauth_grant
+      (grant_id, did, purpose, value, expires_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(grant_id) DO NOTHING`,
+    args: [
+      grantId,
+      did,
+      "service",
+      encrypted,
+      Number(row.expires_at),
+      now,
+      now,
+    ],
+  });
+  const purposeRow = await c.execute({
+    sql: `SELECT purpose FROM oauth_grant WHERE grant_id = ? AND did = ?`,
+    args: [grantId, did],
+  });
+  if (
+    purposeRow.rows.length === 0 ||
+    String((purposeRow.rows[0] as Record<string, unknown>).purpose) !==
+      "service"
+  ) return null;
+  await c.execute({
+    sql: `DELETE FROM oauth_session WHERE did = ? AND value = ?`,
+    args: [did, legacyValue],
+  });
+  return await loadGrantRow(c, did, grantId);
+}
+
+export function legacyGrantMigrationPurposeForTest(
+  appSessionId: string | null,
+): "service" | null {
+  return legacyGrantMigrationPurpose(appSessionId);
+}
+
+function legacyGrantMigrationPurpose(
+  appSessionId: string | null,
+): "service" | null {
+  return appSessionId ? null : "service";
+}
+
+async function loadStoredSession(
+  did: string,
+  options: OAuthSessionLookupOptions = {},
+): Promise<StoredSession | null> {
   return await withDb(async (c) => {
-    const r = await c.execute({
-      sql: `SELECT value FROM oauth_session WHERE did = ?`,
+    const explicitGrantId = requestedGrantId(options);
+    if (explicitGrantId) {
+      return await loadGrantRow(c, did, explicitGrantId);
+    }
+    const context = currentOAuthGrantContext();
+    if (context?.appSessionId) {
+      return await migrateLegacySession(c, did, context.appSessionId);
+    }
+    const service = await c.execute({
+      sql: `SELECT grant_id FROM oauth_grant
+        WHERE did = ? AND purpose = 'service'
+        ORDER BY updated_at DESC LIMIT 1`,
       args: [did],
     });
-    if (r.rows.length === 0) return null;
-    const serialized = String(
-      (r.rows[0] as Record<string, unknown>).value,
-    );
-    return {
-      session: JSON.parse(serialized) as SessionData,
-      serialized,
-    };
+    if (service.rows.length > 0) {
+      return await loadGrantRow(
+        c,
+        did,
+        String((service.rows[0] as Record<string, unknown>).grant_id),
+      );
+    }
+    return await migrateLegacySession(c, did, null);
   });
 }
 
-export async function loadSession(did: string): Promise<SessionData | null> {
-  return (await loadStoredSession(did))?.session ?? null;
+export async function loadSession(
+  did: string,
+  options: OAuthSessionLookupOptions = {},
+): Promise<SessionData | null> {
+  return (await loadStoredSession(did, options))?.session ?? null;
 }
 
 async function insertSessionIfAbsent(session: SessionData): Promise<boolean> {
+  if (!session.grantId) throw new Error("OAuth session is missing a grant ID");
+  const value = await encryptStoredSecret(
+    JSON.stringify(session),
+    `oauth_grant:${session.grantId}`,
+  );
   return await withDb(async (c) => {
-    const result = await c.execute({
-      sql: `INSERT INTO oauth_session (did, value, expires_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(did) DO NOTHING`,
-      args: [session.did, JSON.stringify(session), session.expiresAt],
+    const now = Date.now();
+    const r = await c.execute({
+      sql: `INSERT INTO oauth_grant
+        (grant_id, did, purpose, value, expires_at, created_at, updated_at)
+        VALUES (?, ?, 'browser', ?, ?, ?, ?)
+        ON CONFLICT(grant_id) DO NOTHING`,
+      args: [
+        session.grantId,
+        session.did,
+        value,
+        session.expiresAt,
+        now,
+        now,
+      ],
     });
-    return Number(result.rowsAffected ?? 0) === 1;
+    if (Number(r.rowsAffected ?? 0) === 1) {
+      storedValueBySession.set(session, value);
+    }
+    return Number(r.rowsAffected ?? 0) === 1;
   });
 }
 
 async function replaceSessionIfUnchanged(
   session: SessionData,
-  expectedSerialized: string,
+  expectedStoredValue: string,
 ): Promise<boolean> {
+  if (!session.grantId) return false;
+  const value = await encryptStoredSecret(
+    JSON.stringify(session),
+    `oauth_grant:${session.grantId}`,
+  );
   return await withDb(async (c) => {
     const result = await c.execute({
-      sql: `UPDATE oauth_session
-         SET value = ?, expires_at = ?
-         WHERE did = ? AND value = ?`,
+      sql: `UPDATE oauth_grant
+         SET value = ?, expires_at = ?, updated_at = ?
+         WHERE grant_id = ? AND did = ? AND value = ?`,
       args: [
-        JSON.stringify(session),
+        value,
         session.expiresAt,
+        Date.now(),
+        session.grantId,
         session.did,
-        expectedSerialized,
+        expectedStoredValue,
       ],
     });
-    return Number(result.rowsAffected ?? 0) === 1;
+    const replaced = Number(result.rowsAffected ?? 0) === 1;
+    if (replaced) storedValueBySession.set(session, value);
+    return replaced;
   });
 }
 
@@ -436,25 +644,37 @@ async function deleteSessionIfUnchangedOnClient(
       rowsAffected?: number | bigint;
     }>;
   },
+  grantId: string,
   did: string,
-  expectedSerialized: string,
+  expectedStoredValue: string,
 ): Promise<boolean> {
   const result = await c.execute({
-    sql: `DELETE FROM oauth_session WHERE did = ? AND value = ?`,
-    args: [did, expectedSerialized],
+    sql: `DELETE FROM oauth_grant
+      WHERE grant_id = ? AND did = ? AND value = ?`,
+    args: [grantId, did, expectedStoredValue],
   });
-  return Number(result.rowsAffected ?? 0) === 1;
+  const deleted = Number(result.rowsAffected ?? 0) === 1;
+  if (deleted) {
+    await c.execute({
+      sql: `DELETE FROM app_session_grant WHERE grant_id = ?`,
+      args: [grantId],
+    });
+  }
+  return deleted;
 }
 
 async function deleteSessionIfUnchanged(
   session: SessionData,
 ): Promise<boolean> {
-  const expectedSerialized = JSON.stringify(session);
+  if (!session.grantId) return false;
+  const expectedStoredValue = storedValueBySession.get(session) ??
+    JSON.stringify(session);
   return await withDb(async (c) =>
     await deleteSessionIfUnchangedOnClient(
       c,
+      session.grantId!,
       session.did,
-      expectedSerialized,
+      expectedStoredValue,
     )
   );
 }
@@ -469,6 +689,7 @@ export async function deleteSessionIfUnchangedForTest(
 ): Promise<boolean> {
   return await deleteSessionIfUnchangedOnClient(
     c,
+    session.grantId ?? "test-grant",
     session.did,
     JSON.stringify(session),
   );
@@ -512,10 +733,14 @@ async function saveRefreshedSession(
   let expected = previous;
   let next = refreshed;
   for (let attempt = 0; attempt < 4; attempt++) {
-    if (await replaceSessionIfUnchanged(next, JSON.stringify(expected))) {
+    const expectedStoredValue = storedValueBySession.get(expected) ??
+      JSON.stringify(expected);
+    if (await replaceSessionIfUnchanged(next, expectedStoredValue)) {
       return next;
     }
-    const current = await loadStoredSession(previous.did);
+    const current = await loadStoredSession(previous.did, {
+      grantId: previous.grantId,
+    });
     if (!current) throw new Error("OAuth session was removed during refresh");
     if (!sameRefreshAuthorization(current.session, previous)) {
       // A callback or another refresh installed newer authorization. Never
@@ -533,7 +758,8 @@ async function saveRefreshedSession(
       oauthClientId: refreshed.oauthClientId,
     };
   }
-  return (await loadSession(previous.did)) ?? next;
+  return (await loadSession(previous.did, { grantId: previous.grantId })) ??
+    next;
 }
 
 type CallbackSessionSaveResult = "saved" | "narrower" | "conflict";
@@ -564,16 +790,18 @@ async function saveCallbackSession(
   replaceableSessionHash?: string,
 ): Promise<CallbackSessionSaveResult> {
   for (let attempt = 0; attempt < 4; attempt++) {
-    const current = await loadStoredSession(session.did);
+    const current = await loadStoredSession(session.did, {
+      grantId: session.grantId,
+    });
     if (!current) {
       if (await insertSessionIfAbsent(session)) return "saved";
       continue;
     }
     if (
       replaceableSessionHash &&
-      await sha256B64u(current.serialized) === replaceableSessionHash
+      await sha256B64u(current.storedValue) === replaceableSessionHash
     ) {
-      if (await replaceSessionIfUnchanged(session, current.serialized)) {
+      if (await replaceSessionIfUnchanged(session, current.storedValue)) {
         return "saved";
       }
       continue;
@@ -584,7 +812,7 @@ async function saveCallbackSession(
       session.scope ?? IDENTITY_OAUTH_SCOPE,
     );
     if (decision === "replace") {
-      if (await replaceSessionIfUnchanged(session, current.serialized)) {
+      if (await replaceSessionIfUnchanged(session, current.storedValue)) {
         return "saved";
       }
       continue;
@@ -601,17 +829,27 @@ export function grantedScopeForSession(session: SessionData): string {
   return session.scope?.trim() || IDENTITY_OAUTH_SCOPE;
 }
 
-export async function deleteSession(did: string): Promise<void> {
+export async function deleteSession(
+  did: string,
+  options: OAuthSessionLookupOptions = {},
+): Promise<void> {
+  const stored = await loadStoredSession(did, options);
+  if (!stored) return;
   await withDb(async (c) => {
     await c.execute({
-      sql: `DELETE FROM oauth_session WHERE did = ?`,
-      args: [did],
+      sql: `DELETE FROM app_session_grant WHERE grant_id = ?`,
+      args: [stored.grantId],
+    });
+    await c.execute({
+      sql: `DELETE FROM oauth_grant WHERE grant_id = ? AND did = ?`,
+      args: [stored.grantId, did],
     });
   });
 }
 
 interface ExistingScopeUpgradeGrant {
   session: SessionData | null;
+  grantId?: string;
   replaceableSessionHash?: string;
 }
 
@@ -626,18 +864,25 @@ interface ExistingScopeUpgradeGrant {
  */
 async function existingGrantForScopeUpgrade(
   did: string,
+  grantId?: string,
 ): Promise<ExistingScopeUpgradeGrant> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const before = await loadStoredSession(did).catch(() => null);
+    const before = await loadStoredSession(did, { grantId }).catch(() => null);
     if (!before) return { session: null };
-    const valid = await getValidSession(did, { quiet: true }).catch(() => null);
-    if (valid) return { session: valid };
-    const after = await loadStoredSession(did).catch(() => null);
+    const valid = await getValidSession(did, {
+      quiet: true,
+      grantId: before.grantId,
+    }).catch(() => null);
+    if (valid) return { session: valid, grantId: before.grantId };
+    const after = await loadStoredSession(did, {
+      grantId: before.grantId,
+    }).catch(() => null);
     if (!after) return { session: null };
-    if (after.serialized === before.serialized) {
+    if (after.storedValue === before.storedValue) {
       return {
         session: null,
-        replaceableSessionHash: await sha256B64u(after.serialized),
+        grantId: after.grantId,
+        replaceableSessionHash: await sha256B64u(after.storedValue),
       };
     }
   }
@@ -682,7 +927,7 @@ export async function startLogin(
     options?.preserveExistingScopes,
   );
   const existingGrant = existingPolicy.validateForReplacement
-    ? await existingGrantForScopeUpgrade(id.did)
+    ? await existingGrantForScopeUpgrade(id.did, options?.grantId)
     : null;
   const existing = existingPolicy.unionValidScope
     ? existingGrant?.session ?? null
@@ -709,6 +954,9 @@ export async function startLogin(
   const state = randomB64u(24);
   const browserBinding = randomB64u(32);
   const pkceVerifier = randomB64u(48);
+  const grantId = persistSession
+    ? existingGrant?.grantId ?? randomB64u(24)
+    : undefined;
 
   const flow: FlowState = {
     state,
@@ -734,6 +982,7 @@ export async function startLogin(
     intent: intent ?? undefined,
     action: options?.action,
     targetName: options?.targetName,
+    grantId,
   };
   await saveFlowState(flow);
 
@@ -848,6 +1097,12 @@ export async function startHostAccountCreation(
     intent: intent ?? undefined,
     action: options?.action,
     targetName: options?.targetName,
+    grantId: shouldPersistOAuthSession(
+        options?.persistSession,
+        continuation ?? undefined,
+      )
+      ? randomB64u(24)
+      : undefined,
   };
   await saveFlowState(flow);
 
@@ -962,6 +1217,8 @@ export interface CallbackResult {
   scopeConflict: boolean;
   action?: OAuthAction;
   targetName?: string;
+  /** Undefined only for intentionally non-persistent login-picker flows. */
+  grantId?: string;
 }
 
 export interface CancelledOAuthFlow {
@@ -1132,11 +1389,14 @@ export async function completeCallback(
   const authorizationSufficient = !flow.requiredScope ||
     scopeCoversScope(tokenRes.scope, flow.requiredScope);
   let scopeConflict = false;
+  let persistedGrantId: string | undefined;
   if (flow.persistSession !== false && authorizationSufficient) {
     if (!tokenRes.refresh_token) {
       throw new Error("token response missing refresh_token");
     }
+    persistedGrantId = flow.grantId ?? randomB64u(24);
     const session: SessionData = {
+      grantId: persistedGrantId,
       did,
       handle,
       pdsUrl,
@@ -1180,6 +1440,7 @@ export async function completeCallback(
     scopeConflict,
     action: flow.action,
     targetName: flow.targetName,
+    grantId: persistedGrantId,
   };
 }
 
@@ -1413,10 +1674,13 @@ async function refreshSessionIdentity(
       asIssuer,
       identityCheckedAt: Date.now(),
     };
-    if (await replaceSessionIfUnchanged(updated, JSON.stringify(session))) {
+    const expectedStoredValue = storedValueBySession.get(session) ??
+      JSON.stringify(session);
+    if (await replaceSessionIfUnchanged(updated, expectedStoredValue)) {
       return updated;
     }
-    return (await loadSession(session.did)) ?? null;
+    return (await loadSession(session.did, { grantId: session.grantId })) ??
+      null;
   } catch {
     // Discovery errors can retain authorization/session details in causes.
     if (IS_DEV) console.warn("session identity refresh failed");
@@ -1426,9 +1690,9 @@ async function refreshSessionIdentity(
 
 export async function getValidSession(
   did: string,
-  options: { quiet?: boolean } = {},
+  options: OAuthSessionLookupOptions = {},
 ): Promise<SessionData | null> {
-  let session = await loadSession(did);
+  let session = await loadSession(did, options);
   if (!session) return null;
   session = await refreshSessionIdentity(session);
   if (!session) return null;
@@ -1448,7 +1712,7 @@ export async function getValidSession(
 export async function getSessionForCapabilities(
   did: string,
   capabilities: readonly OAuthCapability[],
-  options: { quiet?: boolean } = {},
+  options: OAuthSessionLookupOptions = {},
 ): Promise<SessionData | null> {
   const session = await getValidSession(did, options);
   if (!session) return null;
@@ -1504,7 +1768,9 @@ export async function authedFetch(
   requireDpopNonce(newNonce, "PDS");
   if (newNonce && newNonce !== session.pdsNonce) {
     const updated = { ...session, pdsNonce: newNonce };
-    await replaceSessionIfUnchanged(updated, JSON.stringify(session));
+    const expectedStoredValue = storedValueBySession.get(session) ??
+      JSON.stringify(session);
+    await replaceSessionIfUnchanged(updated, expectedStoredValue);
     if (res.status === 401 && attempt === 0) {
       return await authedFetch(did, url, init, 1);
     }

@@ -24,8 +24,8 @@ export const handler = define.handlers({
         app,
       });
       return json({ hosts });
-    } catch (err) {
-      console.warn("[login] account host discovery failed:", err);
+    } catch {
+      console.warn("[login] account host discovery failed");
       return json({ hosts: [], error: "host_directory_unavailable" }, 503);
     }
   }, {

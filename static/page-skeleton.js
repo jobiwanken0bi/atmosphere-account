@@ -1,8 +1,12 @@
 const skeletonId = "page-loading-skeleton";
 const skeletonDelayMs = 220;
 const skeletonSafetyMs = 12_000;
+const prefetchDelayMs = 100;
+const prefetchBudget = 8;
 let showTimer = 0;
 let safetyTimer = 0;
+let prefetchTimer = 0;
+const prefetchedPages = new Set();
 
 export function isSkeletonPage(
   url,
@@ -10,6 +14,29 @@ export function isSkeletonPage(
 ) {
   return Boolean(currentOrigin) && url.origin === currentOrigin &&
     !url.pathname.startsWith("/api/");
+}
+
+export function isPrefetchablePage(
+  url,
+  currentOrigin = globalThis.location?.origin,
+) {
+  if (!currentOrigin || url.origin !== currentOrigin) return false;
+  const path = url.pathname;
+  if (
+    path === "/" || path === "/apps" || path === "/apps/all" ||
+    path === "/apps/categories" || path === "/hosts"
+  ) return true;
+  if (path.startsWith("/apps/")) {
+    const detail = path.slice("/apps/".length);
+    return Boolean(detail) && !detail.includes("/") &&
+      !["create", "manage", "migrate-from-legacy"].includes(detail);
+  }
+  if (path.startsWith("/hosts/")) {
+    const detail = path.slice("/hosts/".length);
+    return Boolean(detail) && !detail.includes("/") &&
+      !["claim", "register"].includes(detail);
+  }
+  return false;
 }
 
 export function routeKind(pathname) {
@@ -557,6 +584,80 @@ function hideSkeleton() {
   document.body.removeAttribute("aria-busy");
 }
 
+function prefetchPage(link) {
+  if (!(link instanceof HTMLAnchorElement)) return;
+  const connection = navigator.connection;
+  if (
+    connection?.saveData === true ||
+    /(^|-)2g$/.test(connection?.effectiveType ?? "") ||
+    prefetchedPages.size >= prefetchBudget
+  ) return;
+  if (link.target && link.target !== "_self") return;
+  if (link.hasAttribute("download")) return;
+  const url = new URL(link.href, globalThis.location.href);
+  if (!isPrefetchablePage(url) || url.href === globalThis.location.href) {
+    return;
+  }
+  if (prefetchedPages.has(url.href)) return;
+  prefetchedPages.add(url.href);
+  const preload = document.createElement("link");
+  preload.rel = "prefetch";
+  preload.as = "document";
+  preload.href = url.href;
+  preload.fetchPriority = "low";
+  document.head.appendChild(preload);
+}
+
+function markedPrefetchLink(target) {
+  if (!(target instanceof Element)) return null;
+  const link = target.closest("a[data-page-prefetch][href]");
+  return link instanceof HTMLAnchorElement ? link : null;
+}
+
+function installPagePrefetch() {
+  document.addEventListener("pointerover", (event) => {
+    const link = markedPrefetchLink(event.target);
+    if (!link) return;
+    clearTimeout(prefetchTimer);
+    prefetchTimer = globalThis.setTimeout(
+      () => prefetchPage(link),
+      prefetchDelayMs,
+    );
+  });
+  document.addEventListener("pointerout", (event) => {
+    const link = markedPrefetchLink(event.target);
+    if (
+      !link ||
+      (event.relatedTarget instanceof Node &&
+        link.contains(event.relatedTarget))
+    ) return;
+    clearTimeout(prefetchTimer);
+  });
+  document.addEventListener("focusin", (event) => {
+    const link = markedPrefetchLink(event.target);
+    if (link) prefetchPage(link);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    const link = markedPrefetchLink(event.target);
+    if (link) prefetchPage(link);
+  }, { passive: true });
+
+  if ("IntersectionObserver" in globalThis) {
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        if (entry.target instanceof HTMLAnchorElement) {
+          prefetchPage(entry.target);
+        }
+        observer.unobserve(entry.target);
+      }
+    }, { rootMargin: "240px" });
+    document.querySelectorAll(
+      'a[data-page-prefetch="pagination"]',
+    ).forEach((link) => observer.observe(link));
+  }
+}
+
 function installPageSkeleton() {
   document.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0) return;
@@ -594,6 +695,7 @@ function installPageSkeleton() {
   globalThis.addEventListener("pageshow", hideSkeleton);
   globalThis.addEventListener("pagehide", hideSkeleton);
   document.addEventListener("atmo:hide-page-skeleton", hideSkeleton);
+  installPagePrefetch();
 }
 
 if (typeof document !== "undefined") installPageSkeleton();

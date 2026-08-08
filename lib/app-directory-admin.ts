@@ -243,7 +243,8 @@ async function classifyMigrationCandidate(
   if (!session) {
     return {
       status: "no_session",
-      issue: "The app account needs to sign in again before publishing.",
+      issue:
+        "Reconnect the app account with Login with Atmosphere before publishing.",
     };
   }
   const existingRemote = await findExistingAtstoreListingForProfile(
@@ -307,8 +308,9 @@ const migrationStatusCopy: Record<
     description: "Shared-record publishing requires a primary app URL.",
   },
   no_session: {
-    label: "Needs sign-in",
-    description: "The app account must sign in again before publishing.",
+    label: "Login required",
+    description:
+      "Reconnect the app account with Login with Atmosphere before publishing.",
   },
   blocked: {
     label: "Blocked",

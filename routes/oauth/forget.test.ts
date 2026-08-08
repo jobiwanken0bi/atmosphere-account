@@ -2,6 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   canForgetOAuthSession,
   destroyActiveAppSessionForForget,
+  oauthGrantForForget,
   revokeOAuthSessionForForget,
 } from "./forget.ts";
 
@@ -37,15 +38,43 @@ Deno.test("forget OAuth session requires active or signed remembered ownership",
 
 Deno.test("forget does not hide a failed durable OAuth revocation", async () => {
   assertEquals(
-    await revokeOAuthSessionForForget("did:plc:alice", () => Promise.resolve()),
+    await revokeOAuthSessionForForget(
+      "did:plc:alice",
+      "grant-alice",
+      () => Promise.resolve(),
+    ),
     true,
   );
   assertEquals(
     await revokeOAuthSessionForForget(
       "did:plc:alice",
+      "grant-alice",
       () => Promise.reject(new Error("database unavailable")),
     ),
     false,
+  );
+});
+
+Deno.test("forget selects only the browser-owned grant", () => {
+  assertEquals(
+    oauthGrantForForget(
+      "did:plc:alice",
+      { did: "did:plc:alice", oauthGrantId: "active-grant" },
+      [{ did: "did:plc:alice", grantId: "remembered-grant" }],
+    ),
+    "active-grant",
+  );
+  assertEquals(
+    oauthGrantForForget(
+      "did:plc:alice",
+      null,
+      [{ did: "did:plc:alice", grantId: "remembered-grant" }],
+    ),
+    "remembered-grant",
+  );
+  assertEquals(
+    oauthGrantForForget("did:plc:alice", null, [{ did: "did:plc:alice" }]),
+    null,
   );
 });
 

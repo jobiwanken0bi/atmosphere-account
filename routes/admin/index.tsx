@@ -100,7 +100,7 @@ function AdminHome(
                 <p class="admin-card-count">{loginAppReviews}</p>
                 <h2 class="admin-card-title">Login app trust</h2>
                 <p class="admin-card-body">
-                  Review Atmosphere Login app identity, domains, logos, and
+                  Review Login with Atmosphere app identity, domains, logos, and
                   return URI allow-lists.
                 </p>
               </a>

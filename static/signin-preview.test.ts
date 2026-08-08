@@ -9,7 +9,7 @@ Deno.test("sign-in enhancement keeps server errors out of the UI", async () => {
   );
   assertStringIncludes(
     script,
-    "Couldn’t start sign-in. Check the handle and try again.",
+    "Couldn’t start Login with Atmosphere. Check the handle and try again.",
   );
   assertEquals(script.includes("body.error"), false);
 });
@@ -49,6 +49,11 @@ Deno.test("enhanced mode links switch in place", async () => {
   assertStringIncludes(script, "event.preventDefault()");
   assertStringIncludes(script, "setPageCopy(mode)");
   assertStringIncludes(script, "`data-signin-copy-${mode}`");
+  assertStringIncludes(script, '"[data-signin-mode-content]"');
+  assertStringIncludes(
+    script,
+    'node.getAttribute("data-signin-mode-content") !== mode',
+  );
 });
 
 Deno.test("sign-in validates server destinations before browser navigation", async () => {

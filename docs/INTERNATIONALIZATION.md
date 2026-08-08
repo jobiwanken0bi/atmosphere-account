@@ -60,6 +60,6 @@ annotation. Do not use `as Messages` to suppress missing keys.
 
 Translation pull requests should identify the language and reviewer context,
 state whether the catalog is complete, and include screenshots of at least the
-home page, app directory, sign-in flow, and locale switcher. Machine translation
-can help draft text, but contributors must review every message for meaning,
-tone, placeholders, security language, and layout.
+home page, app directory, Login with Atmosphere flow, and locale switcher.
+Machine translation can help draft text, but contributors must review every
+message for meaning, tone, placeholders, security language, and layout.

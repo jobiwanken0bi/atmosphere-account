@@ -32,7 +32,7 @@ export const handler = define.handlers({
     ctx.state.pageMeta = {
       title: "Passkeys — Atmosphere Account",
       description:
-        "Manage passkeys for faster, user-verified Atmosphere universal sign in.",
+        "Manage passkeys for faster, user-verified Login with Atmosphere.",
     };
     const initialHandle = safeHandle(ctx.url.searchParams.get("handle"));
     const returnTo = passkeyReturnPath(initialHandle ?? ctx.state.user?.handle);
@@ -63,7 +63,7 @@ function PasskeyPage(
           <h1 class="text-section passkey-title">Passkeys</h1>
           <p class="text-body passkey-lede">
             Confirm your Atmosphere account with Face ID, Touch ID, a device
-            passcode, or a security key during universal sign in.
+            passcode, or a security key during Login with Atmosphere.
           </p>
 
           <div class="glass signin-page-card passkey-card">
@@ -103,8 +103,8 @@ function PasskeyPage(
               )}
           </div>
           <p class="passkey-page-footnote">
-            Passkeys work with Atmosphere Login. Your account still lives with
-            your account host.
+            Passkeys work with Login with Atmosphere. Your account still lives
+            with your account host.
           </p>
         </div>
       </section>

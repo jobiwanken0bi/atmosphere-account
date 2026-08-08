@@ -43,8 +43,16 @@ export default function Footer({ variant = "default" }: FooterProps = {}) {
             /* Hide on the explore section — visitors are already there,
             * so the link would just point at the page they're on. */
           }
-          {!compact && <a href="/hosts">{t.footer.links.exploreHosts}</a>}
-          {!compact && <a href="/apps">{t.footer.links.exploreApps}</a>}
+          {!compact && (
+            <a href="/hosts" data-page-prefetch="intent">
+              {t.footer.links.exploreHosts}
+            </a>
+          )}
+          {!compact && (
+            <a href="/apps" data-page-prefetch="intent">
+              {t.footer.links.exploreApps}
+            </a>
+          )}
           <a href="/docs">Docs</a>
         </div>
         {!compact && <p class="footer-quote">{t.footer.quote()}</p>}

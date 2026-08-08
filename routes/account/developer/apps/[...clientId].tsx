@@ -725,7 +725,7 @@ function reviewCopy(app: LoginApp): string {
     return "This app is shown as trusted in the picker.";
   }
   if (app.status === "blocked") {
-    return "This app cannot use Atmosphere Login.";
+    return "This app cannot use Login with Atmosphere.";
   }
   if (app.reviewStatus === "requested") {
     return "Atmosphere has this app in the trust review queue.";
@@ -750,7 +750,7 @@ function noticeCopy(app: LoginApp): string {
     return "This looks like a local development app. Only continue if you opened this flow yourself.";
   }
   if (app.status === "blocked") {
-    return "This app is unavailable for Atmosphere Login.";
+    return "This app is unavailable for Login with Atmosphere.";
   }
   return "This app has not been reviewed by Atmosphere yet. Check the app name, logo, and homepage before continuing.";
 }

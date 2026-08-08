@@ -60,7 +60,10 @@ export const handler = define.handlers({
 
 function untrustedOrigin(): Response {
   return json(
-    { error: "Passkeys are unavailable on this sign-in address." },
+    {
+      error:
+        "Passkeys are unavailable for Login with Atmosphere on this address.",
+    },
     403,
   );
 }
@@ -129,7 +132,7 @@ export function publicPasskeyAuthenticationOptionsFailure(
   if (error instanceof LoginRequestError) {
     if (error.status >= 500) {
       return unavailablePasskeyFailure(
-        "Passkey sign in is temporarily unavailable.",
+        "Login with Atmosphere is temporarily unavailable.",
       );
     }
     return passkeyFailure(
@@ -138,8 +141,8 @@ export function publicPasskeyAuthenticationOptionsFailure(
         ? "login_request_not_allowed"
         : "invalid_login_request",
       error.status === 403
-        ? "This app cannot use this sign-in request."
-        : "Passkey sign-in request is invalid.",
+        ? "This app cannot use this Login with Atmosphere request."
+        : "This Login with Atmosphere request is invalid.",
     );
   }
   if (error instanceof PasskeyError && error.code === "invalid_input") {
@@ -150,7 +153,7 @@ export function publicPasskeyAuthenticationOptionsFailure(
     );
   }
   return unavailablePasskeyFailure(
-    "Passkey sign in is temporarily unavailable.",
+    "Login with Atmosphere is temporarily unavailable.",
   );
 }
 

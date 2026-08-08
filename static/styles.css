@@ -4,6 +4,17 @@
   box-sizing: border-box;
 }
 
+/* Skip layout and paint work for substantial home-page sections until they
+   approach the viewport. The remembered intrinsic size keeps the long landing
+   page stable while the browser progressively renders it. */
+@supports (content-visibility: auto) {
+  #page-top > .content-layer > .section.reveal,
+  #page-top > .content-layer > .section-sm.reveal {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 900px;
+  }
+}
+
 * {
   margin: 0;
 }
@@ -1307,7 +1318,6 @@ h1, h2, h3, h4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .page-skeleton-category-grid,
   .page-skeleton-app-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5894,7 +5904,7 @@ body {
   min-width: 0;
   overflow: hidden;
   font-size: clamp(1.05rem, 2vw, 1.35rem);
-  line-height: 1.08;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5939,7 +5949,7 @@ body {
   margin-top: 0.65rem;
 }
 
-.app-spotlight-card h3 {
+.app-spotlight-card:not(.app-spotlight-card--banner) h3 {
   margin: 0;
   font-size: clamp(2rem, 4vw, 3.4rem);
   line-height: 0.98;
@@ -6155,6 +6165,7 @@ body {
     "icon name"
     "icon count";
   gap: 0.04rem 0.56rem;
+  align-content: center;
   align-items: center;
   min-height: 4.35rem;
   padding: 0.68rem 0.78rem;
@@ -6256,6 +6267,7 @@ body {
   grid-area: count;
   color: rgba(18, 26, 47, 0.58);
   font-size: 0.76rem;
+  line-height: 1.15;
 }
 
 .app-discovery-stack {
@@ -6313,10 +6325,11 @@ body {
 .app-ranked-copy {
   display: flex;
   flex-direction: column;
-  align-self: start;
-  gap: 0.16rem;
+  align-self: stretch;
+  justify-content: space-between;
+  gap: 0;
   min-width: 0;
-  padding-top: 0.02rem;
+  padding-top: 0;
 }
 
 .app-ranked-title-row,
@@ -6342,9 +6355,13 @@ body {
   overflow: hidden;
   color: #0e1428;
   font-weight: 650;
-  line-height: 1.14;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-ranked-detail-row .app-store-category {
+  line-height: 1.3;
 }
 
 .app-ranked-handle,
@@ -7242,10 +7259,6 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .app-category-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .app-promo-column {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: none;
@@ -7254,6 +7267,12 @@ body {
   .app-fresh-card--compact {
     height: auto;
     aspect-ratio: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-category-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -7380,10 +7399,6 @@ body {
     min-height: 1.75rem;
     padding: 0.2rem 0.58rem;
     font-size: 0.72rem;
-  }
-
-  .app-category-grid {
-    grid-template-columns: 1fr;
   }
 
   .app-pagination {
@@ -10378,6 +10393,44 @@ body {
 .dark-phase .signin-modal-account-link a {
   color: #a8c8ff;
 }
+.contextual-signin-bluesky-note {
+  display: grid;
+  grid-template-columns: 1.8rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  margin: -0.2rem 0 0.85rem;
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  border-radius: 14px;
+  padding: 0.58rem 0.68rem;
+  background: rgba(17, 133, 254, 0.06);
+}
+.contextual-signin-bluesky-note > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 50%;
+  background: rgba(17, 133, 254, 0.12);
+  color: #1185fe;
+}
+.contextual-signin-bluesky-icon {
+  width: 1rem;
+  height: 1rem;
+}
+.contextual-signin-bluesky-note p {
+  margin: 0;
+  color: rgba(18, 26, 47, 0.66);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.dark-phase .contextual-signin-bluesky-note {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(17, 133, 254, 0.1);
+}
+.dark-phase .contextual-signin-bluesky-note p {
+  color: rgba(255, 255, 255, 0.72);
+}
 .dark-phase .modal-card {
   background: rgba(20, 28, 50, 0.96);
   border-color: rgba(255, 255, 255, 0.1);
@@ -10390,6 +10443,21 @@ body {
   font-size: 1.05rem;
   font-weight: 700;
   margin: 0 0 0.4rem;
+}
+.contextual-signin-brand-title {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+}
+.contextual-signin-brand-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  filter: brightness(0) saturate(100%) invert(12%) sepia(30%) saturate(1500%)
+    hue-rotate(195deg) brightness(95%);
+}
+.dark-phase .contextual-signin-brand-icon {
+  filter: none;
 }
 .modal-body-text {
   font-size: 0.85rem;
@@ -11071,6 +11139,12 @@ body {
 .signin-host-chooser {
   display: grid;
   gap: 0.65rem;
+}
+
+section[data-signin-panel="create"]
+  > .signin-rich-header
+  + .signin-host-chooser {
+  margin-top: clamp(0.75rem, 2vw, 1rem);
 }
 
 .signin-host-toolbar {
@@ -12565,6 +12639,118 @@ body {
   padding: 1.75rem;
   position: relative;
   z-index: 50;
+}
+
+.signin-create-intro {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.signin-create-intro[hidden] {
+  display: none;
+}
+
+.signin-create-intro-card {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.78rem;
+  border: 1px solid rgba(42, 90, 168, 0.12);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.7),
+    rgba(225, 235, 255, 0.52)
+  );
+  box-shadow: 0 12px 30px rgba(42, 74, 130, 0.07);
+}
+
+.signin-create-intro-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid rgba(42, 90, 168, 0.16);
+  border-radius: 0.78rem;
+  background: rgba(255, 255, 255, 0.7);
+  color: #254a9e;
+}
+
+.signin-create-intro-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.signin-create-intro-copy {
+  min-width: 0;
+}
+
+.signin-create-intro-copy h2 {
+  margin: 0 0 0.22rem;
+  color: #0e1428;
+  font-size: 0.88rem;
+  font-weight: 680;
+  line-height: 1.35;
+}
+
+.signin-create-intro p {
+  margin: 0;
+  color: rgba(18, 26, 47, 0.7);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.signin-create-intro p strong {
+  color: #0e1428;
+  font-weight: 680;
+}
+
+.signin-create-intro a {
+  color: #254a9e;
+  font-weight: 650;
+}
+
+.dark-phase .signin-create-intro-card {
+  border-color: rgba(166, 191, 255, 0.14);
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(84, 118, 194, 0.1)
+  );
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+.dark-phase .signin-create-intro-icon {
+  border-color: rgba(166, 191, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #a8c8ff;
+}
+
+.dark-phase .signin-create-intro p {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.dark-phase .signin-create-intro-copy h2,
+.dark-phase .signin-create-intro p strong {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.dark-phase .signin-create-intro a {
+  color: #a8c8ff;
+}
+
+@media (max-width: 720px) {
+  .signin-create-intro {
+    grid-template-columns: 1fr;
+  }
 }
 
 .account-home-header,

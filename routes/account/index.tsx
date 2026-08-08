@@ -68,8 +68,8 @@ const APP_UPGRADE_COPY = {
   signInWithProjectLink: "Use a different account",
   yes: "Continue to app registration",
   cancel: "Cancel",
-  submitting: "Opening sign-in…",
-  error: "Couldn’t start sign-in. Please try again.",
+  submitting: "Opening Login with Atmosphere…",
+  error: "Couldn’t start Login with Atmosphere. Please try again.",
 };
 
 export const handler = define.handlers({
@@ -111,7 +111,7 @@ async function AccountPage(
           <section class="account-home-section">
             <div class="container account-home-container">
               <p class="text-eyebrow">Manage account</p>
-              <h1 class="text-section">Sign in to manage your account</h1>
+              <h1 class="text-section">Login with Atmosphere</h1>
               <p class="text-body mt-2">
                 View your profile, connected apps, and security settings.
               </p>
@@ -126,7 +126,11 @@ async function AccountPage(
                       initialHandle={initialHandle}
                     />
                   )
-                  : <p class="text-body">Sign in is not ready yet.</p>}
+                  : (
+                    <p class="text-body">
+                      Login with Atmosphere is not ready yet.
+                    </p>
+                  )}
               </div>
             </div>
           </section>
@@ -381,7 +385,7 @@ async function AccountPage(
                   eyebrow="Apps"
                   title="Connected apps"
                   icon="apps"
-                  description="Apps you open with Continue with Atmosphere will appear here."
+                  description="Apps you open with Login with Atmosphere will appear here."
                   badge={loginConnections.length > 0
                     ? `${loginConnections.length} connected`
                     : "None yet"}
@@ -398,7 +402,7 @@ async function AccountPage(
                 eyebrow="Security"
                 title="Passkeys"
                 icon="key"
-                description="Use your device to confirm this account faster during universal sign in."
+                description="Use your device to confirm this account faster in Login with Atmosphere."
                 badge="Optional"
               >
                 <div class="account-dashboard-passkey">
@@ -694,7 +698,7 @@ function ApplicationsPanel(
             <span class="account-home-connection-copy">
               <strong>No connected apps yet</strong>
               <span>
-                Apps opened with Continue with Atmosphere will appear here.
+                Apps opened with Login with Atmosphere will appear here.
               </span>
             </span>
           </div>

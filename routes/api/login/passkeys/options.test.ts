@@ -14,7 +14,7 @@ Deno.test("passkey authentication options hide request and service errors", () =
   assertEquals(forbidden, {
     status: 403,
     body: {
-      error: "This app cannot use this sign-in request.",
+      error: "This app cannot use this Login with Atmosphere request.",
       code: "login_request_not_allowed",
       retryable: false,
     },

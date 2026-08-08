@@ -156,10 +156,10 @@ Deno.test("browser SDK default button label has no loading ellipsis", async () =
   const source = await Deno.readTextFile(
     new URL("./atmosphere-login.js", import.meta.url),
   );
-  if (!source.includes('label.textContent = "Continue with Atmosphere";')) {
-    throw new Error("Expected exact default Continue with Atmosphere label");
+  if (!source.includes('label.textContent = "Login with Atmosphere";')) {
+    throw new Error("Expected exact default Login with Atmosphere label");
   }
-  if (source.includes("Continue with Atmosphere...")) {
+  if (source.includes("Login with Atmosphere...")) {
     throw new Error("Default button label must not include trailing dots");
   }
 });
@@ -194,7 +194,7 @@ Deno.test("browser SDK consumeSelection rejects callback client_id mismatch", as
   try {
     assertThrows(
       () => sdk.login.consumeSelection({ clientId }),
-      "Atmosphere Login client_id mismatch",
+      "Login with Atmosphere client_id mismatch",
     );
   } finally {
     sdk.cleanup();
@@ -215,7 +215,7 @@ Deno.test("browser SDK consumeSelection can bind an expected state", async () =>
           clientId,
           expectedState: "state-from-app-session",
         }),
-      "Atmosphere Login state mismatch",
+      "Login with Atmosphere state mismatch",
     );
   } finally {
     sdk.cleanup();

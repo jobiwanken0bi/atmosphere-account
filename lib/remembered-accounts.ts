@@ -1,14 +1,15 @@
 /**
  * Per-device "remembered accounts" cookie. Powers the in-menu account
  * switcher: every successful OAuth callback appends the (did, handle)
- * pair to a long-lived HMAC-signed cookie so subsequent visits can
+ * pair and its browser-scoped grant ID to a long-lived HMAC-signed cookie so
+ * subsequent visits can
  * offer one-click switching between accounts the user has signed in
  * with on this browser.
  *
  * The cookie carries no secrets — just identifiers — but is signed so
  * a tampered payload can't trick the server into surfacing accounts
  * the user never authenticated as. Authority for actually switching
- * still flows through the OAuth session row keyed by DID; the cookie
+ * still flows through the OAuth grant named by the signed grant ID; the cookie
  * is only used to drive UI and to gate which DIDs the switch handler
  * is willing to act on without bouncing through PAR again.
  *
@@ -22,6 +23,9 @@ export interface RememberedAccount {
   did: string;
   handle: string;
   pdsUrl?: string | null;
+  /** Server-only opaque binding. Parsed as a non-enumerable property so Fresh
+   * never serializes it into client-side account-picker props. */
+  grantId?: string | null;
 }
 
 const COOKIE_NAME = "atmo_accounts";
@@ -171,15 +175,21 @@ async function parseSignedValue(value: string): Promise<RememberedAccount[]> {
     const did = (item as Record<string, unknown>).did;
     const handle = (item as Record<string, unknown>).handle;
     const pdsUrl = (item as Record<string, unknown>).pdsUrl;
+    const grantId = (item as Record<string, unknown>).grantId;
     if (typeof did !== "string" || typeof handle !== "string") continue;
     if (!did.startsWith("did:")) continue;
     if (seen.has(did)) continue;
     seen.add(did);
-    out.push({
+    const account: RememberedAccount = {
       did,
       handle,
       pdsUrl: typeof pdsUrl === "string" && pdsUrl ? pdsUrl : null,
+    };
+    Object.defineProperty(account, "grantId", {
+      value: typeof grantId === "string" && grantId ? grantId : null,
+      enumerable: false,
     });
+    out.push(account);
     if (out.length >= MAX_ACCOUNTS) break;
   }
   return out;
@@ -191,6 +201,7 @@ async function buildCookie(accounts: RememberedAccount[]): Promise<string> {
       did: a.did,
       handle: a.handle,
       ...(a.pdsUrl ? { pdsUrl: a.pdsUrl } : {}),
+      ...(a.grantId ? { grantId: a.grantId } : {}),
     })),
   );
   const payload = b64uEncodeBytes(new TextEncoder().encode(json));

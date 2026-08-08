@@ -41,9 +41,14 @@ export const handler = define.handlers({
     );
     return json(hosts, {
       headers: {
-        // Page links must not combine totals from independently cached
-        // inventory snapshots.
-        "cache-control": "no-store",
+        // Each cached page is an atomic directory snapshot. Keep the shared
+        // lifetime short so moderation and account-lifecycle changes remain
+        // prompt while repeated pagination avoids another database/network
+        // round trip.
+        "cache-control":
+          "public, max-age=15, s-maxage=30, stale-while-revalidate=60",
+        "cache-tag": "public-hosts",
+        "deno-cache-tag": "public-hosts",
       },
     });
   }, {

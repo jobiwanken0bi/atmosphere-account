@@ -123,7 +123,7 @@ export const handler = define.handlers({
       request = readSignInAuthorizationRequest(ctx.url);
     } catch {
       return new Response(
-        "This sign-in link is invalid. Return to the previous page and try again.",
+        "This Login with Atmosphere link is invalid. Return to the previous page and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
     }
@@ -142,7 +142,7 @@ export const handler = define.handlers({
     const allowAccountCreation = oauthActionAllowsAccountCreation(action);
     if (requestedMode === "create" && !allowAccountCreation) {
       return new Response(
-        "This sign-in link is invalid. Return to the previous page and try again.",
+        "This Login with Atmosphere link is invalid. Return to the previous page and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
     }
@@ -287,14 +287,16 @@ export function SignInPageContent(
             class="container signin-page-container"
             data-signin-page-copy="true"
           >
-            <p
-              class="text-eyebrow"
-              data-signin-mode-copy="true"
-              data-signin-copy-signin={copy.eyebrow}
-              data-signin-copy-create="New account"
-            >
-              {creatingAccount ? "New account" : copy.eyebrow}
-            </p>
+            {!creatingAccount && (
+              <p
+                class="text-eyebrow"
+                data-signin-mode-copy="true"
+                data-signin-copy-signin={copy.eyebrow}
+                data-signin-copy-create=""
+              >
+                {copy.eyebrow}
+              </p>
+            )}
             <h1
               class="text-section"
               data-signin-mode-copy="true"
@@ -305,14 +307,51 @@ export function SignInPageContent(
             </h1>
             <p
               class="text-body mt-2"
-              data-signin-mode-copy="true"
-              data-signin-copy-signin={signInBody}
-              data-signin-copy-create="Choose where your account will live."
+              data-signin-mode-content="signin"
+              hidden={creatingAccount}
             >
-              {creatingAccount
-                ? "Choose where your account will live."
-                : signInBody}
+              {signInBody}
             </p>
+            <div
+              class="signin-create-intro mt-2"
+              data-signin-mode-content="create"
+              hidden={!creatingAccount}
+            >
+              <div class="signin-create-intro-card">
+                <span class="signin-create-intro-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M4 10.5 12 4l8 6.5V20H4z" />
+                    <path d="M9 20v-6h6v6" />
+                  </svg>
+                </span>
+                <div class="signin-create-intro-copy">
+                  <h2>Your host is where your account lives.</h2>
+                  <p>
+                    Create an account with a host and you’ll return here when
+                    it’s ready. You can use the same account with any{" "}
+                    <a href="/apps">app</a> in the Atmosphere.
+                  </p>
+                </div>
+              </div>
+              <div class="signin-create-intro-card">
+                <span class="signin-create-intro-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M5 7h13" />
+                    <path d="m15 4 3 3-3 3" />
+                    <path d="M19 17H6" />
+                    <path d="m9 14-3 3 3 3" />
+                  </svg>
+                </span>
+                <div class="signin-create-intro-copy">
+                  <h2>Your account is yours.</h2>
+                  <p>
+                    You can move it to another host later, and if you own a
+                    domain, you can use it as your handle - for example,{" "}
+                    <strong>you.com</strong>.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div class="glass signin-page-card">
               {permissionStatusCopy(permissionState) && (
                 <p class="profile-form-status profile-form-status--error">
@@ -322,7 +361,8 @@ export function SignInPageContent(
               {!oauthConfigured
                 ? (
                   <p class="text-body">
-                    Sign-in isn’t available here yet. Try again shortly.
+                    Login with Atmosphere isn’t available here yet. Try again
+                    shortly.
                   </p>
                 )
                 : signedInUser
@@ -492,9 +532,11 @@ export function authMediaContext(
 }
 
 export function permissionStatusCopy(state: string | null): string | null {
-  if (state === "denied") return "You canceled sign-in. Nothing changed.";
+  if (state === "denied") {
+    return "You canceled Login with Atmosphere. Nothing changed.";
+  }
   if (state === "failed") {
-    return "Sign-in could not be completed. Nothing changed. Try again.";
+    return "Login with Atmosphere could not be completed. Nothing changed. Try again.";
   }
   if (state === "concurrent") {
     return "Your account changed while this was open. Continue once more to finish safely.";
@@ -506,8 +548,8 @@ export function permissionStatusCopy(state: string | null): string | null {
 }
 
 async function loadCreateAccountHosts(): Promise<CreateAccountHostOption[]> {
-  return await listCreateAccountHostOptions().catch((err) => {
-    console.warn("[signin] account host discovery failed:", err);
+  return await listCreateAccountHostOptions().catch(() => {
+    console.warn("[signin] account host discovery failed");
     return [];
   });
 }

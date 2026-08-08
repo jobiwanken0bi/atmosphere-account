@@ -63,15 +63,15 @@ export const docsPages: DocsPage[] = [
     navTitle: "Overview",
     title: "Atmosphere Account docs",
     description:
-      "Build with a shared Atmosphere sign-in picker, host registry, and thin routing to PDS-owned account pages.",
+      "Build with Login with Atmosphere, the host registry, and thin routing to PDS-owned account pages.",
     summary: [
-      "Use Atmosphere Login when an app wants a consistent account picker before starting its own AT Protocol OAuth flow.",
+      "Use Login with Atmosphere when an app wants a consistent account picker before starting its own AT Protocol OAuth flow.",
       "Use host service records when a PDS host wants Atmosphere to route users to its account page without giving custody or account-control authority to Atmosphere.",
       "Passwords, devices, OAuth grants, keys, backups, recovery, deletion, and migration are managed by the user's PDS host, not by Atmosphere.",
       "Use conformance tools before claiming compatibility in the host directory.",
     ],
     primaryCta: {
-      label: "Add Atmosphere Login",
+      label: "Add Login with Atmosphere",
       href: "/docs/atmosphere-login",
     },
     secondaryCta: { label: "Validate a host", href: "/docs/conformance" },
@@ -109,7 +109,7 @@ export const docsPages: DocsPage[] = [
           {
             type: "diagram",
             variant: "login",
-            title: "Universal sign-in flow",
+            title: "Login with Atmosphere flow",
             items: [
               {
                 title: "App button",
@@ -134,7 +134,7 @@ export const docsPages: DocsPage[] = [
             type: "steps",
             items: [
               {
-                title: "Universal sign-in",
+                title: "Login with Atmosphere",
                 body:
                   "Apps send users to the hosted picker. Atmosphere returns a signed selection token, then the app starts normal AT Protocol OAuth with the chosen account.",
               },
@@ -166,13 +166,13 @@ export const docsPages: DocsPage[] = [
             columns: ["Surface", "Atmosphere does", "PDS host does"],
             rows: [
               [
-                "Sign in",
+                "Login with Atmosphere",
                 "Lets the user choose an account and returns a signed selection token.",
                 "Issues the app's OAuth grant after the app starts normal AT Protocol OAuth.",
               ],
               [
                 "Account home",
-                "Shows the current account, remembered browser accounts, Atmosphere Login connections, developer apps, reviews, and a link to the host.",
+                "Shows the current account, remembered browser accounts, Login with Atmosphere connections, developer apps, reviews, and a link to the host.",
                 "Manages passwords, devices, OAuth grants, account deletion, recovery, backups, exports, and migration.",
               ],
               [
@@ -193,7 +193,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "App developers",
                 body:
-                  "Use Atmosphere Login for the shared account picker, then own your app OAuth session.",
+                  "Use Login with Atmosphere for the shared account picker, then own your app OAuth session.",
                 href: "/docs/atmosphere-login",
                 label: "Read the guide",
               },
@@ -232,7 +232,7 @@ export const docsPages: DocsPage[] = [
             rows: [
               [
                 "An Atmosphere app",
-                "Atmosphere Login and shared app records",
+                "Login with Atmosphere and shared app records",
                 "One consistent account picker, followed by your own AT Protocol OAuth session and interoperable app discovery.",
               ],
               [
@@ -256,7 +256,7 @@ export const docsPages: DocsPage[] = [
     group: "Start",
     status: "Stable",
     navTitle: "Get started",
-    title: "Build your first Atmosphere Login flow",
+    title: "Build your first Login with Atmosphere flow",
     description:
       "Add a shared account picker, verify the signed account selection, then start your own AT Protocol OAuth flow.",
     summary: [
@@ -424,8 +424,8 @@ return startAtprotoOAuth({
     slug: "atmosphere-login",
     group: "Guides",
     status: "Stable",
-    navTitle: "Atmosphere Login",
-    title: "Add Continue with Atmosphere",
+    navTitle: "Login with Atmosphere",
+    title: "Add Login with Atmosphere",
     description:
       "Use the hosted picker to let people choose an Atmosphere account, then complete your own AT Protocol OAuth flow with that account.",
     summary: [
@@ -518,7 +518,7 @@ return startAtprotoOAuth({
             type: "steps",
             items: [
               {
-                title: "Click Continue with Atmosphere",
+                title: "Click Login with Atmosphere",
                 body:
                   "The SDK stores a one-time state value, builds the picker URL, and sends the user to `/login/select`. Redirect mode navigates the page; popup mode keeps the app page open.",
               },
@@ -545,7 +545,7 @@ return startAtprotoOAuth({
         id: "complete-oauth-handoff",
         title: "Complete the ATProto OAuth handoff",
         intro:
-          "Atmosphere Login only selects an account. After the selection token passes, your app should begin normal AT Protocol OAuth with the selected handle or DID as the login hint.",
+          "Login with Atmosphere only selects an account. After the selection token passes, your app should begin normal AT Protocol OAuth with the selected handle or DID as the login hint.",
         blocks: [
           {
             type: "endpoint",
@@ -600,7 +600,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "account-management-boundary",
         title: "Account management stays with the host",
         intro:
-          "Atmosphere Login gives apps a consistent account picker. It is intentionally not a replacement for the user's PDS account page.",
+          "Login with Atmosphere gives apps a consistent account picker. It is intentionally not a replacement for the user's PDS account page.",
         blocks: [
           {
             type: "callout",
@@ -721,7 +721,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             type: "steps",
             items: [
               {
-                title: "Sign in with the owner account",
+                title: "Choose the owner account in Login with Atmosphere",
                 body:
                   "The current Atmosphere account becomes the owner of the app registration. That owner can update the name, logo, homepage, and return URI allow-list.",
               },
@@ -787,7 +787,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "domain-manifest",
         title: "Verify your app domain",
         intro:
-          "Before an app can request Trusted status, its homepage origin must publish a small Atmosphere Login manifest. This proves the registered app identity is controlled by the same domain users see in the picker.",
+          "Before an app can request Trusted status, its homepage origin must publish a small Login with Atmosphere manifest. This proves the registered app identity is controlled by the same domain users see in the picker.",
         blocks: [
           {
             type: "code",
@@ -1383,7 +1383,7 @@ return Response.redirect(oauthUrl);`,
               {
                 title: "Use the app account",
                 body:
-                  "Sign in with the account that represents the app. That account owns the app’s shared profile and listing records.",
+                  "Choose the account that represents the app in Login with Atmosphere. That account owns the app’s shared profile and listing records.",
               },
               {
                 title: "Add required listing fields",
@@ -1477,7 +1477,7 @@ return Response.redirect(oauthUrl);`,
     group: "Guides",
     status: "Stable",
     navTitle: "Add button",
-    title: "Add the Continue with Atmosphere button",
+    title: "Add the Login with Atmosphere button",
     description:
       "Use the browser SDK to render a consistent button, generate state, and open the hosted picker.",
     summary: [
@@ -1602,7 +1602,7 @@ location.href = url;`,
 
 button.addEventListener("atmosphere-login:complete", (event) => {
   const { selection } = event.detail;
-  // Verify selection.token on your server before starting your app sign-in.
+  // Verify selection.token on your server before starting your app OAuth flow.
 });
 
 button.addEventListener("atmosphere-login:cancel", () => {
@@ -1837,7 +1837,7 @@ return Response.redirect(oauthUrl);`,
     group: "Guides",
     status: "Stable",
     navTitle: "Production checklist",
-    title: "Prepare Atmosphere Login for production",
+    title: "Prepare Login with Atmosphere for production",
     description:
       "Run the checks needed before users see a trusted, production-ready picker handoff.",
     summary: [
@@ -1954,7 +1954,7 @@ return Response.redirect(oauthUrl);`,
     group: "Guides",
     status: "Stable",
     navTitle: "Troubleshooting",
-    title: "Troubleshoot Atmosphere Login",
+    title: "Troubleshoot Login with Atmosphere",
     description:
       "Common picker, callback, local development, and AT Protocol OAuth handoff issues.",
     summary: [
@@ -2007,8 +2007,8 @@ return Response.redirect(oauthUrl);`,
               ],
               [
                 "No saved accounts shown",
-                "The user has not used Atmosphere Login in this browser.",
-                "Show add-account/sign-in in the picker and let the user continue normally.",
+                "The user has not used Login with Atmosphere in this browser.",
+                "Show the account chooser and let the user continue normally.",
               ],
               [
                 "OAuth login hint ignored",
@@ -2274,7 +2274,7 @@ return Response.redirect(oauthUrl);`,
                 "connectedApps",
                 "OAuth grants and app permissions managed by the host.",
               ],
-              ["devices", "Active sessions, devices, and saved sign-in keys."],
+              ["devices", "Active sessions, devices, and saved passkeys."],
               ["password", "Password changes, reset, and auth methods."],
               ["accountDeletion", "Account deactivation and deletion."],
               ["rotationKeys", "Recovery and rotation-key status."],
@@ -2390,12 +2390,12 @@ deno task host:conformance host.example --write`,
     description:
       "Download the shared assets, examples, schemas, and project icons used by Atmosphere apps and docs.",
     summary: [
-      "Use the sign-in badge and logo to make Atmosphere Login recognizable.",
+      "Use the badge and logo to make Login with Atmosphere recognizable.",
       "Download the Lottie animation and icon assets for product and docs surfaces.",
       "Use community app profiles, ATStore records, host lexicons, optional compatibility schemas, and SVG icon exports when building interoperable experiences.",
     ],
     primaryCta: {
-      label: "Sign-in badge",
+      label: "Login with Atmosphere badge",
       href: "/sign-in-box.svg",
     },
     secondaryCta: {
@@ -2406,7 +2406,7 @@ deno task host:conformance host.example --write`,
       {
         id: "brand-assets",
         eyebrow: "Assets",
-        title: "Sign-in and brand assets",
+        title: "Login with Atmosphere and brand assets",
         blocks: [
           {
             type: "paragraph",
@@ -2417,7 +2417,7 @@ deno task host:conformance host.example --write`,
             type: "endpoint",
             method: "GET",
             path: "/sign-in-box.svg",
-            body: "SVG badge for sign-in pages and docs examples.",
+            body: "SVG badge for Login with Atmosphere pages and examples.",
           },
           {
             type: "endpoint",
@@ -2429,7 +2429,7 @@ deno task host:conformance host.example --write`,
             type: "endpoint",
             method: "GET",
             path: "/atmosphere-login.js",
-            body: "Browser SDK for the Continue with Atmosphere button.",
+            body: "Browser SDK for the Login with Atmosphere button.",
           },
         ],
       },
@@ -2546,7 +2546,7 @@ deno task host:conformance host.example --write`,
         id: "project-icons",
         title: "Project SVG icons",
         intro:
-          "Current verified project icons for people building sign-in flows, app showcases, and directory experiences.",
+          "Current verified project icons for people building Login with Atmosphere flows, app showcases, and directory experiences.",
         blocks: [{ type: "iconDownloads" }],
       },
     ],
@@ -2556,7 +2556,7 @@ deno task host:conformance host.example --write`,
     group: "Reference",
     status: "Stable",
     navTitle: "SDK reference",
-    title: "Atmosphere Login SDK reference",
+    title: "Login with Atmosphere SDK reference",
     description:
       "Browser attributes, helper methods, server verifier exports, callback parameters, token claims, and common verifier errors.",
     summary: [
@@ -2600,7 +2600,7 @@ deno task host:conformance host.example --write`,
               [
                 "data-atmosphere-login",
                 "boolean",
-                "Enhance this element as a Continue with Atmosphere button.",
+                "Enhance this element as a Login with Atmosphere button.",
               ],
               [
                 "data-client-id",
@@ -2664,7 +2664,7 @@ const selection = AtmosphereLogin.consumeSelection({
   expectedState: stateFromSession,
 });
 
-// By default, consumeSelection removes Atmosphere Login callback parameters
+// By default, consumeSelection removes Login with Atmosphere callback parameters
 // from the address bar after reading them. Pass { clearUrl: false } only if
 // your router needs to control URL cleanup itself.
 //
@@ -2825,7 +2825,7 @@ iss=https://login.atmosphereaccount.com`,
     sections: [
       {
         id: "login",
-        eyebrow: "Atmosphere Login",
+        eyebrow: "Login with Atmosphere",
         title: "Login endpoints",
         blocks: [
           {

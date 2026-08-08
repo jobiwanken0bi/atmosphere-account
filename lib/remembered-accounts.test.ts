@@ -76,6 +76,7 @@ Deno.test("remembered account cookies roundtrip signed account hints", async () 
     did: "did:plc:account",
     handle: "account.example.com",
     pdsUrl: "https://pds.example.com",
+    grantId: "browser-grant",
   });
   const accounts = await readRememberedAccountsFromHeader(cookie);
 
@@ -86,6 +87,8 @@ Deno.test("remembered account cookies roundtrip signed account hints", async () 
       pdsUrl: "https://pds.example.com",
     },
   ]);
+  assertEquals(accounts[0].grantId, "browser-grant");
+  assertEquals(Object.keys(accounts[0]).includes("grantId"), false);
 });
 
 Deno.test("remembered account reader merges duplicate scoped cookies", async () => {

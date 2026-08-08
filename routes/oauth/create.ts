@@ -58,7 +58,7 @@ function isLoginSelectionReturn(path: string | null): boolean {
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-    (err) => appviewUnavailable("OAuth account creation", err),
+    () => appviewUnavailable("OAuth account creation"),
   );
   if (proxied) return proxied;
 
@@ -250,7 +250,7 @@ export function enforceDirectAccountCreationAction(
   return oauthActionAllowsAccountCreation(normalized)
     ? normalized
     : publicAccountCreationError(
-      "This action requires an existing account. Sign in instead.",
+      "This action requires an existing account. Use Login with Atmosphere instead.",
       400,
     );
 }
@@ -268,8 +268,8 @@ function publicAccountCreationError(
   });
 }
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(scope: string): Response {
+  console.error(`[appview] ${scope} proxy failed`);
   return new Response("Account creation is temporarily unavailable.", {
     status: 503,
     headers: {

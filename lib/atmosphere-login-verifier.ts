@@ -45,7 +45,9 @@ export async function fetchAtmosphereLoginPublicJwkForToken(
 ): Promise<JsonWebKey> {
   const kid = readAtmosphereLoginTokenKid(token);
   if (!kid) {
-    throw new Error("Atmosphere Login selection token did not include a kid");
+    throw new Error(
+      "Login with Atmosphere selection token did not include a kid",
+    );
   }
   return await fetchAtmosphereLoginPublicJwk(atmosphereOrigin, {
     ...options,
@@ -83,10 +85,10 @@ export async function fetchAtmosphereLoginJwks(
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("Atmosphere Login JWKS request timed out");
+      throw new Error("Login with Atmosphere JWKS request timed out");
     }
     throw new Error(
-      `Atmosphere Login JWKS request failed: ${
+      `Login with Atmosphere JWKS request failed: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -95,7 +97,7 @@ export async function fetchAtmosphereLoginJwks(
   }
   if (!response.ok) {
     throw new Error(
-      `Atmosphere Login JWKS request failed with ${response.status}`,
+      `Login with Atmosphere JWKS request failed with ${response.status}`,
     );
   }
   const contentType = (response.headers.get("content-type") ?? "")
@@ -105,7 +107,7 @@ export async function fetchAtmosphereLoginJwks(
     !contentType.includes("application/jwk-set+json")
   ) {
     await response.body?.cancel().catch(() => {});
-    throw new Error("Atmosphere Login JWKS response was not JSON");
+    throw new Error("Login with Atmosphere JWKS response was not JSON");
   }
   const bodyTimeoutId =
     controller && Number.isFinite(timeoutMs) && timeoutMs > 0
@@ -120,7 +122,7 @@ export async function fetchAtmosphereLoginJwks(
     );
   } catch (error) {
     if (controller?.signal.aborted) {
-      throw new Error("Atmosphere Login JWKS request timed out");
+      throw new Error("Login with Atmosphere JWKS request timed out");
     }
     throw error;
   } finally {
@@ -130,7 +132,7 @@ export async function fetchAtmosphereLoginJwks(
   try {
     jwks = JSON.parse(text) as unknown;
   } catch {
-    throw new Error("Atmosphere Login JWKS was not valid JSON");
+    throw new Error("Login with Atmosphere JWKS was not valid JSON");
   }
   if (cacheEnabled) {
     jwksCache.set(cacheKey, {
@@ -158,8 +160,8 @@ export function selectAtmosphereLoginPublicJwk(
   if (!key) {
     throw new Error(
       kid
-        ? `Atmosphere Login JWKS did not include key ${kid}`
-        : "Atmosphere Login JWKS did not include a key",
+        ? `Login with Atmosphere JWKS did not include key ${kid}`
+        : "Login with Atmosphere JWKS did not include a key",
     );
   }
   return key;
@@ -179,11 +181,11 @@ export function readAtmosphereLoginTokenHeader(
     typeof token !== "string" ||
     new TextEncoder().encode(token).byteLength > MAX_SELECTION_TOKEN_BYTES
   ) {
-    throw new Error("Atmosphere Login selection token is malformed");
+    throw new Error("Login with Atmosphere selection token is malformed");
   }
   const parts = token.split(".");
   if (parts.length !== 3 || !parts[0]) {
-    throw new Error("Atmosphere Login selection token is malformed");
+    throw new Error("Login with Atmosphere selection token is malformed");
   }
   try {
     const header = JSON.parse(
@@ -194,7 +196,7 @@ export function readAtmosphereLoginTokenHeader(
     }
     return header as Record<string, unknown>;
   } catch {
-    throw new Error("Atmosphere Login selection token header is invalid");
+    throw new Error("Login with Atmosphere selection token header is invalid");
   }
 }
 
@@ -305,14 +307,14 @@ async function readBoundedResponseText(
   signal?: AbortSignal,
 ): Promise<string> {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
-    throw new Error("Atmosphere Login JWKS response limit was invalid");
+    throw new Error("Login with Atmosphere JWKS response limit was invalid");
   }
   const rawLength = response.headers.get("content-length");
   if (rawLength) {
     const length = Number(rawLength);
     if (Number.isFinite(length) && length > maxBytes) {
       await response.body?.cancel().catch(() => {});
-      throw new Error("Atmosphere Login JWKS response was too large");
+      throw new Error("Login with Atmosphere JWKS response was too large");
     }
   }
   if (!response.body) return "";
@@ -332,7 +334,7 @@ async function readBoundedResponseText(
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => {});
-        throw new Error("Atmosphere Login JWKS response was too large");
+        throw new Error("Login with Atmosphere JWKS response was too large");
       }
       chunks.push(value);
     }

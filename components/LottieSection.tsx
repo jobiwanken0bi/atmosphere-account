@@ -137,6 +137,7 @@ export default function LottieSection() {
       <a
         href="/apps"
         class="explore-cta-primary home-section-cta-button lottie-section-cta"
+        data-page-prefetch="intent"
       >
         {t.lottie.exploreApps}
         <svg

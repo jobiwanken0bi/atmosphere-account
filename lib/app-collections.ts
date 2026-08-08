@@ -6,6 +6,11 @@ export interface AppCollectionDefinition {
   aliases: string[];
 }
 
+export interface AppCollectionSummary {
+  tag: string;
+  count: number;
+}
+
 export const APP_COLLECTIONS: AppCollectionDefinition[] = [
   {
     key: "social",
@@ -262,6 +267,29 @@ export const APP_COLLECTIONS: AppCollectionDefinition[] = [
     aliases: ["video", "videos", "media"],
   },
 ];
+
+/**
+ * Keep the full collection directory stable even before every collection has
+ * a published app. The home page can still use the non-empty summaries from
+ * the AppView, while the dedicated collection page shows the complete catalog.
+ */
+export function completeAppCollectionSummaries(
+  summaries: readonly AppCollectionSummary[],
+): AppCollectionSummary[] {
+  const counts = new Map<string, number>();
+  for (const summary of summaries) {
+    const collection = appCollectionForTag(summary.tag);
+    if (!collection) continue;
+    counts.set(
+      collection.tag,
+      (counts.get(collection.tag) ?? 0) + Math.max(0, summary.count),
+    );
+  }
+  return APP_COLLECTIONS.map((collection) => ({
+    tag: collection.tag,
+    count: counts.get(collection.tag) ?? 0,
+  }));
+}
 
 export function appCollectionForTag(
   tag: string | null | undefined,

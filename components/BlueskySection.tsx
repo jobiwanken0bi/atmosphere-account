@@ -141,6 +141,7 @@ export default function BlueskySection() {
         <div class="home-section-cta-row">
           <a
             href="/hosts"
+            data-page-prefetch="intent"
             class="explore-cta-primary home-section-cta-button"
           >
             {t.providers.exploreHosts}

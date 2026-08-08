@@ -15,7 +15,11 @@ Deno.test("database maintenance preserves refresh sessions while removing expire
       const sql = typeof query === "string" ? query : query.sql;
       const args = typeof query === "string" ? [] : query.args ?? [];
       calls.push({ sql, args });
+      if (/^SELECT (key|did), value FROM oauth_(state|session)/i.test(sql)) {
+        return { rows: [], rowsAffected: 0 };
+      }
       if (/oauth_state/i.test(sql)) return { rowsAffected: 1 };
+      if (/app_session_grant/i.test(sql)) return { rowsAffected: 0 };
       if (/app_session/i.test(sql)) return { rowsAffected: 3 };
       if (/login_selection_replay/i.test(sql)) return { rowsAffected: 4 };
       if (/login_picker_intent/i.test(sql)) return { rowsAffected: 5 };

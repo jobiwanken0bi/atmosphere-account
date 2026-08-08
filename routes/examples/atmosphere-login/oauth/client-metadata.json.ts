@@ -12,7 +12,7 @@ export const handler = define.handlers({
     const body = {
       client_id: clientId,
       application_type: "web",
-      client_name: "Atmosphere Login reference app",
+      client_name: "Login with Atmosphere reference app",
       client_uri: new URL("/examples/atmosphere-login/app", origin).toString(),
       logo_uri: new URL("/app-icon.svg", origin).toString(),
       tos_uri: origin,

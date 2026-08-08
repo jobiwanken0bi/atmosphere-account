@@ -126,7 +126,7 @@ Atmosphere `/account` should:
 - show the current account, avatar, handle, and friendly host name,
 - provide one primary "Manage account at host" route derived from the PDS
   endpoint or supplied as an explicit override,
-- show Atmosphere Login picker connections,
+- show Login with Atmosphere picker connections,
 - show remembered accounts for this browser,
 - hide technical identifiers behind disclosure UI,
 - never render first-party controls for PDS OAuth grant revocation, devices,

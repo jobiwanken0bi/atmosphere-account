@@ -316,7 +316,7 @@ const { sub: did, handle, pds_url } = result.claims;`;
               } for ${selectedApp.appName}.`
               : appsLoadError.value
               ? "Registered apps could not be loaded; the reference app still works."
-              : "Sign in and register an app to generate URLs from saved metadata."}
+              : "Use Login with Atmosphere and register an app to generate URLs from saved metadata."}
           </span>
         </label>
         <label class="profile-form-field">

@@ -7,6 +7,7 @@ import {
   deleteSessionIfUnchangedForTest,
   flowMatchesCallbackClientForTest,
   grantedScopeForSession,
+  legacyGrantMigrationPurposeForTest,
   oauthClientIdForSessionForTest,
   persistentExistingSessionPolicyForTest,
   sameRefreshAuthorizationForTest,
@@ -17,6 +18,7 @@ import {
 
 function session(scope?: string): SessionData {
   return {
+    grantId: "grant-alice",
     did: "did:plc:alice",
     handle: "alice.example",
     pdsUrl: "https://pds.example",
@@ -78,6 +80,11 @@ Deno.test("login-selection OAuth never persists its token session", () => {
   );
   assertEquals(shouldPersistOAuthSessionForTest(undefined, undefined), true);
   assertEquals(shouldPersistOAuthSessionForTest(false, undefined), false);
+});
+
+Deno.test("legacy DID-wide grants are never assigned to a browser session", () => {
+  assertEquals(legacyGrantMigrationPurposeForTest("old-app-session"), null);
+  assertEquals(legacyGrantMigrationPurposeForTest(null), "service");
 });
 
 Deno.test("persistent identity login validates stale rows without unioning their scopes", () => {
@@ -165,10 +172,17 @@ Deno.test("invalid-session deletion is compare-and-swap guarded", async () => {
     current,
   );
   assertEquals(deleted, true);
-  assertEquals(calls, [{
-    sql: "DELETE FROM oauth_session WHERE did = ? AND value = ?",
-    args: [current.did, JSON.stringify(current)],
-  }]);
+  assertEquals(calls, [
+    {
+      sql:
+        "DELETE FROM oauth_grant\n      WHERE grant_id = ? AND did = ? AND value = ?",
+      args: [current.grantId, current.did, JSON.stringify(current)],
+    },
+    {
+      sql: "DELETE FROM app_session_grant WHERE grant_id = ?",
+      args: [current.grantId],
+    },
+  ]);
 
   const raced = await deleteSessionIfUnchangedForTest(
     {

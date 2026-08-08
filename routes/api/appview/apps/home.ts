@@ -29,7 +29,10 @@ export const handler = define.handlers({
       }));
     return json(result, {
       headers: {
-        "cache-control": "public, max-age=60, stale-while-revalidate=300",
+        "cache-control":
+          "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
+        "cache-tag": "public-apps",
+        "deno-cache-tag": "public-apps",
       },
     });
   },

@@ -89,7 +89,7 @@ function Page({ account, rows, message, error }: PageProps) {
               </a>
             </p>
             <header class="admin-header" style={{ marginTop: "0.75rem" }}>
-              <h1 class="text-section">Atmosphere Login app reviews</h1>
+              <h1 class="text-section">Login with Atmosphere app reviews</h1>
               <p class="text-body mt-2">
                 Review app identity, allowed return URIs, and trust notes before
                 promoting an app to Trusted in the picker.

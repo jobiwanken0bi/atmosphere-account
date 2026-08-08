@@ -1,6 +1,7 @@
 import { SUPPORTED_LOCALES } from "../locales.ts";
 import en, { type Messages } from "./en.tsx";
 import { getMessages } from "./index.ts";
+import { renderToString } from "preact-render-to-string";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -55,4 +56,50 @@ Deno.test("translated catalogs may change text while preserving shape", () => {
     meta: { ...en.meta, title: "Translated title" },
   } satisfies Messages;
   assert(translated.meta.title === "Translated title", "translation rejected");
+});
+
+Deno.test("universal account entry uses the Login with Atmosphere brand", () => {
+  assert(
+    en.nav.account.signIn === "Login with Atmosphere",
+    "account entry label drifted",
+  );
+  assert(
+    en.explore.create.signIn === "Login with Atmosphere",
+    "app registration label drifted",
+  );
+  assert(
+    en.reviews.composer.signIn === "Login with Atmosphere",
+    "review label drifted",
+  );
+  assert(
+    en.reviews.app.like.signIn ===
+      "Login with Atmosphere to like this app",
+    "like label drifted",
+  );
+});
+
+Deno.test("homepage Atmosphere explanation keeps the agreed account story", () => {
+  const text = [
+    renderToString(en.whatIs.paragraphs[0]()),
+    renderToString(en.whatIs.blueskyNote("[Bluesky icon]")),
+    renderToString(en.whatIs.paragraphs[1]()),
+    renderToString(en.whatIs.paragraphs[2]()),
+  ].join(" ").replaceAll(/<[^>]+>/g, " ").replaceAll(/\s+/g, " ").trim();
+
+  assert(
+    text.includes("one account to use them all"),
+    "one-account explanation drifted",
+  );
+  assert(
+    text.includes("You might have heard of Bluesky [Bluesky icon]"),
+    "Bluesky explanation or icon placement drifted",
+  );
+  assert(
+    text.includes("Your Atmosphere Account is your passport"),
+    "account-passport explanation drifted",
+  );
+  assert(
+    text.includes("it’s an open social internet"),
+    "open-social-internet explanation drifted",
+  );
 });

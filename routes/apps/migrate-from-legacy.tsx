@@ -70,10 +70,10 @@ async function renderLegacyAppMigrationPage(
             <p class="text-eyebrow">Shared app records</p>
             <h1 class="text-section">Migrate this app listing</h1>
             <p class="text-body mt-2">
-              Sign in with the app account for{" "}
-              {expected}. Atmosphere will preview the existing legacy listing,
-              then publish a community app profile and an ATStore listing from
-              that account.
+              Choose the app account for {expected}{" "}
+              in Login with Atmosphere. Atmosphere will preview the existing
+              legacy listing, then publish a community app profile and an
+              ATStore listing from that account.
             </p>
             {current && current !== expected && (
               <p class="admin-app-directory-warning">

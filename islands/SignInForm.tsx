@@ -97,7 +97,11 @@ export default function SignInForm(
   const resolvedMode = allowAccountCreation ? initialMode : "signin";
   const continueLabel = submitLabel ??
     (rich ? "Continue" : t.explore.create.signIn);
-  const hasModeTabs = rich && allowAccountCreation;
+  // A direct account-creation link is a complete destination, not another
+  // sign-in decision. The combined tabs remain available on the general
+  // sign-in page, while contextual modal links open a focused host chooser.
+  const createOnly = rich && allowAccountCreation && resolvedMode === "create";
+  const hasModeTabs = rich && allowAccountCreation && !createOnly;
   const modeHref = (mode: "signin" | "create") =>
     signinModeFallbackHref({
       mode,
@@ -141,7 +145,7 @@ export default function SignInForm(
       )}
     >
       {hasModeTabs && (
-        <div class="signin-tabs" role="tablist" aria-label="Sign in options">
+        <div class="signin-tabs" role="tablist" aria-label="Account options">
           <a
             href={modeHref("signin")}
             class={`signin-tab${resolvedMode === "signin" ? " is-active" : ""}`}
@@ -152,7 +156,7 @@ export default function SignInForm(
             tabIndex={resolvedMode === "signin" ? 0 : -1}
             data-signin-tab="signin"
           >
-            Sign in
+            Login with Atmosphere
           </a>
           <a
             href={modeHref("create")}
@@ -174,7 +178,7 @@ export default function SignInForm(
         id={hasModeTabs ? signInPanelId : undefined}
         role={hasModeTabs ? "tabpanel" : undefined}
         aria-labelledby={hasModeTabs ? signInTabId : undefined}
-        hidden={rich && resolvedMode === "create"}
+        hidden={createOnly}
       >
         {hasRememberedAccounts && (
           <div
@@ -319,8 +323,8 @@ export default function SignInForm(
             data-preview-loading={t.explore.create.previewLoading}
             data-preview-not-found={t.explore.create.previewNotFound}
             data-submit-label={continueLabel}
-            data-submitting-label="Opening sign-in…"
-            data-error-label="Couldn’t start sign-in. Check the handle and try again."
+            data-submitting-label="Opening Login with Atmosphere…"
+            data-error-label="Couldn’t start Login with Atmosphere. Check the handle and try again."
           >
             {lockInitialHandle && initialDid && (
               <input type="hidden" name="handle" value={initialDid} />
@@ -398,20 +402,16 @@ export default function SignInForm(
         </div>
       </section>
 
-      {hasModeTabs && (
+      {rich && allowAccountCreation && (
         <section
           data-signin-panel="create"
-          id={createPanelId}
-          role="tabpanel"
-          aria-labelledby={createTabId}
+          id={hasModeTabs ? createPanelId : undefined}
+          role={hasModeTabs ? "tabpanel" : undefined}
+          aria-labelledby={hasModeTabs ? createTabId : undefined}
           hidden={resolvedMode !== "create"}
         >
           <div class="signin-rich-header">
             <h2>Choose an account host</h2>
-            <p>
-              Your host creates your account and keeps it online. You’ll return
-              here when it’s ready.
-            </p>
           </div>
           <CreateAccountHostChooser
             initialHosts={createAccountHosts}
@@ -706,8 +706,8 @@ function CreateAccountHostChooser(
         })}
       </div>
       <p class="signin-host-privacy-note">
-        Only hosts that can create an account here are shown. Atmosphere never
-        sees your password or invite code.
+        These hosts let you start signup here. You’ll enter any password or
+        invite code directly with the host.
       </p>
     </div>
   );

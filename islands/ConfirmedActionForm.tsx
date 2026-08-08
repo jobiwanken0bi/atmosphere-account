@@ -50,7 +50,7 @@ export function forgetAccountConfirmation(
   const account = `@${handle.replace(/^@/, "")}`;
   return isCurrent
     ? `Remove ${account} from saved accounts? This will also sign you out.`
-    : `Remove ${account} from saved accounts? You’ll need to sign in with its host to use it again.`;
+    : `Remove ${account} from saved accounts? You’ll need to use Login with Atmosphere again to switch back.`;
 }
 
 export function disconnectAppConfirmation(appName: string): string {

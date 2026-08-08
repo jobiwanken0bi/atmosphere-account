@@ -37,7 +37,7 @@ Deno.test("direct account creation enforces every action policy", async () => {
     assertEquals(response.status, 400, action);
     assertEquals(
       await response.text(),
-      "This action requires an existing account. Sign in instead.",
+      "This action requires an existing account. Use Login with Atmosphere instead.",
       action,
     );
   }

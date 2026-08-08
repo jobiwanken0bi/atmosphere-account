@@ -22,7 +22,7 @@
     if (selection.did) url.searchParams.set("did", selection.did);
     if (selection.handle) url.searchParams.set("handle", selection.handle);
     if (selection.issuer) url.searchParams.set("iss", selection.issuer);
-    setStatus("Account selected. Finishing the example app sign-in...");
+    setStatus("Account selected. Finishing Login with Atmosphere...");
     globalThis.location.href = url.toString();
   }
 

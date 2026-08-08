@@ -2,7 +2,7 @@
 
 Atmosphere Account is becoming a developer platform with three layers:
 
-- universal sign-in picker for apps,
+- Login with Atmosphere picker for apps,
 - host account routing and optional compatibility metadata for PDS hosts,
 - docs, examples, and conformance tooling for the developer community.
 
@@ -11,7 +11,7 @@ Atmosphere Account is becoming a developer platform with three layers:
 ### Cycle 1: Contract Foundation
 
 - Harden `/signin`, `/login/select`, `/account`, `/hosts`, and OAuth dev flow.
-- Publish Atmosphere Login v0.1 docs.
+- Publish Login with Atmosphere v0.1 docs.
 - Add reusable selection-token verification helpers.
 - Add host service records and honest account-routing fallbacks.
 - Test token verification, invalid requests, and PDS account-route states.
@@ -31,7 +31,7 @@ runner, expiring persisted results, and passing-only directory badges.
 
 ### Cycle 3: Developer Adoption
 
-- Expand `/developer-resources` into a full "Continue with Atmosphere" console.
+- Expand `/developer-resources` into a full "Login with Atmosphere" console.
 - Add app registration metadata for trusted picker display.
 - Add examples for Fresh/Deno, Next.js, and plain HTML.
 - Add an end-to-end sample app that completes AT Protocol OAuth after account

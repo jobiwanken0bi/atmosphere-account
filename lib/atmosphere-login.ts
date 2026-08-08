@@ -352,7 +352,7 @@ function appFromClientId(clientId: string): LoginApp {
   return {
     clientId,
     appName: isReferenceApp
-      ? "Atmosphere Login reference app"
+      ? "Login with Atmosphere reference app"
       : isDev
       ? "Development app"
       : client.hostname,
@@ -1352,7 +1352,7 @@ export function buildLoginAppIdentityChecks(
     body: app.status === "trusted"
       ? "This app is trusted in the picker."
       : app.status === "blocked"
-      ? "This app cannot use Atmosphere Login."
+      ? "This app cannot use Login with Atmosphere."
       : app.reviewStatus === "requested"
       ? "Trusted review has been requested."
       : app.reviewStatus === "rejected"
@@ -1389,7 +1389,7 @@ export function buildLoginAppReadiness(
       state: "blocked",
       label: "Blocked",
       tone: "fail",
-      body: "This app cannot use Atmosphere Login until it is unblocked.",
+      body: "This app cannot use Login with Atmosphere until it is unblocked.",
     };
   }
   if (app.status === "trusted") {
@@ -1478,7 +1478,7 @@ export async function resolveLoginAppForRequest(
   const app = registered ?? appFromClientId(normalizedClientId);
   if (app.status === "blocked") {
     throw new LoginRequestError(
-      "This app is blocked and cannot use Atmosphere Login.",
+      "This app is blocked and cannot use Login with Atmosphere.",
       403,
     );
   }
@@ -1517,7 +1517,7 @@ export async function signLoginSelection(input: {
 }): Promise<{ token: string; payload: LoginSelectionPayload }> {
   if (!OAUTH_PRIVATE_JWK || !OAUTH_KID) {
     throw new LoginRequestError(
-      "Atmosphere Login signing is not configured",
+      "Login with Atmosphere signing is not configured",
       503,
     );
   }
@@ -1566,7 +1566,7 @@ export async function verifyLoginSelectionTokenDetailed(
   if (!OAUTH_PUBLIC_JWK) {
     return {
       ok: false,
-      error: "Atmosphere Login verification is not configured",
+      error: "Login with Atmosphere verification is not configured",
     };
   }
   const publicJwk = parseJwkEnv("OAUTH_PUBLIC_JWK", OAUTH_PUBLIC_JWK);

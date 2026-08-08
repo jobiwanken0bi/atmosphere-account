@@ -42,9 +42,8 @@ export const handler = define.handlers({
       ctx.url.origin,
     ).toString();
     ctx.state.pageMeta = {
-      title: "Atmosphere Login Example App",
-      description:
-        "A working relying-app example for Continue with Atmosphere.",
+      title: "Login with Atmosphere Example App",
+      description: "A working relying-app example for Login with Atmosphere.",
       canonicalUrl: new URL("/examples/atmosphere-login/app", ctx.url.origin)
         .toString(),
     };
@@ -92,7 +91,7 @@ function ExampleApp(
   data-return-uri="${returnUri}"
   data-state="${loginState}"
   data-scope="atproto"
-  data-app-name="Atmosphere Login reference app"
+  data-app-name="Login with Atmosphere reference app"
   data-app-homepage="${appHomepage}"
 ></button>
 <script src="${sdkSrc}" defer></script>`;
@@ -102,7 +101,7 @@ function ExampleApp(
   data-return-uri="${popupReturnUri}"
   data-state="${loginState}"
   data-scope="atproto"
-  data-app-name="Atmosphere Login reference app"
+  data-app-name="Login with Atmosphere reference app"
   data-app-homepage="${appHomepage}"
   data-mode="popup"
 ></button>
@@ -154,7 +153,7 @@ return createAppSession(account);`;
             <div class="glass signin-page-card login-example-card login-example-app-card">
               <div>
                 <p class="text-eyebrow">Example relying app</p>
-                <h1 class="host-claim-title">Continue with Atmosphere</h1>
+                <h1 class="host-claim-title">Login with Atmosphere</h1>
                 <p class="text-body host-claim-copy">
                   This is the canonical copy-paste reference: the app asks
                   Atmosphere to choose an account, verifies the signed selection
@@ -221,7 +220,7 @@ return createAppSession(account);`;
                       data-return-uri={returnUri}
                       data-state={loginState}
                       data-scope="atproto"
-                      data-app-name="Atmosphere Login reference app"
+                      data-app-name="Login with Atmosphere reference app"
                       data-app-homepage={appHomepage}
                     />
                     <button
@@ -231,7 +230,7 @@ return createAppSession(account);`;
                       data-return-uri={popupReturnUri}
                       data-state={loginState}
                       data-scope="atproto"
-                      data-app-name="Atmosphere Login reference app"
+                      data-app-name="Login with Atmosphere reference app"
                       data-app-homepage={appHomepage}
                       data-mode="popup"
                       data-example-popup-button

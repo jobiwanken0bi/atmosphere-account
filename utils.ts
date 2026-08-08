@@ -7,6 +7,11 @@ import type { HostVerificationStatus } from "./lib/account-hosts.ts";
 export interface SessionUser {
   did: string;
   handle: string;
+  /** Server-only binding to this browser's OAuth grant. Non-enumerable when
+   * hydrated so it is never serialized into island props. */
+  oauthGrantId?: string | null;
+  /** Server-only app-session identifier used for one-time legacy migration. */
+  appSessionId?: string;
 }
 
 /**

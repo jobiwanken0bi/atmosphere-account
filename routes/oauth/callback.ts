@@ -164,7 +164,7 @@ export const handler = define.handlers({
       })
     ) {
       return new Response(
-        "Sign-in isn’t available right now. Try again shortly.",
+        "Login with Atmosphere isn’t available right now. Try again shortly.",
         {
           status: 503,
         },
@@ -175,7 +175,7 @@ export const handler = define.handlers({
       callback = readOAuthCallbackParameters(ctx.url);
     } catch {
       return new Response(
-        "This sign-in link is invalid. Return to Atmosphere and try again.",
+        "This Login with Atmosphere link is invalid. Return to Atmosphere and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
     }
@@ -185,7 +185,7 @@ export const handler = define.handlers({
       : null;
     if (state && !browserBinding) {
       return new Response(
-        "This sign-in link was opened in a different browser or has expired. Return to Atmosphere and try again.",
+        "This Login with Atmosphere link was opened in a different browser or has expired. Return to Atmosphere and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
     }
@@ -253,7 +253,7 @@ export const handler = define.handlers({
     if (!state || !code || !iss) {
       return withClearedOAuthFlowBinding(
         new Response(
-          "This sign-in link has expired or is incomplete. Return to Atmosphere and try again.",
+          "This Login with Atmosphere link has expired or is incomplete. Return to Atmosphere and try again.",
           { status: 400 },
         ),
         state,
@@ -275,11 +275,14 @@ export const handler = define.handlers({
       const remembered = await readRememberedAccountsFromHeader(
         ctx.req.headers.get("cookie"),
       );
-      const rememberedCookies = await addRememberedAccountCookies(remembered, {
-        did: result.did,
-        handle: result.handle,
-        pdsUrl: result.pdsUrl,
-      });
+      const rememberedCookies = result.grantId
+        ? await addRememberedAccountCookies(remembered, {
+          did: result.did,
+          handle: result.handle,
+          pdsUrl: result.pdsUrl,
+          grantId: result.grantId,
+        })
+        : [];
 
       const [bskyProfile, atmosphereProfile, existingAppUser] = await Promise
         .all([
@@ -345,10 +348,7 @@ export const handler = define.handlers({
       const returnTo = isSafeRelativePath(result.returnTo)
         ? result.returnTo
         : null;
-      const defaultLanding = accountType === "project"
-        ? "/apps/manage"
-        : "/account";
-      let destination = returnTo ?? defaultLanding;
+      let destination = oauthSuccessDestination(returnTo, accountType);
       if (result.continuation === "login_selection" && returnTo) {
         try {
           const requestUrl = new URL(returnTo, ctx.url.origin);
@@ -381,18 +381,24 @@ export const handler = define.handlers({
         isPasskeyManagementReturnTo(returnTo) && result.reauthenticated
           ? await buildPasskeyManagementCookie(result.did)
           : clearPasskeyManagementCookie();
-      const sessionCookie = buildSessionCookie(
-        await createSession({ did: result.did, handle: result.handle }),
-      );
+      const sessionCookie = result.grantId
+        ? buildSessionCookie(
+          await createSession({
+            did: result.did,
+            handle: result.handle,
+            oauthGrantId: result.grantId,
+          }),
+        )
+        : null;
       // Finish all fallible callback bookkeeping before rotating the browser
       // session. Mint the replacement first so a create failure preserves the
       // current account, then require the old SID to be revoked before the
       // replacement cookie is delivered.
-      await destroySession(ctx.req);
+      if (sessionCookie) await destroySession(ctx.req);
       const headers = new Headers({
         location: destination,
       });
-      headers.append("set-cookie", sessionCookie);
+      if (sessionCookie) headers.append("set-cookie", sessionCookie);
       for (const cookie of rememberedCookies) {
         headers.append("set-cookie", cookie);
       }
@@ -491,10 +497,18 @@ function withClearedOAuthFlowBinding(
   return response;
 }
 
+export function oauthSuccessDestination(
+  returnTo: string | null | undefined,
+  accountType: AccountType,
+): string {
+  if (returnTo && isSafeRelativePath(returnTo)) return returnTo;
+  return accountType === "project" ? "/apps/manage" : "/account";
+}
+
 function appviewUnavailable(): Response {
   // Proxy errors can include the callback URL and its code, state, and issuer.
   console.error("[appview] OAuth callback proxy failed");
-  return new Response("Sign in callback is temporarily unavailable.", {
+  return new Response("Login with Atmosphere is temporarily unavailable.", {
     status: 503,
     headers: {
       "cache-control": "no-store",

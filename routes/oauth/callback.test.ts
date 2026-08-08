@@ -6,8 +6,24 @@ import {
   oauthCompletedFailureLocation,
   oauthErrorPermission,
   oauthRetryLocation,
+  oauthSuccessDestination,
   readOAuthCallbackParameters,
 } from "./callback.ts";
+
+Deno.test("successful account creation returns to the exact originating action", () => {
+  assertEquals(
+    oauthSuccessDestination(
+      "/apps/tangled?from=featured&review=compose#reviews",
+      "user",
+    ),
+    "/apps/tangled?from=featured&review=compose#reviews",
+  );
+  assertEquals(
+    oauthSuccessDestination("https://evil.example/leave", "user"),
+    "/account",
+  );
+  assertEquals(oauthSuccessDestination(null, "project"), "/apps/manage");
+});
 
 Deno.test("post-callback failures retain the validated action context", () => {
   const location = new URL(

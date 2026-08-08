@@ -21,9 +21,10 @@ Deno.test("anonymous navigation has public destinations and no sign-in control",
 
   assertStringIncludes(html, 'href="/hosts"');
   assertStringIncludes(html, 'href="/apps"');
+  assertStringIncludes(html, 'data-page-prefetch="intent"');
   assertStringIncludes(
     html,
-    'href="/hosts" class="nav-btn nav-btn-ghost" aria-current="page"',
+    'href="/hosts" class="nav-btn nav-btn-ghost" data-page-prefetch="intent" aria-current="page"',
   );
   assertEquals(html.includes('href="/docs"'), false);
   assertEquals(html.includes("nav-account"), false);

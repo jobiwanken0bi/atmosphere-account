@@ -17,16 +17,16 @@ state:
 - **Database:** Railway Postgres as the current relational store. It stores the
   appview read model, including source records, deduped listings, aggregates,
   account hosts, moderation state, and the worker lease. It also stores
-  off-protocol control-plane state for hosted sign-in, including OAuth/session
-  state, registered login apps, exact return URI policy, picker connections,
-  replay protection, durable rate limits, and trust review state.
+  off-protocol control-plane state for Login with Atmosphere, including
+  OAuth/session state, registered login apps, exact return URI policy, picker
+  connections, replay protection, durable rate limits, and trust review state.
 
 ## Provider Direction
 
 The MVP provider split is still sound, but the next product stage changes the
 database requirements. Atmosphere Account is no longer only a small directory:
-it is becoming a control plane for hosted sign-in, app registration, ATStore
-interop, host claims, moderation, jobs, and admin observability.
+it is becoming a control plane for Login with Atmosphere, app registration,
+ATStore interop, host claims, moderation, jobs, and admin observability.
 
 Recommended target:
 
@@ -66,9 +66,9 @@ Why Railway Postgres now:
 
 - The app directory and login app tables are relational read models with dedupe,
   aggregates, review/favorite counts, admin queues, and backfill jobs.
-- Hosted sign-in can create bursty request traffic from many third-party apps.
-  Postgres plus pooled connections is a better fit than request-time SQLite
-  migrations and raw FTS tables.
+- Login with Atmosphere can create bursty request traffic from many third-party
+  apps. Postgres plus pooled connections is a better fit than request-time
+  SQLite migrations and raw FTS tables.
 - Keeping the appview runtime, indexer, jobs, and database in one Railway
   project gives us private service networking and one operational control plane.
 - The codebase needs a real migration history rather than lazy additive schema
@@ -76,11 +76,11 @@ Why Railway Postgres now:
 
 ## Auth And Off-Protocol Control Plane
 
-`login.atmosphereaccount.com` should feel like an edge-native sign-in surface,
-but the edge is not the authority for Atmosphere Login. Deno Deploy owns the
-fast public experience: the picker shell, SDK assets, public metadata, JWKS, and
-safe cached reads. Railway owns the durable decisions that must be consistent
-across every request.
+`login.atmosphereaccount.com` should feel like an edge-native Login with
+Atmosphere surface, but the edge is not the authority for Login with Atmosphere.
+Deno Deploy owns the fast public experience: the picker shell, SDK assets,
+public metadata, JWKS, and safe cached reads. Railway owns the durable decisions
+that must be consistent across every request.
 
 Durable auth/control-plane state stays in Railway Postgres:
 
@@ -401,10 +401,10 @@ Run schema bootstrap explicitly before deploys and after additive DB changes:
 deno task db:migrate
 ```
 
-Run cleanup for expired OAuth flow state, app sessions, Atmosphere Login replay
-keys, and stale worker leases. Persisted OAuth refresh sessions are retained
-past their short-lived access-token expiry and are cleaned up by the OAuth
-lifecycle itself:
+Run cleanup for expired OAuth flow state, app sessions, Login with Atmosphere
+replay keys, and stale worker leases. Persisted OAuth refresh sessions are
+retained past their short-lived access-token expiry and are cleaned up by the
+OAuth lifecycle itself:
 
 ```sh
 deno task db:maintain
@@ -539,7 +539,10 @@ Hosted environments must set:
 - `TURSO_DATABASE_URL`
 - `TURSO_AUTH_TOKEN` for remote Turso URLs
 - `SESSION_SECRET`
-- OAuth keys when sign-in/write flows are enabled
+- `OAUTH_STORAGE_KEYS` (recommended: comma-separated base64url 32-byte keyring;
+  first key writes, remaining keys support rotation. When omitted, OAuth storage
+  encryption derives a dedicated key from `SESSION_SECRET`.)
+- OAuth keys when Login with Atmosphere or write flows are enabled
 
 Production PDS contact-email claims use Comail. Enroll the sending domain under
 the sender's ATProto DID, publish Comail's DKIM and SPF records, and set

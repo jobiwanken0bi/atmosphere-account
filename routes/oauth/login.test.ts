@@ -171,13 +171,14 @@ Deno.test("direct OAuth login failures never expose provider details", async () 
   assertEquals(plain.status, 400);
   assertEquals(
     await plain.text(),
-    "Couldn’t start sign-in. Check the handle and try again.",
+    "Couldn’t start Login with Atmosphere. Check the handle and try again.",
   );
 
   const json = oauthLoginFailureResponse(true);
   assertEquals(json.status, 400);
   assertEquals(await json.json(), {
-    error: "Couldn’t start sign-in. Check the handle and try again.",
+    error:
+      "Couldn’t start Login with Atmosphere. Check the handle and try again.",
   });
 });
 

@@ -66,6 +66,7 @@ export default function AppCard({ app, compact = false }: Props) {
       class={`glass profile-card app-card${
         compact ? " app-card--compact" : ""
       }`}
+      data-page-prefetch="intent"
       aria-label={compact ? `View ${app.name}` : undefined}
     >
       {compact

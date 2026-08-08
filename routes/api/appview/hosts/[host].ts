@@ -38,8 +38,10 @@ export const handler = define.handlers({
       status: detail.host ? 200 : 404,
       headers: {
         "cache-control": detail.host
-          ? "public, max-age=60, stale-while-revalidate=300"
-          : "public, max-age=15, stale-while-revalidate=60",
+          ? "public, max-age=30, s-maxage=60, stale-while-revalidate=120"
+          : "public, max-age=10, s-maxage=15, stale-while-revalidate=30",
+        "cache-tag": "public-host-detail",
+        "deno-cache-tag": "public-host-detail",
       },
     });
   }, {

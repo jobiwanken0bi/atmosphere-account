@@ -938,9 +938,9 @@ function ManageBody(
             <h2>Where new people sign up with you</h2>
             <p class="text-body">
               This is the lever that decides whether you appear as a place to
-              create an account in the “Continue with Atmosphere” picker.
-              Sign-up always happens on your own site — Atmosphere only links
-              out and never sees invite codes.
+              create an account in the “Login with Atmosphere” picker. Sign-up
+              always happens on your own site — Atmosphere only links out and
+              never sees invite codes.
             </p>
           </div>
         </div>

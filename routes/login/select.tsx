@@ -184,7 +184,7 @@ export const handler = define.handlers({
 function appviewUnavailable(): Response {
   // The proxy error can include the full request URL, including OAuth state.
   console.error("[appview] login picker proxy failed");
-  return new Response("Atmosphere Login is temporarily unavailable.", {
+  return new Response("Login with Atmosphere is temporarily unavailable.", {
     status: 503,
     headers: {
       "cache-control": "no-store",
@@ -485,7 +485,7 @@ function LoginPickerPage(props: PickerPageProps) {
         <div class="container signin-page-container login-picker-container">
           <p class="text-eyebrow">Account picker</p>
           <h1 class="text-section login-picker-title">
-            <span>Continue with</span>
+            <span>Login with</span>
             <span class="login-picker-title-brand">
               <img src="/union.svg" alt="" width="36" height="36" />
               <span>Atmosphere</span>
@@ -495,7 +495,7 @@ function LoginPickerPage(props: PickerPageProps) {
             {error || !app || !request || !selectPath
               ? (
                 <LoginPickerError
-                  message={error ?? "Invalid login request."}
+                  message={error ?? "Invalid Login with Atmosphere request."}
                 />
               )
               : (
@@ -615,7 +615,8 @@ function LoginPickerBody(
               )
               : (
                 <p class="text-body">
-                  Atmosphere Login is not configured on this deployment yet.
+                  Login with Atmosphere is not configured on this deployment
+                  yet.
                 </p>
               )}
           </div>
@@ -678,11 +679,13 @@ function LoginPickerError({ message }: { message: string }) {
   const blocked = message.toLowerCase().includes("blocked");
   return (
     <div class="login-picker-error">
-      <h2>{blocked ? "App unavailable" : "Login request unavailable"}</h2>
+      <h2>
+        {blocked ? "App unavailable" : "Login with Atmosphere unavailable"}
+      </h2>
       <p class="text-body">{message}</p>
       <p class="text-body-sm">
         {blocked
-          ? "Atmosphere cannot continue this sign-in request. Return to the app or choose another app."
+          ? "This Login with Atmosphere request can’t continue. Return to the app or choose another app."
           : "This app did not send enough information to open the account picker. Return to the app and try again."}
       </p>
     </div>

@@ -70,6 +70,23 @@ Deno.test("sign-in authorization context rejects ambiguity and typos", () => {
   );
 });
 
+Deno.test("create mode retains the page, action, and requested permissions", () => {
+  const request = readSignInAuthorizationRequest(
+    new URL(
+      "https://atmosphereaccount.com/signin?next=%2Fapps%2Ftangled%3Ffrom%3Dfeatured%26review%3Dcompose%23reviews&action=review&name=Tangled&capability=review&mode=create",
+    ),
+  );
+
+  assertEquals(request.requestedMode, "create");
+  assertEquals(
+    request.next,
+    "/apps/tangled?from=featured&review=compose#reviews",
+  );
+  assertEquals(request.action, "review");
+  assertEquals(request.targetName, "Tangled");
+  assertEquals(request.capabilities, ["review"]);
+});
+
 Deno.test("authorization recovery states expose a safe exit", () => {
   for (
     const permissionState of [
@@ -199,13 +216,15 @@ Deno.test("media permission gets explicit image-upload context", () => {
 
 Deno.test("review and Like copy retain the requested target", () => {
   const review = authActionCopy("review", "Grain");
-  assertStringIncludes(review.title, "review Grain");
+  assertEquals(review.title, "Login with Atmosphere");
+  assertStringIncludes(review.signInBody, "review of Grain");
 
   const reviewManage = authActionCopy("review_manage", "Grain");
   assertStringIncludes(reviewManage.signInBody, "review of Grain");
 
   const favorite = authActionCopy("favorite", "Grain");
-  assertStringIncludes(favorite.title, "like Grain");
+  assertEquals(favorite.title, "Login with Atmosphere");
+  assertStringIncludes(favorite.signInBody, "like Grain");
   assertStringIncludes(favorite.upgradeBody("alice.example"), "like Grain");
   assertEquals(favorite.signInBody.includes("save"), false);
   assertEquals(favorite.signInBody.includes("favorite"), false);
@@ -234,7 +253,7 @@ Deno.test("every OAuth action has fallback-page copy", () => {
 Deno.test("authorization recovery messages are brief and non-technical", () => {
   assertEquals(
     permissionStatusCopy("denied"),
-    "You canceled sign-in. Nothing changed.",
+    "You canceled Login with Atmosphere. Nothing changed.",
   );
   assertEquals(
     permissionStatusCopy("partial"),
@@ -246,7 +265,7 @@ Deno.test("authorization recovery messages are brief and non-technical", () => {
   );
   assertEquals(
     permissionStatusCopy("failed"),
-    "Sign-in could not be completed. Nothing changed. Try again.",
+    "Login with Atmosphere could not be completed. Nothing changed. Try again.",
   );
   assertEquals(permissionStatusCopy("required"), null);
 });
@@ -281,6 +300,26 @@ Deno.test("create mode does not reuse or auto-continue the signed-in account", (
   }));
 
   assertStringIncludes(html, "Create an Atmosphere account");
+  assertEquals(html.includes("New account"), false);
+  assertEquals(html.includes("Choose where your account will live."), false);
+  assertStringIncludes(
+    html,
+    "<h2>Your host is where your account lives.</h2>",
+  );
+  assertStringIncludes(
+    html,
+    "Create an account with a host and you’ll return here when it’s ready.",
+  );
+  assertStringIncludes(html, 'class="signin-create-intro-card"');
+  assertStringIncludes(html, 'class="signin-create-intro-icon"');
+  assertStringIncludes(html, '<a href="/apps">app</a> in the Atmosphere');
+  assertStringIncludes(
+    html,
+    "<h2>Your account is yours.</h2><p>You can move it to another host later, and if you own a domain, you can use it as your handle - for example,",
+  );
+  assertStringIncludes(html, "<strong>you.com</strong>");
+  assertEquals(html.includes("Already use Bluesky?"), false);
+  assertStringIncludes(html, 'data-signin-mode-content="create"');
   assertStringIncludes(html, 'data-initial-mode="create"');
   assertStringIncludes(html, 'data-signin-page-copy="true"');
   assertStringIncludes(
@@ -292,6 +331,12 @@ Deno.test("create mode does not reuse or auto-continue the signed-in account", (
     'data-signin-copy-signin="Choose your app’s account"',
   );
   assertStringIncludes(html, "Choose an account host");
+  assertEquals(html.includes('role="tablist"'), false);
+  assertEquals(html.includes('data-signin-tab="signin"'), false);
+  assertEquals(
+    /<section data-signin-panel="signin"[^>]*\shidden>/.test(html),
+    true,
+  );
   assertEquals(html.includes("Currently signed in"), false);
 });
 

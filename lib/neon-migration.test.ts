@@ -11,6 +11,19 @@ Deno.test("NEON_APP_TABLES tracks app tables from the Postgres baseline schema",
   assertStringArrayEquals([...NEON_APP_TABLES].sort(), schemaTables);
 });
 
+Deno.test("OAuth grants are device scoped without a one-session uniqueness trap", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const binding = schema.match(
+    /CREATE TABLE IF NOT EXISTS app_session_grant\s*\(([\s\S]*?)\);/i,
+  )?.[1] ?? "";
+  if (!/grant_id text NOT NULL/i.test(binding)) {
+    throw new Error("app_session_grant is missing its grant binding");
+  }
+  if (/grant_id text NOT NULL UNIQUE/i.test(binding)) {
+    throw new Error("one grant must be usable by same-browser site sessions");
+  }
+});
+
 Deno.test("Postgres baseline removes legacy per-DID PDS discovery tables", async () => {
   const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
   for (const table of ["pds_host_account", "pds_discovery_cursor"]) {

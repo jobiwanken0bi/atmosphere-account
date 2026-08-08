@@ -1,4 +1,8 @@
 import { isPostgresBackend, withDb } from "./db.ts";
+import {
+  encryptStoredSecret,
+  isEncryptedStoredSecret,
+} from "./secret-storage.ts";
 
 export interface DatabaseMaintenanceResult {
   expiredOauthStates: number;
@@ -31,7 +35,7 @@ export async function runDatabaseMaintenance(
 export async function runDatabaseMaintenanceForClient(
   c: {
     execute: (query: string | { sql: string; args?: unknown[] }) => Promise<
-      { rowsAffected?: number | bigint }
+      { rows?: unknown[]; rowsAffected?: number | bigint }
     >;
   },
   options: { now?: number; postgresBackend?: boolean } = {},
@@ -44,11 +48,18 @@ export async function runDatabaseMaintenanceForClient(
       args: [now],
     }),
   );
-  // `oauth_session.expires_at` tracks the short-lived access token so request
-  // paths know when to refresh it. The row also holds a longer-lived refresh
-  // token and must survive access-token expiry; invalid rows are replaced or
-  // explicitly removed by the OAuth lifecycle instead of periodic cleanup.
+  await encryptLegacyOAuthRows(c, "oauth_state", "key", 128);
+  await encryptLegacyOAuthRows(c, "oauth_session", "did", 128);
+  // OAuth grant/session `expires_at` tracks the short-lived access token so
+  // request paths know when to refresh it. The row also holds a longer-lived
+  // refresh token and must survive access-token expiry; invalid rows are
+  // replaced or explicitly removed by the OAuth lifecycle instead of cleanup.
   const expiredOauthSessions = 0;
+  await c.execute({
+    sql: `DELETE FROM app_session_grant
+      WHERE session_id IN (SELECT id FROM app_session WHERE expires_at < ?)`,
+    args: [now],
+  });
   const expiredAppSessions = rowsAffected(
     await c.execute({
       sql: `DELETE FROM app_session WHERE expires_at < ?`,
@@ -115,4 +126,31 @@ export async function runDatabaseMaintenanceForClient(
     expiredWorkerLeases,
     optimized,
   };
+}
+
+async function encryptLegacyOAuthRows(
+  c: {
+    execute: (query: string | { sql: string; args?: unknown[] }) => Promise<{
+      rows?: unknown[];
+      rowsAffected?: number | bigint;
+    }>;
+  },
+  table: "oauth_state" | "oauth_session",
+  keyColumn: "key" | "did",
+  limit: number,
+): Promise<void> {
+  const result = await c.execute(
+    `SELECT ${keyColumn}, value FROM ${table} LIMIT ${limit}`,
+  );
+  for (const raw of result.rows ?? []) {
+    const row = raw as Record<string, unknown>;
+    const key = String(row[keyColumn]);
+    const value = String(row.value);
+    if (isEncryptedStoredSecret(value)) continue;
+    const encrypted = await encryptStoredSecret(value, `${table}:${key}`);
+    await c.execute({
+      sql: `UPDATE ${table} SET value = ? WHERE ${keyColumn} = ? AND value = ?`,
+      args: [encrypted, key, value],
+    });
+  }
 }

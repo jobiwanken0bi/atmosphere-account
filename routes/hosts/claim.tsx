@@ -197,9 +197,9 @@ function DetectedHostClaimPage(
                 </button>
               </form>
               <p class="text-body host-claim-privacy-note">
-                Searches are exact-domain only and require sign-in, so this does
-                not expose the hidden personal-PDS inventory as a browseable
-                directory.
+                Searches are exact-domain only and require Login with
+                Atmosphere, so this does not expose the hidden personal-PDS
+                inventory as a browseable directory.
               </p>
             </div>
           </div>

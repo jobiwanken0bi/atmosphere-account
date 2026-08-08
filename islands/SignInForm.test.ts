@@ -36,13 +36,16 @@ Deno.test("rich sign-in form keeps the prompt concise", () => {
 
   assertStringIncludes(html, "Enter your handle");
   assertStringIncludes(html, "Create account");
+  assertStringIncludes(html, "Atmosphere handle");
+  assertEquals(html.includes("Saved accounts"), false);
   assertEquals(html.includes("Connect your Atmosphere account"), false);
   assertEquals(html.includes("New to the Atmosphere"), false);
   assertEquals(html.includes("Sign in with your Atmosphere handle"), false);
   assertStringIncludes(
     html,
-    'data-error-label="Couldn’t start sign-in. Check the handle and try again."',
+    'data-error-label="Couldn’t start Login with Atmosphere. Check the handle and try again."',
   );
+  assertStringIncludes(html, ">Login with Atmosphere</a>");
   assertEquals(
     html.includes(
       "Enter the handle you use with Bluesky, Blacksky, Tangled, or any other account host.",
@@ -96,13 +99,15 @@ Deno.test("create-account mode opens the host chooser with plain-language copy",
   assertStringIncludes(html, "Choose an account host");
   assertStringIncludes(
     html,
-    "Your host creates your account and keeps it online. You’ll return here when it’s ready.",
-  );
-  assertStringIncludes(
-    html,
-    "Only hosts that can create an account here are shown. Atmosphere never sees your password or invite code.",
+    "These hosts let you start signup here. You’ll enter any password or invite code directly with the host.",
   );
   assertStringIncludes(html, "Open signup");
+  assertEquals(html.includes('role="tablist"'), false);
+  assertEquals(html.includes('data-signin-tab="signin"'), false);
+  assertEquals(
+    /<section data-signin-panel="signin"[^>]*\shidden>/.test(html),
+    true,
+  );
   assertEquals(html.includes("direct OAuth"), false);
 });
 
@@ -128,6 +133,35 @@ Deno.test("account-creation fallback keeps action context and opens create mode"
   assertEquals(
     accountCreationFallbackHref("https://evil.example/signin"),
     "/signin?mode=create",
+  );
+});
+
+Deno.test("account creation carries the originating action into the host authorization", () => {
+  const createPageHref = accountCreationFallbackHref(
+    "/signin?next=%2Fapps%2Ftangled%3Ffrom%3Dfeatured%26review%3Dcompose%23reviews&action=review&name=Tangled&capability=review",
+  );
+  const createPage = new URL(createPageHref, "https://atmosphereaccount.com");
+
+  assertEquals(createPage.pathname, "/signin");
+  assertEquals(createPage.searchParams.get("mode"), "create");
+  assertEquals(
+    createPage.searchParams.get("next"),
+    "/apps/tangled?from=featured&review=compose#reviews",
+  );
+  assertEquals(createPage.searchParams.get("action"), "review");
+  assertEquals(createPage.searchParams.get("name"), "Tangled");
+  assertEquals(createPage.searchParams.getAll("capability"), ["review"]);
+
+  assertEquals(
+    createAccountHostHref(
+      directHost,
+      createPage.searchParams.get("next") ?? undefined,
+      undefined,
+      ["review"],
+      "review",
+      createPage.searchParams.get("name") ?? undefined,
+    ),
+    "/oauth/create?host=host.example&next=%2Fapps%2Ftangled%3Ffrom%3Dfeatured%26review%3Dcompose%23reviews&capability=review&action=review&name=Tangled",
   );
 });
 

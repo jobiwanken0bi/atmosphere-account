@@ -221,9 +221,10 @@ function enhanceForm(form, index) {
   const notFoundLabel = form.dataset.previewNotFound ||
     "No matching account found.";
   const submitLabel = form.dataset.submitLabel || "Continue";
-  const submittingLabel = form.dataset.submittingLabel || "Opening sign-in…";
+  const submittingLabel = form.dataset.submittingLabel ||
+    "Opening Login with Atmosphere…";
   const errorLabel = form.dataset.errorLabel ||
-    "Couldn’t start sign-in. Check the handle and try again.";
+    "Couldn’t start Login with Atmosphere. Check the handle and try again.";
   const submitButton = form.querySelector(".signin-form-submit");
   const selectedBox = form.querySelector("[data-signin-selected]");
   const previewId = input.dataset.signinPreviewId ||
@@ -476,6 +477,13 @@ function enhanceFlow(flow) {
     ) {
       const value = node.getAttribute(`data-signin-copy-${mode}`);
       if (value !== null) node.textContent = value;
+    }
+    for (
+      const node of pageCopyScope.querySelectorAll(
+        "[data-signin-mode-content]",
+      )
+    ) {
+      node.hidden = node.getAttribute("data-signin-mode-content") !== mode;
     }
   }
 

@@ -102,7 +102,10 @@ function appBrowseCacheKey(input: {
   sort: AppDirectorySort;
   page: number;
 }): string {
-  const tags = [...input.tags].sort().join(",");
+  const tags = [...input.tags]
+    .map((tag) => tag.trim().toLocaleLowerCase())
+    .sort()
+    .join(",");
   return JSON.stringify({
     q: input.query.trim().toLocaleLowerCase(),
     tags,
@@ -132,7 +135,11 @@ function BrowseAppsPage({ data }: { data: BrowseAppsData }) {
         <Nav account={data.account} active="apps" />
         <div class="app-browse-top-link">
           <div class="container">
-            <a href="/apps" class="app-browse-home-link">
+            <a
+              href="/apps"
+              class="app-browse-home-link"
+              data-page-prefetch="intent"
+            >
               <span class="app-browse-home-arrow" aria-hidden="true">
                 ←
               </span>
@@ -263,7 +270,12 @@ function AppPagination(
     <nav class="app-pagination" aria-label="Apps pagination">
       {page > 1
         ? (
-          <a class="app-pagination-link" href={pageHref(page - 1, data)}>
+          <a
+            class="app-pagination-link"
+            href={pageHref(page - 1, data)}
+            rel="prev"
+            data-page-prefetch="pagination"
+          >
             Previous
           </a>
         )
@@ -273,7 +285,12 @@ function AppPagination(
       </span>
       {page < pageCount
         ? (
-          <a class="app-pagination-link" href={pageHref(page + 1, data)}>
+          <a
+            class="app-pagination-link"
+            href={pageHref(page + 1, data)}
+            rel="next"
+            data-page-prefetch="pagination"
+          >
             Next
           </a>
         )

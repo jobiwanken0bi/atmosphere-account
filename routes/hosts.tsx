@@ -22,14 +22,25 @@ import { hostDetailHref } from "../lib/host-directory-navigation.ts";
 import { getMessages } from "../i18n/mod.ts";
 import ContextualSignInLink from "../islands/ContextualSignInLink.tsx";
 import { oauthSigninUrl } from "../lib/oauth-action.ts";
+import { EdgeStaleCache } from "../lib/edge-cache.ts";
+
+const HOST_BROWSE_CACHE_TTL_MS = 30_000;
+const HOST_BROWSE_CACHE_STALE_MS = 2 * 60_000;
+const HOST_BROWSE_CACHE_MAX_ENTRIES = 96;
+
+const hostBrowseCache = new EdgeStaleCache<AccountHostDirectoryResult>({
+  freshMs: HOST_BROWSE_CACHE_TTL_MS,
+  staleMs: HOST_BROWSE_CACHE_STALE_MS,
+  maxEntries: HOST_BROWSE_CACHE_MAX_ENTRIES,
+});
 
 export default define.page(async function HostsPage(ctx) {
   const copy = getMessages(ctx.state.locale).hostsDirectory;
   const input = readDirectoryInput(ctx.url.searchParams);
   const appliedFilterCount = activeFilterCount(input);
   let loadFailed = false;
-  const result = await loadHostsResult(input).catch((err) => {
-    console.warn("[hosts] appview host list failed:", err);
+  const result = await loadHostsResult(input, ctx.req.headers).catch(() => {
+    console.warn("[hosts] appview host list failed");
     loadFailed = true;
     return emptyHostResult(input);
   });
@@ -253,8 +264,24 @@ export default define.page(async function HostsPage(ctx) {
 
 async function loadHostsResult(
   input: AccountHostDirectoryOptions,
+  requestHeaders?: Headers,
 ): Promise<AccountHostDirectoryResult> {
-  return await listHostsFromAppview(input);
+  return await hostBrowseCache.get(
+    hostBrowseCacheKey(input),
+    () => listHostsFromAppview(input, requestHeaders),
+  );
+}
+
+function hostBrowseCacheKey(input: AccountHostDirectoryOptions): string {
+  return JSON.stringify({
+    q: input.query?.trim().toLowerCase() ?? "",
+    includeApps: input.includeLinkedApps === true,
+    sort: input.sort ?? DEFAULT_ACCOUNT_HOST_SORT,
+    signup: input.signupStatus ?? "all",
+    verification: input.verificationStatus ?? "all",
+    page: input.page ?? 1,
+    pageSize: input.pageSize ?? 24,
+  });
 }
 
 interface HostDirectoryInput extends AccountHostDirectoryOptions {
@@ -329,7 +356,11 @@ function HostPagination(
     <nav class="hosts-pagination" aria-label={copy.paginationLabel}>
       {page > 1
         ? (
-          <a href={hostDirectoryHref(input, page - 1)} rel="prev">
+          <a
+            href={hostDirectoryHref(input, page - 1)}
+            rel="prev"
+            data-page-prefetch="pagination"
+          >
             ← {copy.previous}
           </a>
         )
@@ -337,7 +368,11 @@ function HostPagination(
       <span>{copy.page(page, pageCount)}</span>
       {page < pageCount
         ? (
-          <a href={hostDirectoryHref(input, page + 1)} rel="next">
+          <a
+            href={hostDirectoryHref(input, page + 1)}
+            rel="next"
+            data-page-prefetch="pagination"
+          >
             {copy.next} →
           </a>
         )
@@ -431,6 +466,7 @@ function HostCard(
     <a
       href={hostDetailHref(host.host, returnTo)}
       class="glass host-card"
+      data-page-prefetch="intent"
     >
       <div class="host-card-top">
         <div class="host-card-identity">

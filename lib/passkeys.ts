@@ -702,13 +702,13 @@ function validatedLoginRequest(request: LoginRequest): LoginRequest {
   ) {
     throw new PasskeyError(
       "invalid_input",
-      "Invalid validated Atmosphere Login request.",
+      "Invalid validated Login with Atmosphere request.",
     );
   }
   if (request.scope && request.scope.length > 1_000) {
     throw new PasskeyError(
       "invalid_input",
-      "Invalid validated Atmosphere Login request.",
+      "Invalid validated Login with Atmosphere request.",
     );
   }
   const normalized = {
@@ -723,7 +723,7 @@ function validatedLoginRequest(request: LoginRequest): LoginRequest {
   ) {
     throw new PasskeyError(
       "invalid_input",
-      "Atmosphere Login request is too large.",
+      "Login with Atmosphere request is too large.",
     );
   }
   return normalized;

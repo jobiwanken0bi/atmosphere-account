@@ -248,7 +248,7 @@ function ManagedProductsPage(props: ManagedProductsPageProps) {
               <div class="account-products-group-head">
                 <div>
                   <p class="text-eyebrow">Universal login</p>
-                  <h2>Continue with Atmosphere</h2>
+                  <h2>Login with Atmosphere</h2>
                   <p>
                     Login client IDs and return URLs are operational settings,
                     not another public app profile.

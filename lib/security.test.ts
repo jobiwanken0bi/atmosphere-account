@@ -124,7 +124,7 @@ Deno.test("CSRF uses the trusted public origin for appview-proxied requests", ()
   );
 });
 
-Deno.test("Atmosphere Login selection verification is the only cross-origin POST exemption", () => {
+Deno.test("Login with Atmosphere selection verification is the only cross-origin POST exemption", () => {
   const req = new Request(
     "https://atmosphereaccount.com/api/login/selection",
     {
@@ -264,7 +264,7 @@ Deno.test("bounded form reader rejects chunked bodies without content-length", a
   assertEquals(tooLarge, true);
 });
 
-Deno.test("token-bearing Atmosphere Login pages force private browser headers", () => {
+Deno.test("token-bearing Login with Atmosphere pages force private browser headers", () => {
   for (
     const pathname of [
       "/login/select",
@@ -325,7 +325,91 @@ Deno.test("personalized HTML is explicitly private and not cacheable", () => {
     "/apps",
     new Headers({ "content-type": "text/html; charset=utf-8" }),
   );
-  assertEquals(publicHeaders.has("cache-control"), false);
+  assertEquals(
+    publicHeaders.get("cache-control"),
+    "public, max-age=15, s-maxage=60, stale-while-revalidate=180",
+  );
+  assertEquals(publicHeaders.get("vary"), "Cookie");
+  assertEquals(publicHeaders.get("deno-cache-tag"), "public-apps");
+});
+
+Deno.test("anonymous exploration pages use narrow shared-cache policies", () => {
+  const cases = [
+    [
+      "/",
+      "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+    ],
+    [
+      "/apps/all?tag=clients&page=2",
+      "public, max-age=15, s-maxage=60, stale-while-revalidate=180",
+    ],
+    [
+      "/apps/tangled?reviews=newest",
+      "public, max-age=15, s-maxage=30, stale-while-revalidate=30",
+    ],
+    [
+      "/hosts?page=2&signup=open",
+      "public, max-age=15, s-maxage=60, stale-while-revalidate=180",
+    ],
+    [
+      "/hosts/example.com",
+      "public, max-age=15, s-maxage=30, stale-while-revalidate=30",
+    ],
+    [
+      "/docs/oauth",
+      "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+    ],
+    [
+      "/users/alice.example",
+      "public, max-age=15, s-maxage=30, stale-while-revalidate=30",
+    ],
+  ] as const;
+  for (const [url, expected] of cases) {
+    const headers = applySecurityHeadersForTest(
+      url,
+      new Headers({
+        "content-type": "text/html; charset=utf-8",
+        vary: "Accept-Encoding",
+      }),
+    );
+    assertEquals(headers.get("cache-control"), expected);
+    assertEquals(headers.get("vary"), "Accept-Encoding, Cookie");
+  }
+});
+
+Deno.test("stateful and unbounded public-looking URLs never enter shared caches", () => {
+  for (
+    const url of [
+      "/apps/tangled?review=compose",
+      "/apps/manage",
+      "/apps/create",
+      "/apps/all?sort=garbage",
+      "/apps/all?page=2&page=3",
+      `/apps/all?q=${"x".repeat(129)}`,
+      `/apps/all?tag=${"x".repeat(65)}`,
+      `/apps/all?tag=${
+        Array.from({ length: 13 }, (_, i) => `t${i}`).join(",")
+      }`,
+      "/apps/tangled?reviews=random",
+      "/hosts/example.com?claimed=1",
+      "/hosts/example.com/manage",
+      "/hosts/register",
+      "/hosts?sort=garbage",
+      "/hosts?page=2&page=3",
+      "/account",
+      "/signin?next=%2Fapps",
+    ]
+  ) {
+    const headers = applySecurityHeadersForTest(
+      url,
+      new Headers({ "content-type": "text/html; charset=utf-8" }),
+    );
+    if (url.startsWith("/signin") || url === "/hosts/register") {
+      assertEquals(headers.get("cache-control"), "no-store");
+    } else {
+      assertEquals(headers.has("cache-control"), false);
+    }
+  }
 });
 
 Deno.test("login popup routes keep opener-compatible COOP", () => {

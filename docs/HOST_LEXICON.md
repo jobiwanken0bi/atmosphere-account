@@ -131,7 +131,7 @@ the email proof.
 The Hosts page read model merges:
 
 - Seeded host records for known hosts.
-- Observed PDS endpoints from account sign-ins.
+- Observed PDS endpoints from Login with Atmosphere.
 - Indexed `account.atmosphere.host.profile` records.
 - Indexed `account.atmosphere.host.service` records.
 - Local verification, moderation, and conformance state.
@@ -202,11 +202,11 @@ working URL for:
 - account deactivation and deletion
 - backup, export, restore, and migration workflows when supported
 
-Atmosphere-owned UI should stay limited to Atmosphere Login picker connections,
-host discovery, host claims, app directory state, and compatibility metadata. If
-a host publishes extended compatibility metadata, treat it as optional
-enhancement data; do not use it as a substitute for an explicit host account
-page URL.
+Atmosphere-owned UI should stay limited to Login with Atmosphere picker
+connections, host discovery, host claims, app directory state, and compatibility
+metadata. If a host publishes extended compatibility metadata, treat it as
+optional enhancement data; do not use it as a substitute for an explicit host
+account page URL.
 
 ## OAuth Scopes
 

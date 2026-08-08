@@ -49,7 +49,7 @@ export default function Nav(
       id="main-nav"
       data-scroll-effects={disableScrollEffects ? "false" : "true"}
     >
-      <a href="/" class="nav-logo">
+      <a href="/" class="nav-logo" data-page-prefetch="intent">
         <img src="/union.svg" alt={t.nav.logoAlt} width="26" height="26" />
         <span class="nav-logo-text">{t.nav.brand}</span>
       </a>
@@ -58,6 +58,7 @@ export default function Nav(
           <a
             href="/hosts"
             class="nav-btn nav-btn-ghost"
+            data-page-prefetch="intent"
             {...hostsCurrent}
           >
             {t.nav.hosts}
@@ -65,6 +66,7 @@ export default function Nav(
           <a
             href="/apps"
             class="nav-btn nav-btn-ghost"
+            data-page-prefetch="intent"
             {...appsCurrent}
           >
             {t.nav.apps}

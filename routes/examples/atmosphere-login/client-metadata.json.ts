@@ -10,7 +10,7 @@ export const handler = define.handlers({
     const origin = ctx.url.origin;
     const body = {
       client_id: exampleAtmosphereLoginClientId(origin),
-      client_name: "Atmosphere Login reference app",
+      client_name: "Login with Atmosphere reference app",
       client_uri: new URL("/examples/atmosphere-login/app", origin).toString(),
       logo_uri: new URL("/app-icon.svg", origin).toString(),
       allowed_return_uris: [
@@ -18,7 +18,7 @@ export const handler = define.handlers({
         exampleAtmosphereLoginPopupCallbackUri(origin),
       ],
       note:
-        "Reference metadata for the Atmosphere Login docs console. Production apps should register trusted return URIs with Atmosphere Account.",
+        "Reference metadata for the Login with Atmosphere docs console. Production apps should register trusted return URIs with Atmosphere Account.",
     };
     return new Response(JSON.stringify(body, null, 2), {
       headers: {

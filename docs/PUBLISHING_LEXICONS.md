@@ -139,15 +139,15 @@ not the scope sent with every authorization request. Each flow requests the
 smallest allowlisted capability bundle needed by the action that opened it (see
 `lib/oauth-scopes.ts`):
 
-| Action                                   | Requested permission                                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Sign in or use the hosted account picker | `atproto` only                                                                             |
-| Write a new shared review                | `include:fyi.atstore.authThirdPartyReviews`                                                |
-| Edit or delete a shared review           | `repo:fyi.atstore.listing.review?action=update&action=delete`                              |
-| Favorite or unfavorite an app            | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                            |
-| Manage an app                            | the community app profile, ATStore profile/detail, and transitional legacy app collections |
-| Manage a host                            | `repo:account.atmosphere.host.profile` and `repo:account.atmosphere.host.service`          |
-| Upload imagery                           | `blob:image/*`, added only when the action actually uses image blobs                       |
+| Action                         | Requested permission                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------ |
+| Use Login with Atmosphere      | `atproto` only                                                                             |
+| Write a new shared review      | `include:fyi.atstore.authThirdPartyReviews`                                                |
+| Edit or delete a shared review | `repo:fyi.atstore.listing.review?action=update&action=delete`                              |
+| Favorite or unfavorite an app  | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                            |
+| Manage an app                  | the community app profile, ATStore profile/detail, and transitional legacy app collections |
+| Manage a host                  | `repo:account.atmosphere.host.profile` and `repo:account.atmosphere.host.service`          |
+| Upload imagery                 | `blob:image/*`, added only when the action actually uses image blobs                       |
 
 Every action bundle also includes `atproto`. When an already-authorized account
 adds a capability, Atmosphere requests the union of its existing grant and the

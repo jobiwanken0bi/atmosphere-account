@@ -5,7 +5,25 @@ import ManagementActionIcon, {
   type ManagementActionIconName,
 } from "../components/ManagementActionIcon.tsx";
 import { isPlainLinkActivation } from "../lib/link-activation.ts";
-import ContextualSignInDialog from "./ContextualSignInDialog.tsx";
+
+type ContextualSignInDialogComponent =
+  typeof import("./ContextualSignInDialog.tsx")["default"];
+
+let dialogModulePromise: Promise<ContextualSignInDialogComponent> | null = null;
+
+function loadContextualSignInDialog(): Promise<
+  ContextualSignInDialogComponent
+> {
+  if (!dialogModulePromise) {
+    dialogModulePromise = import("./ContextualSignInDialog.tsx")
+      .then((module) => module.default)
+      .catch((error) => {
+        dialogModulePromise = null;
+        throw error;
+      });
+  }
+  return dialogModulePromise;
+}
 
 interface Props {
   href: string;
@@ -46,6 +64,15 @@ export default function ContextualSignInLink(
   }: Props,
 ) {
   const open = useSignal(false);
+  const Dialog = useSignal<ContextualSignInDialogComponent | null>(null);
+
+  const prepareDialog = () => {
+    if (Dialog.value) return;
+    void loadContextualSignInDialog().then((component) => {
+      Dialog.value = component;
+    }).catch(() => {});
+  };
+  const DialogComponent = Dialog.value;
 
   return (
     <>
@@ -54,10 +81,19 @@ export default function ContextualSignInLink(
         href={href}
         aria-haspopup="dialog"
         aria-expanded={open.value ? "true" : "false"}
+        aria-busy={open.value && !Dialog.value ? "true" : undefined}
+        onPointerEnter={prepareDialog}
+        onPointerDown={prepareDialog}
+        onFocus={prepareDialog}
         onClick={(event) => {
           if (!isPlainLinkActivation(event)) return;
           event.preventDefault();
           open.value = true;
+          loadContextualSignInDialog().then((component) => {
+            Dialog.value = component;
+          }).catch(() => {
+            globalThis.location.assign(href);
+          });
         }}
       >
         {leadingIcon && <ManagementActionIcon name={leadingIcon} />}
@@ -69,8 +105,8 @@ export default function ContextualSignInLink(
         <span>{label}</span>
         {trailingArrow && <span aria-hidden="true">→</span>}
       </a>
-      {open.value && (
-        <ContextualSignInDialog
+      {open.value && DialogComponent && (
+        <DialogComponent
           fallbackHref={href}
           returnTo={returnTo}
           intent={intent}
@@ -81,6 +117,11 @@ export default function ContextualSignInLink(
           initialHandle={initialHandle}
           onClose={() => open.value = false}
         />
+      )}
+      {open.value && !Dialog.value && (
+        <span class="visually-hidden" role="status" aria-live="polite">
+          Loading account chooser…
+        </span>
       )}
     </>
   );

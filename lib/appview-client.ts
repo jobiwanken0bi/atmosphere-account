@@ -72,8 +72,8 @@ export const appviewAssetProxyMiddleware = define.middleware(
       appviewAssetSourceUrl(ctx.url),
       ctx.req,
     ).catch(
-      (err) => {
-        console.error("[appview] asset proxy failed:", err);
+      () => {
+        console.error("[appview] asset proxy failed");
         return appviewEarlyProxyUnavailable(ctx.url.pathname);
       },
     );
@@ -104,7 +104,10 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
         },
       });
     }
-    console.error("[appview] early proxy failed:", err);
+    // Fetch failures can include the full target URL. OAuth routes may carry
+    // short-lived authorization codes and state in that URL, so never attach
+    // the caught object to production logs.
+    console.error("[appview] early proxy failed");
     return appviewEarlyProxyUnavailable(ctx.url.pathname);
   });
   if (proxied) {
@@ -259,6 +262,7 @@ export async function searchAppsFromAppview(input: {
 
 export async function listHostsFromAppview(
   input: AccountHostDirectoryOptions = {},
+  requestHeaders?: Headers,
 ): Promise<AccountHostDirectoryResult> {
   const publicInput = { ...input, publicOnly: true };
   const remote = appviewBaseUrl();
@@ -284,6 +288,7 @@ export async function listHostsFromAppview(
     const payload = await fetchAppviewJson<unknown>(
       remote,
       `/api/appview/hosts${qs ? `?${qs}` : ""}`,
+      requestHeaders,
     );
     if (Array.isArray(payload)) {
       // Keep rolling deployments compatible with the pre-pagination appview,

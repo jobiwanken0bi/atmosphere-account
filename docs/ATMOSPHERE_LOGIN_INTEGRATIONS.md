@@ -1,4 +1,4 @@
-# Atmosphere Login integration examples
+# Login with Atmosphere integration examples
 
 Atmosphere Account ships three integration levels:
 
@@ -43,7 +43,7 @@ enhancement. They should preserve the normal redirect or native
 authentication-browser flow and handle passkey cancellation like any other
 picker cancellation. Product copy should describe the gesture as choosing or
 continuing with an Atmosphere account, not as granting PDS access to the app.
-See [Passkeys in Atmosphere Login](./PASSKEYS.md) for the full boundary and
+See [Passkeys in Login with Atmosphere](./PASSKEYS.md) for the full boundary and
 security design.
 
 The picker also keeps account creation host-owned. “Add another account” stays

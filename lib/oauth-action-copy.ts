@@ -45,8 +45,9 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Write a review",
-        title: `Sign in to review ${name}`,
-        signInBody: "Choose the account that will publish your review.",
+        title: "Login with Atmosphere",
+        signInBody:
+          `Choose the account that will publish your review of ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to publish your review of ${name}.`,
       };
@@ -55,7 +56,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Your review",
-        title: "Sign in to manage your review",
+        title: "Login with Atmosphere",
         signInBody: `Choose the account that owns your review of ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to manage your review of ${name}.`,
@@ -65,8 +66,9 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Write a review",
-        title: `Sign in to review ${name}`,
-        signInBody: "Choose the account that will publish your review.",
+        title: "Login with Atmosphere",
+        signInBody:
+          `Choose the account that will publish your review of ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to publish your review of ${name}.`,
       };
@@ -75,7 +77,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Your review",
-        title: "Sign in to manage your review",
+        title: "Login with Atmosphere",
         signInBody: `Choose the account that owns your review of ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to manage your review of ${name}.`,
@@ -85,7 +87,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Review response",
-        title: "Sign in to respond",
+        title: "Login with Atmosphere",
         signInBody: `Continue with the account that manages ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to respond for ${name}.`,
@@ -95,7 +97,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Report a review",
-        title: "Sign in to report this review",
+        title: "Login with Atmosphere",
         signInBody:
           `Choose the account you want to use to report a review of ${name}.`,
         upgradeBody: (handle) => `Confirm @${handle} to report this review.`,
@@ -105,8 +107,8 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Like an app",
-        title: `Sign in to like ${name}`,
-        signInBody: "Choose the account you want to use.",
+        title: "Login with Atmosphere",
+        signInBody: `Choose the account you want to use to like ${name}.`,
         upgradeBody: (handle) => `Continue as @${handle} to like ${name}.`,
       };
     }
@@ -125,8 +127,8 @@ export function authActionCopy(
       const name = targetName || "this account host";
       return {
         eyebrow: "Claim an account host",
-        title: `Sign in to claim ${name}`,
-        signInBody: "Choose the account that should manage this account host.",
+        title: "Login with Atmosphere",
+        signInBody: `Choose the account that should manage ${name}.`,
         upgradeBody: (handle) =>
           `Confirm @${handle} to continue the host claim.`,
       };
@@ -156,7 +158,7 @@ export function authActionCopy(
     case "profile":
       return {
         eyebrow: "Profile",
-        title: "Sign in to manage your profile",
+        title: "Login with Atmosphere",
         signInBody: "Choose the account whose profile you want to edit.",
         upgradeBody: (handle) =>
           `Continue as @${handle} to edit this account’s profile.`,
@@ -173,7 +175,7 @@ export function authActionCopy(
         eyebrow: "Passkey verification",
         title: "Verify your account",
         signInBody: targetName
-          ? `Sign in with ${targetName} to continue with its passkeys.`
+          ? `Use Login with Atmosphere as ${targetName} to continue with its passkeys.`
           : "Choose the account whose passkeys you want to use.",
         upgradeBody: (handle) =>
           `Confirm @${handle} to continue with passkeys.`,
@@ -190,7 +192,7 @@ export function authActionCopy(
     case "admin":
       return {
         eyebrow: "Admin",
-        title: "Admin sign-in",
+        title: "Login with Atmosphere",
         signInBody: "Choose an authorized account.",
         upgradeBody: (handle) =>
           `Confirm @${handle} to continue to admin tools.`,

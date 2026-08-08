@@ -108,6 +108,18 @@ CREATE TABLE IF NOT EXISTS oauth_session (
   expires_at bigint NOT NULL
 );
 
+-- Browser/device-scoped OAuth grants. oauth_session is retained only as a
+-- legacy migration source for databases created before grant IDs existed.
+CREATE TABLE IF NOT EXISTS oauth_grant (
+  grant_id text PRIMARY KEY,
+  did text NOT NULL,
+  purpose text NOT NULL DEFAULT 'browser',
+  value text NOT NULL,
+  expires_at bigint NOT NULL,
+  created_at bigint NOT NULL,
+  updated_at bigint NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS oauth_key (
   kid text PRIMARY KEY,
   jwk text NOT NULL,
@@ -121,6 +133,15 @@ CREATE TABLE IF NOT EXISTS app_session (
   created_at bigint NOT NULL,
   expires_at bigint NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS app_session_grant (
+  session_id text PRIMARY KEY,
+  grant_id text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS oauth_grant_did ON oauth_grant(did, purpose);
+CREATE INDEX IF NOT EXISTS oauth_grant_updated ON oauth_grant(updated_at);
+CREATE INDEX IF NOT EXISTS app_session_grant_id ON app_session_grant(grant_id);
 
 CREATE TABLE IF NOT EXISTS passkey_account (
   did text PRIMARY KEY,

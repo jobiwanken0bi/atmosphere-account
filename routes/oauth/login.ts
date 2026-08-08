@@ -51,6 +51,8 @@ import {
   hasValidLoginSelectionContinuationBinding,
 } from "../../lib/oauth-continuation.ts";
 import { buildOAuthFlowBindingCookie } from "../../lib/oauth-flow-binding.ts";
+import { peekSessionUser } from "../../lib/session.ts";
+import { readRememberedAccountsFromHeader } from "../../lib/remembered-accounts.ts";
 
 export { isValidLoginSelectionContinuation } from "../../lib/oauth-continuation.ts";
 
@@ -220,7 +222,7 @@ export async function readLoginInputForTest(req: Request): Promise<LoginInput> {
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-    (err) => appviewUnavailable("oauth login", err),
+    () => appviewUnavailable("oauth login"),
   );
   if (proxied) return proxied;
 
@@ -239,7 +241,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     (ctx.req.headers.get("accept") ?? "").includes("application/json");
   if (ctx.url.search.length > MAX_OAUTH_LOGIN_BODY_BYTES) {
     return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
+      "This Login with Atmosphere link is invalid. Return to Atmosphere and try again.",
       414,
       wantsJson,
     );
@@ -251,7 +253,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   };
   if (!isOAuthConfigured(oauthOptions)) {
     return publicLoginError(
-      "Sign-in isn’t available right now. Try again shortly.",
+      "Login with Atmosphere isn’t available right now. Try again shortly.",
       503,
       wantsJson,
     );
@@ -262,7 +264,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   } catch (error) {
     const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
     return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
+      "This Login with Atmosphere link is invalid. Return to Atmosphere and try again.",
       status,
       wantsJson,
     );
@@ -286,14 +288,14 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   }
   if (!capabilities) {
     return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
+      "This Login with Atmosphere link is invalid. Return to Atmosphere and try again.",
       400,
       wantsJson,
     );
   }
   if (!isOAuthActionCapabilityRequest(action, capabilities)) {
     return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
+      "This Login with Atmosphere link is invalid. Return to Atmosphere and try again.",
       400,
       wantsJson,
     );
@@ -308,12 +310,20 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     )
   ) {
     return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
+      "This Login with Atmosphere link is invalid. Return to Atmosphere and try again.",
       400,
       wantsJson,
     );
   }
   try {
+    const active = await peekSessionUser(ctx.req).catch(() => null);
+    const remembered = await readRememberedAccountsFromHeader(
+      ctx.req.headers.get("cookie"),
+    ).catch(() => []);
+    const selectedGrantId = active?.did === handleStr
+      ? active.oauthGrantId ?? undefined
+      : remembered.find((account) => account.did === handleStr)?.grantId ??
+        undefined;
     const { redirectUrl, state, browserBinding } = await startLogin(
       handleStr,
       returnTo,
@@ -325,6 +335,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
         reauthenticate: isPasskeyManagementReturnTo(returnTo),
         action: action ?? undefined,
         targetName: targetName ?? undefined,
+        grantId: selectedGrantId,
         ...(continuation === "login_selection"
           ? {
             scope: IDENTITY_OAUTH_SCOPE,
@@ -365,15 +376,15 @@ export const handler = define.handlers({ GET: handle, POST: handle });
 
 export function oauthLoginFailureResponse(wantsJson: boolean): Response {
   return publicLoginError(
-    "Couldn’t start sign-in. Check the handle and try again.",
+    "Couldn’t start Login with Atmosphere. Check the handle and try again.",
     400,
     wantsJson,
   );
 }
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
-  return new Response("Sign in is temporarily unavailable.", {
+function appviewUnavailable(scope: string): Response {
+  console.error(`[appview] ${scope} proxy failed`);
+  return new Response("Login with Atmosphere is temporarily unavailable.", {
     status: 503,
     headers: {
       "cache-control": "no-store",

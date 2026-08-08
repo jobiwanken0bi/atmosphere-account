@@ -418,7 +418,7 @@ Deno.test("resolveLoginAppForRequest uses generic icon for registered reference 
     getLoginApp: (clientId) =>
       Promise.resolve(app({
         clientId,
-        appName: "Atmosphere Login reference app",
+        appName: "Login with Atmosphere reference app",
         appUri: "https://atmosphereaccount.com/examples/atmosphere-login/app",
         logoUri: "https://atmosphereaccount.com/union.svg",
         allowedReturnUris: [

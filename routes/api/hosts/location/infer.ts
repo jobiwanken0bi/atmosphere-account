@@ -17,7 +17,10 @@ const MAX_LOCATION_INFER_BODY_BYTES = 8_192;
 export const handler = define.handlers({
   POST: withRateLimit(async (ctx) => {
     if (!ctx.state.user) {
-      return json({ ok: false, message: "Sign in to infer host location." }, {
+      return json({
+        ok: false,
+        message: "Use Login with Atmosphere to infer host location.",
+      }, {
         status: 401,
       });
     }

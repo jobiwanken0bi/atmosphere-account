@@ -7,9 +7,11 @@ import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import type { AppTagSummary } from "../../lib/app-directory.ts";
 import { loadAppsHomeFromAppview } from "../../lib/appview-client.ts";
 import { EdgeStaleCache } from "../../lib/edge-cache.ts";
+import { completeAppCollectionSummaries } from "../../lib/app-collections.ts";
 
 interface AppCategoriesData {
   tags: AppTagSummary[];
+  unavailable: boolean;
   account: ReturnType<typeof buildAccountMenuProps>;
 }
 
@@ -23,10 +25,18 @@ const appCategoriesCache = new EdgeStaleCache<AppTagSummary[]>({
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const tags = await loadAppCategories(ctx.req.headers).catch(() => []);
+    let tags: AppTagSummary[] = [];
+    let unavailable = false;
+    try {
+      tags = await loadAppCategories(ctx.req.headers);
+    } catch {
+      unavailable = true;
+      console.warn("[apps] collection directory unavailable");
+    }
 
     const data: AppCategoriesData = {
       tags,
+      unavailable,
       account: buildAccountMenuProps(ctx.state),
     };
 
@@ -37,13 +47,14 @@ export const handler = define.handlers({
 async function loadAppCategories(
   requestHeaders: Headers,
 ): Promise<AppTagSummary[]> {
-  return await appCategoriesCache.get(
+  const summaries = await appCategoriesCache.get(
     "categories",
     () =>
       loadAppsHomeFromAppview(requestHeaders).then(
         (result) => result.tagSummaries,
       ),
   );
+  return completeAppCollectionSummaries(summaries);
 }
 
 export default function AppCategoriesPage(
@@ -77,11 +88,18 @@ export default function AppCategoriesPage(
           <div class="container">
             <div class="app-showcase-heading">
               <div>
-                <p class="text-eyebrow">{data.tags.length} collections</p>
+                <p class="text-eyebrow">
+                  {data.unavailable
+                    ? "Collections"
+                    : `${data.tags.length} collections`}
+                </p>
                 <h2 class="text-subsection">All collections</h2>
               </div>
             </div>
-            <AppCategoryGrid tags={data.tags} />
+            <AppCategoriesDirectory
+              tags={data.tags}
+              unavailable={data.unavailable}
+            />
           </div>
         </section>
 
@@ -89,4 +107,20 @@ export default function AppCategoriesPage(
       </div>
     </div>
   );
+}
+
+export function AppCategoriesDirectory(
+  { tags, unavailable }: { tags: AppTagSummary[]; unavailable: boolean },
+) {
+  if (unavailable) {
+    return (
+      <div class="explore-empty glass">
+        <h3 class="text-subsection">
+          Collections aren’t available right now.
+        </h3>
+        <p class="text-body-sm mt-2">Try again in a moment.</p>
+      </div>
+    );
+  }
+  return <AppCategoryGrid tags={tags} />;
 }

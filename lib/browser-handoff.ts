@@ -35,7 +35,7 @@ export function browserHandoffDocument(redirectUrl: string): Response {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
-    <title>Continue with Atmosphere</title>
+    <title>Login with Atmosphere</title>
     <link rel="stylesheet" href="${stylesheetHref}">
     <script type="module" src="${handoffScriptSrc}"></script>
   </head>

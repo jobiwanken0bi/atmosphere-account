@@ -94,7 +94,7 @@ Deno.test("selectAtmosphereLoginPublicJwk fails when the requested kid is absent
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS did not include key current",
+      "Login with Atmosphere JWKS did not include key current",
     );
     return;
   }
@@ -171,7 +171,7 @@ Deno.test("fetchAtmosphereLoginPublicJwkForToken requires a token kid", async ()
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login selection token did not include a kid",
+      "Login with Atmosphere selection token did not include a kid",
     );
     return;
   }
@@ -244,7 +244,7 @@ Deno.test("fetchAtmosphereLoginPublicJwk requires a JSON media type", async () =
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS response was not JSON",
+      "Login with Atmosphere JWKS response was not JSON",
     );
     return;
   }
@@ -265,7 +265,7 @@ Deno.test("fetchAtmosphereLoginPublicJwk bounds streamed JWKS bodies", async () 
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS response was too large",
+      "Login with Atmosphere JWKS response was too large",
     );
     return;
   }
@@ -283,7 +283,7 @@ Deno.test("fetchAtmosphereLoginPublicJwk times out a stalled JWKS body", async (
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS request timed out",
+      "Login with Atmosphere JWKS request timed out",
     );
     return;
   }

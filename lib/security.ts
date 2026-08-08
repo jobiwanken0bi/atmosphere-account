@@ -402,9 +402,13 @@ function isPopupCompatibleLoginRoute(pathname: string): boolean {
 
 function applySecurityHeaders(
   headers: Headers,
-  pathname: string,
+  requestUrl: string | URL,
   personalizedHtml = false,
 ): void {
+  const url = typeof requestUrl === "string"
+    ? new URL(requestUrl, "https://atmosphereaccount.com")
+    : requestUrl;
+  const pathname = url.pathname;
   setDefault(headers, "x-content-type-options", "nosniff");
   setDefault(headers, "x-frame-options", "DENY");
   setDefault(headers, "referrer-policy", "strict-origin-when-cross-origin");
@@ -440,6 +444,17 @@ function applySecurityHeaders(
   }
   if (personalizedHtml) {
     headers.set("cache-control", "private, no-store");
+  } else if (
+    headers.get("content-type")?.toLowerCase().startsWith("text/html") &&
+    !headers.has("cache-control")
+  ) {
+    const publicCache = publicExplorationPageCache(url);
+    if (publicCache) {
+      headers.set("cache-control", publicCache.cacheControl);
+      headers.set("cache-tag", publicCache.tag);
+      headers.set("deno-cache-tag", publicCache.tag);
+      appendVary(headers, "Cookie");
+    }
   }
   if (
     pathname === "/atmosphere-login.js" ||
@@ -450,11 +465,11 @@ function applySecurityHeaders(
 }
 
 export function applySecurityHeadersForTest(
-  pathname: string,
+  requestUrl: string | URL,
   headers = new Headers(),
   personalizedHtml = false,
 ): Headers {
-  applySecurityHeaders(headers, pathname, personalizedHtml);
+  applySecurityHeaders(headers, requestUrl, personalizedHtml);
   return headers;
 }
 
@@ -463,12 +478,17 @@ export const securityHeadersMiddleware = define.middleware(async (ctx) => {
   try {
     const isHtml = response.headers.get("content-type")?.toLowerCase()
       .startsWith("text/html") ?? false;
+    // Only cookie-free documents enter the one shared anonymous cache variant.
+    // This also covers early AppView proxying, which happens before this
+    // process hydrates its session state, and prevents arbitrary cookie values
+    // from creating an unbounded set of public CDN variants.
     const personalizedHtml = isHtml && Boolean(
-      ctx.state.user || ctx.state.rememberedAccounts?.length,
+      ctx.state.user || ctx.state.rememberedAccounts?.length ||
+        ctx.req.headers.has("cookie"),
     );
     applySecurityHeaders(
       response.headers,
-      ctx.url.pathname,
+      ctx.url,
       personalizedHtml,
     );
     return response;
@@ -476,6 +496,203 @@ export const securityHeadersMiddleware = define.middleware(async (ctx) => {
     return response;
   }
 });
+
+interface PublicPageCachePolicy {
+  cacheControl: string;
+  tag: string;
+}
+
+/**
+ * Public exploration pages are safe to cache only when their HTML has no
+ * account state. The middleware adds `Vary: Cookie`, while signed-in and
+ * remembered-account documents are forced to `private, no-store` above.
+ *
+ * Keep this allowlist intentionally narrow: OAuth, account creation,
+ * management, and one-shot resume URLs must always reach the application.
+ */
+export function publicExplorationPageCache(
+  input: URL | string,
+): PublicPageCachePolicy | null {
+  const url = typeof input === "string"
+    ? new URL(input, "https://atmosphereaccount.com")
+    : input;
+  const { pathname, searchParams } = url;
+
+  if (pathname === "/" && searchParams.size === 0) {
+    return {
+      cacheControl:
+        "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+      tag: "public-home",
+    };
+  }
+  if (pathname === "/apps" && searchParams.size === 0) {
+    return directoryCache("public-apps");
+  }
+  if (pathname === "/apps/categories" && searchParams.size === 0) {
+    return {
+      cacheControl:
+        "public, max-age=60, s-maxage=300, stale-while-revalidate=900",
+      tag: "public-apps",
+    };
+  }
+  if (
+    pathname === "/apps/all" &&
+    isCacheableAppsBrowseSearch(searchParams)
+  ) {
+    return directoryCache("public-apps");
+  }
+  if (
+    isPublicDetailPath(pathname, "/apps/", [
+      "all",
+      "categories",
+      "create",
+      "manage",
+      "migrate-from-legacy",
+    ]) &&
+    isCacheableReviewSort(searchParams)
+  ) {
+    return detailCache("public-app-detail");
+  }
+  if (
+    pathname === "/hosts" &&
+    isCacheableHostBrowseSearch(searchParams)
+  ) {
+    return directoryCache("public-hosts");
+  }
+  if (
+    isPublicDetailPath(pathname, "/hosts/", ["claim", "register"]) &&
+    searchParams.size === 0
+  ) {
+    return detailCache("public-host-detail");
+  }
+  if (
+    (pathname === "/docs" || pathname === "/developer-resources" ||
+      isPublicDetailPath(pathname, "/docs/", [])) &&
+    searchParams.size === 0
+  ) {
+    return {
+      cacheControl:
+        "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+      tag: "public-docs",
+    };
+  }
+  if (
+    isPublicDetailPath(pathname, "/users/", []) && searchParams.size === 0
+  ) {
+    return detailCache("public-user-detail");
+  }
+  return null;
+}
+
+function directoryCache(tag: string): PublicPageCachePolicy {
+  return {
+    cacheControl: "public, max-age=15, s-maxage=60, stale-while-revalidate=180",
+    tag,
+  };
+}
+
+function detailCache(tag: string): PublicPageCachePolicy {
+  return {
+    cacheControl: "public, max-age=15, s-maxage=30, stale-while-revalidate=30",
+    tag,
+  };
+}
+
+function hasOnlySearchParams(
+  search: URLSearchParams,
+  allowed: readonly string[],
+): boolean {
+  const names = new Set(allowed);
+  return [...search.keys()].every((name) => names.has(name));
+}
+
+function isCacheableAppsBrowseSearch(search: URLSearchParams): boolean {
+  if (!hasOnlySearchParams(search, ["q", "tag", "sort", "page"])) {
+    return false;
+  }
+  if (search.getAll("q").length > 1 || (search.get("q")?.length ?? 0) > 128) {
+    return false;
+  }
+  const rawTags = search.getAll("tag");
+  if (rawTags.length > 12 || rawTags.some((tag) => tag.length > 768)) {
+    return false;
+  }
+  const tags = rawTags.flatMap((tag) =>
+    tag.split(",").map((part) => part.trim()).filter(Boolean)
+  );
+  if (tags.length > 12 || tags.some((tag) => tag.length > 64)) return false;
+  const sorts = search.getAll("sort");
+  if (
+    sorts.length > 1 ||
+    (sorts[0] != null && !["trending", "newest", "az"].includes(sorts[0]))
+  ) return false;
+  return isSingleBoundedPage(search);
+}
+
+function isCacheableHostBrowseSearch(search: URLSearchParams): boolean {
+  if (
+    !hasOnlySearchParams(search, [
+      "q",
+      "sort",
+      "signup",
+      "verification",
+      "page",
+    ])
+  ) return false;
+  if (search.getAll("q").length > 1 || (search.get("q")?.length ?? 0) > 128) {
+    return false;
+  }
+  const allowed = {
+    sort: ["recommended", "accounts", "name", "recent"],
+    signup: ["all", "open", "invite_required"],
+    verification: ["all", "verified", "claimed", "observed"],
+  } as const;
+  for (const [name, values] of Object.entries(allowed)) {
+    const supplied = search.getAll(name);
+    if (supplied.length > 1) return false;
+    if (supplied[0] != null && !values.includes(supplied[0] as never)) {
+      return false;
+    }
+  }
+  return isSingleBoundedPage(search);
+}
+
+function isCacheableReviewSort(search: URLSearchParams): boolean {
+  if (!hasOnlySearchParams(search, ["reviews"])) return false;
+  const values = search.getAll("reviews");
+  return values.length <= 1 &&
+    (values[0] == null || ["newest", "highest", "lowest"].includes(values[0]));
+}
+
+function isSingleBoundedPage(search: URLSearchParams): boolean {
+  const values = search.getAll("page");
+  if (values.length > 1) return false;
+  if (values.length === 0) return true;
+  return /^\d{1,4}$/.test(values[0]) && Number(values[0]) <= 1_000;
+}
+
+function isPublicDetailPath(
+  pathname: string,
+  prefix: string,
+  reserved: readonly string[],
+): boolean {
+  if (!pathname.startsWith(prefix)) return false;
+  const remainder = pathname.slice(prefix.length);
+  return remainder.length > 0 && !remainder.includes("/") &&
+    !reserved.includes(remainder.toLowerCase());
+}
+
+function appendVary(headers: Headers, name: string): void {
+  const fields = (headers.get("vary") ?? "")
+    .split(",")
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (fields.includes("*")) return;
+  if (!fields.some((field) => field.toLowerCase() === name.toLowerCase())) {
+    fields.push(name);
+  }
+  headers.set("vary", fields.join(", "));
+}
 
 export const csrfMiddleware = define.middleware((ctx) => {
   if (isCrossOriginReadonlyRequest(ctx.req, ctx.url.pathname)) {

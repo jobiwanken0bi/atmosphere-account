@@ -1,4 +1,4 @@
-# Next.js Atmosphere Login example
+# Next.js Login with Atmosphere example
 
 This is the minimal App Router shape for a relying app. Atmosphere chooses an
 account; the Next.js server verifies the signed choice and starts the app's own

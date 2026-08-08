@@ -1960,7 +1960,8 @@ export function validateAccountHostRegistrationInput(
     return {
       ok: false,
       reason: "not_authorized",
-      message: "Sign in as the host account you want attached to this listing.",
+      message:
+        "Use Login with Atmosphere with the host account you want attached to this listing.",
     };
   }
 
@@ -2092,7 +2093,8 @@ export async function registerAccountHost(
     return {
       ok: false,
       reason: "not_authorized",
-      message: "Sign in as the host account you want attached to this listing.",
+      message:
+        "Use Login with Atmosphere with the host account you want attached to this listing.",
     };
   }
 
@@ -2135,7 +2137,7 @@ export async function registerAccountHost(
         ok: false,
         reason: "not_authorized",
         message: authority
-          ? `This host is tied to @${authority.handle}. Sign in as that account to claim it.`
+          ? `This host is tied to @${authority.handle}. Use that account in Login with Atmosphere to claim it.`
           : "This curated host's operator identity could not be verified. Try again later.",
         host: existing,
       };
@@ -2808,32 +2810,39 @@ export async function listAccountHostDirectory(
       );
     }
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
-    const countResult = await c.execute({
+    const pageSize = positiveInteger(opts.pageSize, 24, MAX_PUBLIC_HOSTS);
+    const requestedPage = positiveInteger(opts.page, 1);
+    const sort = opts.sort ?? DEFAULT_ACCOUNT_HOST_SORT;
+    const countPromise = c.execute({
       sql: `SELECT COUNT(*) AS total FROM account_host ${where}`,
       args,
     });
+    const rowsForPage = (page: number) =>
+      c.execute({
+        sql: `SELECT account_host.*,
+            host_conformance.status AS conformance_status,
+            host_conformance.checked_at AS conformance_checked_at,
+            host_conformance.expires_at AS conformance_expires_at
+          FROM account_host
+          LEFT JOIN host_conformance ON host_conformance.host = account_host.host
+          ${where}
+          ORDER BY ${accountHostOrder(sort)}
+          LIMIT ? OFFSET ?`,
+        args: [...args, pageSize, (page - 1) * pageSize],
+      });
+    // The page and its total are independent reads. Running them together
+    // removes one database/network round trip from every normal directory
+    // request while preserving numbered pagination.
+    const [countResult, requestedRows] = await Promise.all([
+      countPromise,
+      rowsForPage(requestedPage),
+    ]);
     const total = Number(
       (countResult.rows[0] as Record<string, unknown> | undefined)?.total ?? 0,
     );
-    const pageSize = positiveInteger(opts.pageSize, 24, MAX_PUBLIC_HOSTS);
     const pageCount = Math.max(1, Math.ceil(total / pageSize));
-    const page = Math.min(
-      pageCount,
-      positiveInteger(opts.page, 1),
-    );
-    const sort = opts.sort ?? DEFAULT_ACCOUNT_HOST_SORT;
-    const r = await c.execute({
-      sql: `SELECT account_host.*,
-          host_conformance.status AS conformance_status,
-          host_conformance.checked_at AS conformance_checked_at,
-          host_conformance.expires_at AS conformance_expires_at
-        FROM account_host
-        LEFT JOIN host_conformance ON host_conformance.host = account_host.host
-        ${where}
-        ORDER BY ${accountHostOrder(sort)}
-        LIMIT ? OFFSET ?`,
-      args: [...args, pageSize, (page - 1) * pageSize],
-    });
+    const page = Math.min(pageCount, requestedPage);
+    const r = page === requestedPage ? requestedRows : await rowsForPage(page);
     return {
       hosts: r.rows.map((row) => parseHostRow(row as Record<string, unknown>)),
       total,

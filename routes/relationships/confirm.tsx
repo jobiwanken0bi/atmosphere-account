@@ -190,9 +190,9 @@ function RelationshipConfirmationPage(props: {
                     ))}
                     {!canApprove && switchable.length === 0 && (
                       <p class="text-body">
-                        Sign in with the other controlling account to finish the
-                        connection. Atmosphere never accepts an unverified DID
-                        from the request.
+                        Choose the other controlling account in Login with
+                        Atmosphere to finish the connection. Atmosphere never
+                        accepts an unverified DID from the request.
                       </p>
                     )}
                     <RelationshipAddAccountForm

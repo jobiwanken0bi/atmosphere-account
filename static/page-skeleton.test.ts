@@ -4,7 +4,12 @@ import {
   assertFalse,
   assertStringIncludes,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isSkeletonPage, routeKind, templateFor } from "./page-skeleton.js";
+import {
+  isPrefetchablePage,
+  isSkeletonPage,
+  routeKind,
+  templateFor,
+} from "./page-skeleton.js";
 
 const routeCases = [
   ["/", "home"],
@@ -59,6 +64,36 @@ Deno.test("page skeleton only handles same-origin non-API navigation", () => {
   assertFalse(
     isSkeletonPage(new URL("https://account.example/api/hosts"), origin),
   );
+});
+
+Deno.test("intent prefetch is limited to public exploration documents", () => {
+  const origin = "https://account.example";
+  for (
+    const path of [
+      "/",
+      "/apps",
+      "/apps/all?page=2",
+      "/apps/tangled",
+      "/hosts?page=2",
+      "/hosts/example.com?from=%2Fhosts",
+    ]
+  ) {
+    assert(isPrefetchablePage(new URL(path, origin), origin), path);
+  }
+  for (
+    const path of [
+      "/signin",
+      "/account",
+      "/apps/manage",
+      "/apps/create",
+      "/hosts/register",
+      "/hosts/example.com/manage",
+      "/api/appview/hosts",
+      "https://other.example/apps",
+    ]
+  ) {
+    assertFalse(isPrefetchablePage(new URL(path, origin), origin), path);
+  }
 });
 
 Deno.test("route templates preserve the visible page geometry", () => {
@@ -151,4 +186,9 @@ Deno.test("skeleton delay, safety timeout, and status semantics stay intact", as
     'document.body.setAttribute("aria-busy", "true")',
   );
   assertStringIncludes(source, 'document.body.removeAttribute("aria-busy")');
+  assertStringIncludes(source, 'preload.rel = "prefetch"');
+  assertStringIncludes(source, 'a[data-page-prefetch="pagination"]');
+  assertStringIncludes(source, 'rootMargin: "240px"');
+  assertStringIncludes(source, "const prefetchBudget = 8");
+  assertStringIncludes(source, "connection?.saveData === true");
 });
