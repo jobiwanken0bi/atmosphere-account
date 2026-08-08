@@ -1,6 +1,7 @@
 import { define } from "../../utils.ts";
 import { DEV_PICKER_ACCOUNTS } from "../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../lib/env.ts";
+import { buildExampleLoginState } from "../../lib/example-atproto-oauth.ts";
 import {
   addRememberedAccountCookies,
   type RememberedAccount,
@@ -21,27 +22,14 @@ export const handler = define.handlers({
       [...DEV_PICKER_ACCOUNTS],
       current,
     );
-
-    const picker = new URL("/login/select", url.origin);
-    picker.searchParams.set(
-      "client_id",
-      new URL(
-        "/examples/atmosphere-login/client-metadata.json",
-        url.origin,
-      ).toString(),
-    );
-    picker.searchParams.set(
-      "return_uri",
-      new URL("/examples/atmosphere-login/callback", url.origin).toString(),
-    );
-    picker.searchParams.set("state", `dev-picker-${crypto.randomUUID()}`);
-    picker.searchParams.set("scope", "atproto");
+    const handoff = await buildDevPickerHandoff(url);
 
     const headers = new Headers({
       "cache-control": "no-store",
-      "location": `${picker.pathname}${picker.search}`,
+      "location": handoff.location,
     });
     headers.append("set-cookie", buildSessionCookie(sessionValue));
+    headers.append("set-cookie", handoff.stateCookie);
     for (const cookie of rememberedCookies) {
       headers.append("set-cookie", cookie);
     }
@@ -49,6 +37,32 @@ export const handler = define.handlers({
     return new Response(null, { status: 303, headers });
   },
 });
+
+async function buildDevPickerHandoff(
+  url: URL,
+): Promise<{ location: string; stateCookie: string }> {
+  const loginState = await buildExampleLoginState();
+  const picker = new URL("/login/select", url.origin);
+  picker.searchParams.set(
+    "client_id",
+    new URL(
+      "/examples/atmosphere-login/client-metadata.json",
+      url.origin,
+    ).toString(),
+  );
+  picker.searchParams.set(
+    "return_uri",
+    new URL("/examples/atmosphere-login/callback", url.origin).toString(),
+  );
+  picker.searchParams.set("state", loginState.state);
+  picker.searchParams.set("scope", "atproto");
+  return {
+    location: `${picker.pathname}${picker.search}`,
+    stateCookie: loginState.cookie,
+  };
+}
+
+export const buildDevPickerHandoffForTest = buildDevPickerHandoff;
 
 function currentAccount(handle: string | null): RememberedAccount {
   const normalized = handle?.trim().replace(/^@/, "").toLowerCase();
