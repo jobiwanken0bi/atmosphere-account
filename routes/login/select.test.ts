@@ -180,3 +180,11 @@ Deno.test("login picker failures do not disclose raw exception details", async (
   assertEquals(source.includes("String(err)"), false);
   assertEquals(source.includes('proxy failed:", err'), false);
 });
+
+Deno.test("login picker keeps its icon and product name in the branded title group", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./select.tsx", import.meta.url),
+  );
+  assertEquals(source.includes('class="login-picker-title-brand"'), true);
+  assertEquals(source.includes('aria-label="Login with Atmosphere"'), true);
+});

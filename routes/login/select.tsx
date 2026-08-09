@@ -482,9 +482,15 @@ function LoginPickerPage(props: PickerPageProps) {
       <section class="signin-page-section login-picker-section">
         <div class="container signin-page-container login-picker-container">
           <p class="text-eyebrow">Account picker</p>
-          <h1 class="text-section login-picker-title">
-            <img src="/union.svg" alt="" width="36" height="36" />
-            <span>Login with Atmosphere</span>
+          <h1
+            class="text-section login-picker-title"
+            aria-label="Login with Atmosphere"
+          >
+            <span>Login with</span>
+            <span class="login-picker-title-brand">
+              <img src="/union.svg" alt="" width="36" height="36" />
+              <span>Atmosphere</span>
+            </span>
           </h1>
           <div class="glass signin-page-card login-picker-card">
             {error || !app || !request || !selectPath || !cancelHref
