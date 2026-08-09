@@ -1,6 +1,6 @@
 import {
   type AppListing,
-  listVisibleAppListingsByAccountDid,
+  listManagedAppListingsByAccountDid,
 } from "./app-directory.ts";
 import {
   findExistingAtstoreListingsForProfile,
@@ -41,7 +41,7 @@ export async function loadManagedAppPortfolio(input: {
     }
   }
 
-  const apps = await listVisibleAppListingsByAccountDid(input.did, {
+  const apps = await listManagedAppListingsByAccountDid(input.did, {
     syncLegacy: true,
   });
   return { apps, discoveredAtstoreCount, syncUnavailable };

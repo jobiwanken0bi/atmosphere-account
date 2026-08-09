@@ -11,10 +11,15 @@ import {
 import { enrichAppMirroredReviews } from "../../../../lib/app-review-display.ts";
 import { ATSTORE_REVIEW_NSID } from "../../../../lib/app-lexicons.ts";
 import { ensureAtstoreReviewerProfile } from "../../../../lib/atstore-profile.ts";
-import { getValidSession } from "../../../../lib/oauth.ts";
-import { putRecord } from "../../../../lib/pds.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+} from "../../../../lib/oauth.ts";
+import { isPdsScopeMissingError, putRecord } from "../../../../lib/pds.ts";
 import { createAtprotoTid } from "../../../../lib/tid.ts";
 import { rejectLargeRequest } from "../../../../lib/security.ts";
+import { hasOAuthCapabilities } from "../../../../lib/oauth-scopes.ts";
+import { oauthReauthorizationUrl } from "../../../../lib/oauth-action.ts";
 
 interface ReviewPayload {
   rating?: unknown;
@@ -73,9 +78,6 @@ export const handler = define.handlers({
       return jsonError(400, "cannot_review_self");
     }
 
-    const session = await getValidSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
-
     const body = await ctx.req.json().catch(() => null) as
       | ReviewPayload
       | null;
@@ -86,15 +88,26 @@ export const handler = define.handlers({
     const text = normalizeReviewText(body.body);
     if (text == null) return jsonError(400, "body_too_long");
 
-    await ensureAtstoreReviewerProfile({
-      did: user.did,
-      handle: user.handle,
-      pdsUrl: session.pdsUrl,
-    }).catch((err) => {
-      console.warn("[apps/reviews] could not ensure ATStore profile:", err);
-    });
-
     const existing = await getOwnAppReview(app.id, user.did).catch(() => null);
+    const capability = existing ? "review_manage" as const : "review" as const;
+    const session = await getValidSession(user.did);
+    if (!session) {
+      return reauthorizationRequired(user.handle, app.slug, capability);
+    }
+    if (!hasOAuthCapabilities(grantedScopeForSession(session), [capability])) {
+      return reauthorizationRequired(user.handle, app.slug, capability);
+    }
+
+    if (!existing) {
+      await ensureAtstoreReviewerProfile({
+        did: user.did,
+        handle: user.handle,
+        pdsUrl: session.pdsUrl,
+      }).catch((err) => {
+        console.warn("[apps/reviews] could not ensure ATStore profile:", err);
+      });
+    }
+
     const now = Date.now();
     const rkey = existing?.rkey ?? createAtprotoTid();
     const createdAt = existing?.createdAt
@@ -115,6 +128,13 @@ export const handler = define.handlers({
       record,
     ).catch((err) => err instanceof Error ? err : new Error(String(err)));
     if (result instanceof Error) {
+      if (isPdsScopeMissingError(result)) {
+        return reauthorizationRequired(
+          user.handle,
+          app.slug,
+          capability,
+        );
+      }
       return jsonResponse(502, {
         error: "put_record_failed",
         detail: result.message,
@@ -171,6 +191,24 @@ function jsonResponse(
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function reauthorizationRequired(
+  handle: string,
+  identifier: string,
+  capability: "review" | "review_manage",
+): Response {
+  const next = `/apps/${encodeURIComponent(identifier)}?review=compose`;
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: oauthReauthorizationUrl({
+      next,
+      action: capability,
+      capabilities: [capability],
+      name: identifier,
+    }),
+    handle,
+  });
 }
 
 function appviewProxyError(err: unknown): Response {

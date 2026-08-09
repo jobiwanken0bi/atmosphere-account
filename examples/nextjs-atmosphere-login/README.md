@@ -1,8 +1,8 @@
-# Next.js Atmosphere Login example
+# Next.js Login with Atmosphere example
 
-This is the minimal App Router shape for a relying app. Atmosphere chooses an
-account; the Next.js server verifies the signed choice and starts the app's own
-AT Protocol OAuth flow.
+This is the minimal App Router shape for a relying app. Login with Atmosphere
+chooses an account; the Next.js server verifies the signed choice and starts the
+app's own AT Protocol OAuth flow.
 
 ## Button (`app/page.tsx`)
 
@@ -57,5 +57,5 @@ export async function GET(request: NextRequest) {
 ```
 
 The `/api/oauth/start` handler belongs to the relying app. It must create the
-app's own AT Protocol OAuth request; Atmosphere never receives or brokers the
-resulting app token.
+app's own AT Protocol OAuth request; Login with Atmosphere never receives or
+brokers the resulting app token.

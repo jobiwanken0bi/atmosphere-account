@@ -106,7 +106,7 @@ Deno.test("static server helper fails when requested kid is absent", async () =>
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS did not include key current",
+      "Login with Atmosphere JWKS did not include key current",
     );
     return;
   }
@@ -188,7 +188,7 @@ Deno.test("static server helper requires a token kid for token JWKS fetch", asyn
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login selection token did not include a kid",
+      "Login with Atmosphere selection token did not include a kid",
     );
     return;
   }

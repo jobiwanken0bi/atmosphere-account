@@ -15,18 +15,31 @@ function routeKind(pathname) {
   if (pathname === "/apps/all") return "apps-browse";
   if (
     pathname === "/apps/create" || pathname === "/apps/manage" ||
-    pathname === "/explore/create" || pathname === "/explore/manage"
+    pathname.startsWith("/apps/manage/") ||
+    pathname === "/apps/migrate-from-legacy" ||
+    pathname === "/explore/create" || pathname === "/explore/manage" ||
+    pathname.startsWith("/explore/manage/")
   ) return "form";
   if (pathname.startsWith("/apps/") || pathname.startsWith("/explore/")) {
     return "app-detail";
   }
   if (pathname === "/hosts") return "hosts";
+  if (
+    pathname === "/hosts/claim" || pathname === "/hosts/register" ||
+    /^\/hosts\/[^/]+\/(?:claim|manage)(?:\/apps)?$/.test(pathname)
+  ) return "form";
   if (pathname.startsWith("/hosts/")) return "host-detail";
-  if (pathname === "/signin") return "signin";
+  if (pathname === "/signin" || pathname === "/login/select") {
+    return "signin";
+  }
+  if (pathname === "/relationships/confirm") return "form";
+  if (
+    pathname === "/account/apps-hosts" || pathname === "/account/products"
+  ) return "apps-hosts";
+  if (pathname.startsWith("/account/developer/apps")) return "form";
   if (pathname === "/account" || pathname.startsWith("/account/")) {
     return "account";
   }
-  if (pathname.startsWith("/users/")) return "user";
   return "default";
 }
 
@@ -312,7 +325,7 @@ function templateFor(kind) {
     `;
   }
 
-  if (kind === "signin" || kind === "account") {
+  if (kind === "signin" || kind === "account" || kind === "apps-hosts") {
     return `
       ${navMarkup()}
       <main class="page-skeleton-main page-skeleton-main--account">
@@ -332,6 +345,29 @@ function templateFor(kind) {
             ${line("page-skeleton-block--button")}
           `,
         )
+        : kind === "apps-hosts"
+        ? `
+          ${
+          filledCard(
+            "page-skeleton-card--account",
+            `
+              ${line("page-skeleton-block--title page-skeleton-block--heading")}
+              ${line("page-skeleton-block--body")}
+              ${card("page-skeleton-card--app")}
+            `,
+          )
+        }
+          ${
+          filledCard(
+            "page-skeleton-card--account",
+            `
+              ${line("page-skeleton-block--title page-skeleton-block--heading")}
+              ${line("page-skeleton-block--body")}
+              ${card("page-skeleton-card--host")}
+            `,
+          )
+        }
+        `
         : `
           ${
           filledCard(
@@ -473,35 +509,41 @@ function hideSkeleton() {
   );
 }
 
-document.addEventListener("click", (event) => {
-  if (event.defaultPrevented || event.button !== 0) return;
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
 
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  const link = target.closest("a[href]");
-  if (!(link instanceof HTMLAnchorElement)) return;
-  if (link.target && link.target !== "_self") return;
-  if (link.hasAttribute("download")) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const link = target.closest("a[href]");
+    if (!(link instanceof HTMLAnchorElement)) return;
+    if (link.target && link.target !== "_self") return;
+    if (link.hasAttribute("download")) return;
 
-  const url = new URL(link.href, globalThis.location.href);
-  if (url.hash && url.pathname === globalThis.location.pathname) return;
-  if (!isSkeletonPage(url)) return;
-
-  scheduleSkeleton(url);
-});
-
-document.addEventListener("submit", (event) => {
-  const form = event.target;
-  if (!(form instanceof HTMLFormElement)) return;
-
-  globalThis.setTimeout(() => {
-    if (event.defaultPrevented) return;
-    const url = new URL(form.action || globalThis.location.href);
+    const url = new URL(link.href, globalThis.location.href);
+    if (url.hash && url.pathname === globalThis.location.pathname) return;
     if (!isSkeletonPage(url)) return;
-    scheduleSkeleton(url);
-  }, 0);
-});
 
-globalThis.addEventListener("pageshow", hideSkeleton);
-document.addEventListener("atmo:hide-page-skeleton", hideSkeleton);
+    scheduleSkeleton(url);
+  });
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+
+    globalThis.setTimeout(() => {
+      if (event.defaultPrevented) return;
+      const url = new URL(form.action || globalThis.location.href);
+      if (!isSkeletonPage(url)) return;
+      scheduleSkeleton(url);
+    }, 0);
+  });
+
+  globalThis.addEventListener("pageshow", hideSkeleton);
+  document.addEventListener("atmo:hide-page-skeleton", hideSkeleton);
+}
+
+export { routeKind };

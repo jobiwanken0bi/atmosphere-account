@@ -17,6 +17,9 @@ import type { HostVerificationStatus } from "./account-hosts.ts";
 
 interface AccountMenuProps {
   user: { did: string; handle: string } | null;
+  hasManagedAppProfile: boolean;
+  hasManagedHostProfiles: boolean;
+  hasManagedProfiles: boolean;
   accountType: AccountType | null;
   avatarUrl: string | null;
   publicProfileHandle: string | null;
@@ -37,8 +40,14 @@ export function buildAccountMenuProps(
   publicProfileHandle: string | null = null,
 ): AccountMenuProps {
   const user = state.user;
+  const hasManagedAppProfile = user?.hasManagedAppProfile === true;
+  const hasManagedHostProfiles = user?.hasManagedHostProfiles === true;
   return {
     user: user ? { did: user.did, handle: user.handle } : null,
+    hasManagedAppProfile,
+    hasManagedHostProfiles,
+    hasManagedProfiles: user?.hasManagedProfiles === true ||
+      hasManagedAppProfile || hasManagedHostProfiles,
     accountType: state.accountType ?? null,
     avatarUrl: user ? `/api/me/avatar?v=${encodeURIComponent(user.did)}` : null,
     publicProfileHandle,

@@ -12,6 +12,7 @@ import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import type { AppSearchResult } from "../lib/app-directory.ts";
 import { loadAppsHomeFromAppview } from "../lib/appview-client.ts";
 import { EdgeStaleCache } from "../lib/edge-cache.ts";
+import AppDirectoryOwnerCta from "../components/explore/AppDirectoryOwnerCta.tsx";
 
 interface ExploreData {
   result: AppSearchResult;
@@ -81,42 +82,43 @@ function ExplorePage({ data, locale: _locale }: ExplorePageProps) {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={data.account} active="apps" />
-        <StoreHero
-          initialQuery=""
-          activeTag={null}
-          sort="trending"
-          searchAction="/apps/all"
-          controls={
-            <AppBrowseControls
-              initialQuery=""
-              selectedTags={[]}
-              sort="trending"
-              tags={data.result.tags}
-            />
-          }
-        />
+        <main id="main-content">
+          <StoreHero
+            initialQuery=""
+            activeTag={null}
+            sort="trending"
+            searchAction="/apps/all"
+            controls={
+              <AppBrowseControls
+                initialQuery=""
+                selectedTags={[]}
+                sort="trending"
+                tags={data.result.tags}
+              />
+            }
+          />
 
-        <AppSpotlight apps={data.result.featured} />
-        <AppCategoryTiles
-          tags={data.result.tagSummaries}
-          limit={9}
-          seeAllHref="/apps/categories"
-        />
-        <AppDiscoverySplit
-          trending={data.result.trending}
-          fresh={data.result.fresh}
-        />
+          <AppSpotlight apps={data.result.featured} />
+          <AppCategoryTiles
+            tags={data.result.tagSummaries}
+            limit={9}
+            seeAllHref="/apps/categories"
+          />
+          <AppDiscoverySplit
+            trending={data.result.trending}
+            fresh={data.result.fresh}
+          />
 
-        <section class="section app-directory-bottom-cta">
-          <div class="container">
-            <DirectoryRegisterCta
-              href="/apps/create?intent=project"
-              label="Register an app"
-              secondaryHref="/apps/all"
-              secondaryLabel="See all apps"
-            />
-          </div>
-        </section>
+          <section class="section app-directory-bottom-cta">
+            <div class="container">
+              <AppDirectoryOwnerCta
+                secondaryHref="/apps/all"
+                secondaryLabel="See all apps"
+                account={data.account}
+              />
+            </div>
+          </section>
+        </main>
 
         <Footer variant="compact" />
       </div>
@@ -156,32 +158,4 @@ function redirectBrowseAllUrl(url: URL): Response {
     status: 308,
     headers: { location: `/apps/all${qs ? `?${qs}` : ""}` },
   });
-}
-
-function DirectoryRegisterCta(
-  { href, label, secondaryHref, secondaryLabel }: {
-    href: string;
-    label: string;
-    secondaryHref?: string;
-    secondaryLabel?: string;
-  },
-) {
-  return (
-    <div class="directory-register-cta">
-      {secondaryHref && secondaryLabel && (
-        <a href={secondaryHref} class="directory-register-button">
-          <span class="directory-register-button-icon" aria-hidden="true">
-            ↗
-          </span>
-          <span>{secondaryLabel}</span>
-        </a>
-      )}
-      <a href={href} class="directory-register-button">
-        <span class="directory-register-button-icon" aria-hidden="true">
-          +
-        </span>
-        <span>{label}</span>
-      </a>
-    </div>
-  );
 }

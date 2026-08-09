@@ -31,7 +31,6 @@ import type { Locale } from "../../i18n/mod.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
-  listProfilesByDids,
   type ProfileRow,
 } from "../../lib/registry.ts";
 import {
@@ -43,8 +42,7 @@ import {
 } from "../../lib/reviews.ts";
 import { accountHostName } from "../../lib/account-hosts.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getAppUser, listAppUsersByDids } from "../../lib/account-types.ts";
-import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
+import { getAppUser } from "../../lib/account-types.ts";
 import {
   listProfileUpdates,
   type ProfileUpdateRow,
@@ -70,6 +68,7 @@ import type { ResolvedDirectoryHostLink } from "../../lib/app-directory.ts";
 import {
   type DisplayAppReview,
   enrichAppMirroredReviews,
+  loadReviewAuthorIdentities,
 } from "../../lib/app-review-display.ts";
 import {
   type AppActionLink,
@@ -80,6 +79,8 @@ import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import { favoriteResumeReturnPath } from "../../lib/favorite-resume.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -189,19 +190,23 @@ export const handler = define.handlers({
         null,
         [] as ProfileUpdateRow[],
       ];
-    const [displayReviews, displayAppReviews] = await Promise.all([
-      legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
-      enrichAppMirroredReviews(appReviews),
-    ]);
-    const resolvedHostLink = appListing
-      ? await getResolvedHostLinkForApp(appListing).catch((err) => {
-        console.warn(
-          `[apps] host relationship lookup failed for ${appListing?.id}:`,
-          err,
-        );
-        return null;
-      })
-      : null;
+    // Host relationship resolution is independent of reviewer identity
+    // enrichment. Start it in the same batch so slow DID/handle fallbacks do
+    // not add another serial wait before the page can render.
+    const [displayReviews, displayAppReviews, resolvedHostLink] = await Promise
+      .all([
+        legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
+        enrichAppMirroredReviews(appReviews),
+        appListing
+          ? getResolvedHostLinkForApp(appListing).catch((err) => {
+            console.warn(
+              `[apps] host relationship lookup failed for ${appListing?.id}:`,
+              err,
+            );
+            return null;
+          })
+          : Promise.resolve(null),
+      ]);
     /**
      * Share URL intentionally ends in `/`. Bluesky's composer runs a
      * client-side `getLikelyType` over the pasted URL: it splits the path
@@ -431,7 +436,7 @@ function ProfileDetailPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-profile-detail">
+        <main class="explore-profile-detail" id="main-content">
           <div class="container" style={{ maxWidth: "880px" }}>
             <div class="project-page-toolbar">
               <a href="/apps" class="text-link-button">
@@ -491,9 +496,17 @@ function ProfileDetailPage(
                     targetId={profile.handle}
                     signedIn={!!signedInUser}
                     isOwner={isOwner}
-                    loginHref={`/signin?next=${
-                      encodeURIComponent(`/apps/${profile.handle}`)
-                    }`}
+                    loginHref={oauthSigninUrl({
+                      action: "legacy_review",
+                      name: profile.name,
+                      next: `/apps/${profile.handle}?review=compose`,
+                      capabilities: ["legacy_review"],
+                    })}
+                    returnTo={`/apps/${profile.handle}?review=compose`}
+                    authCapabilities={["legacy_review"]}
+                    authAction="legacy_review"
+                    authTargetName={profile.name}
+                    rememberedAccounts={account.rememberedAccounts}
                     ownReview={ownReview
                       ? {
                         id: ownReview.id,
@@ -517,6 +530,8 @@ function ProfileDetailPage(
                       submitting: messages.reviews.composer.submitting,
                       delete: messages.reviews.composer.delete,
                       signIn: messages.reviews.composer.signIn,
+                      signInTitle: messages.reviews.composer.signInTitle,
+                      signInBody: messages.reviews.composer.signInBody,
                       cancel: messages.reviews.composer.cancel,
                       saved: messages.reviews.composer.saved,
                       deleted: messages.reviews.composer.deleted,
@@ -593,7 +608,7 @@ function ProfileDetailPage(
               </span>
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -654,7 +669,10 @@ function AppListingDetailPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-profile-detail app-detail-section">
+        <main
+          class="explore-profile-detail app-detail-section"
+          id="main-content"
+        >
           <div class="container" style={{ maxWidth: "980px" }}>
             <div class="project-page-toolbar">
               <a href="/apps" class="text-link-button">
@@ -720,6 +738,7 @@ function AppListingDetailPage(
               signedInUser={signedInUser}
               isOwner={isOwner}
               locale={locale}
+              rememberedAccounts={account.rememberedAccounts}
             />
 
             {relatedApps.length > 0 && (
@@ -732,7 +751,7 @@ function AppListingDetailPage(
               <AppTechnicalDetails app={app} aliases={sourceAliases} />
             )}
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -950,6 +969,7 @@ function AppReviewsSection(
     signedInUser,
     isOwner,
     locale,
+    rememberedAccounts,
   }: {
     app: AppListing;
     reviews: DisplayAppReview[];
@@ -959,15 +979,36 @@ function AppReviewsSection(
     signedInUser: { did: string; handle: string } | null;
     isOwner: boolean;
     locale: Locale;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
   },
 ) {
   const messages = getMessages(locale);
   const detailPath = `/apps/${app.slug}`;
+  const reviewReturnPath = `${detailPath}?review=compose`;
+  const favoriteReturnPath = favoriteResumeReturnPath(app.slug, "save");
+  const favoriteRemoveReturnPath = favoriteResumeReturnPath(
+    app.slug,
+    "remove",
+  );
   const encodedIdentifier = encodeURIComponent(app.slug);
-  const loginHref = `/signin?next=${encodeURIComponent(detailPath)}`;
-  const reauthHref = signedInUser
-    ? appLikeReauthHref(signedInUser.handle, detailPath)
-    : loginHref;
+  const reviewLoginHref = oauthSigninUrl({
+    action: "review",
+    name: app.name,
+    next: reviewReturnPath,
+    capabilities: ["review"],
+  });
+  const favoriteLoginHref = oauthSigninUrl({
+    action: "favorite",
+    name: app.name,
+    next: favoriteReturnPath,
+    capabilities: ["favorite"],
+  });
+  const reauthSaveHref = signedInUser
+    ? appLikeReauthHref(signedInUser.handle, favoriteReturnPath)
+    : favoriteLoginHref;
+  const reauthRemoveHref = signedInUser
+    ? appLikeReauthHref(signedInUser.handle, favoriteRemoveReturnPath)
+    : favoriteLoginHref;
   const reviewSummary = app.reviewCount > 0 && app.averageRating != null
     ? messages.reviews.summary.average(
       app.averageRating.toFixed(1),
@@ -996,8 +1037,12 @@ function AppReviewsSection(
               identifier={app.slug}
               signedIn={!!signedInUser}
               isOwner={isOwner}
-              loginHref={loginHref}
-              reauthHref={reauthHref}
+              loginHref={favoriteLoginHref}
+              reauthSaveHref={reauthSaveHref}
+              reauthRemoveHref={reauthRemoveHref}
+              returnTo={favoriteReturnPath}
+              rememberedAccounts={rememberedAccounts}
+              targetName={app.name}
               initiallyLiked={!!ownFavorite}
               count={app.favoriteCount}
               copy={messages.reviews.app.like}
@@ -1006,7 +1051,12 @@ function AppReviewsSection(
               targetId={app.slug}
               signedIn={!!signedInUser}
               isOwner={isOwner}
-              loginHref={loginHref}
+              loginHref={reviewLoginHref}
+              returnTo={reviewReturnPath}
+              authCapabilities={["review"]}
+              authAction="review"
+              authTargetName={app.name}
+              rememberedAccounts={rememberedAccounts}
               submitEndpoint={`/api/apps/${encodedIdentifier}/reviews`}
               deleteEndpoint={`/api/apps/${encodedIdentifier}/reviews/me`}
               maxBodyLength={8000}
@@ -1032,6 +1082,8 @@ function AppReviewsSection(
                 submitting: messages.reviews.composer.submitting,
                 delete: messages.reviews.composer.delete,
                 signIn: messages.reviews.composer.signIn,
+                signInTitle: messages.reviews.composer.signInTitle,
+                signInBody: messages.reviews.composer.signInBody,
                 cancel: messages.reviews.composer.cancel,
                 saved: messages.reviews.composer.saved,
                 deleted: messages.reviews.composer.deleted,
@@ -1180,41 +1232,26 @@ function emptyReviewSummary(): ReviewSummary {
 
 async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
   const reviewerDids = uniqueDids(reviews.map((review) => review.reviewerDid));
-  const [appUsers, profiles] = await Promise.all([
-    listAppUsersByDids(reviewerDids).catch(() => new Map()),
-    listProfilesByDids(reviewerDids, { profileType: "user" }).catch(() =>
-      new Map()
-    ),
-  ]);
+  const identities = await loadReviewAuthorIdentities(reviewerDids);
   return reviews.map((review) => {
-    const appUser = appUsers.get(review.reviewerDid) ?? null;
-    const profile = profiles.get(review.reviewerDid) ?? null;
-    const reviewerName = profile?.name ?? appUser?.displayName ?? null;
-    const reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
-    const reviewerAvatarUrl = profile?.avatarCid
-      ? bskyCdnAvatarUrl(review.reviewerDid, profile.avatarCid)
-      : appUser?.avatarCid && appUser.avatarMime
-      ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
-      : null;
+    const identity = identities.get(review.reviewerDid) ?? {
+      handle: null,
+      name: null,
+      avatarUrl: null,
+      href: null,
+    };
     return {
       ...review,
-      reviewerName,
-      reviewerHandle,
-      reviewerAvatarUrl,
-      reviewerProfileHref: profile
-        ? `/users/${encodeURIComponent(profile.handle)}`
-        : microblogProfileHref(reviewerHandle),
+      reviewerName: identity.name,
+      reviewerHandle: identity.handle,
+      reviewerAvatarUrl: identity.avatarUrl,
+      reviewerProfileHref: identity.href,
     };
   });
 }
 
 function uniqueDids(dids: string[]): string[] {
   return [...new Set(dids.map((did) => did.trim()).filter(Boolean))];
-}
-
-function microblogProfileHref(handle: string | null): string | null {
-  const clean = handle?.replace(/^@/, "").trim();
-  return clean ? `https://bsky.app/profile/${encodeURIComponent(clean)}` : null;
 }
 
 function NotFound(
@@ -1229,7 +1266,7 @@ function NotFound(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-profile-detail">
+        <main class="explore-profile-detail" id="main-content">
           <div
             class="container"
             style={{ maxWidth: "640px", textAlign: "center" }}
@@ -1242,7 +1279,7 @@ function NotFound(
               </a>
             </p>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

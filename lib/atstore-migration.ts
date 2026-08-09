@@ -5,6 +5,7 @@ import type { BlobRef, LinkEntry, ProfileRecord } from "./lexicons.ts";
 import { listRecordsPublic, putRecord } from "./pds.ts";
 import type { ProfileRow } from "./registry.ts";
 import { createAtprotoTid } from "./tid.ts";
+import { reserveAppProfileTarget } from "./app-profile-cardinality.ts";
 
 export interface AtstoreListingLink {
   type: string;
@@ -277,7 +278,11 @@ export async function publishAtstoreListingMigration(
     input.profile,
     input.sourceRecord,
   );
-  const rkey = createAtstoreListingRkey();
+  const target = await reserveAppProfileTarget(
+    input.did,
+    createAtstoreListingRkey(),
+  );
+  const rkey = target.rkey;
   const result = await putRecord(
     input.did,
     input.pdsUrl,
@@ -306,10 +311,12 @@ export async function publishAtstoreListingFromProfileRecord(
     record: ProfileRecord;
     existingRecord?: AtstoreMigrationRecordRef | null;
     createDistinctListing?: boolean;
+    rkeyOverride?: string | null;
   },
 ): Promise<AtstoreMigrationPublishResult> {
   const existing = asRecord(input.existingRecord?.value);
-  const rkey = input.existingRecord?.rkey || createAtstoreListingRkey();
+  const rkey = input.existingRecord?.rkey || input.rkeyOverride ||
+    createAtstoreListingRkey();
   const record = buildAtstoreListingFromProfileRecord({
     did: input.did,
     handle: input.handle,

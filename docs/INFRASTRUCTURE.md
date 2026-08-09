@@ -77,10 +77,10 @@ Why Railway Postgres now:
 ## Auth And Off-Protocol Control Plane
 
 `login.atmosphereaccount.com` should feel like an edge-native sign-in surface,
-but the edge is not the authority for Atmosphere Login. Deno Deploy owns the
-fast public experience: the picker shell, SDK assets, public metadata, JWKS, and
-safe cached reads. Railway owns the durable decisions that must be consistent
-across every request.
+but the edge is not the authority for Login with Atmosphere. Deno Deploy owns
+the fast public experience: the picker shell, SDK assets, public metadata, JWKS,
+and safe cached reads. Railway owns the durable decisions that must be
+consistent across every request.
 
 Durable auth/control-plane state stays in Railway Postgres:
 
@@ -399,8 +399,10 @@ Run schema bootstrap explicitly before deploys and after additive DB changes:
 deno task db:migrate
 ```
 
-Run cleanup for expired OAuth/app sessions, Atmosphere Login replay keys, and
-stale worker leases:
+Run cleanup for expired OAuth flow state, app sessions, Login with Atmosphere
+replay keys, and stale worker leases. Persisted OAuth refresh sessions are
+retained past their short-lived access-token expiry and are cleaned up by the
+OAuth lifecycle itself:
 
 ```sh
 deno task db:maintain
@@ -537,11 +539,9 @@ Hosted environments must set:
 - `SESSION_SECRET`
 - OAuth keys when sign-in/write flows are enabled
 
-Production PDS contact-email claims use Comail. Enroll the sending domain under
-the sender's ATProto DID, publish Comail's DKIM and SPF records, and set
-`COMAIL_API_KEY`, `COMAIL_SENDER_DID`, and `HOST_CLAIM_EMAIL_FROM`. Ownership
-messages are sent with Comail's `verification` category; local development keeps
-using the private on-page preview when these values are absent.
+Production host claims use a temporary, account-bound DNS TXT challenge. They do
+not require an outbound email provider. Explicit local `.test` fixtures keep
+their development-only bypass for visual and integration testing.
 
 The app intentionally refuses local DB and weak session-secret fallbacks in
 hosted runtimes.

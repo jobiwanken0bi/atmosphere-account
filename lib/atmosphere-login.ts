@@ -1,4 +1,4 @@
-import { isPostgresBackend, withDb } from "./db.ts";
+import { type DbClient, isPostgresBackend, withDb } from "./db.ts";
 import {
   b64uDecode,
   loadClientPrivateKey,
@@ -30,16 +30,27 @@ import {
   type AccountHostClaim,
   getAccountHost,
   getAccountHostClaim,
+  listClaimedAccountHostsForOwner,
   verifiedAccountHostOwnerDid,
 } from "./account-hosts.ts";
+import {
+  type AppListing,
+  type AppListingLoginAvailability,
+  getAppListingLoginAvailability,
+  listManagedAppListingsByAccountDid,
+} from "./app-directory.ts";
+import { listVerifiedDirectoryEntityLinksForApp } from "./directory-entity-links.ts";
 
 const SELECTION_TOKEN_TTL_SEC = 2 * 60;
 const MAX_STATE_LEN = 500;
 const MAX_SCOPE_LEN = 1000;
-const MAX_APP_NAME_LEN = 80;
 const MAX_URL_LEN = 2048;
 const MAX_ALLOWED_RETURN_URIS = 20;
 const MAX_REVIEW_NOTES_LEN = 2000;
+export const LOGIN_APP_CLIENT_ID_CONFLICT_MESSAGE =
+  "This client ID is already registered to another app account.";
+export const LOGIN_APP_STALE_ENVIRONMENT_MESSAGE =
+  "This login environment changed in another tab. Reload before saving.";
 export const ATMOSPHERE_LOGIN_MANIFEST_VERSION = "atmosphere.login.v0.1";
 const ATMOSPHERE_LOGIN_MANIFEST_PATH = "/.well-known/atmosphere-login.json";
 const ATMOSPHERE_LOGIN_MANIFEST_TIMEOUT_MS = 3_000;
@@ -57,9 +68,17 @@ export interface LoginRequest {
 
 export interface LoginApp {
   clientId: string;
+  /** Live identity derived from the linked app profile. */
   appName: string;
   appUri: string | null;
   logoUri: string | null;
+  appDid: string | null;
+  appProfileUri: string | null;
+  appProfileSlug: string | null;
+  linkStatus: LoginAppLinkStatus;
+  identityAvailable: boolean;
+  /** Safety state for picker/handoff; owner management stays available. */
+  loginAvailability: AppListingLoginAvailability | "unlinked";
   allowedReturnUris: string[];
   allowedOrigins: string[];
   status: "trusted" | "unverified" | "development" | "blocked";
@@ -69,9 +88,33 @@ export interface LoginApp {
   reviewDecisionAt: number | null;
   reviewDecisionBy: string | null;
   reviewDecisionReason: string | null;
+  /** Opaque version binding an admin decision to the reviewed configuration. */
+  reviewRevision: string | null;
+  /** Opaque version used to compare-and-swap owner environment edits. */
+  environmentRevision: string | null;
   contactDid: string | null;
   preferredAccountHost: string | null;
   registered: boolean;
+}
+
+export type LoginAppLinkStatus =
+  | "linked"
+  | "relink_required"
+  | "system_fixture";
+
+export interface LoginAppProfileIdentity {
+  did: string;
+  listingId: string;
+  profileUri: string;
+  slug: string;
+  name: string;
+  homepage: string | null;
+  logoUri: string | null;
+  /** Indexed app-profile version used for atomic trust checks. */
+  updatedAt: number;
+  loginAvailability: AppListingLoginAvailability;
+  /** Internal version used to invalidate stale trust after profile updates. */
+  identityFingerprint: string;
 }
 
 export type LoginAppReviewStatus =
@@ -94,6 +137,7 @@ export type LoginAppReadinessState =
   | "needs_fixes"
   | "ready"
   | "trusted"
+  | "unavailable"
   | "blocked";
 
 export interface LoginAppReadiness {
@@ -118,12 +162,10 @@ export interface LoginConnection {
 }
 
 export interface LoginAppRegistrationInput {
-  appName: string;
   clientId: string;
-  appUri: string;
-  logoUri?: string | null;
   allowedReturnUris: string[];
   preferredAccountHost?: string | null;
+  expectedEnvironmentRevision?: string | null;
 }
 
 export class LoginRequestError extends Error {
@@ -166,6 +208,13 @@ function nullableNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function readLinkStatus(value: unknown): LoginAppLinkStatus {
+  return value === "linked" || value === "system_fixture" ||
+      value === "relink_required"
+    ? value
+    : "relink_required";
+}
+
 function isExampleLoginClientId(clientId: string): boolean {
   try {
     return new URL(clientId).pathname === EXAMPLE_LOGIN_CLIENT_METADATA_PATH;
@@ -189,15 +238,40 @@ function exampleLoginAppLogoUri(
   }
 }
 
-function rowToLoginApp(row: Record<string, unknown>): LoginApp {
+function rowToLoginApp(
+  row: Record<string, unknown>,
+  profile: LoginAppProfileIdentity | null = null,
+): LoginApp {
   const clientId = String(row.client_id);
-  const appUri = typeof row.app_uri === "string" ? row.app_uri : null;
+  const linkStatus = readLinkStatus(row.link_status);
+  const usesStoredFixtureIdentity = linkStatus === "system_fixture";
+  const identityAvailable = !!profile || usesStoredFixtureIdentity;
+  const snapshotAppUri = typeof row.app_uri === "string" ? row.app_uri : null;
+  const appUri = profile?.homepage ??
+    (usesStoredFixtureIdentity ? snapshotAppUri : null);
+  const snapshotLogoUri = typeof row.logo_uri === "string"
+    ? row.logo_uri
+    : null;
   return {
     clientId,
-    appName: String(row.app_name),
+    appName: profile?.name ??
+      (usesStoredFixtureIdentity
+        ? String(row.app_name)
+        : "Unlinked login configuration"),
     appUri,
-    logoUri: exampleLoginAppLogoUri(clientId, appUri) ??
-      (typeof row.logo_uri === "string" ? row.logo_uri : null),
+    logoUri: profile?.logoUri ??
+      (usesStoredFixtureIdentity
+        ? exampleLoginAppLogoUri(clientId, appUri) ?? snapshotLogoUri
+        : null),
+    appDid: typeof row.app_did === "string" ? row.app_did : null,
+    appProfileUri: typeof row.app_profile_uri === "string"
+      ? row.app_profile_uri
+      : null,
+    appProfileSlug: profile?.slug ?? null,
+    linkStatus,
+    identityAvailable,
+    loginAvailability: profile?.loginAvailability ??
+      (usesStoredFixtureIdentity ? "available" : "unlinked"),
     allowedReturnUris: jsonArray(row.allowed_return_uris),
     allowedOrigins: jsonArray(row.allowed_origins),
     status: readStatus(row.status),
@@ -211,6 +285,12 @@ function rowToLoginApp(row: Record<string, unknown>): LoginApp {
     reviewDecisionReason: typeof row.review_decision_reason === "string"
       ? row.review_decision_reason
       : null,
+    reviewRevision: typeof row.review_revision === "string"
+      ? row.review_revision
+      : null,
+    environmentRevision: typeof row.environment_revision === "string"
+      ? row.environment_revision
+      : null,
     contactDid: typeof row.contact_did === "string" ? row.contact_did : null,
     preferredAccountHost: typeof row.preferred_account_host === "string"
       ? row.preferred_account_host
@@ -220,6 +300,7 @@ function rowToLoginApp(row: Record<string, unknown>): LoginApp {
 }
 
 function withExampleLoginAppLogo(app: LoginApp): LoginApp {
+  if (app.registered && app.linkStatus !== "system_fixture") return app;
   const logoUri = exampleLoginAppLogoUri(app.clientId, app.appUri);
   return logoUri && app.logoUri !== logoUri ? { ...app, logoUri } : app;
 }
@@ -352,7 +433,7 @@ function appFromClientId(clientId: string): LoginApp {
   return {
     clientId,
     appName: isReferenceApp
-      ? "Atmosphere Login reference app"
+      ? "Login with Atmosphere reference app"
       : isDev
       ? "Development app"
       : client.hostname,
@@ -360,6 +441,12 @@ function appFromClientId(clientId: string): LoginApp {
       ? new URL("/examples/atmosphere-login/app", client.origin).toString()
       : client.origin,
     logoUri: exampleLoginAppLogoUri(clientId, client.origin),
+    appDid: null,
+    appProfileUri: null,
+    appProfileSlug: null,
+    linkStatus: "system_fixture",
+    identityAvailable: true,
+    loginAvailability: "available",
     allowedReturnUris: [],
     allowedOrigins: [],
     status: isDev ? "development" : "unverified",
@@ -369,6 +456,8 @@ function appFromClientId(clientId: string): LoginApp {
     reviewDecisionAt: null,
     reviewDecisionBy: null,
     reviewDecisionReason: null,
+    reviewRevision: null,
+    environmentRevision: null,
     contactDid: null,
     preferredAccountHost: null,
     registered: false,
@@ -376,11 +465,15 @@ function appFromClientId(clientId: string): LoginApp {
 }
 
 export function readLoginRequest(url: URL): LoginRequest {
-  const clientId = url.searchParams.get("client_id")?.trim();
-  const returnUri = url.searchParams.get("return_uri")?.trim() ??
-    url.searchParams.get("redirect_uri")?.trim();
-  const state = url.searchParams.get("state")?.trim();
-  const scope = url.searchParams.get("scope")?.trim() || null;
+  const clientId = singleLoginRequestValue(url, "client_id")?.trim();
+  const returnUriValue = singleLoginRequestValue(url, "return_uri");
+  const redirectUriValue = singleLoginRequestValue(url, "redirect_uri");
+  if (returnUriValue !== null && redirectUriValue !== null) {
+    throw new LoginRequestError("use only one return URI parameter");
+  }
+  const returnUri = (returnUriValue ?? redirectUriValue)?.trim();
+  const state = singleLoginRequestValue(url, "state")?.trim();
+  const scope = singleLoginRequestValue(url, "scope")?.trim() || null;
   if (!clientId) throw new LoginRequestError("missing client_id");
   if (!returnUri) throw new LoginRequestError("missing return_uri");
   if (!state) throw new LoginRequestError("missing state");
@@ -399,6 +492,14 @@ export function readLoginRequest(url: URL): LoginRequest {
   return { clientId, returnUri, state, scope };
 }
 
+function singleLoginRequestValue(url: URL, key: string): string | null {
+  const values = url.searchParams.getAll(key);
+  if (values.length > 1) {
+    throw new LoginRequestError(`duplicate ${key}`);
+  }
+  return values[0] ?? null;
+}
+
 export function loginRequestToPath(req: LoginRequest): string {
   const params = new URLSearchParams({
     client_id: req.clientId,
@@ -409,38 +510,466 @@ export function loginRequestToPath(req: LoginRequest): string {
   return `/login/select?${params.toString()}`;
 }
 
+function derivedProfileUrl(
+  value: string | null | undefined,
+  allowRelative = false,
+): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  try {
+    const url = allowRelative ? new URL(raw, siteOrigin()) : new URL(raw);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return normalizeHref(url);
+  } catch {
+    return null;
+  }
+}
+
+export function loginAppProfileIdentityFromListing(
+  ownerDid: string,
+  listing: Pick<
+    AppListing,
+    | "id"
+    | "canonicalUri"
+    | "slug"
+    | "name"
+    | "primaryUrl"
+    | "iconUrl"
+    | "updatedAt"
+  >,
+  loginAvailability: AppListingLoginAvailability = "available",
+): LoginAppProfileIdentity {
+  const homepage = derivedProfileUrl(listing.primaryUrl);
+  const logoUri = derivedProfileUrl(listing.iconUrl, true);
+  return {
+    did: ownerDid.trim(),
+    listingId: listing.id,
+    profileUri: listing.canonicalUri,
+    slug: listing.slug,
+    name: listing.name.trim(),
+    homepage,
+    logoUri,
+    updatedAt: listing.updatedAt,
+    loginAvailability,
+    // App-profile image URLs can be stable proxy URLs while their underlying
+    // blob changes. Including the indexed profile version makes that change
+    // invalidate picker trust as well as direct name/homepage URL edits.
+    identityFingerprint: JSON.stringify([
+      listing.name.trim(),
+      homepage,
+      logoUri,
+      listing.updatedAt,
+    ]),
+  };
+}
+
+export async function getLoginAppProfileForOwner(
+  ownerDid: string,
+): Promise<LoginAppProfileIdentity | null> {
+  const owner = ownerDid.trim();
+  if (!owner.startsWith("did:")) return null;
+  const listings = await listManagedAppListingsByAccountDid(owner, {
+    syncLegacy: false,
+  });
+  if (listings.length === 0) return null;
+  if (listings.length !== 1) {
+    throw new LoginRequestError(
+      "This account controls more than one legacy app profile. Resolve the duplicate profiles before using Login with Atmosphere.",
+      409,
+    );
+  }
+  const availability = await getAppListingLoginAvailability(listings[0].id);
+  return loginAppProfileIdentityFromListing(owner, listings[0], availability);
+}
+
+export async function requireLoginAppProfileForOwner(
+  ownerDid: string,
+): Promise<LoginAppProfileIdentity> {
+  const profile = await getLoginAppProfileForOwner(ownerDid);
+  if (!profile) {
+    throw new LoginRequestError(
+      "Create an app profile with this account before adding Login with Atmosphere.",
+      403,
+    );
+  }
+  return profile;
+}
+
+async function getLinkedLoginAppProfile(
+  appDid: string | null,
+  profileUri: string | null,
+): Promise<LoginAppProfileIdentity | null> {
+  const did = appDid?.trim() ?? "";
+  const uri = profileUri?.trim() ?? "";
+  if (!did.startsWith("did:") || !uri) return null;
+  const listings = await listManagedAppListingsByAccountDid(did, {
+    syncLegacy: false,
+  });
+  const matches = listings.filter((listing) => listing.canonicalUri === uri);
+  if (matches.length !== 1) return null;
+  const availability = await getAppListingLoginAvailability(matches[0].id);
+  return loginAppProfileIdentityFromListing(did, matches[0], availability);
+}
+
+function sameOptionalIdentityUrl(
+  left: unknown,
+  right: string | null,
+): boolean {
+  const stored = typeof left === "string" ? left : null;
+  if (!stored || !right) return stored === right;
+  return sameNormalizedUrl(stored, right);
+}
+
+export function loginAppProfileIdentityChanged(
+  snapshot: {
+    appName: string;
+    appUri: string | null;
+    logoUri: string | null;
+    identityFingerprint: string | null;
+  },
+  profile: LoginAppProfileIdentity,
+): boolean {
+  if (snapshot.appName !== profile.name) return true;
+  if (!sameOptionalIdentityUrl(snapshot.appUri, profile.homepage)) return true;
+  if (!sameOptionalIdentityUrl(snapshot.logoUri, profile.logoUri)) return true;
+  // A null fingerprint is a pre-migration snapshot. Preserve its existing
+  // review only when all three historical identity fields still match.
+  return snapshot.identityFingerprint !== null &&
+    snapshot.identityFingerprint !== profile.identityFingerprint;
+}
+
+function rowIdentityChanged(
+  row: Record<string, unknown>,
+  profile: LoginAppProfileIdentity,
+): boolean {
+  return loginAppProfileIdentityChanged({
+    appName: String(row.app_name),
+    appUri: typeof row.app_uri === "string" ? row.app_uri : null,
+    logoUri: typeof row.logo_uri === "string" ? row.logo_uri : null,
+    identityFingerprint: typeof row.profile_identity_fingerprint === "string"
+      ? row.profile_identity_fingerprint
+      : null,
+  }, profile);
+}
+
+export function loginAppStatusAfterProfileIdentityChange(
+  currentStatus: LoginApp["status"],
+  clientId: string,
+  allowedReturnUris: string[],
+): LoginApp["status"] {
+  return currentStatus === "blocked"
+    ? "blocked"
+    : defaultRegistrationStatus(clientId, allowedReturnUris);
+}
+
+async function bindLoginAppRowToProfile(
+  row: Record<string, unknown>,
+  profile: LoginAppProfileIdentity,
+): Promise<Record<string, unknown>> {
+  return await withDb((c) =>
+    syncLoginAppProfileIdentityWithClient(c, row, profile)
+  );
+}
+
+export async function syncLoginAppProfileIdentityWithClient(
+  c: DbClient,
+  row: Record<string, unknown>,
+  profile: LoginAppProfileIdentity,
+  now = Date.now(),
+): Promise<Record<string, unknown>> {
+  const identityChanged = rowIdentityChanged(row, profile);
+  const profileChanged = row.app_did !== profile.did ||
+    row.app_profile_uri !== profile.profileUri;
+  const linkageChanged = profileChanged || row.contact_did !== profile.did ||
+    readLinkStatus(row.link_status) !== "linked";
+  const fingerprintChanged = row.profile_identity_fingerprint !==
+    profile.identityFingerprint;
+  const profileVersionChanged = nullableNumber(
+    row.profile_identity_updated_at,
+  ) !== profile.updatedAt;
+  const reviewRevisionMissing = typeof row.review_revision !== "string" ||
+    !row.review_revision;
+  const environmentRevisionMissing =
+    typeof row.environment_revision !== "string" || !row.environment_revision;
+  if (
+    !identityChanged && !linkageChanged && !fingerprintChanged &&
+    !profileVersionChanged && !reviewRevisionMissing &&
+    !environmentRevisionMissing
+  ) return row;
+  const resetTrust = identityChanged || profileChanged;
+  const nextReviewRevision = randomB64u(18);
+  const ownerEnvironmentChanged = identityChanged || linkageChanged ||
+    fingerprintChanged || profileVersionChanged;
+  const nextEnvironmentRevision = ownerEnvironmentChanged ||
+      environmentRevisionMissing
+    ? randomB64u(18)
+    : String(row.environment_revision);
+  const currentStatus = readStatus(row.status);
+  const nextStatus = resetTrust
+    ? loginAppStatusAfterProfileIdentityChange(
+      currentStatus,
+      String(row.client_id),
+      jsonArray(row.allowed_return_uris),
+    )
+    : currentStatus;
+  const changed = await c.execute({
+    sql: `
+        UPDATE login_app
+        SET app_name = ?,
+            app_uri = ?,
+            logo_uri = ?,
+            contact_did = ?,
+            app_did = ?,
+            app_profile_uri = ?,
+            link_status = 'linked',
+            profile_identity_fingerprint = ?,
+            profile_identity_updated_at = ?,
+            review_revision = ?,
+            environment_revision = ?,
+            status = CASE
+              WHEN status = 'blocked' THEN 'blocked'
+              WHEN ? THEN ?
+              ELSE status
+            END,
+            review_status = CASE
+              WHEN ? AND status <> 'blocked' THEN 'none'
+              ELSE review_status
+            END,
+            review_requested_at = CASE
+              WHEN ? AND status <> 'blocked' THEN NULL
+              ELSE review_requested_at
+            END,
+            review_notes = CASE
+              WHEN ? AND status <> 'blocked' THEN NULL
+              ELSE review_notes
+            END,
+            review_decision_at = CASE
+              WHEN ? AND status <> 'blocked' THEN NULL
+              ELSE review_decision_at
+            END,
+            review_decision_by = CASE
+              WHEN ? AND status <> 'blocked' THEN NULL
+              ELSE review_decision_by
+            END,
+            review_decision_reason = CASE
+              WHEN ? AND status <> 'blocked' THEN NULL
+              ELSE review_decision_reason
+            END,
+            updated_at = ?
+        WHERE client_id = ?
+          AND app_name = ?
+          AND COALESCE(app_uri, '') = COALESCE(?, '')
+          AND COALESCE(logo_uri, '') = COALESCE(?, '')
+          AND allowed_return_uris = ?
+          AND allowed_origins = ?
+          AND COALESCE(contact_did, '') = COALESCE(?, '')
+          AND COALESCE(app_did, '') = COALESCE(?, '')
+          AND COALESCE(app_profile_uri, '') = COALESCE(?, '')
+          AND link_status = ?
+          AND COALESCE(profile_identity_fingerprint, '') = COALESCE(?, '')
+          AND COALESCE(profile_identity_updated_at, -1) = COALESCE(?, -1)
+          AND COALESCE(review_revision, '') = COALESCE(?, '')
+          AND COALESCE(environment_revision, '') = COALESCE(?, '')
+      `,
+    args: [
+      profile.name,
+      profile.homepage,
+      profile.logoUri,
+      profile.did,
+      profile.did,
+      profile.profileUri,
+      profile.identityFingerprint,
+      profile.updatedAt,
+      nextReviewRevision,
+      nextEnvironmentRevision,
+      resetTrust ? 1 : 0,
+      nextStatus,
+      resetTrust ? 1 : 0,
+      resetTrust ? 1 : 0,
+      resetTrust ? 1 : 0,
+      resetTrust ? 1 : 0,
+      resetTrust ? 1 : 0,
+      resetTrust ? 1 : 0,
+      now,
+      String(row.client_id),
+      String(row.app_name),
+      typeof row.app_uri === "string" ? row.app_uri : null,
+      typeof row.logo_uri === "string" ? row.logo_uri : null,
+      typeof row.allowed_return_uris === "string"
+        ? row.allowed_return_uris
+        : "[]",
+      typeof row.allowed_origins === "string" ? row.allowed_origins : "[]",
+      typeof row.contact_did === "string" ? row.contact_did : null,
+      typeof row.app_did === "string" ? row.app_did : null,
+      typeof row.app_profile_uri === "string" ? row.app_profile_uri : null,
+      readLinkStatus(row.link_status),
+      typeof row.profile_identity_fingerprint === "string"
+        ? row.profile_identity_fingerprint
+        : null,
+      nullableNumber(row.profile_identity_updated_at),
+      typeof row.review_revision === "string" ? row.review_revision : null,
+      typeof row.environment_revision === "string"
+        ? row.environment_revision
+        : null,
+    ],
+  });
+  const selected = await c.execute({
+    sql: `SELECT * FROM login_app WHERE client_id = ?`,
+    args: [String(row.client_id)],
+  });
+  const updated = selected.rows[0] as Record<string, unknown> | undefined;
+  if (!updated) {
+    throw new LoginRequestError("Login environment no longer exists", 404);
+  }
+  const stillBoundToProfile = updated.app_did === profile.did &&
+    updated.app_profile_uri === profile.profileUri &&
+    readLinkStatus(updated.link_status) === "linked" &&
+    !rowIdentityChanged(updated, profile) &&
+    updated.profile_identity_fingerprint === profile.identityFingerprint &&
+    nullableNumber(updated.profile_identity_updated_at) === profile.updatedAt &&
+    typeof updated.review_revision === "string" && !!updated.review_revision &&
+    typeof updated.environment_revision === "string" &&
+    !!updated.environment_revision;
+  if (Number(changed.rowsAffected ?? 0) !== 1 && !stillBoundToProfile) {
+    throw new LoginRequestError(
+      "Login environment ownership changed while its app profile was being refreshed.",
+      409,
+    );
+  }
+  if (!stillBoundToProfile) {
+    throw new LoginRequestError(
+      "Login environment could not be linked to its current app profile.",
+      409,
+    );
+  }
+  return updated;
+}
+
+async function hydrateLoginAppRow(
+  input: Record<string, unknown>,
+  knownOwnerProfile?: LoginAppProfileIdentity,
+): Promise<LoginApp> {
+  const linkStatus = readLinkStatus(input.link_status);
+  if (linkStatus === "system_fixture") return rowToLoginApp(input);
+
+  const rowAppDid = typeof input.app_did === "string" ? input.app_did : null;
+  const rowProfileUri = typeof input.app_profile_uri === "string"
+    ? input.app_profile_uri
+    : null;
+  let profile = linkStatus === "linked"
+    ? knownOwnerProfile
+      ? rowAppDid === knownOwnerProfile.did ? knownOwnerProfile : null
+      : await getLinkedLoginAppProfile(rowAppDid, rowProfileUri)
+    : null;
+  // A DID may safely recover a deleted/recreated profile because new writes
+  // enforce one canonical app profile per DID. Zero or multiple live profiles
+  // remain unavailable, and the latter throws/fails closed.
+  if (!profile && linkStatus === "linked" && rowAppDid) {
+    profile = await getLoginAppProfileForOwner(rowAppDid);
+  }
+  if (!profile && linkStatus === "relink_required") {
+    const legacyOwner = typeof input.contact_did === "string"
+      ? input.contact_did
+      : "";
+    profile = legacyOwner
+      ? knownOwnerProfile?.did === legacyOwner
+        ? knownOwnerProfile
+        : await getLoginAppProfileForOwner(legacyOwner)
+      : null;
+  }
+  if (!profile) return rowToLoginApp(input);
+  const row = await bindLoginAppRowToProfile(input, profile);
+  return rowToLoginApp(row, profile);
+}
+
 export async function getLoginApp(
   clientId: string,
 ): Promise<LoginApp | null> {
-  return await withDb(async (c) => {
+  const row = await withDb(async (c) => {
     const result = await c.execute({
       sql: `SELECT * FROM login_app WHERE client_id = ?`,
       args: [clientId],
     });
     if (result.rows.length === 0) return null;
-    return rowToLoginApp(result.rows[0] as Record<string, unknown>);
+    return result.rows[0] as Record<string, unknown>;
   });
+  return row ? await hydrateLoginAppRow(row) : null;
 }
 
 export async function listLoginAppsForOwner(
   ownerDid: string,
+  knownOwnerProfile?: LoginAppProfileIdentity,
 ): Promise<LoginApp[]> {
-  return await withDb(async (c) => {
+  const owner = ownerDid.trim();
+  if (knownOwnerProfile && knownOwnerProfile.did !== owner) {
+    throw new LoginRequestError("App profile owner does not match", 403);
+  }
+  const profile = knownOwnerProfile ?? await getLoginAppProfileForOwner(owner);
+  if (!profile) return [];
+  const rows = await withDb(async (c) => {
     const appNameOrder = isPostgresBackend()
       ? "lower(app_name)"
       : "app_name COLLATE NOCASE";
     const result = await c.execute({
       sql: `
         SELECT * FROM login_app
-        WHERE contact_did = ?
+        WHERE app_did = ?
+          OR (app_did IS NULL AND contact_did = ?)
         ORDER BY updated_at DESC, ${appNameOrder}
       `,
-      args: [ownerDid],
+      args: [owner, owner],
     });
-    return result.rows.map((row) =>
-      rowToLoginApp(row as Record<string, unknown>)
-    );
+    return result.rows as Record<string, unknown>[];
   });
+  const apps = await Promise.all(
+    rows.map((row) => hydrateLoginAppRow(row, profile)),
+  );
+  return apps.filter((app) =>
+    app.identityAvailable && app.appDid === profile.did &&
+    app.appProfileUri === profile.profileUri
+  );
+}
+
+/**
+ * Owner-facing recovery inventory. Unlike the normal environment list, this
+ * keeps legacy or orphaned rows visible to the DID that can remove them. If
+ * the owner now has one unambiguous app profile, hydration relinks the rows
+ * automatically; otherwise their stored identity remains unavailable.
+ */
+export async function listRecoverableLoginAppsForOwner(
+  ownerDid: string,
+): Promise<LoginApp[]> {
+  const owner = ownerDid.trim();
+  if (!owner.startsWith("did:")) return [];
+  let profile: LoginAppProfileIdentity | null = null;
+  try {
+    profile = await getLoginAppProfileForOwner(owner);
+  } catch {
+    // Multiple legacy profiles cannot be guessed. The raw rows stay visible
+    // only for cleanup until the ownership ambiguity is resolved.
+  }
+  const rows = await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `
+        SELECT * FROM login_app
+        WHERE link_status <> 'system_fixture'
+          AND (
+            app_did = ? OR
+            (app_did IS NULL AND contact_did = ?)
+          )
+        ORDER BY updated_at DESC, client_id ASC
+      `,
+      args: [owner, owner],
+    });
+    return result.rows as Record<string, unknown>[];
+  });
+  return await Promise.all(rows.map(async (row) => {
+    try {
+      return await hydrateLoginAppRow(row, profile ?? undefined);
+    } catch {
+      return rowToLoginApp(row);
+    }
+  }));
 }
 
 export async function getLoginAppForOwner(
@@ -448,17 +977,110 @@ export async function getLoginAppForOwner(
   clientId: string,
 ): Promise<LoginApp | null> {
   const app = await getLoginApp(clientId);
-  if (!app || app.contactDid !== ownerDid) return null;
+  if (
+    !app || !app.identityAvailable || app.linkStatus !== "linked" ||
+    app.appDid !== ownerDid.trim()
+  ) return null;
   return app;
+}
+
+export async function deleteLoginAppForOwner(
+  ownerDid: string,
+  clientId: string,
+): Promise<boolean> {
+  const owner = ownerDid.trim();
+  if (!owner.startsWith("did:")) {
+    throw new LoginRequestError("signed-in app account is required", 401);
+  }
+  return await withDb((c) =>
+    deleteLoginAppForOwnerWithClient(c, owner, clientId)
+  );
+}
+
+export async function deleteLoginAppForOwnerWithClient(
+  c: DbClient,
+  ownerDid: string,
+  clientId: string,
+): Promise<boolean> {
+  const result = await c.execute({
+    sql: `
+      DELETE FROM login_app
+      WHERE client_id = ?
+        AND link_status <> 'system_fixture'
+        AND (
+          app_did = ? OR
+          (app_did IS NULL AND contact_did = ?)
+        )
+    `,
+    args: [clientId.trim(), ownerDid.trim(), ownerDid.trim()],
+  });
+  return Number(result.rowsAffected ?? 0) === 1;
 }
 
 interface PreferredAccountHostDependencies {
   getHost?: typeof getAccountHost;
   getClaim?: typeof getAccountHostClaim;
+  getAppProfile?: (
+    ownerDid: string,
+  ) => Promise<LoginAppProfileIdentity | null>;
+  listVerifiedLinks?: (
+    appListingId: string,
+  ) => Promise<Array<{ host: string; relationship: string }>>;
   verifyOwner?: (
     host: AccountHost,
     claim: AccountHostClaim | null,
   ) => Promise<string | null>;
+}
+
+function isJoinableAccountHost(host: AccountHost): boolean {
+  return !!host.signupUrl &&
+    (host.signupStatus === "open" ||
+      host.signupStatus === "invite_required");
+}
+
+async function verifiedPreferredHostRelationship(
+  profile: LoginAppProfileIdentity,
+  host: AccountHost,
+  claim: AccountHostClaim | null,
+  dependencies: PreferredAccountHostDependencies,
+): Promise<boolean> {
+  const verifiedOwnerDid = await (dependencies.verifyOwner ??
+    verifiedAccountHostOwnerDid)(host, claim).catch(() => null);
+  if (verifiedOwnerDid === profile.did) return true;
+  const links = await (dependencies.listVerifiedLinks ??
+    listVerifiedDirectoryEntityLinksForApp)(profile.listingId);
+  return links.some((link) =>
+    link.host === host.host && link.relationship !== "host_only"
+  );
+}
+
+export async function listLoginPreferredHostChoicesForApp(
+  ownerDid: string,
+  knownOwnerProfile?: LoginAppProfileIdentity,
+): Promise<AccountHost[]> {
+  const owner = ownerDid.trim();
+  if (knownOwnerProfile && knownOwnerProfile.did !== owner) {
+    throw new LoginRequestError("App profile owner does not match", 403);
+  }
+  const profile = knownOwnerProfile ??
+    await requireLoginAppProfileForOwner(owner);
+  const [ownedHosts, links] = await Promise.all([
+    listClaimedAccountHostsForOwner(profile.did),
+    listVerifiedDirectoryEntityLinksForApp(profile.listingId),
+  ]);
+  const linkedHosts = await Promise.all(
+    links.filter((link) => link.relationship !== "host_only").map((link) =>
+      getAccountHost(link.host)
+    ),
+  );
+  const choices = new Map<string, AccountHost>();
+  for (const host of [...ownedHosts, ...linkedHosts]) {
+    if (host && isJoinableAccountHost(host)) choices.set(host.host, host);
+  }
+  return [...choices.values()].sort((left, right) =>
+    left.displayName.localeCompare(right.displayName) ||
+    left.host.localeCompare(right.host)
+  );
 }
 
 export async function verifyPreferredAccountHostForOwner(
@@ -468,26 +1090,31 @@ export async function verifyPreferredAccountHostForOwner(
 ): Promise<string | null> {
   const host = value?.trim().toLowerCase() ?? "";
   if (!host) return null;
+  const profile = await (dependencies.getAppProfile ??
+    getLoginAppProfileForOwner)(ownerDid);
+  if (!profile) {
+    throw new LoginRequestError(
+      "An app profile is required before choosing a preferred account host.",
+      403,
+    );
+  }
   const getHostClaim = dependencies.getClaim ?? getAccountHostClaim;
   const getHost = dependencies.getHost ?? getAccountHost;
   const [claim, accountHost] = await Promise.all([
     getHostClaim(host),
     getHost(host),
   ]);
-  const verifiedOwnerDid = accountHost
-    ? await (dependencies.verifyOwner ?? verifiedAccountHostOwnerDid)(
+  if (
+    !accountHost || !isJoinableAccountHost(accountHost) ||
+    !await verifiedPreferredHostRelationship(
+      profile,
       accountHost,
       claim,
-    ).catch(() => null)
-    : null;
-  if (
-    !accountHost || !claim || verifiedOwnerDid !== ownerDid.trim() ||
-    !accountHost.signupUrl ||
-    (accountHost.signupStatus !== "open" &&
-      accountHost.signupStatus !== "invite_required")
+      dependencies,
+    )
   ) {
     throw new LoginRequestError(
-      "You can only recommend a joinable account host claimed by this account.",
+      "Choose a joinable account host owned by this app account or connected to this app by a verified relationship.",
       400,
     );
   }
@@ -498,45 +1125,77 @@ export async function resolveVerifiedPreferredAccountHost(
   app: LoginApp,
   dependencies: PreferredAccountHostDependencies = {},
 ): Promise<AccountHost | null> {
-  if (!app.registered || !app.contactDid || !app.preferredAccountHost) {
+  if (
+    !app.registered || !app.identityAvailable || app.linkStatus !== "linked" ||
+    !app.appDid || !app.appProfileUri || !app.preferredAccountHost
+  ) {
     return null;
   }
+  const profile = dependencies.getAppProfile
+    ? await dependencies.getAppProfile(app.appDid)
+    : await getLinkedLoginAppProfile(app.appDid, app.appProfileUri);
+  if (!profile || profile.profileUri !== app.appProfileUri) return null;
   const getHostClaim = dependencies.getClaim ?? getAccountHostClaim;
   const getHost = dependencies.getHost ?? getAccountHost;
   const [claim, host] = await Promise.all([
     getHostClaim(app.preferredAccountHost),
     getHost(app.preferredAccountHost),
   ]);
-  const verifiedOwnerDid = host
-    ? await (dependencies.verifyOwner ?? verifiedAccountHostOwnerDid)(
+  if (
+    !host || !isJoinableAccountHost(host) ||
+    !await verifiedPreferredHostRelationship(
+      profile,
       host,
       claim,
-    ).catch(() => null)
-    : null;
-  if (
-    !host || !claim || verifiedOwnerDid !== app.contactDid ||
-    !host.signupUrl ||
-    (host.signupStatus !== "open" && host.signupStatus !== "invite_required")
+      dependencies,
+    )
   ) {
     return null;
   }
   return host;
 }
 
-export async function listLoginAppsForTrustReview(): Promise<LoginApp[]> {
-  return await withDb(async (c) => {
+export interface LoginAppTrustReviewListOptions {
+  limit?: number;
+  offset?: number;
+}
+
+export async function hydrateLoginAppTrustReviewRowFailClosed(
+  row: Record<string, unknown>,
+  hydrate: (
+    row: Record<string, unknown>,
+  ) => Promise<LoginApp> = hydrateLoginAppRow,
+): Promise<LoginApp> {
+  try {
+    return await hydrate(row);
+  } catch {
+    // Legacy rows may have no owner profile or an ambiguous owner. Keep the
+    // request visible to admins, but expose no stored identity and make trust
+    // approval impossible until the link can be recovered safely.
+    return rowToLoginApp(row);
+  }
+}
+
+export async function listLoginAppsForTrustReview(
+  options: LoginAppTrustReviewListOptions = {},
+): Promise<LoginApp[]> {
+  const limit = Math.max(1, Math.min(50, Math.trunc(options.limit ?? 50)));
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+  const rows = await withDb(async (c) => {
     const result = await c.execute({
       sql: `
         SELECT * FROM login_app
         WHERE review_status = 'requested'
         ORDER BY review_requested_at ASC, updated_at ASC
+        LIMIT ? OFFSET ?
       `,
-      args: [],
+      args: [limit, offset],
     });
-    return result.rows.map((row) =>
-      rowToLoginApp(row as Record<string, unknown>)
-    );
+    return result.rows as Record<string, unknown>[];
   });
+  return await Promise.all(
+    rows.map((row) => hydrateLoginAppTrustReviewRowFailClosed(row)),
+  );
 }
 
 export async function countLoginAppsForTrustReview(): Promise<number> {
@@ -553,7 +1212,7 @@ export async function countLoginAppsForTrustReview(): Promise<number> {
   });
 }
 
-export async function upsertLoginApp(app: {
+export interface LoginAppUpsertInput {
   clientId: string;
   appName: string;
   appUri?: string | null;
@@ -562,43 +1221,200 @@ export async function upsertLoginApp(app: {
   allowedOrigins?: string[];
   status?: LoginApp["status"];
   contactDid?: string | null;
+  appDid?: string | null;
+  appProfileUri?: string | null;
+  linkStatus?: LoginAppLinkStatus;
+  profileIdentityFingerprint?: string | null;
+  profileIdentityUpdatedAt?: number | null;
+  reviewRevision?: string;
+  environmentRevision?: string;
+  expectedEnvironmentRevision?: string | null;
+  /** Refuse the conflict-update branch; used for race-safe owner creation. */
+  insertOnly?: boolean;
   preferredAccountHost?: string | null;
-}): Promise<void> {
-  const now = Date.now();
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `
+}
+
+export async function upsertLoginApp(
+  app: LoginAppUpsertInput,
+): Promise<boolean> {
+  return await withDb((c) => upsertLoginAppWithClient(c, app));
+}
+
+export async function upsertLoginAppWithClient(
+  c: DbClient,
+  app: LoginAppUpsertInput,
+  now = Date.now(),
+): Promise<boolean> {
+  const linkStatus = app.linkStatus ??
+    (app.appDid && app.appProfileUri ? "linked" : "relink_required");
+  const reviewRevision = app.reviewRevision ?? randomB64u(18);
+  const environmentRevision = app.environmentRevision ?? randomB64u(18);
+  const expectedEnvironmentRevision = app.expectedEnvironmentRevision ?? null;
+  // Keep trust only when the security- and identity-bearing environment is
+  // byte-for-byte unchanged. Resetting the review in this same statement
+  // prevents an admin from approving the new environment in the gap between
+  // an owner update and a later cleanup query.
+  const unchangedEnvironmentSql = `
+    login_app.allowed_return_uris = excluded.allowed_return_uris
+    AND login_app.allowed_origins = excluded.allowed_origins
+    AND login_app.app_name = excluded.app_name
+    AND COALESCE(login_app.app_uri, '') = COALESCE(excluded.app_uri, '')
+    AND COALESCE(login_app.logo_uri, '') = COALESCE(excluded.logo_uri, '')
+    AND COALESCE(login_app.app_did, '') = COALESCE(excluded.app_did, '')
+    AND COALESCE(login_app.app_profile_uri, '') = COALESCE(excluded.app_profile_uri, '')
+    AND COALESCE(login_app.profile_identity_fingerprint, '') = COALESCE(excluded.profile_identity_fingerprint, '')
+  `;
+  const unchangedOwnerEnvironmentSql = `
+    ${unchangedEnvironmentSql}
+    AND COALESCE(login_app.preferred_account_host, '') = COALESCE(excluded.preferred_account_host, '')
+  `;
+  const result = await c.execute({
+    sql: `
         INSERT INTO login_app (
           client_id, app_name, app_uri, logo_uri, allowed_return_uris,
-          allowed_origins, status, contact_did, preferred_account_host,
+          allowed_origins, status, contact_did, app_did, app_profile_uri,
+          link_status, profile_identity_fingerprint,
+          profile_identity_updated_at, review_revision, environment_revision,
+          preferred_account_host,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE ? <> 'linked'
+          OR EXISTS (
+            SELECT 1
+            FROM app_listing
+            WHERE canonical_uri = ?
+              AND deleted_at IS NULL
+              AND updated_at = ?
+              AND (
+                product_did = ? OR
+                profile_did = ? OR
+                legacy_profile_did = ?
+              )
+          )
         ON CONFLICT(client_id) DO UPDATE SET
           app_name = excluded.app_name,
           app_uri = excluded.app_uri,
           logo_uri = excluded.logo_uri,
           allowed_return_uris = excluded.allowed_return_uris,
           allowed_origins = excluded.allowed_origins,
-          status = excluded.status,
+          status = CASE
+            WHEN login_app.status = 'blocked' THEN 'blocked'
+            WHEN ${unchangedEnvironmentSql}
+            THEN login_app.status
+            ELSE excluded.status
+          END,
           contact_did = excluded.contact_did,
+          app_did = excluded.app_did,
+          app_profile_uri = excluded.app_profile_uri,
+          link_status = excluded.link_status,
+          profile_identity_fingerprint = excluded.profile_identity_fingerprint,
+          profile_identity_updated_at = excluded.profile_identity_updated_at,
+          review_status = CASE
+            WHEN login_app.status = 'blocked' OR ${unchangedEnvironmentSql}
+            THEN login_app.review_status
+            ELSE 'none'
+          END,
+          review_requested_at = CASE
+            WHEN login_app.status = 'blocked' OR ${unchangedEnvironmentSql}
+            THEN login_app.review_requested_at
+            ELSE NULL
+          END,
+          review_notes = CASE
+            WHEN login_app.status = 'blocked' OR ${unchangedEnvironmentSql}
+            THEN login_app.review_notes
+            ELSE NULL
+          END,
+          review_decision_at = CASE
+            WHEN login_app.status = 'blocked' OR ${unchangedEnvironmentSql}
+            THEN login_app.review_decision_at
+            ELSE NULL
+          END,
+          review_decision_by = CASE
+            WHEN login_app.status = 'blocked' OR ${unchangedEnvironmentSql}
+            THEN login_app.review_decision_by
+            ELSE NULL
+          END,
+          review_decision_reason = CASE
+            WHEN login_app.status = 'blocked' OR ${unchangedEnvironmentSql}
+            THEN login_app.review_decision_reason
+            ELSE NULL
+          END,
+          review_revision = CASE
+            WHEN ${unchangedEnvironmentSql} THEN login_app.review_revision
+            ELSE excluded.review_revision
+          END,
+          environment_revision = CASE
+            WHEN ${unchangedOwnerEnvironmentSql}
+            THEN login_app.environment_revision
+            ELSE excluded.environment_revision
+          END,
           preferred_account_host = excluded.preferred_account_host,
           updated_at = excluded.updated_at
+        WHERE (
+          (
+            excluded.link_status = 'linked'
+            AND (
+              (
+                login_app.link_status = 'linked'
+                AND login_app.app_did = excluded.app_did
+                AND login_app.app_profile_uri = excluded.app_profile_uri
+              )
+              OR (
+                login_app.link_status = 'relink_required'
+                AND login_app.app_did IS NULL
+                AND login_app.contact_did = excluded.contact_did
+              )
+            )
+          )
+          OR (
+            excluded.link_status = 'system_fixture'
+            AND login_app.link_status = 'system_fixture'
+          )
+          OR (
+            excluded.link_status = 'relink_required'
+            AND login_app.link_status = 'relink_required'
+            AND COALESCE(login_app.contact_did, '') = COALESCE(excluded.contact_did, '')
+            AND COALESCE(login_app.app_did, '') = COALESCE(excluded.app_did, '')
+          )
+        )
+          AND (
+            ? IS NULL OR
+            COALESCE(login_app.environment_revision, '') = COALESCE(?, '')
+          )
+          AND ? = 0
       `,
-      args: [
-        app.clientId,
-        app.appName,
-        app.appUri ?? null,
-        app.logoUri ?? null,
-        JSON.stringify(app.allowedReturnUris),
-        JSON.stringify(app.allowedOrigins ?? []),
-        app.status ?? "unverified",
-        app.contactDid ?? null,
-        app.preferredAccountHost ?? null,
-        now,
-        now,
-      ],
-    });
+    args: [
+      app.clientId,
+      app.appName,
+      app.appUri ?? null,
+      app.logoUri ?? null,
+      JSON.stringify(app.allowedReturnUris),
+      JSON.stringify(app.allowedOrigins ?? []),
+      app.status ?? "unverified",
+      app.contactDid ?? null,
+      app.appDid ?? null,
+      app.appProfileUri ?? null,
+      linkStatus,
+      app.profileIdentityFingerprint ?? null,
+      app.profileIdentityUpdatedAt ?? null,
+      reviewRevision,
+      environmentRevision,
+      app.preferredAccountHost ?? null,
+      now,
+      now,
+      linkStatus,
+      app.appProfileUri ?? null,
+      app.profileIdentityUpdatedAt ?? null,
+      app.appDid ?? null,
+      app.appDid ?? null,
+      app.appDid ?? null,
+      expectedEnvironmentRevision,
+      expectedEnvironmentRevision,
+      app.insertOnly ? 1 : 0,
+    ],
   });
+  return Number(result.rowsAffected ?? 0) === 1;
 }
 
 export async function registerLoginAppForOwner(
@@ -610,26 +1426,20 @@ export async function registerLoginAppForOwner(
     throw new LoginRequestError("signed-in account is required", 401);
   }
 
-  const appName = normalizeAppName(input.appName);
+  const profile = await requireLoginAppProfileForOwner(owner);
   const clientId = normalizeRegistrationUrl(input.clientId, "client ID", true);
-  const appUri = normalizeRegistrationUrl(input.appUri, "homepage URL", true);
-  const logoUri = normalizeRegistrationUrl(
-    input.logoUri ?? "",
-    "logo URL",
-    false,
-  );
   const allowedReturnUris = normalizeAllowedReturnUris(
     input.allowedReturnUris,
   );
 
   const existing = await getLoginApp(clientId);
-  if (existing && existing.contactDid !== owner) {
-    throw new LoginRequestError(
-      existing.contactDid
-        ? "This client ID is already registered to another account."
-        : "This client ID is already registered. Contact Atmosphere if you need ownership moved.",
-      409,
-    );
+  if (
+    existing &&
+    (existing.linkStatus === "system_fixture" ||
+      (existing.appDid && existing.appDid !== owner) ||
+      (!existing.appDid && existing.contactDid !== owner))
+  ) {
+    throw new LoginRequestError(LOGIN_APP_CLIENT_ID_CONFLICT_MESSAGE, 409);
   }
   const preferredAccountHost = input.preferredAccountHost === undefined
     ? (existing?.preferredAccountHost ?? null)
@@ -637,46 +1447,196 @@ export async function registerLoginAppForOwner(
       owner,
       input.preferredAccountHost,
     );
+  const expectedEnvironmentRevision =
+    input.expectedEnvironmentRevision?.trim() || null;
+  const desiredEnvironment = {
+    ownerDid: owner,
+    profileUri: profile.profileUri,
+    allowedReturnUris,
+    preferredAccountHost,
+  };
+  if (existing && !expectedEnvironmentRevision) {
+    if (loginEnvironmentMatchesRegistration(existing, desiredEnvironment)) {
+      return existing;
+    }
+    throw new LoginRequestError(LOGIN_APP_STALE_ENVIRONMENT_MESSAGE, 409);
+  }
 
   const changed = existing
-    ? registrationChanged(existing, {
-      appName,
-      appUri,
-      logoUri,
-      allowedReturnUris,
-    })
+    ? registrationChanged(existing, { allowedReturnUris }) ||
+      existing.appProfileUri !== profile.profileUri
     : false;
   const status = existing?.status === "blocked"
     ? "blocked"
     : existing && !changed
     ? existing.status
     : defaultRegistrationStatus(clientId, allowedReturnUris);
+  const writeRevision = randomB64u(18);
+  const writeEnvironmentRevision = randomB64u(18);
 
-  await upsertLoginApp({
+  const saved = await upsertLoginApp({
     clientId,
-    appName,
-    appUri,
-    logoUri,
+    appName: profile.name,
+    appUri: profile.homepage,
+    logoUri: profile.logoUri,
     allowedReturnUris,
     allowedOrigins: [],
     status,
     contactDid: owner,
+    appDid: owner,
+    appProfileUri: profile.profileUri,
+    linkStatus: "linked",
+    profileIdentityFingerprint: profile.identityFingerprint,
+    profileIdentityUpdatedAt: profile.updatedAt,
+    reviewRevision: writeRevision,
+    environmentRevision: writeEnvironmentRevision,
+    expectedEnvironmentRevision,
+    insertOnly: !existing,
     preferredAccountHost,
   });
-
-  if (
-    existing && changed &&
-    (existing.status === "trusted" || existing.reviewStatus === "approved" ||
-      existing.reviewStatus === "rejected")
-  ) {
-    await resetLoginAppReviewState(clientId);
+  if (!saved) {
+    const current = await getLoginAppForOwner(owner, clientId).catch(() =>
+      null
+    );
+    if (
+      current && loginEnvironmentMatchesRegistration(
+        current,
+        desiredEnvironment,
+      )
+    ) {
+      return current;
+    }
+    throw new LoginRequestError(
+      existing
+        ? LOGIN_APP_STALE_ENVIRONMENT_MESSAGE
+        : LOGIN_APP_CLIENT_ID_CONFLICT_MESSAGE,
+      409,
+    );
   }
 
-  const registered = await getLoginApp(clientId);
+  let registered: LoginApp | null;
+  try {
+    registered = await getLoginApp(clientId);
+  } catch (error) {
+    if (!existing && error instanceof LoginRequestError) {
+      await deleteNewlyInsertedLoginApp(
+        clientId,
+        owner,
+        profile.profileUri,
+        writeRevision,
+      );
+    }
+    throw error;
+  }
   if (!registered) {
     throw new LoginRequestError("App registration could not be saved", 500);
   }
+  if (
+    !registered.identityAvailable || registered.linkStatus !== "linked" ||
+    registered.appDid !== owner ||
+    registered.appProfileUri !== profile.profileUri
+  ) {
+    if (!existing) {
+      await deleteNewlyInsertedLoginApp(
+        clientId,
+        owner,
+        profile.profileUri,
+        writeRevision,
+      );
+    }
+    throw new LoginRequestError(LOGIN_APP_CLIENT_ID_CONFLICT_MESSAGE, 409);
+  }
   return registered;
+}
+
+async function deleteNewlyInsertedLoginApp(
+  clientId: string,
+  ownerDid: string,
+  profileUri: string,
+  reviewRevision: string,
+): Promise<void> {
+  await withDb(async (c) => {
+    await c.execute({
+      sql: `
+        DELETE FROM login_app
+        WHERE client_id = ?
+          AND app_did = ?
+          AND app_profile_uri = ?
+          AND link_status = 'linked'
+          AND review_revision = ?
+      `,
+      args: [clientId, ownerDid, profileUri, reviewRevision],
+    });
+  });
+}
+
+export async function saveLoginAppTrustReviewRequestWithClient(
+  c: DbClient,
+  input: {
+    clientId: string;
+    ownerDid: string;
+    notes: string;
+    expectedReviewRevision: string;
+    nextReviewRevision: string;
+  },
+  now = Date.now(),
+): Promise<boolean> {
+  const result = await c.execute({
+    sql: `
+      UPDATE login_app
+      SET review_status = 'requested',
+          review_requested_at = ?,
+          review_notes = ?,
+          review_decision_at = NULL,
+          review_decision_by = NULL,
+          review_decision_reason = NULL,
+          review_revision = ?,
+          updated_at = ?
+      WHERE client_id = ?
+        AND contact_did = ?
+        AND status <> 'blocked'
+        AND link_status = 'linked'
+        AND review_revision = ?
+        AND app_did IS NOT NULL
+        AND app_profile_uri IS NOT NULL
+        AND profile_identity_updated_at IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM app_listing l
+          LEFT JOIN app_moderation m ON m.listing_id = l.id
+          WHERE l.canonical_uri = login_app.app_profile_uri
+            AND l.deleted_at IS NULL
+            AND l.updated_at = login_app.profile_identity_updated_at
+            AND COALESCE(m.status, 'visible') = 'visible'
+            AND (
+              l.product_did = login_app.app_did OR
+              l.profile_did = login_app.app_did OR
+              l.legacy_profile_did = login_app.app_did
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM profile p
+              WHERE p.profile_type = 'project'
+                AND p.takedown_status = 'taken_down'
+                AND p.did IN (
+                  l.product_did,
+                  l.profile_did,
+                  l.legacy_profile_did
+                )
+            )
+        )
+    `,
+    args: [
+      now,
+      input.notes,
+      input.nextReviewRevision,
+      now,
+      input.clientId,
+      input.ownerDid,
+      input.expectedReviewRevision,
+    ],
+  });
+  return Number(result.rowsAffected ?? 0) === 1;
 }
 
 export async function requestLoginAppTrustReview(
@@ -694,6 +1654,12 @@ export async function requestLoginAppTrustReview(
       403,
     );
   }
+  if (app.loginAvailability !== "available") {
+    throw new LoginRequestError(
+      "This app profile is not available for Login with Atmosphere.",
+      403,
+    );
+  }
   if (app.status === "trusted") {
     throw new LoginRequestError("This app is already trusted");
   }
@@ -706,67 +1672,181 @@ export async function requestLoginAppTrustReview(
     );
   }
   const reviewNotes = normalizeReviewNotes(notes);
+  const expectedReviewRevision = app.reviewRevision;
+  if (!expectedReviewRevision) {
+    throw new LoginRequestError(
+      "Reload this login environment before requesting review.",
+      409,
+    );
+  }
   const now = Date.now();
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `
-        UPDATE login_app
-        SET review_status = 'requested',
-            review_requested_at = ?,
-            review_notes = ?,
-            review_decision_at = NULL,
-            review_decision_by = NULL,
-            review_decision_reason = NULL,
-            updated_at = ?
-        WHERE client_id = ? AND contact_did = ?
-      `,
-      args: [now, reviewNotes, now, clientId, ownerDid],
-    });
-  });
+  const reviewRevision = randomB64u(18);
+  const requested = await withDb((c) =>
+    saveLoginAppTrustReviewRequestWithClient(c, {
+      clientId,
+      ownerDid,
+      notes: reviewNotes,
+      expectedReviewRevision,
+      nextReviewRevision: reviewRevision,
+    }, now)
+  );
+  if (!requested) {
+    throw new LoginRequestError(
+      "This login environment changed before review could be requested.",
+      409,
+    );
+  }
   const updated = await getLoginAppForOwner(ownerDid, clientId);
   if (!updated) throw new LoginRequestError("App registration not found", 404);
   return updated;
 }
 
-export async function moderateLoginAppTrustReview(input: {
+export interface LoginAppTrustReviewDecisionInput {
   clientId: string;
   adminDid: string;
   action: "approve" | "reject" | "block";
   reason?: string | null;
-}): Promise<LoginApp> {
+  /**
+   * Revision rendered with the admin review. Approval requires a non-empty
+   * revision; reject/block also compare-and-swap legacy rows whose revision is
+   * absent.
+   */
+  expectedReviewRevision?: string | null;
+}
+
+export async function applyLoginAppTrustReviewDecisionWithClient(
+  c: DbClient,
+  input: LoginAppTrustReviewDecisionInput,
+  now = Date.now(),
+  nextReviewRevision = randomB64u(18),
+): Promise<boolean> {
   const reason = normalizeDecisionReason(input.reason ?? "");
-  const now = Date.now();
-  const status: LoginApp["status"] = input.action === "approve"
-    ? "trusted"
-    : input.action === "block"
-    ? "blocked"
-    : "unverified";
-  const reviewStatus: LoginAppReviewStatus = input.action === "approve"
-    ? "approved"
-    : "rejected";
-  await withDb(async (c) => {
-    await c.execute({
+  const expectedRevision = input.expectedReviewRevision?.trim() ?? "";
+  if (input.action === "approve") {
+    if (!expectedRevision) return false;
+    const result = await c.execute({
       sql: `
         UPDATE login_app
-        SET status = ?,
-            review_status = ?,
+        SET status = 'trusted',
+            review_status = 'approved',
             review_decision_at = ?,
             review_decision_by = ?,
             review_decision_reason = ?,
+            review_revision = ?,
             updated_at = ?
         WHERE client_id = ?
+          AND status <> 'blocked'
+          AND review_status = 'requested'
+          AND review_revision = ?
+          AND (
+            link_status = 'system_fixture'
+            OR (
+              link_status = 'linked'
+              AND app_did IS NOT NULL
+              AND app_profile_uri IS NOT NULL
+              AND profile_identity_updated_at IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM app_listing l
+                LEFT JOIN app_moderation m ON m.listing_id = l.id
+                WHERE l.canonical_uri = login_app.app_profile_uri
+                  AND l.deleted_at IS NULL
+                  AND l.updated_at = login_app.profile_identity_updated_at
+                  AND COALESCE(m.status, 'visible') = 'visible'
+                  AND (
+                    l.product_did = login_app.app_did OR
+                    l.profile_did = login_app.app_did OR
+                    l.legacy_profile_did = login_app.app_did
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM profile p
+                    WHERE p.profile_type = 'project'
+                      AND p.takedown_status = 'taken_down'
+                      AND p.did IN (
+                        l.product_did,
+                        l.profile_did,
+                        l.legacy_profile_did
+                      )
+                  )
+              )
+            )
+          )
       `,
       args: [
-        status,
-        reviewStatus,
         now,
         input.adminDid,
         reason,
+        nextReviewRevision,
         now,
         input.clientId,
+        expectedRevision,
       ],
     });
+    return Number(result.rowsAffected ?? 0) === 1;
+  }
+
+  const status: LoginApp["status"] = input.action === "block"
+    ? "blocked"
+    : "unverified";
+  const result = await c.execute({
+    sql: `
+      UPDATE login_app
+      SET status = ?,
+          review_status = 'rejected',
+          review_decision_at = ?,
+          review_decision_by = ?,
+          review_decision_reason = ?,
+          review_revision = ?,
+          updated_at = ?
+      WHERE client_id = ?
+        AND COALESCE(review_revision, '') = ?
+        AND review_status = 'requested'
+        AND status <> 'blocked'
+    `,
+    args: [
+      status,
+      now,
+      input.adminDid,
+      reason,
+      nextReviewRevision,
+      now,
+      input.clientId,
+      expectedRevision,
+    ],
   });
+  return Number(result.rowsAffected ?? 0) === 1;
+}
+
+export async function moderateLoginAppTrustReview(
+  input: LoginAppTrustReviewDecisionInput,
+): Promise<LoginApp> {
+  const current = await getLoginApp(input.clientId);
+  if (!current) {
+    throw new LoginRequestError("App registration not found", 404);
+  }
+  if (
+    input.action === "approve" &&
+    (!current.identityAvailable ||
+      current.loginAvailability !== "available" ||
+      (current.registered && current.linkStatus === "relink_required"))
+  ) {
+    throw new LoginRequestError(
+      "This login environment is not linked to a live app profile and cannot be trusted.",
+      409,
+    );
+  }
+  const changed = await withDb((c) =>
+    applyLoginAppTrustReviewDecisionWithClient(c, input)
+  );
+  if (!changed) {
+    throw new LoginRequestError(
+      input.action === "approve"
+        ? "This login environment changed after it was reviewed. Reload it before approving."
+        : "This login environment changed before the decision was saved.",
+      409,
+    );
+  }
   const updated = await getLoginApp(input.clientId);
   if (!updated) throw new LoginRequestError("App registration not found", 404);
   return updated;
@@ -794,17 +1874,6 @@ export function loginAppStatusLabel(status: LoginApp["status"]): string {
   }
 }
 
-function normalizeAppName(value: string): string {
-  const appName = value.trim().replace(/\s+/g, " ");
-  if (!appName) throw new LoginRequestError("App name is required");
-  if (appName.length > MAX_APP_NAME_LEN) {
-    throw new LoginRequestError(
-      `App name must be ${MAX_APP_NAME_LEN} characters or fewer`,
-    );
-  }
-  return appName;
-}
-
 function normalizeReviewNotes(value: string): string {
   const notes = value.trim();
   if (!notes) {
@@ -827,24 +1896,42 @@ function normalizeDecisionReason(value: string): string | null {
 function registrationChanged(
   app: LoginApp,
   next: {
-    appName: string;
-    appUri: string;
-    logoUri: string | null;
     allowedReturnUris: string[];
   },
 ): boolean {
-  return app.appName !== next.appName ||
-    app.appUri !== next.appUri ||
-    app.logoUri !== next.logoUri ||
-    JSON.stringify(app.allowedReturnUris) !==
-      JSON.stringify(next.allowedReturnUris);
+  return JSON.stringify(app.allowedReturnUris) !==
+    JSON.stringify(next.allowedReturnUris);
 }
 
-async function resetLoginAppReviewState(clientId: string): Promise<void> {
-  const now = Date.now();
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `
+function loginEnvironmentMatchesRegistration(
+  app: LoginApp,
+  desired: {
+    ownerDid: string;
+    profileUri: string;
+    allowedReturnUris: string[];
+    preferredAccountHost: string | null;
+  },
+): boolean {
+  return app.identityAvailable && app.linkStatus === "linked" &&
+    app.appDid === desired.ownerDid &&
+    app.appProfileUri === desired.profileUri &&
+    app.allowedOrigins.length === 0 &&
+    JSON.stringify(app.allowedReturnUris) ===
+      JSON.stringify(desired.allowedReturnUris) &&
+    app.preferredAccountHost === desired.preferredAccountHost;
+}
+
+export const loginEnvironmentMatchesRegistrationForTest =
+  loginEnvironmentMatchesRegistration;
+
+export async function resetLoginAppReviewStateWithClient(
+  c: DbClient,
+  clientId: string,
+  now = Date.now(),
+): Promise<boolean> {
+  const reviewRevision = randomB64u(18);
+  const result = await c.execute({
+    sql: `
         UPDATE login_app
         SET review_status = 'none',
             review_requested_at = NULL,
@@ -852,12 +1939,14 @@ async function resetLoginAppReviewState(clientId: string): Promise<void> {
             review_decision_at = NULL,
             review_decision_by = NULL,
             review_decision_reason = NULL,
+            review_revision = ?,
             updated_at = ?
         WHERE client_id = ?
+          AND status <> 'blocked'
       `,
-      args: [now, clientId],
-    });
+    args: [reviewRevision, now, clientId],
   });
+  return Number(result.rowsAffected ?? 0) === 1;
 }
 
 function normalizeRegistrationUrl(
@@ -1332,15 +2421,19 @@ export function buildLoginAppIdentityChecks(
   checks.push({
     key: "review-status",
     label: "Review status",
-    status: app.status === "trusted"
+    status: app.loginAvailability !== "available"
+      ? "fail"
+      : app.status === "trusted"
       ? "pass"
       : app.status === "blocked"
       ? "fail"
       : "warn",
-    body: app.status === "trusted"
+    body: app.loginAvailability !== "available"
+      ? "Login with Atmosphere is unavailable for this app profile. The owner can still manage its settings."
+      : app.status === "trusted"
       ? "This app is trusted in the picker."
       : app.status === "blocked"
-      ? "This app cannot use Atmosphere Login."
+      ? "This app cannot use Login with Atmosphere."
       : app.reviewStatus === "requested"
       ? "Trusted review has been requested."
       : app.reviewStatus === "rejected"
@@ -1372,12 +2465,21 @@ export function buildLoginAppReadiness(
   app: LoginApp,
   checks = buildLoginAppIdentityChecks(app),
 ): LoginAppReadiness {
+  if (app.loginAvailability !== "available") {
+    return {
+      state: "unavailable",
+      label: "Login unavailable",
+      tone: "fail",
+      body:
+        "This app profile cannot use Login with Atmosphere right now. Its owner can still manage the app and its login settings.",
+    };
+  }
   if (app.status === "blocked") {
     return {
       state: "blocked",
       label: "Blocked",
       tone: "fail",
-      body: "This app cannot use Atmosphere Login until it is unblocked.",
+      body: "This app cannot use Login with Atmosphere until it is unblocked.",
     };
   }
   if (app.status === "trusted") {
@@ -1398,7 +2500,7 @@ export function buildLoginAppReadiness(
       label: "Local development only",
       tone: "warn",
       body:
-        "Loopback URLs are present. Keep testing locally, then switch client ID, homepage, logo, and callbacks to HTTPS before review.",
+        "Loopback URLs are present. Keep testing locally, then use an HTTPS client ID and callbacks and publish an HTTPS homepage and logo in the app profile before review.",
     };
   }
   const hasBlockingFixes = checks.some((check) =>
@@ -1463,10 +2565,22 @@ export async function resolveLoginAppForRequest(
     normalizedClientId,
   );
   const registered = foundApp ? withExampleLoginAppLogo(foundApp) : null;
+  if (registered && !registered.identityAvailable) {
+    throw new LoginRequestError(
+      "This Login with Atmosphere environment is not linked to a live app profile.",
+      403,
+    );
+  }
   const app = registered ?? appFromClientId(normalizedClientId);
+  if (app.loginAvailability !== "available") {
+    throw new LoginRequestError(
+      "This app is not available for Login with Atmosphere.",
+      403,
+    );
+  }
   if (app.status === "blocked") {
     throw new LoginRequestError(
-      "This app is blocked and cannot use Atmosphere Login.",
+      "This app is blocked and cannot use Login with Atmosphere.",
       403,
     );
   }
@@ -1503,9 +2617,19 @@ export async function signLoginSelection(input: {
   state: string;
   scope?: string | null;
 }): Promise<{ token: string; payload: LoginSelectionPayload }> {
+  if (
+    !input.app.identityAvailable ||
+    input.app.loginAvailability !== "available" ||
+    input.app.status === "blocked"
+  ) {
+    throw new LoginRequestError(
+      "This app cannot use Login with Atmosphere.",
+      403,
+    );
+  }
   if (!OAUTH_PRIVATE_JWK || !OAUTH_KID) {
     throw new LoginRequestError(
-      "Atmosphere Login signing is not configured",
+      "Login with Atmosphere signing is not configured",
       503,
     );
   }
@@ -1554,7 +2678,7 @@ export async function verifyLoginSelectionTokenDetailed(
   if (!OAUTH_PUBLIC_JWK) {
     return {
       ok: false,
-      error: "Atmosphere Login verification is not configured",
+      error: "Login with Atmosphere verification is not configured",
     };
   }
   const publicJwk = parseJwkEnv("OAUTH_PUBLIC_JWK", OAUTH_PUBLIC_JWK);
@@ -1630,12 +2754,25 @@ export async function listLoginConnectionsForAccount(
           conn.selected_count,
           conn.first_selected_at,
           conn.last_selected_at,
-          app.app_name,
-          app.app_uri,
-          app.logo_uri,
-          app.status
+          app.*,
+          profile.id AS live_profile_id,
+          profile.canonical_uri AS live_profile_uri,
+          profile.slug AS live_profile_slug,
+          profile.name AS live_profile_name,
+          profile.primary_url AS live_profile_homepage,
+          profile.icon_url AS live_profile_logo_uri,
+          profile.updated_at AS live_profile_updated_at
         FROM login_app_connection conn
         LEFT JOIN login_app app ON app.client_id = conn.client_id
+        LEFT JOIN app_listing profile
+          ON app.link_status = 'linked'
+          AND profile.canonical_uri = app.app_profile_uri
+          AND profile.deleted_at IS NULL
+          AND (
+            profile.product_did = app.app_did OR
+            profile.profile_did = app.app_did OR
+            profile.legacy_profile_did = app.app_did
+          )
         WHERE conn.did = ?
         ORDER BY conn.last_selected_at DESC
         LIMIT 25
@@ -1645,12 +2782,52 @@ export async function listLoginConnectionsForAccount(
     return result.rows.map((row) => {
       const r = row as Record<string, unknown>;
       const fallback = appFromClientId(String(r.client_id));
+      const profile = typeof r.live_profile_id === "string" &&
+          typeof r.app_did === "string" &&
+          typeof r.live_profile_uri === "string" &&
+          typeof r.live_profile_slug === "string" &&
+          typeof r.live_profile_name === "string"
+        ? loginAppProfileIdentityFromListing(r.app_did, {
+          id: r.live_profile_id,
+          canonicalUri: r.live_profile_uri,
+          slug: r.live_profile_slug,
+          name: r.live_profile_name,
+          primaryUrl: typeof r.live_profile_homepage === "string"
+            ? r.live_profile_homepage
+            : null,
+          iconUrl: typeof r.live_profile_logo_uri === "string"
+            ? r.live_profile_logo_uri
+            : null,
+          updatedAt: Number(r.live_profile_updated_at) || 0,
+        })
+        : null;
+      const registered = typeof r.app_name === "string"
+        ? rowToLoginApp(
+          profile && rowIdentityChanged(r, profile)
+            ? {
+              ...r,
+              status: loginAppStatusAfterProfileIdentityChange(
+                readStatus(r.status),
+                String(r.client_id),
+                jsonArray(r.allowed_return_uris),
+              ),
+            }
+            : r,
+          profile,
+        )
+        : null;
       return {
         clientId: String(r.client_id),
-        appName: typeof r.app_name === "string" ? r.app_name : fallback.appName,
-        appUri: typeof r.app_uri === "string" ? r.app_uri : fallback.appUri,
-        logoUri: typeof r.logo_uri === "string" ? r.logo_uri : null,
-        status: readStatus(r.status ?? fallback.status),
+        appName: registered?.identityAvailable
+          ? registered.appName
+          : fallback.appName,
+        appUri: registered?.identityAvailable
+          ? registered.appUri
+          : fallback.appUri,
+        logoUri: registered?.identityAvailable ? registered.logoUri : null,
+        status: registered?.identityAvailable
+          ? registered.status
+          : fallback.status,
         handle: String(r.handle),
         selectedCount: Number(r.selected_count) || 1,
         firstSelectedAt: Number(r.first_selected_at) || 0,

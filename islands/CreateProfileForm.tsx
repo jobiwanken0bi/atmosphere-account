@@ -22,6 +22,19 @@ import {
   isCollectionNsid,
 } from "../lib/collection-nsid.ts";
 import type { CollectionSuggestion } from "../lib/collection-catalog.ts";
+import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
+import {
+  clearPendingBrowserAction,
+  loadPendingBrowserAction,
+  savePendingBrowserAction,
+} from "../lib/pending-browser-action.ts";
+import {
+  appProfilePendingKey,
+  appProfileResumeLocation,
+  appProfileResumeReturnTo,
+  appProfileReturnToWithoutResume,
+} from "../lib/app-profile-resume.ts";
+import { createAtprotoTid, isAtprotoTid } from "../lib/tid.ts";
 
 interface ExistingProfile {
   name: string;
@@ -92,10 +105,12 @@ interface Props {
   publicProfileHandle?: string | null;
   /** Directory identifier used to continue into verified host connection. */
   managedAppIdentifier?: string | null;
-  /** Publish a new ATStore record even when this DID already owns an app. */
+  /** Publish this DID's first ATStore app record. */
   createNewListing?: boolean;
   /** Exact shared record managed by this form, used for targeted removal. */
   atstoreListingUri?: string | null;
+  /** Exact safe page restored after a progressive permission upgrade. */
+  reauthReturnTo?: string;
 }
 
 interface BlobRefShape {
@@ -569,6 +584,19 @@ async function responseErrorText(res: Response): Promise<string> {
   return await res.text().catch(() => "") || `HTTP ${res.status}`;
 }
 
+async function followRequiredReauth(
+  res: Response,
+  beforeNavigate?: () => Promise<void>,
+): Promise<boolean> {
+  if (res.status !== 403) return false;
+  const body = await res.clone().json().catch(() => null);
+  const reauthUrl = reauthUrlFromApiPayload(body);
+  if (!reauthUrl) return false;
+  await beforeNavigate?.();
+  globalThis.location.assign(reauthUrl);
+  return true;
+}
+
 interface CustomLinkRow {
   label: string;
   url: string;
@@ -692,6 +720,7 @@ export default function CreateProfileForm(
     managedAppIdentifier,
     createNewListing = false,
     atstoreListingUri = null,
+    reauthReturnTo = "/apps/manage",
     collectionSuggestions = [],
   }: Props,
 ) {
@@ -864,9 +893,70 @@ export default function CreateProfileForm(
     atstoreListingUri,
   );
   const createNewListingPending = useSignal(createNewListing);
+  const baseReauthReturnTo = appProfileReturnToWithoutResume(reauthReturnTo);
+  const createListingRkey = useSignal(createAtprotoTid());
+  const shouldPersistCreationRkey = createNewListing ||
+    (!initialPublished && !atstoreListingUri);
+  const pendingPublishKey = appProfilePendingKey(did, baseReauthReturnTo);
+  const resumeReturnTo = appProfileResumeReturnTo(baseReauthReturnTo, did);
+  const profileEndpoint = `/api/registry/profile?${new URLSearchParams({
+    next: resumeReturnTo,
+  })}`;
 
   useEffect(() => {
     hydrated.value = true;
+  }, []);
+
+  useEffect(() => {
+    if (!shouldPersistCreationRkey) return;
+    try {
+      createListingRkey.value = appProfileCreationRkeyForSession(
+        did,
+        baseReauthReturnTo,
+        createListingRkey.value,
+        sessionStorage,
+      );
+    } catch {
+      // The server lease provides bounded recovery when storage is blocked.
+    }
+  }, []);
+
+  useEffect(() => {
+    const resume = appProfileResumeLocation(globalThis.location.href, did);
+    if (!resume.hadMarker) return;
+    globalThis.history.replaceState(null, "", resume.cleanLocation);
+    if (!resume.shouldResume) return;
+    let cancelled = false;
+    (async () => {
+      const pending = await loadPendingBrowserAction<Record<string, unknown>>(
+        pendingPublishKey,
+      ).catch(() => null);
+      if (!pending || cancelled) return;
+      submitting.value = true;
+      message.value = null;
+      const res = await fetch(profileEndpoint, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(pending),
+      }).catch(() => null);
+      if (!res || cancelled) return;
+      if (!res.ok) {
+        if (await followRequiredReauth(res)) return;
+        await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+        message.value = {
+          kind: "error",
+          text: await responseErrorText(res),
+        };
+        submitting.value = false;
+        return;
+      }
+      await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      clearAppProfileCreationRkey(did, baseReauthReturnTo);
+      globalThis.location.reload();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1112,6 +1202,20 @@ export default function CreateProfileForm(
     try {
       const cleanedLinks = buildLinksPayload();
       const indicators = parseAccountIndicatorLines(accountIndicators.value);
+      let submissionCreateRkey = createListingRkey.value;
+      if (shouldPersistCreationRkey) {
+        try {
+          submissionCreateRkey = appProfileCreationRkeyForSession(
+            did,
+            baseReauthReturnTo,
+            submissionCreateRkey,
+            sessionStorage,
+          );
+          createListingRkey.value = submissionCreateRkey;
+        } catch {
+          // The in-memory key still makes retries in this page idempotent.
+        }
+      }
 
       const payload: Record<string, unknown> = {
         name: name.value.trim(),
@@ -1128,6 +1232,12 @@ export default function CreateProfileForm(
         },
         accountIndicators: indicators,
         createNewListing: createNewListingPending.value,
+        createListingRkey: appProfileCreateRkeyForPayload({
+          createNewListing: createNewListingPending.value,
+          published: published.value,
+          atstoreListingUri: currentAtstoreListingUri.value,
+          rkey: submissionCreateRkey,
+        }),
         atstoreListingUri: currentAtstoreListingUri.value,
       };
       if (avatarFile.value) {
@@ -1167,12 +1277,18 @@ export default function CreateProfileForm(
           })),
       );
 
-      const res = await fetch("/api/registry/profile", {
+      const res = await fetch(profileEndpoint, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
+        if (
+          await followRequiredReauth(
+            res,
+            () => savePendingBrowserAction(pendingPublishKey, payload),
+          )
+        ) return;
         const text = await responseErrorText(res);
         throw new Error(text || `HTTP ${res.status}`);
       }
@@ -1191,6 +1307,7 @@ export default function CreateProfileForm(
       currentAtstoreListingUri.value = saved.atstoreListingUri ??
         currentAtstoreListingUri.value;
       createNewListingPending.value = false;
+      clearAppProfileCreationRkey(did, baseReauthReturnTo);
       message.value = {
         kind: "ok",
         text: saved.writeTarget === "atstore_listing"
@@ -1212,15 +1329,22 @@ export default function CreateProfileForm(
     deleting.value = true;
     message.value = null;
     try {
-      const target = currentAtstoreListingUri.value
-        ? `?listing=${encodeURIComponent(currentAtstoreListingUri.value)}`
-        : "";
-      const res = await fetch(`/api/registry/profile${target}`, {
+      const target = new URLSearchParams({ next: baseReauthReturnTo });
+      if (currentAtstoreListingUri.value) {
+        target.set("listing", currentAtstoreListingUri.value);
+      }
+      const res = await fetch(`/api/registry/profile?${target}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error(await responseErrorText(res));
+      if (!res.ok) {
+        if (await followRequiredReauth(res)) return;
+        throw new Error(await responseErrorText(res));
+      }
       published.value = false;
       publicPath.value = null;
+      currentAtstoreListingUri.value = null;
+      createListingRkey.value = createAtprotoTid();
+      clearAppProfileCreationRkey(did, baseReauthReturnTo);
       message.value = { kind: "ok", text: tManage.deletedToast };
     } catch (err) {
       message.value = {
@@ -1446,6 +1570,7 @@ export default function CreateProfileForm(
                 class={`profile-form-chip ${
                   subcategories.value.includes(s) ? "is-selected" : ""
                 }`}
+                aria-pressed={subcategories.value.includes(s)}
                 onClick={() => toggleSub(s)}
               >
                 {t.subcategories[s]}
@@ -1649,6 +1774,7 @@ export default function CreateProfileForm(
                 <input
                   type="text"
                   class="profile-form-input custom-link-label"
+                  aria-label={`Custom link ${i + 1} label`}
                   placeholder={tCustom.labelPlaceholder}
                   value={row.label}
                   maxLength={64}
@@ -1660,6 +1786,7 @@ export default function CreateProfileForm(
                 <input
                   type="url"
                   class="profile-form-input custom-link-url"
+                  aria-label={`Custom link ${i + 1} URL`}
                   placeholder={tCustom.urlPlaceholder}
                   value={row.url}
                   onInput={(e) =>
@@ -1831,6 +1958,66 @@ export default function CreateProfileForm(
   );
 }
 
+export function appProfileCreateRkeyForPayload(input: {
+  createNewListing: boolean;
+  published: boolean;
+  atstoreListingUri: string | null;
+  rkey: string;
+}): string | undefined {
+  return input.createNewListing ||
+      (!input.published && !input.atstoreListingUri)
+    ? input.rkey
+    : undefined;
+}
+
+export function appProfileCreationRkeyStorageKey(
+  did: string,
+  registrationContext: string,
+): string {
+  const context = appProfileReturnToWithoutResume(registrationContext);
+  return "app-profile:create-rkey:" + encodeURIComponent(did.trim()) + ":" +
+    encodeURIComponent(context);
+}
+
+export function appProfileCreationRkeyFromStored(
+  stored: string | null,
+  fallback: string,
+): string {
+  if (!isAtprotoTid(fallback)) {
+    throw new Error("Could not create a valid app profile record key.");
+  }
+  return stored && isAtprotoTid(stored) ? stored : fallback;
+}
+
+export function appProfileCreationRkeyForSession(
+  did: string,
+  registrationContext: string,
+  fallback: string,
+  storage: Pick<Storage, "getItem" | "setItem">,
+): string {
+  const key = appProfileCreationRkeyStorageKey(did, registrationContext);
+  const rkey = appProfileCreationRkeyFromStored(
+    storage.getItem(key),
+    fallback,
+  );
+  storage.setItem(key, rkey);
+  return rkey;
+}
+
+export function clearAppProfileCreationRkey(
+  did: string,
+  registrationContext: string,
+  storage?: Pick<Storage, "removeItem">,
+): void {
+  try {
+    (storage ?? globalThis.sessionStorage).removeItem(
+      appProfileCreationRkeyStorageKey(did, registrationContext),
+    );
+  } catch {
+    // Session storage is only a same-tab retry aid.
+  }
+}
+
 /* ----------------------- Atmosphere row renderer ------------------------ */
 
 interface AtmosphereRowCtx {
@@ -1889,6 +2076,7 @@ function BskyAtmosphereRow({ ctx, svc }: BskyRowProps) {
         <input
           type="checkbox"
           checked={isOn}
+          aria-label="Show Bluesky on the public app profile"
           onChange={(e) => {
             const next = (e.currentTarget as HTMLInputElement).checked;
             if (next) {
@@ -1995,6 +2183,7 @@ function SimpleAtmosphereRow(
         <input
           type="checkbox"
           checked={on.value}
+          aria-label={`Show ${svc.name} on the public app profile`}
           onChange={(
             e,
           ) => (on.value = (e.currentTarget as HTMLInputElement).checked)}

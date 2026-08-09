@@ -65,7 +65,7 @@ export class PublicRecordFetchError extends Error {
 
 export class PdsRecordWriteError extends Error {
   constructor(
-    readonly operation: "putRecord" | "deleteRecord",
+    readonly operation: "createRecord" | "putRecord" | "deleteRecord",
     readonly status: number,
     readonly body: string,
     readonly retryAfter: string | null = null,
@@ -121,6 +121,43 @@ export function isPdsScopeMissingError(value: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Create a record with an optional caller-selected rkey. Unlike putRecord,
+ * this method requires only the collection's create permission and will not
+ * silently turn an idempotent create into an update.
+ */
+export async function createRecord(
+  did: string,
+  pdsUrl: string,
+  collection: string,
+  record: Record<string, unknown>,
+  rkey?: string,
+): Promise<PutRecordResult> {
+  const url = `${
+    normalizeServiceEndpoint(pdsUrl)
+  }/xrpc/com.atproto.repo.createRecord`;
+  const res = await authedFetch(did, url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      repo: did,
+      collection,
+      ...(rkey ? { rkey } : {}),
+      record: { ...record, $type: collection },
+    }),
+  });
+  if (!res.ok) {
+    const text = await readPdsErrorBody(res);
+    throw new PdsRecordWriteError(
+      "createRecord",
+      res.status,
+      text,
+      res.headers.get("retry-after"),
+    );
+  }
+  return await res.json() as PutRecordResult;
 }
 
 export async function putProfileRecord(
@@ -235,7 +272,12 @@ export async function putRecord(
   });
   if (!res.ok) {
     const text = await readPdsErrorBody(res);
-    throw new Error(`putRecord failed: HTTP ${res.status}: ${text}`);
+    throw new PdsRecordWriteError(
+      "putRecord",
+      res.status,
+      text,
+      res.headers.get("retry-after"),
+    );
   }
   return await res.json() as PutRecordResult;
 }

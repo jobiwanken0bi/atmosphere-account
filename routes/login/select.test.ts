@@ -1,6 +1,7 @@
 import type { State } from "../../utils.ts";
 import {
   pickerAccountsForStateForTest,
+  pickerCancelHrefForTest,
   pickerSelectionPathForTest,
   readLoginRequestFromInputForTest,
 } from "./select.tsx";
@@ -147,4 +148,35 @@ Deno.test("login picker uses a browser-safe compact selection link", async () =>
   assertEquals([...url.searchParams.keys()], ["selection"]);
   assertEquals(url.searchParams.get("selection")?.length, 24);
   assertEquals(path.length < 80, true);
+});
+
+Deno.test("login picker cancel returns only to the verified app callback", () => {
+  const href = pickerCancelHrefForTest({
+    clientId: "https://app.example/client.json",
+    returnUri: "https://app.example/callback?existing=1#done",
+    state: "state-value",
+    scope: null,
+  }, {
+    clientId: "https://app.example/client.json",
+    returnUri: "https://app.example/callback?existing=1#done",
+  });
+  const url = new URL(href);
+  assertEquals(url.origin, "https://app.example");
+  assertEquals(url.pathname, "/callback");
+  assertEquals(url.searchParams.get("existing"), "1");
+  assertEquals(url.searchParams.get("error"), "access_denied");
+  assertEquals(
+    url.searchParams.get("client_id"),
+    "https://app.example/client.json",
+  );
+  assertEquals(url.searchParams.get("state"), "state-value");
+  assertEquals(url.hash, "#done");
+});
+
+Deno.test("login picker failures do not disclose raw exception details", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./select.tsx", import.meta.url),
+  );
+  assertEquals(source.includes("String(err)"), false);
+  assertEquals(source.includes('proxy failed:", err'), false);
 });

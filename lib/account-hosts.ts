@@ -14,10 +14,12 @@ import {
   verifyHostClaimDomainProof,
 } from "./host-claim-proof.ts";
 import {
-  consumeHostContactEmailChallenge,
-  type HostContactEmailVerificationFailureReason,
-  prepareHostContactEmailChallenge,
-} from "./host-claim-email.ts";
+  consumeHostDnsChallenge,
+  type HostDnsChallengeVerificationFailureReason,
+  inspectHostDnsChallenge,
+  prepareHostDnsChallenge,
+} from "./host-claim-dns.ts";
+import type { ResolvedHostOwnerTransferContext } from "./host-owner-transfer-intent.ts";
 import { resolveIdentity as resolveAtprotoIdentity } from "./identity.ts";
 import { isPrivateNetworkUrl } from "./security.ts";
 
@@ -177,7 +179,12 @@ export interface AccountHostClaim {
   host: string;
   claimantDid: string;
   claimantHandle: string;
-  method: "oauth_atproto_account" | "pds_contact_email";
+  /** Legacy methods remain readable so deployed managers are not locked out. */
+  method:
+    | "dns_txt"
+    | "local_dev_fixture"
+    | "oauth_atproto_account"
+    | "pds_contact_email";
   claimedAt: number;
   verifiedAt: number;
   updatedAt: number;
@@ -245,9 +252,9 @@ export type AccountHostClaimResult =
       | "host_not_found"
       | "not_claimable"
       | "not_authorized"
-      | "contact_email_required"
+      | "dns_required"
       | "already_claimed"
-      | HostContactEmailVerificationFailureReason;
+      | HostDnsChallengeVerificationFailureReason;
     host?: AccountHost;
     authority?: AccountHostClaimAuthority | null;
     claim?: AccountHostClaim | null;
@@ -257,14 +264,18 @@ export interface AccountHostClaimOptions {
   operatorListingOptIn?: boolean;
 }
 
-class ContactEmailClaimCompletionError extends Error {
+export interface DnsAccountHostClaimOptions extends AccountHostClaimOptions {
+  transfer?: ResolvedHostOwnerTransferContext;
+}
+
+class DnsClaimCompletionError extends Error {
   constructor(
     readonly reason:
-      | HostContactEmailVerificationFailureReason
+      | HostDnsChallengeVerificationFailureReason
       | "claim_conflict",
   ) {
     super(reason);
-    this.name = "ContactEmailClaimCompletionError";
+    this.name = "DnsClaimCompletionError";
   }
 }
 
@@ -282,7 +293,7 @@ export type AccountHostRegistrationResult =
       | "invalid_support_url"
       | "invalid_profile_handle"
       | "already_claimed"
-      | "contact_email_required"
+      | "dns_required"
       | "not_authorized";
     message: string;
     host?: AccountHost | null;
@@ -946,6 +957,15 @@ export function pinnedSeededAccountHostClaimHandle(
 }
 
 /**
+ * Compiled hostnames whose legacy OAuth ownership must be revalidated against
+ * the pinned AT Protocol identity. The returned list cannot be influenced by
+ * mutable database source or claim-pin columns.
+ */
+export function pinnedSeededAccountHostNames(): string[] {
+  return SEEDED_HOSTS.map((seed) => normalizeHandle(seed.host));
+}
+
+/**
  * Resolve the operator identity pinned by the compiled seed map. Callers that
  * already loaded an account-host row should pass its source; indexers may omit
  * source so a corrupted/missing row cannot make a curated domain unprotected.
@@ -1068,6 +1088,10 @@ function textOrNull(value: string | null | undefined): string | null {
 function parseHostClaimRow(row: Record<string, unknown>): AccountHostClaim {
   const method = row.method === "pds_contact_email"
     ? "pds_contact_email"
+    : row.method === "dns_txt"
+    ? "dns_txt"
+    : row.method === "local_dev_fixture"
+    ? "local_dev_fixture"
     : "oauth_atproto_account";
   return {
     host: String(row.host),
@@ -1393,10 +1417,10 @@ export async function listManagedAccountHosts(
     );
     return ownerDid === normalized ? host : null;
   }));
-  return verified.filter((host): host is AccountHost => host !== null).slice(
-    0,
-    20,
-  );
+  // Management and preferred-host eligibility must be complete. A silent cap
+  // here made a DID's 21st verified host impossible to manage or recommend.
+  // Page at the presentation layer when needed; never truncate authority data.
+  return verified.filter((host): host is AccountHost => host !== null);
 }
 
 function managedAccountHostsQuery(
@@ -1438,22 +1462,7 @@ export const managedAccountHostsQueryForTest = managedAccountHostsQuery;
 export async function listClaimedAccountHostsForOwner(
   did: string,
 ): Promise<AccountHost[]> {
-  const normalized = did.trim();
-  if (!normalized) return [];
-  return await withDb(async (c) => {
-    const r = await c.execute({
-      sql: `
-        SELECT h.*
-        FROM account_host h
-        INNER JOIN account_host_claim c ON c.host = h.host
-        WHERE c.claimant_did = ?
-        ORDER BY lower(h.display_name), h.host
-        LIMIT 20
-      `,
-      args: [normalized],
-    });
-    return r.rows.map((row) => parseHostRow(row as Record<string, unknown>));
-  });
+  return await listManagedAccountHosts(did);
 }
 
 export async function resolveAccountHostClaimAuthority(
@@ -1466,7 +1475,7 @@ export async function resolveAccountHostClaimAuthority(
 ): Promise<AccountHostClaimAuthority | null> {
   // Curated seed mappings pin social metadata and let us revalidate
   // grandfathered OAuth claims. They are not accepted as proof for a new
-  // production claim; that path requires the PDS contact-email challenge.
+  // production claim; that path requires the DNS challenge.
   const authority = await resolvePinnedSeededAccountHostAuthority(
     { host: host.host },
     options,
@@ -1498,39 +1507,50 @@ export function accountHostClaimAuthorityMatchesUser(
   return !!authority.did && authority.did === user.did;
 }
 
-/**
- * Return the currently verified owner of a claimed host. Curated domains are
- * recognized from the compiled seed map even if a legacy database row has a
- * damaged source field, and their pinned handle is resolved live on every
- * privileged check. A stale claim or resolver failure therefore fails closed.
- */
-export async function verifiedAccountHostOwnerDid(
-  host: AccountHost,
-  claim: AccountHostClaim | null,
-  options: {
-    resolveIdentity?: (
-      handle: string,
-    ) => Promise<{ did: string; handle: string }>;
-  } = {},
+interface AccountHostOwnerVerificationOptions {
+  resolveIdentity?: (
+    handle: string,
+  ) => Promise<{ did: string; handle: string }>;
+  isDev?: boolean;
+}
+
+export async function verifiedAccountHostClaimOwnerDid(
+  host: string,
+  claim: Pick<AccountHostClaim, "host" | "claimantDid" | "method">,
+  options: AccountHostOwnerVerificationOptions = {},
 ): Promise<string | null> {
+  const normalizedHost = normalizeHandle(host);
   if (
-    !claim || normalizeHandle(claim.host) !== normalizeHandle(host.host) ||
+    !normalizedHost || normalizeHandle(claim.host) !== normalizedHost ||
     !claim.claimantDid.trim()
   ) return null;
-  // Contact-email claims were live-verified against the exact PDS endpoint
-  // and are authoritative even when a curated host's social identity is a
-  // different DID. The compiled social handle remains profile metadata.
-  if (claim.method === "pds_contact_email") return claim.claimantDid.trim();
-  // Deliberately omit `source`: a corrupted mutable row must not turn a
-  // compiled seeded domain into an ordinary self-service claim.
+  // Historical contact-email rows remain operational, but cannot be created.
+  if (claim.method === "pds_contact_email" || claim.method === "dns_txt") {
+    return claim.claimantDid.trim();
+  }
+  if (claim.method === "local_dev_fixture") {
+    return hostSelfServiceClaimPolicy(normalizedHost, options) === "local-dev"
+      ? claim.claimantDid.trim()
+      : null;
+  }
+  // Preserve old OAuth claims. Curated rows still re-resolve their pinned DID.
   const authority = await resolvePinnedSeededAccountHostAuthority(
-    { host: host.host },
+    { host: normalizedHost },
     options,
   );
   if (!authority) return claim.claimantDid.trim();
   return authority.did && authority.did === claim.claimantDid.trim()
     ? authority.did
     : null;
+}
+
+export async function verifiedAccountHostOwnerDid(
+  host: AccountHost,
+  claim: AccountHostClaim | null,
+  options: AccountHostOwnerVerificationOptions = {},
+): Promise<string | null> {
+  if (!claim) return null;
+  return await verifiedAccountHostClaimOwnerDid(host.host, claim, options);
 }
 
 interface AccountHostClaimUpdateQueryInput {
@@ -1585,12 +1605,13 @@ export function accountHostClaimUpdateQueryForTest(
   return accountHostClaimUpdateQuery(input);
 }
 
-interface ContactEmailClaimWriteInput {
+interface DnsClaimWriteInput {
   tokenHash: string;
   claim: AccountHostClaim;
   claimHandle: string;
   claimDid: string;
   operatorListingOptIn?: boolean;
+  transfer?: ResolvedHostOwnerTransferContext;
   timestamp: number;
 }
 
@@ -1598,6 +1619,10 @@ async function upsertAccountHostClaimForOwner(
   c: DbClient,
   claim: AccountHostClaim,
 ): Promise<boolean> {
+  // Legacy methods remain readable but cannot be minted or refreshed here.
+  if (claim.method !== "dns_txt" && claim.method !== "local_dev_fixture") {
+    return false;
+  }
   const result = await c.execute({
     sql: `INSERT INTO account_host_claim (
         host, claimant_did, claimant_handle, method,
@@ -1625,42 +1650,126 @@ async function upsertAccountHostClaimForOwner(
 export const upsertAccountHostClaimForOwnerForTest =
   upsertAccountHostClaimForOwner;
 
-async function writeContactEmailClaimTransaction(
+async function writeDnsClaimTransaction(
   c: DbClient,
-  input: ContactEmailClaimWriteInput,
+  input: DnsClaimWriteInput,
 ): Promise<void> {
-  const consumed = await consumeHostContactEmailChallenge(
-    c,
-    {
-      tokenHash: input.tokenHash,
-      host: input.claim.host,
-      claimantDid: input.claim.claimantDid,
-      consumedAt: input.timestamp,
-    },
-  );
+  if (input.claim.method !== "dns_txt") {
+    throw new DnsClaimCompletionError("claim_conflict");
+  }
+  const consumed = await consumeHostDnsChallenge(c, {
+    tokenHash: input.tokenHash,
+    host: input.claim.host,
+    claimantDid: input.claim.claimantDid,
+    consumedAt: input.timestamp,
+  });
   if (!consumed.ok) {
-    throw new ContactEmailClaimCompletionError(consumed.reason);
+    throw new DnsClaimCompletionError(consumed.reason);
   }
 
-  // The guarded upsert makes two different valid tokens for the same owner
-  // idempotent while still refusing to replace another DID's ownership.
-  if (!await upsertAccountHostClaimForOwner(c, input.claim)) {
-    throw new ContactEmailClaimCompletionError("claim_conflict");
+  const transferFromDid = input.transfer?.intent.previousOwnerDid ?? null;
+  const isTransfer = !!input.transfer && !!transferFromDid &&
+    transferFromDid !== input.claim.claimantDid;
+  if (isTransfer) {
+    const replaced = await c.execute({
+      sql: `UPDATE account_host_claim SET
+          claimant_did = ?, claimant_handle = ?, method = ?,
+          claimed_at = ?, verified_at = ?, updated_at = ?
+        WHERE host = ? AND claimant_did = ? AND updated_at = ?`,
+      args: [
+        input.claim.claimantDid,
+        input.claim.claimantHandle,
+        input.claim.method,
+        input.claim.claimedAt,
+        input.claim.verifiedAt,
+        input.claim.updatedAt,
+        input.claim.host,
+        transferFromDid,
+        input.transfer!.intent.previousOwnerUpdatedAt,
+      ],
+    });
+    if (Number(replaced.rowsAffected ?? 0) !== 1) {
+      throw new DnsClaimCompletionError("claim_conflict");
+    }
+    await c.execute({
+      sql: `INSERT INTO account_host_owner_transfer (
+          jti, host, previous_owner_did, new_owner_did, proof_method,
+          initiated_at, completed_at
+        ) VALUES (?, ?, ?, ?, 'dns_txt', ?, ?)`,
+      args: [
+        input.transfer!.intent.jti,
+        input.claim.host,
+        transferFromDid,
+        input.claim.claimantDid,
+        input.transfer!.intent.issuedAt,
+        input.timestamp,
+      ],
+    });
+  } else if (!await upsertAccountHostClaimForOwner(c, input.claim)) {
+    throw new DnsClaimCompletionError("claim_conflict");
   }
   const hostWrite = await c.execute(accountHostClaimUpdateQuery({
     host: input.claim.host,
     claimHandle: input.claimHandle,
     claimDid: input.claimDid,
-    operatorListingOptIn: input.operatorListingOptIn,
+    operatorListingOptIn: isTransfer ? undefined : input.operatorListingOptIn,
     timestamp: input.timestamp,
   }));
   if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
-    throw new Error("claimed account host disappeared during registration");
+    throw new Error("claimed account host disappeared during DNS verification");
+  }
+  if (isTransfer) {
+    await c.execute({
+      sql: `UPDATE account_host SET
+          profile_handle = ?, profile_did = ?, avatar_url = NULL,
+          service_record_uri = NULL, service_record_cid = NULL,
+          service_observed_at = NULL, updated_at = ?
+        WHERE host = ?`,
+      args: [
+        input.claim.claimantHandle,
+        input.claim.claimantDid,
+        input.timestamp,
+        input.claim.host,
+      ],
+    });
+    await c.execute({
+      sql: `UPDATE directory_entity_link SET
+          status = 'pending', host_owner_did = ?, host_approved_at = NULL,
+          updated_at = ?
+        WHERE host = ? AND source = 'claimed'`,
+      args: [input.claim.claimantDid, input.timestamp, input.claim.host],
+    });
   }
 }
 
-export const writeContactEmailClaimTransactionForTest =
-  writeContactEmailClaimTransaction;
+export const writeDnsClaimTransactionForTest = writeDnsClaimTransaction;
+
+function isCompletedDnsClaimReplay(
+  claim: AccountHostClaim | null,
+  verifiedOwnerDid: string | null,
+  userDid: string,
+): claim is AccountHostClaim {
+  return !!claim && claim.method === "dns_txt" &&
+    claim.claimantDid === userDid && verifiedOwnerDid === userDid;
+}
+
+export const isCompletedDnsClaimReplayForTest = isCompletedDnsClaimReplay;
+
+async function completedDnsClaimReplay(
+  host: AccountHost,
+  userDid: string,
+): Promise<Extract<AccountHostClaimResult, { ok: true }> | null> {
+  const claim = await getAccountHostClaim(host.host);
+  const ownerDid = claim
+    ? await verifiedAccountHostClaimOwnerDid(host.host, claim).catch(() => null)
+    : null;
+  if (!isCompletedDnsClaimReplay(claim, ownerDid, userDid)) return null;
+  return {
+    ok: true,
+    host: await getAccountHost(host.host) ?? host,
+    claim,
+  };
+}
 
 export async function claimAccountHost(
   host: string,
@@ -1672,7 +1781,7 @@ export async function claimAccountHost(
   if (hostSelfServiceClaimPolicy(row.host) !== "local-dev") {
     return {
       ok: false,
-      reason: "contact_email_required",
+      reason: "dns_required",
       host: row,
     };
   }
@@ -1704,7 +1813,7 @@ export async function claimAccountHost(
     host: row.host,
     claimantDid: user.did,
     claimantHandle: user.handle,
-    method: existingClaim?.method ?? "oauth_atproto_account",
+    method: "local_dev_fixture",
     claimedAt: existingClaim?.claimedAt ?? ts,
     verifiedAt: ts,
     updatedAt: ts,
@@ -1745,15 +1854,12 @@ export async function claimAccountHost(
   return { ok: true, host: updatedHost, claim };
 }
 
-/**
- * Complete a claim after the exact PDS endpoint has verified the signed-in
- * management DID through its live, announced contact email.
- */
-export async function claimAccountHostWithContactEmail(
+/** Complete an account-bound DNS TXT challenge atomically with ownership. */
+export async function claimAccountHostWithDns(
   host: string,
   user: { did: string; handle: string },
   token: string,
-  options: AccountHostClaimOptions = {},
+  options: DnsAccountHostClaimOptions = {},
 ): Promise<AccountHostClaimResult> {
   const row = await getAccountHost(host);
   if (!row) return { ok: false, reason: "host_not_found" };
@@ -1761,7 +1867,52 @@ export async function claimAccountHostWithContactEmail(
     null
   );
   const existingClaim = await getAccountHostClaim(row.host);
-  if (existingClaim && existingClaim.claimantDid !== user.did) {
+  const existingOwnerDid = existingClaim
+    ? await verifiedAccountHostClaimOwnerDid(row.host, existingClaim).catch(
+      () => null,
+    )
+    : null;
+  const transfer = options.transfer ?? null;
+  const transferFromDid = transfer?.intent.previousOwnerDid ?? null;
+  // A second transfer POST can arrive after the first request has atomically
+  // consumed the account-bound token and installed this DID as the owner. The
+  // original transfer intent is stale at that point, so recognize the exact
+  // consumed token before applying the previous-owner CAS below.
+  if (
+    transfer &&
+    isCompletedDnsClaimReplay(existingClaim, existingOwnerDid, user.did)
+  ) {
+    const replay = await inspectHostDnsChallenge(
+      { host: row.host },
+      user,
+      token,
+    );
+    if (!replay.ok && replay.reason === "already_used") {
+      return { ok: true, host: row, claim: existingClaim };
+    }
+  }
+  if (
+    transfer &&
+    (transfer.intent.host !== row.host ||
+      transfer.intent.expiresAt <= now() ||
+      transfer.intent.previousOwnerDid === user.did ||
+      !existingClaim ||
+      existingOwnerDid !== transfer.intent.previousOwnerDid ||
+      existingClaim.claimantDid !== transfer.intent.previousOwnerDid ||
+      existingClaim.updatedAt !== transfer.intent.previousOwnerUpdatedAt)
+  ) {
+    return {
+      ok: false,
+      reason: "not_authorized",
+      host: row,
+      authority,
+      claim: existingClaim,
+    };
+  }
+  if (
+    existingClaim && existingClaim.claimantDid !== user.did &&
+    existingClaim.claimantDid !== transferFromDid
+  ) {
     return {
       ok: false,
       reason: "already_claimed",
@@ -1770,16 +1921,17 @@ export async function claimAccountHostWithContactEmail(
       claim: existingClaim,
     };
   }
-  const verified = await prepareHostContactEmailChallenge(
-    {
-      host: row.host,
-      displayName: row.displayName,
-      serviceEndpoint: row.serviceEndpoint,
-    },
+
+  const verified = await prepareHostDnsChallenge(
+    { host: row.host },
     user,
     token,
   );
   if (!verified.ok) {
+    if (verified.reason === "already_used") {
+      const replay = await completedDnsClaimReplay(row, user.did);
+      if (replay) return replay;
+    }
     return {
       ok: false,
       reason: verified.reason,
@@ -1789,30 +1941,45 @@ export async function claimAccountHostWithContactEmail(
     };
   }
 
-  const ts = now();
+  const observedNow = now();
+  const ts = transfer && existingClaim
+    ? Math.max(observedNow, existingClaim.updatedAt + 1)
+    : observedNow;
   const claim: AccountHostClaim = {
     host: row.host,
     claimantDid: user.did,
     claimantHandle: user.handle,
-    method: "pds_contact_email",
-    claimedAt: existingClaim?.claimedAt ?? ts,
+    method: "dns_txt",
+    claimedAt: existingClaim?.claimantDid === user.did
+      ? existingClaim.claimedAt
+      : ts,
     verifiedAt: ts,
     updatedAt: ts,
   };
   try {
     await withDbTransaction(async (c) => {
-      await writeContactEmailClaimTransaction(c, {
+      await writeDnsClaimTransaction(c, {
         tokenHash: verified.tokenHash,
         claim,
         claimHandle: authority?.did ? authority.handle : user.handle,
         claimDid: authority?.did ? authority.did : user.did,
-        operatorListingOptIn: options.operatorListingOptIn,
+        operatorListingOptIn: transfer
+          ? undefined
+          : options.operatorListingOptIn,
+        transfer: transfer ?? undefined,
         timestamp: ts,
       });
     });
   } catch (error) {
     if (
-      error instanceof ContactEmailClaimCompletionError &&
+      error instanceof DnsClaimCompletionError &&
+      error.reason === "already_used"
+    ) {
+      const replay = await completedDnsClaimReplay(row, user.did);
+      if (replay) return replay;
+    }
+    if (
+      error instanceof DnsClaimCompletionError &&
       error.reason !== "claim_conflict"
     ) {
       return {
@@ -1824,7 +1991,7 @@ export async function claimAccountHostWithContactEmail(
       };
     }
     if (
-      !(error instanceof ContactEmailClaimCompletionError) ||
+      !(error instanceof DnsClaimCompletionError) ||
       error.reason !== "claim_conflict"
     ) throw error;
 
@@ -1934,7 +2101,8 @@ export function validateAccountHostRegistrationInput(
     return {
       ok: false,
       reason: "not_authorized",
-      message: "Sign in as the host account you want attached to this listing.",
+      message:
+        "Use Login with Atmosphere with the host account you want attached to this listing.",
     };
   }
 
@@ -1984,9 +2152,9 @@ export async function registerAccountHost(
   if (hostSelfServiceClaimPolicy(host) !== "local-dev") {
     return {
       ok: false,
-      reason: "contact_email_required",
+      reason: "dns_required",
       message:
-        "Production host registration starts from a detected PDS. Configure contact.email in com.atproto.server.describeServer, find the PDS by its exact server domain, and complete the emailed claim link.",
+        "Production host registration starts from a detected PDS. Find the PDS by its exact server domain and verify control with its DNS TXT challenge.",
       host: await getAccountHost(host).catch(() => null),
     };
   }
@@ -2066,7 +2234,8 @@ export async function registerAccountHost(
     return {
       ok: false,
       reason: "not_authorized",
-      message: "Sign in as the host account you want attached to this listing.",
+      message:
+        "Use Login with Atmosphere with the host account you want attached to this listing.",
     };
   }
 
@@ -2109,7 +2278,7 @@ export async function registerAccountHost(
         ok: false,
         reason: "not_authorized",
         message: authority
-          ? `This host is tied to @${authority.handle}. Sign in as that account to claim it.`
+          ? `This host is tied to @${authority.handle}. Use that account in Login with Atmosphere to claim it.`
           : "This curated host's operator identity could not be verified. Try again later.",
         host: existing,
       };
@@ -2140,7 +2309,7 @@ export async function registerAccountHost(
     host,
     claimantDid: user.did,
     claimantHandle: user.handle,
-    method: existingClaim?.method ?? "oauth_atproto_account",
+    method: "local_dev_fixture",
     claimedAt: existingClaim?.claimedAt ?? ts,
     verifiedAt: ts,
     updatedAt: ts,

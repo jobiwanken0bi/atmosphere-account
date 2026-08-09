@@ -93,10 +93,10 @@
 
   function buildUrl(options) {
     if (!options || !options.clientId) {
-      throw new Error("Atmosphere Login requires clientId");
+      throw new Error("Login with Atmosphere requires clientId");
     }
     if (!options.returnUri) {
-      throw new Error("Atmosphere Login requires returnUri");
+      throw new Error("Login with Atmosphere requires returnUri");
     }
     const state = options.state || randomState();
     const origin = options.atmosphereOrigin || defaultOrigin;
@@ -297,10 +297,10 @@
     if (
       expectedClientId && paramClientId && paramClientId !== expectedClientId
     ) {
-      throw new Error("Atmosphere Login client_id mismatch");
+      throw new Error("Login with Atmosphere client_id mismatch");
     }
     if (options && options.expectedState && options.expectedState !== state) {
-      throw new Error("Atmosphere Login state mismatch");
+      throw new Error("Login with Atmosphere state mismatch");
     }
     const exactKey = stateStorageKey(clientId, state);
     const legacyKey = legacyStorageKey(clientId);
@@ -315,7 +315,7 @@
       stored = null;
     }
     if (stored && stored.state && stored.state !== state) {
-      throw new Error("Atmosphere Login state mismatch");
+      throw new Error("Login with Atmosphere state mismatch");
     }
     try {
       globalThis.sessionStorage.removeItem(exactKey);
@@ -408,14 +408,14 @@
       mark.append(icon);
       const label = document.createElement("span");
       label.className = "atmosphere-login-button-label";
-      label.textContent = "Continue with Atmosphere";
+      label.textContent = "Login with Atmosphere";
       button.replaceChildren(mark, label);
     }
     button.classList.add("atmosphere-login-button");
     button.setAttribute(
       "aria-label",
       button.getAttribute("aria-label") ||
-        `Continue to ${options.appName} with Atmosphere`,
+        `Login with Atmosphere to continue to ${options.appName}`,
     );
     if (options.appHomepage) button.title = options.appHomepage;
     button.addEventListener("click", function (event) {

@@ -16,7 +16,17 @@ import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
-import { isPasskeyManagementReturnTo } from "../../lib/passkey-management.ts";
+import {
+  IDENTITY_OAUTH_SCOPE,
+  normalizeOAuthCapabilities,
+  type OAuthCapability,
+} from "../../lib/oauth-scopes.ts";
+import {
+  isOAuthAction,
+  isOAuthActionCapabilityRequest,
+  type OAuthAction,
+  safeOAuthTargetName,
+} from "../../lib/oauth-action.ts";
 
 const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
 
@@ -33,6 +43,9 @@ interface LoginInput {
   next: string | null;
   intent: SignInIntent | null;
   continuation: "login_selection" | null;
+  capabilities: OAuthCapability[] | null;
+  action: OAuthAction | null;
+  targetName: string | null;
 }
 
 function safeContinuation(
@@ -48,12 +61,23 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
   const continuationFromQs = safeContinuation(
     url.searchParams.get("continuation"),
   );
+  const capabilitiesFromQs = normalizeOAuthCapabilities(
+    url.searchParams.getAll("capability"),
+  );
+  const queryAction = url.searchParams.get("action");
+  const actionFromQs = isOAuthAction(queryAction) ? queryAction : null;
+  const targetNameFromQs = safeOAuthTargetName(
+    url.searchParams.get("name"),
+  ) ?? null;
   if (fromQs) {
     return {
       handle: fromQs.trim(),
       next: nextFromQs,
       intent: intentFromQs,
       continuation: continuationFromQs,
+      capabilities: capabilitiesFromQs,
+      action: actionFromQs,
+      targetName: targetNameFromQs,
     };
   }
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
@@ -64,14 +88,27 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
         next?: string;
         intent?: string;
         continuation?: string;
+        capability?: string | string[];
+        action?: string;
+        name?: string;
       }
       | null;
+    const bodyCapabilities = Array.isArray(body?.capability)
+      ? body.capability
+      : typeof body?.capability === "string"
+      ? [body.capability]
+      : null;
     return {
       handle: body?.handle?.trim() ?? null,
       next: safeNext(body?.next ?? null) ?? nextFromQs,
       intent: safeIntent(body?.intent) ?? intentFromQs,
       continuation: safeContinuation(body?.continuation) ??
         continuationFromQs,
+      capabilities: bodyCapabilities
+        ? normalizeOAuthCapabilities(bodyCapabilities)
+        : capabilitiesFromQs,
+      action: isOAuthAction(body?.action) ? body.action : actionFromQs,
+      targetName: safeOAuthTargetName(body?.name) ?? targetNameFromQs,
     };
   }
   if (
@@ -85,12 +122,20 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
         next: nextFromQs,
         intent: intentFromQs,
         continuation: continuationFromQs,
+        capabilities: capabilitiesFromQs,
+        action: actionFromQs,
+        targetName: targetNameFromQs,
       };
     }
     const v = form.get("handle");
     const next = form.get("next");
     const intent = form.get("intent");
     const continuation = form.get("continuation");
+    const formCapabilities = form.getAll("capability").filter((value) =>
+      typeof value === "string"
+    );
+    const formAction = form.get("action");
+    const formTargetName = form.get("name");
     return {
       handle: typeof v === "string" ? v.trim() : null,
       next: safeNext(typeof next === "string" ? next : null) ?? nextFromQs,
@@ -99,6 +144,11 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
       continuation: safeContinuation(
         typeof continuation === "string" ? continuation : null,
       ) ?? continuationFromQs,
+      capabilities: formCapabilities.length > 0
+        ? normalizeOAuthCapabilities(formCapabilities)
+        : capabilitiesFromQs,
+      action: isOAuthAction(formAction) ? formAction : actionFromQs,
+      targetName: safeOAuthTargetName(formTargetName) ?? targetNameFromQs,
     };
   }
   return {
@@ -106,7 +156,14 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
     next: nextFromQs,
     intent: intentFromQs,
     continuation: continuationFromQs,
+    capabilities: capabilitiesFromQs,
+    action: actionFromQs,
+    targetName: targetNameFromQs,
   };
+}
+
+export async function readLoginInputForTest(req: Request): Promise<LoginInput> {
+  return await getLoginInput(req, new URL(req.url));
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
@@ -145,11 +202,26 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     next: returnTo,
     intent,
     continuation,
+    capabilities,
+    action,
+    targetName,
   } = await getLoginInput(ctx.req, ctx.url);
   if (!handleStr) {
     return wantsJson
       ? jsonError("missing handle", 400)
       : new Response("missing handle", { status: 400 });
+  }
+  if (!capabilities) {
+    return wantsJson
+      ? jsonError("invalid capability", 400)
+      : new Response("invalid capability", { status: 400 });
+  }
+  if (!isOAuthActionCapabilityRequest(action, capabilities)) {
+    return wantsJson
+      ? jsonError("invalid action capability combination", 400)
+      : new Response("invalid action capability combination", {
+        status: 400,
+      });
   }
   try {
     const { redirectUrl } = await startLogin(
@@ -159,7 +231,11 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       {
         ...oauthOptions,
         continuation: continuation ?? undefined,
-        reauthenticate: isPasskeyManagementReturnTo(returnTo),
+        action: action ?? undefined,
+        targetName: targetName ?? undefined,
+        ...(continuation === "login_selection"
+          ? { scope: IDENTITY_OAUTH_SCOPE, persistSession: false }
+          : { capabilities }),
       },
     );
     if (wantsJson) {

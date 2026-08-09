@@ -1,5 +1,9 @@
 import { useSignal } from "@preact/signals";
 import type { HostSignupStatus } from "../lib/account-hosts.ts";
+import {
+  appHostRelationshipDescription,
+  appHostRelationshipLabel,
+} from "../lib/app-host-relationship-copy.ts";
 
 type LocationInferenceState = "idle" | "ok" | "error";
 
@@ -94,7 +98,7 @@ export default function HostRegisterForm(
       {linkingApp && (
         <section class="host-register-form-section host-register-link-section">
           <header class="host-register-section-head">
-            <p class="text-eyebrow">Connected product</p>
+            <p class="text-eyebrow">Connected app</p>
             <h2>{linkingApp.name}</h2>
             <p class="text-body">
               The new host will be linked as soon as registration succeeds.
@@ -106,9 +110,10 @@ export default function HostRegisterForm(
             value={linkingApp.intentToken}
           />
           <p class="profile-form-hint">
-            {linkingApp.relationship === "same_operator"
-              ? "Same operator — this is a separate service run by the app owner."
-              : "Same product — this host is part of the app."}
+            {appHostRelationshipLabel(linkingApp.relationship)} —{" "}
+            {appHostRelationshipDescription(
+              linkingApp.relationship,
+            )}
           </p>
         </section>
       )}
@@ -440,19 +445,12 @@ export default function HostRegisterForm(
         <section class="host-register-form-section host-register-app-section">
           <div>
             <p class="text-eyebrow">Apps and hosts</p>
-            <h2>Connect products without merging them</h2>
+            <h2>Connect apps to this host</h2>
             <p class="text-body">
-              Host records describe where accounts live. Your owner workspace
-              can connect this host to one or more separately managed app
-              profiles after registration.
+              After creating this host profile, you can connect it to a
+              separately managed app from Apps and hosts.
             </p>
           </div>
-          <a
-            class="profile-form-button-secondary profile-form-button-secondary--lg"
-            href="/account/products"
-          >
-            View managed products
-          </a>
         </section>
       )}
 

@@ -7,7 +7,19 @@ import {
   verifyLoginSelectionTokenDetailed,
 } from "../../../lib/atmosphere-login.ts";
 import { checkDurableRateLimit } from "../../../lib/rate-limit.ts";
-import { rejectLargeRequest } from "../../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
+import {
+  InvalidOAuthRequestInputError,
+  optionalJsonString,
+  plainJsonRecord,
+  singleFormString,
+  singleSearchValue,
+} from "../../../lib/oauth-request-input.ts";
 
 export interface SelectionVerificationInput {
   token: string | null;
@@ -50,36 +62,44 @@ function readInputFromSearchParams(
   params: URLSearchParams,
 ): SelectionVerificationInput {
   return {
-    token: params.get("token")?.trim() || null,
-    expectedClientId: params.get("client_id")?.trim() || null,
-    expectedReturnUri: params.get("return_uri")?.trim() || null,
-    expectedState: params.get("state")?.trim() || null,
-    expectedIssuer: params.get("iss")?.trim() || null,
+    token: singleSearchValue(params, "token")?.trim() || null,
+    expectedClientId: singleSearchValue(params, "client_id")?.trim() || null,
+    expectedReturnUri: singleSearchValue(params, "return_uri")?.trim() || null,
+    expectedState: singleSearchValue(params, "state")?.trim() || null,
+    expectedIssuer: singleSearchValue(params, "iss")?.trim() || null,
   };
 }
 
 function readInputFromRecord(
-  body: Record<string, unknown> | null,
+  body: Record<string, unknown>,
 ): SelectionVerificationInput {
   return {
-    token: stringField(body, "token"),
-    expectedClientId: stringField(body, "client_id") ??
-      stringField(body, "expectedClientId"),
-    expectedReturnUri: stringField(body, "return_uri") ??
-      stringField(body, "expectedReturnUri"),
-    expectedState: stringField(body, "state") ??
-      stringField(body, "expectedState"),
-    expectedIssuer: stringField(body, "iss") ??
-      stringField(body, "expectedIssuer"),
+    token: optionalJsonString(body, "token")?.trim() || null,
+    expectedClientId: exclusiveJsonString(
+      body,
+      "client_id",
+      "expectedClientId",
+    ),
+    expectedReturnUri: exclusiveJsonString(
+      body,
+      "return_uri",
+      "expectedReturnUri",
+    ),
+    expectedState: exclusiveJsonString(body, "state", "expectedState"),
+    expectedIssuer: exclusiveJsonString(body, "iss", "expectedIssuer"),
   };
 }
 
-function stringField(
-  body: Record<string, unknown> | null,
-  key: string,
+function exclusiveJsonString(
+  body: Record<string, unknown>,
+  primary: string,
+  alias: string,
 ): string | null {
-  const value = body?.[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  if (Object.hasOwn(body, primary) && Object.hasOwn(body, alias)) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  return (optionalJsonString(body, primary) ?? optionalJsonString(body, alias))
+    ?.trim() || null;
 }
 
 async function readInput(
@@ -92,22 +112,24 @@ async function readInput(
   };
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
-    const body = await req.json().catch(() => null);
     return readInputFromRecord(
-      body && typeof body === "object" && !Array.isArray(body)
-        ? body as Record<string, unknown>
-        : null,
+      plainJsonRecord(
+        await readJsonRequestWithLimit(req, MAX_SELECTION_REQUEST_BODY_BYTES),
+      ),
     );
   }
   if (
     ct.includes("application/x-www-form-urlencoded")
   ) {
-    const form = await req.formData().catch(() => null);
-    if (!form) return qs;
+    const form = await readFormDataRequestWithLimit(
+      req,
+      MAX_SELECTION_REQUEST_BODY_BYTES,
+    );
+    if (!form) throw new InvalidOAuthRequestInputError();
     const params = new URLSearchParams();
     for (const key of ["token", "client_id", "return_uri", "state", "iss"]) {
-      const value = form.get(key);
-      if (typeof value === "string") params.set(key, value);
+      const value = singleFormString(form, key);
+      if (value !== null) params.set(key, value);
     }
     return readInputFromSearchParams(params);
   }
@@ -131,8 +153,24 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       status: 413,
     });
   }
-  const input = await readInput(ctx.req, ctx.url);
-  const corsHeaders = await selectionCorsHeaders(ctx.req, input);
+  let input: SelectionVerificationInput;
+  try {
+    input = await readInput(ctx.req, ctx.url);
+  } catch (error) {
+    return json({
+      active: false,
+      error: error instanceof RequestBodyTooLargeError
+        ? "request body too large"
+        : "invalid request",
+    }, { status: error instanceof RequestBodyTooLargeError ? 413 : 400 });
+  }
+  const normalizedClientId = normalizeUrl(input.expectedClientId);
+  const currentApp = normalizedClientId
+    ? await getLoginApp(normalizedClientId)
+    : null;
+  const corsHeaders = await selectionCorsHeaders(ctx.req, input, {
+    getLoginApp: () => Promise.resolve(currentApp),
+  });
   const token = input.token;
   if (!token) {
     return json(
@@ -148,19 +186,26 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       corsHeaders,
     );
   }
-  const hasBindingExpectation = Boolean(
-    input.expectedClientId || input.expectedReturnUri ||
-      input.expectedState || input.expectedIssuer,
-  );
-  if (!hasBindingExpectation) {
+  if (!hasCompleteSelectionBinding(input)) {
     return json(
       {
         active: false,
         bound: false,
         error:
-          "binding expectations are required: provide client_id, return_uri, state, or iss",
+          "complete binding expectations are required: provide client_id, return_uri, state, and iss",
       },
       { status: 400 },
+      corsHeaders,
+    );
+  }
+  if (!canAppVerifySelection(input, currentApp)) {
+    return json(
+      {
+        active: false,
+        bound: false,
+        error: "login environment is unavailable",
+      },
+      { status: 403 },
       corsHeaders,
     );
   }
@@ -198,6 +243,15 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     },
     {},
     corsHeaders,
+  );
+}
+
+export function hasCompleteSelectionBinding(
+  input: SelectionVerificationInput,
+): boolean {
+  return Boolean(
+    input.expectedClientId && input.expectedReturnUri &&
+      input.expectedState && input.expectedIssuer,
   );
 }
 
@@ -279,8 +333,26 @@ export function canOriginReadSelectionVerification(
   const returnUri = normalizeUrl(input.expectedReturnUri);
   if (!normalizedOrigin || !clientId || !returnUri) return false;
   if (normalizeOrigin(returnUri) !== normalizedOrigin) return false;
+  return canAppVerifySelection(input, app, options);
+}
+
+/**
+ * Require the current app registration to remain eligible before token
+ * verification. This protects server-to-server callers as well as browsers;
+ * CORS alone is not an authorization boundary.
+ */
+export function canAppVerifySelection(
+  input: SelectionVerificationInput,
+  app: LoginApp | null,
+  options: { dev?: boolean } = {},
+): boolean {
+  const clientId = normalizeUrl(input.expectedClientId);
+  const returnUri = normalizeUrl(input.expectedReturnUri);
+  if (!clientId || !returnUri) return false;
   if (app) {
-    return app.status !== "blocked" && app.clientId === clientId &&
+    return app.identityAvailable && app.loginAvailability === "available" &&
+      app.status !== "blocked" &&
+      app.clientId === clientId &&
       registeredAppAllowsReturnUri(app, returnUri);
   }
   return isUnregisteredDevLoginReturnAllowed(clientId, returnUri, {

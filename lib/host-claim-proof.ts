@@ -43,14 +43,15 @@ export function isLocalDevHostClaim(
 }
 
 /**
- * Production self-service ownership is contact-email only. The sole exception
- * is an explicit local `.test` fixture while the process is actually in dev.
+ * Production self-service ownership uses the dedicated DNS challenge flow.
+ * The sole bypass is an explicit local `.test` fixture while the process is
+ * actually in dev.
  */
 export function hostSelfServiceClaimPolicy(
   host: string,
   options: { isDev?: boolean } = {},
-): "contact-email" | "local-dev" {
-  return isLocalDevHostClaim(host, options) ? "local-dev" : "contact-email";
+): "dns" | "local-dev" {
+  return isLocalDevHostClaim(host, options) ? "local-dev" : "dns";
 }
 
 export function verifyHostClaimDomainProof(
@@ -60,7 +61,7 @@ export function verifyHostClaimDomainProof(
 ): HostClaimProofResult {
   // Social handles and host records can describe a host but do not prove who
   // controls its PDS. Production ownership is verified only by the separate
-  // contact.email challenge flow.
+  // DNS challenge flow.
   if (isLocalDevHostClaim(host.host, options)) {
     return { ok: true, method: "local-dev" };
   }
@@ -68,5 +69,5 @@ export function verifyHostClaimDomainProof(
 }
 
 export function hostClaimProofMessage(): string {
-  return "Configure contact.email in this PDS's live com.atproto.server.describeServer response, then retry. Atmosphere sends that address a one-time verification link; social handles and host records do not prove operator ownership.";
+  return "Verify the host with a temporary DNS record. Social handles, email addresses, and host records do not prove operator ownership.";
 }

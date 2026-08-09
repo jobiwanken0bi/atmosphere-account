@@ -41,7 +41,7 @@ export const handler = define.handlers({
     }
 
     const appUser = await getAppUser(user.did).catch(() => null);
-    if (!appUser) return new Response("profile not found", { status: 404 });
+    if (!appUser) return new Response("account not found", { status: 404 });
 
     const visible = typeof body?.visible === "boolean"
       ? body.visible
@@ -59,7 +59,7 @@ export const handler = define.handlers({
 function appviewUnavailable(scope: string, err: unknown): Response {
   console.error(`[appview] ${scope} proxy failed:`, err);
   return new Response(
-    "Updating the profile viewer is temporarily unavailable.",
+    "Updating the microblog viewer is temporarily unavailable.",
     {
       status: 503,
       headers: {

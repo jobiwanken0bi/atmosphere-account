@@ -1,4 +1,5 @@
 import { useSignal } from "@preact/signals";
+import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
 
 interface Props {
   disabled: boolean;
@@ -67,8 +68,16 @@ export default function AtstoreMigrationButton(
         issues?: string[];
         detail?: string;
         error?: string;
+        reauthUrl?: string;
       };
       if (!res.ok) {
+        if (body.error === "reauth_required") {
+          const reauthUrl = reauthUrlFromApiPayload(body);
+          if (reauthUrl) {
+            globalThis.location.assign(reauthUrl);
+            return;
+          }
+        }
         const detail = body.issues?.join(" ") || body.detail ||
           "Migration failed. Please try again.";
         message.value = { kind: "error", text: detail };

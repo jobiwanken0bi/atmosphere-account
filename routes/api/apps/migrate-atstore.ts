@@ -13,10 +13,14 @@ import {
 } from "../../../lib/community-app-profile.ts";
 import { getAppListingByIdentifier } from "../../../lib/app-directory.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
-import { loadSession } from "../../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../../lib/oauth.ts";
 import { getProfileRecord } from "../../../lib/pds.ts";
 import { getProfileByDid } from "../../../lib/registry.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  oauthReauthorizationUrl,
+} from "../../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -46,8 +50,21 @@ export const handler = define.handlers({
       return jsonError(403, "project_account_required");
     }
 
-    const session = await loadSession(user.did);
-    if (!session) return jsonError(401, "reauth_required");
+    const session = await getSessionForCapabilities(
+      user.did,
+      APP_MANAGEMENT_CAPABILITIES,
+    );
+    if (!session) {
+      return jsonResponse(403, {
+        error: "reauth_required",
+        reauthUrl: oauthReauthorizationUrl({
+          next: "/apps/manage?migrate=shared-records",
+          action: "app",
+          capabilities: APP_MANAGEMENT_CAPABILITIES,
+          name: "this app",
+        }),
+      });
+    }
 
     const profile = await getProfileByDid(user.did, {
       includeTakenDown: true,

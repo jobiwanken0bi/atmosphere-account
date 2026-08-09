@@ -11,7 +11,7 @@ Atmosphere Account is becoming a developer platform with three layers:
 ### Cycle 1: Contract Foundation
 
 - Harden `/signin`, `/login/select`, `/account`, `/hosts`, and OAuth dev flow.
-- Publish Atmosphere Login v0.1 docs.
+- Publish Login with Atmosphere v0.1 docs.
 - Add reusable selection-token verification helpers.
 - Add host service records and honest account-routing fallbacks.
 - Test token verification, invalid requests, and PDS account-route states.
@@ -31,7 +31,7 @@ runner, expiring persisted results, and passing-only directory badges.
 
 ### Cycle 3: Developer Adoption
 
-- Expand `/developer-resources` into a full "Continue with Atmosphere" console.
+- Expand `/developer-resources` into a full "Login with Atmosphere" console.
 - Add app registration metadata for trusted picker display.
 - Add examples for Fresh/Deno, Next.js, and plain HTML.
 - Add an end-to-end sample app that completes AT Protocol OAuth after account
@@ -61,12 +61,12 @@ token verification → OAuth start.
 
 ## Security Invariants
 
-- Atmosphere never brokers app OAuth tokens.
-- Atmosphere never holds plaintext private keys or backup material.
+- Login with Atmosphere never brokers app OAuth tokens.
+- This site never holds plaintext private keys or backup material.
 - Selection tokens are short-lived, signed, audience-bound, state-bound, and
   replay-detectable by relying apps through `jti`.
 - Return URLs must be exact-match or trusted-origin validated.
 - Host-owned controls stay visibly separate from Atmosphere-owned picker
   history.
-- Atmosphere never renders first-party controls for PDS grants, devices,
+- This site never renders first-party controls for PDS grants, devices,
   passwords, keys, recovery, account deletion, backup/restore, or migration.

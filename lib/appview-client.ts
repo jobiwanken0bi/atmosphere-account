@@ -25,6 +25,7 @@ import {
   createProxyClientKey,
   PROXY_CLIENT_KEY_HEADER,
 } from "./proxy-client-key.ts";
+import { legacyHostClaimEdgeResponse } from "./host-claim-legacy.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -79,6 +80,9 @@ export const appviewAssetProxyMiddleware = define.middleware(
 );
 
 export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
+  const retiredHostClaim = await legacyHostClaimEdgeResponse(ctx.url, ctx.req);
+  if (retiredHostClaim) return retiredHostClaim;
+
   if (!shouldProxyAppviewBeforeSession(ctx.url.pathname)) {
     return await ctx.next();
   }
@@ -110,13 +114,14 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
 export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
   if (isEdgeOwnedOauthDocument(pathname)) return false;
   if (isEdgeRenderedPublicDirectory(pathname)) return false;
+  // Keep the retired shell route local so it can reliably redirect during a
+  // rolling AppView deploy. The canonical management page remains proxied.
+  if (pathname === "/account/products") return false;
   return pathname === "/apps" || pathname.startsWith("/apps/") ||
     pathname === "/hosts" || pathname.startsWith("/hosts/") ||
     pathname === "/account" || pathname.startsWith("/account/") ||
     pathname === "/admin" || pathname.startsWith("/admin/") ||
-    pathname === "/users" || pathname.startsWith("/users/") ||
     pathname === "/login/select" ||
-    pathname === "/passkeys" ||
     pathname === "/oauth" || pathname.startsWith("/oauth/") ||
     pathname === "/api/apps" || pathname.startsWith("/api/apps/") ||
     pathname === "/api/hosts" || pathname.startsWith("/api/hosts/") ||
@@ -124,8 +129,6 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/admin" || pathname.startsWith("/api/admin/") ||
     pathname === "/api/login/selection" ||
     pathname === "/api/login/account-hosts" ||
-    pathname.startsWith("/api/login/passkeys/") ||
-    pathname === "/api/passkeys" || pathname.startsWith("/api/passkeys/") ||
     pathname === "/api/registry" || pathname.startsWith("/api/registry/") ||
     pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
     pathname === "/api/atproto/blob" ||

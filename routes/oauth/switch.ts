@@ -20,7 +20,7 @@
  */
 import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
-import { getValidSession } from "../../lib/oauth.ts";
+import { getValidSession, grantedScopeForSession } from "../../lib/oauth.ts";
 import {
   buildSessionCookie,
   createSession,
@@ -36,7 +36,17 @@ import {
 } from "../../lib/browser-handoff.ts";
 import { devPickerAccountForDid } from "../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../lib/env.ts";
-import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
+import {
+  hasOAuthCapabilities,
+  normalizeOAuthCapabilities,
+  type OAuthCapability,
+} from "../../lib/oauth-scopes.ts";
+import {
+  isOAuthAction,
+  isOAuthActionCapabilityRequest,
+  type OAuthAction,
+  safeOAuthTargetName,
+} from "../../lib/oauth-action.ts";
 
 const SWITCH_SESSION_TIMEOUT_MS = 5_000;
 const MAX_SWITCH_BODY_BYTES = 8_192;
@@ -48,15 +58,48 @@ function safeNext(raw: string | null | undefined): string | null {
 async function readInput(
   req: Request,
   url: URL,
-): Promise<{ did: string | null; next: string | null }> {
+): Promise<{
+  did: string | null;
+  next: string | null;
+  intent: "user" | "project" | null;
+  capabilities: OAuthCapability[] | null;
+  action: OAuthAction | null;
+  targetName: string | null;
+}> {
+  const queryCapabilities = normalizeOAuthCapabilities(
+    url.searchParams.getAll("capability"),
+  );
+  const queryIntent = safeIntent(url.searchParams.get("intent"));
+  const rawQueryAction = url.searchParams.get("action");
+  const queryAction = isOAuthAction(rawQueryAction) ? rawQueryAction : null;
+  const queryTargetName = safeOAuthTargetName(url.searchParams.get("name")) ??
+    null;
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => null) as
-      | { did?: string; next?: string }
+      | {
+        did?: string;
+        next?: string;
+        intent?: string;
+        capability?: string | string[];
+        action?: string;
+        name?: string;
+      }
       | null;
+    const bodyCapabilities = Array.isArray(body?.capability)
+      ? body.capability
+      : typeof body?.capability === "string"
+      ? [body.capability]
+      : null;
     return {
       did: body?.did?.trim() ?? null,
       next: safeNext(body?.next),
+      intent: safeIntent(body?.intent) ?? queryIntent,
+      capabilities: bodyCapabilities
+        ? normalizeOAuthCapabilities(bodyCapabilities)
+        : queryCapabilities,
+      action: isOAuthAction(body?.action) ? body.action : queryAction,
+      targetName: safeOAuthTargetName(body?.name) ?? queryTargetName,
     };
   }
   const form = await req.formData().catch(() => null);
@@ -64,10 +107,18 @@ async function readInput(
     return {
       did: url.searchParams.get("did")?.trim() || null,
       next: safeNext(url.searchParams.get("next")),
+      intent: queryIntent,
+      capabilities: queryCapabilities,
+      action: queryAction,
+      targetName: queryTargetName,
     };
   }
   const v = form.get("did");
   const next = form.get("next");
+  const intent = form.get("intent");
+  const formCapabilities = form.getAll("capability");
+  const formAction = form.get("action");
+  const formTargetName = form.get("name");
   return {
     did: typeof v === "string"
       ? v.trim()
@@ -75,41 +126,94 @@ async function readInput(
     next: safeNext(
       typeof next === "string" ? next : url.searchParams.get("next"),
     ),
+    intent: safeIntent(typeof intent === "string" ? intent : null) ??
+      queryIntent,
+    capabilities: formCapabilities.length > 0
+      ? normalizeOAuthCapabilities(formCapabilities)
+      : queryCapabilities,
+    action: isOAuthAction(formAction) ? formAction : queryAction,
+    targetName: safeOAuthTargetName(formTargetName) ?? queryTargetName,
   };
+}
+
+function safeIntent(
+  value: string | null | undefined,
+): "user" | "project" | null {
+  return value === "user" || value === "project" ? value : null;
 }
 
 export function buildSwitchReauthLocation(
   handle: string,
   next: string | null,
+  capabilities: readonly OAuthCapability[] = [],
+  intent: "user" | "project" | null = null,
+  action: OAuthAction | null = null,
+  targetName: string | null = null,
 ): string {
   const location = new URLSearchParams({ handle });
   if (next) location.set("next", next);
+  if (intent) location.set("intent", intent);
+  if (action) location.set("action", action);
+  if (targetName) location.set("name", targetName);
+  for (const capability of capabilities) {
+    location.append("capability", capability);
+  }
   return `/oauth/login?${location.toString()}`;
 }
 
 export async function readSwitchInputForTest(
   req: Request,
 ): Promise<{ did: string | null; next: string | null }> {
-  return await readInput(req, new URL(req.url));
+  const { did, next } = await readInput(req, new URL(req.url));
+  return { did, next };
+}
+
+/** Full parser view used by capability-preservation regression tests. */
+export async function readSwitchAuthorizationInputForTest(
+  req: Request,
+): Promise<{
+  did: string | null;
+  next: string | null;
+  intent: "user" | "project" | null;
+  capabilities: OAuthCapability[] | null;
+  action: OAuthAction | null;
+  targetName: string | null;
+}> {
+  const { did, next, intent, capabilities, action, targetName } =
+    await readInput(
+      req,
+      new URL(req.url),
+    );
+  return { did, next, intent, capabilities, action, targetName };
 }
 
 function redirectToReauth(
   req: Request,
   handle: string,
   next: string | null,
+  capabilities: readonly OAuthCapability[],
+  intent: "user" | "project" | null,
+  action: OAuthAction | null,
+  targetName: string | null,
 ): Response {
-  const headers = new Headers();
-  headers.append("set-cookie", clearPasskeyManagementCookie());
-  return browserHandoffResponse(buildSwitchReauthLocation(handle, next), {
-    json: wantsBrowserHandoffJson(req),
-    headers,
-  });
+  return browserHandoffResponse(
+    buildSwitchReauthLocation(
+      handle,
+      next,
+      capabilities,
+      intent,
+      action,
+      targetName,
+    ),
+    {
+      json: wantsBrowserHandoffJson(req),
+    },
+  );
 }
 
 function switchedSessionHeaders(sessionCookie: string): Headers {
   const headers = new Headers();
   headers.append("set-cookie", sessionCookie);
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   return headers;
 }
 
@@ -147,8 +251,22 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     );
   }
   const wantsJson = wantsBrowserHandoffJson(ctx.req);
-  const { did, next } = await readInput(ctx.req, url);
+  const { did, next, intent, capabilities, action, targetName } =
+    await readInput(
+      ctx.req,
+      url,
+    );
   if (!did) return browserHandoffError("missing did", 400, wantsJson);
+  if (!capabilities) {
+    return browserHandoffError("invalid capability", 400, wantsJson);
+  }
+  if (!isOAuthActionCapabilityRequest(action, capabilities)) {
+    return browserHandoffError(
+      "invalid action capability combination",
+      400,
+      wantsJson,
+    );
+  }
 
   const remembered = await readRememberedAccountsFromHeader(
     ctx.req.headers.get("cookie"),
@@ -194,7 +312,31 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     SWITCH_SESSION_TIMEOUT_MS,
   );
   if (!oauthSession) {
-    return redirectToReauth(ctx.req, target.handle, next);
+    return redirectToReauth(
+      ctx.req,
+      target.handle,
+      next,
+      capabilities,
+      intent,
+      action,
+      targetName,
+    );
+  }
+  if (
+    !hasOAuthCapabilities(
+      grantedScopeForSession(oauthSession),
+      capabilities,
+    )
+  ) {
+    return redirectToReauth(
+      ctx.req,
+      target.handle,
+      next,
+      capabilities,
+      intent,
+      action,
+      targetName,
+    );
   }
 
   /** Drop the previous app session row (if any) so we don't leak
@@ -211,11 +353,13 @@ async function handle(ctx: { req: Request }): Promise<Response> {
 
   return browserHandoffResponse(
     next ??
-      (accountType === "project"
-        ? "/apps/manage"
-        : accountType === "user"
-        ? "/account"
-        : "/account/type"),
+      (intent === "project" && accountType !== "project"
+        ? "/apps/manage?new=1"
+        : (accountType === "project"
+          ? "/apps/manage"
+          : accountType === "user"
+          ? "/account"
+          : "/account/type")),
     {
       json: wantsJson,
       headers: switchedSessionHeaders(buildSessionCookie(cookieValue)),

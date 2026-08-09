@@ -47,8 +47,14 @@ export class EdgeStaleCache<Value> {
     const entry = this.entries.get(key);
     if (entry?.refreshPromise) return entry.refreshPromise;
 
-    const refreshPromise = load()
+    const refreshPromise: Promise<Value> = load()
       .then((value) => {
+        const current = this.entries.get(key);
+        if (
+          current?.refreshPromise && current.refreshPromise !== refreshPromise
+        ) {
+          return value;
+        }
         this.setEntry(key, {
           value,
           hasValue: true,
@@ -57,12 +63,23 @@ export class EdgeStaleCache<Value> {
         return value;
       })
       .catch((err) => {
-        if (entry?.hasValue) return entry.value as Value;
+        if (
+          entry?.hasValue &&
+          this.now() - entry.refreshedAt < this.options.staleMs
+        ) {
+          return entry.value as Value;
+        }
+        // A failed refresh must not revive a value beyond the configured stale
+        // window. Remove the in-flight copy so a later request can recover with
+        // a genuinely cold load instead of repeatedly serving expired data.
+        if (this.entries.get(key)?.refreshPromise === refreshPromise) {
+          this.entries.delete(key);
+        }
         throw err;
       })
       .finally(() => {
         const current = this.entries.get(key);
-        if (!current) return;
+        if (!current || current.refreshPromise !== refreshPromise) return;
         if (!current.hasValue) {
           this.entries.delete(key);
           return;

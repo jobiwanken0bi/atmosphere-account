@@ -1,4 +1,4 @@
-function syncNavState() {
+function syncCurrentPage() {
   const nav = document.getElementById("main-nav");
   if (!nav) return;
 
@@ -9,6 +9,8 @@ function syncNavState() {
       ? path === "/apps" || path.startsWith("/apps/")
       : href === "/hosts"
       ? path === "/hosts" || path.startsWith("/hosts/")
+      : href === "/docs"
+      ? path === "/docs" || path.startsWith("/docs/")
       : href === path;
 
     if (active) {
@@ -19,15 +21,31 @@ function syncNavState() {
       delete link.dataset.current;
     }
   });
+}
 
+function syncScrollState() {
+  const nav = document.getElementById("main-nav");
+  if (!nav) return;
   if (nav.dataset.scrollEffects === "false") {
     nav.classList.remove("scrolled");
     return;
   }
-
   nav.classList.toggle("scrolled", globalThis.scrollY > 40);
 }
 
-syncNavState();
-globalThis.addEventListener("scroll", syncNavState, { passive: true });
-globalThis.addEventListener("pageshow", syncNavState);
+let scrollFrame = 0;
+function scheduleScrollSync() {
+  if (scrollFrame) return;
+  scrollFrame = globalThis.requestAnimationFrame(() => {
+    scrollFrame = 0;
+    syncScrollState();
+  });
+}
+
+syncCurrentPage();
+syncScrollState();
+globalThis.addEventListener("scroll", scheduleScrollSync, { passive: true });
+globalThis.addEventListener("pageshow", () => {
+  syncCurrentPage();
+  syncScrollState();
+});

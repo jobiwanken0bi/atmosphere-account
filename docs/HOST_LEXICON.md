@@ -7,9 +7,9 @@ The namespace is `account.atmosphere.host.*`.
 
 - Let PDS hosts publish their own public host metadata.
 - Keep host records user-readable and appview-indexable.
-- Separate self-declared host metadata from Atmosphere verification.
+- Separate self-declared host metadata from site verification.
 - Support host account routing and optional compatibility metadata without
-  making Atmosphere the authority for keys, backups, devices, grants, or
+  making this site the authority for keys, backups, devices, grants, or
   recovery.
 - Treat the host-published account page as the primary account-management
   surface; `/account` on the PDS is the recommended convention when it exists.
@@ -45,11 +45,11 @@ minimal required fields, flexible optional arrays for links and images, and
 token-backed `knownValues` so future host directories can add new roles without
 breaking old records.
 
-Atmosphere's claim/manage flow should prefill this profile from the signed-in
-account's existing microblog profile when possible. If the host uploads a custom
-avatar or logo, the image is uploaded to the host account's PDS as a blob and
-referenced from the `images` array; Atmosphere does not need R2 for these public
-host profile images.
+This site's claim and management flow should prefill this profile from the
+signed-in account's existing microblog profile when possible. If the host
+uploads a custom avatar or logo, the image is uploaded to the host account's PDS
+as a blob and referenced from the `images` array; this site does not need R2 for
+these public host profile images.
 
 ### `account.atmosphere.host.service`
 
@@ -87,44 +87,46 @@ metadata, and host capabilities.
 ## Verification Model
 
 Host records are self-asserted. They should not automatically make a host
-"verified" in Atmosphere Account.
+"verified" in this directory.
 
-For new production claims, Atmosphere derives operator authority from one proof:
-a short-lived, one-time challenge sent only to the contact email announced by
-the exact PDS endpoint. Service reachability, social handles, host records,
-curated profile mappings, conformance checks, and local moderation can inform
-directory metadata, but they do not grant host management.
+For new production claims, this site derives operator authority from one proof:
+a short-lived, one-time TXT challenge placed at the exact host domain. Service
+reachability, email, social handles, host records, curated profile mappings,
+conformance checks, and local moderation can inform directory metadata, but they
+do not grant host management.
 
 A future standardized, bidirectional PDS operator declaration may add another
 claim proof after the declaration exists in a PDS specification and reference
 implementation. It is not part of the current claim flow.
 
 This means a host card can show the publishing account, while "verified" remains
-an Atmosphere-local or conformance-test result. A self-published record alone
-does not prove that the author controls every hostname it names.
+a site-local or conformance-test result. A self-published record alone does not
+prove that the author controls every hostname it names.
 
 ## Claim Proof
 
-Atmosphere accepts these claim paths:
+This site accepts these claim paths:
 
-- Production: a short-lived, single-use email link sent to `contact.email` from
-  the PDS's live `com.atproto.server.describeServer` response. The challenge is
-  bound to the exact directory host and signed-in account DID. Atmosphere
-  rechecks the live address before atomically consuming the link and recording
-  ownership.
+- Production: a short-lived, single-use TXT value at
+  `_atmosphere-account.<host>`. The challenge is bound to the exact directory
+  host and signed-in account DID, then consumed in the same transaction that
+  records ownership.
 - Development only: explicit local `.test` fixtures for visual testing.
 
-An operator claims a production host by configuring the PDS so its live
-`com.atproto.server.describeServer` response includes `contact.email`, finding
-the exact PDS domain in Atmosphere's detected-host flow, signing in with the
-account that should manage the listing, and following the emailed link within 20
-minutes. The address is discovered from the PDS rather than accepted from a
-form.
+Contact-email claims completed before the DNS-only policy remain operational so
+existing managers are not silently locked out. New email claims and email-based
+manager changes are not accepted.
 
-Atmosphere does not ask operators to publish a product-specific HTTPS well-known
-file. A PDS without an announced contact address cannot be claimed self-service
-today. Curated social handles remain profile metadata and do not substitute for
-the email proof.
+An operator claims a production host by finding the exact PDS domain in the
+detected-host flow, signing in with the account that should manage the listing,
+and requesting a DNS challenge. They publish the displayed TXT value at
+`_atmosphere-account.<host>` and ask the site to check it before the challenge
+expires. The TXT value can be removed after the claim succeeds.
+
+This site does not accept an email address, social handle, host record, or
+product-specific HTTPS well-known file as ownership proof. Those values can
+remain useful profile metadata, but only the DNS challenge establishes a new
+production claim or completes a manager change.
 
 ## Hosts Page Read Model
 
@@ -165,7 +167,7 @@ Implementation notes:
 
 ## Host and App Relationships
 
-Atmosphere keeps the existing DID-based host/app match as a fallback so imported
+This site keeps the existing DID-based host/app match as a fallback so imported
 ATStore listings do not become disconnected. Claimed host owners and verified
 app owners can override that inference from their management pages with one of
 three explicit relationships:
@@ -192,9 +194,9 @@ change either account's AT Protocol identity.
 ## Account Management Boundary
 
 The reference PDS exposes account management at `/account` on the PDS itself
-when the host has enabled that surface. Atmosphere Account should therefore
-route users to the host-owned account page when the host publishes an explicit
-working URL for:
+when the host has enabled that surface. This site should therefore route users
+to the host-owned account page when the host publishes an explicit working URL
+for:
 
 - OAuth grants and connected apps
 - signed-in devices and sessions
@@ -202,7 +204,7 @@ working URL for:
 - account deactivation and deletion
 - backup, export, restore, and migration workflows when supported
 
-Atmosphere-owned UI should stay limited to Atmosphere Login picker connections,
+This site's UI should stay limited to Login with Atmosphere picker connections,
 host discovery, host claims, app directory state, and compatibility metadata. If
 a host publishes extended compatibility metadata, treat it as optional
 enhancement data; do not use it as a substitute for an explicit host account
@@ -218,9 +220,15 @@ repo:account.atmosphere.host.service
 blob:image/*
 ```
 
-Normal account sign-in should not imply Atmosphere can manage PDS grants,
+The host-claim entry point requests this same complete bundle before the DNS
+challenge. The OAuth grant allows that DID to publish host records and images;
+it does not prove ownership or make the claim effective. Only successful DNS
+verification does that. Reusing the same bundle after verification avoids a
+second predictable authorization prompt when management opens.
+
+Normal account sign-in should not imply this site can manage PDS grants,
 devices, passwords, or recovery material. Those controls remain host-owned even
-when Atmosphere has permission to publish host registry records.
+when this site has permission to publish host registry records.
 
 ## Publishing Note
 

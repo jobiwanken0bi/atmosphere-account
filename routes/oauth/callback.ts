@@ -9,7 +9,12 @@
  */
 import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
-import { completeCallback, isOAuthConfigured } from "../../lib/oauth.ts";
+import {
+  type CancelledOAuthFlow,
+  cancelOAuthFlow,
+  completeCallback,
+  isOAuthConfigured,
+} from "../../lib/oauth.ts";
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import { buildSessionCookie, createSession } from "../../lib/session.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
@@ -25,15 +30,15 @@ import {
   updateAppUserProfile,
 } from "../../lib/account-types.ts";
 import { observeAccountHost } from "../../lib/account-hosts.ts";
-import { getProfileByDid } from "../../lib/registry.ts";
+import { microblogAccountIdentity } from "../../lib/microblog-account-identity.ts";
 import { isSafeRelativePath } from "../../lib/security.ts";
 import { readLoginRequest } from "../../lib/atmosphere-login.ts";
 import { createLoginSelectionIntent } from "../../lib/login-selection-intent.ts";
 import {
-  buildPasskeyManagementCookie,
-  clearPasskeyManagementCookie,
-  isPasskeyManagementReturnTo,
-} from "../../lib/passkey-management.ts";
+  isAccountCreationAction,
+  isOAuthActionCapabilityRequest,
+  oauthCreateAccountUrl,
+} from "../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -56,6 +61,15 @@ export const handler = define.handlers({
     const iss = ctx.url.searchParams.get("iss");
     const error = ctx.url.searchParams.get("error");
     if (error) {
+      if (state) {
+        const cancelled = await cancelOAuthFlow(state).catch(() => null);
+        if (cancelled) {
+          return new Response(null, {
+            status: 303,
+            headers: { location: oauthCancellationRedirect(cancelled) },
+          });
+        }
+      }
       return new Response(`authorization denied: ${error}`, { status: 400 });
     }
     if (!state || !code || !iss) {
@@ -80,13 +94,9 @@ export const handler = define.handlers({
         pdsUrl: result.pdsUrl,
       });
 
-      const [bskyProfile, atmosphereProfile, existingAppUser] = await Promise
+      const [bskyProfile, existingAppUser] = await Promise
         .all([
           getBskyProfile(result.pdsUrl, result.did).catch(() => null),
-          getProfileByDid(result.did, {
-            includeTakenDown: true,
-            profileType: "user",
-          }).catch(() => null),
           getAppUser(result.did).catch(() => null),
         ]);
 
@@ -96,9 +106,8 @@ export const handler = define.handlers({
        *  - `intent === "project"` (clicked "Register an app")
        *      → mark as project, take them to the project dashboard.
        *  - `intent === "user"` or unset (header sign-in, review CTAs)
-       *      → mark as user in the local account cache. An Atmosphere user
-       *        profile is authoritative when present; the microblog profile
-       *        supplies the initial fallback otherwise.
+       *      → mark as user in the local account cache and use the account's
+       *        microblog profile for its display identity.
        *
        * If the DID already has a type (re-sign-in or upgrade flows),
        * the intent is ignored and the existing classification stands.
@@ -108,21 +117,7 @@ export const handler = define.handlers({
       if (accountType == null) {
         accountType = result.intent === "project" ? "project" : "user";
       }
-      const identityProfile = accountType === "user" && atmosphereProfile
-        ? {
-          displayName: atmosphereProfile.name,
-          bio: atmosphereProfile.description,
-          avatarCid: atmosphereProfile.avatarCid,
-          avatarMime: atmosphereProfile.avatarMime,
-        }
-        : bskyProfile
-        ? {
-          displayName: bskyProfile.displayName ?? null,
-          bio: bskyProfile.description ?? null,
-          avatarCid: bskyProfile.avatar?.ref.$link ?? null,
-          avatarMime: bskyProfile.avatar?.mimeType ?? null,
-        }
-        : null;
+      const identityProfile = microblogAccountIdentity(bskyProfile);
 
       if (!existingAppUser) {
         await setAppUserType({
@@ -134,7 +129,7 @@ export const handler = define.handlers({
           avatarMime: identityProfile?.avatarMime ?? null,
           accountType,
         }).catch(() => {});
-      } else if (identityProfile) {
+      } else {
         await updateAppUserProfile({
           did: result.did,
           handle: result.handle,
@@ -163,6 +158,20 @@ export const handler = define.handlers({
           // Preserve the picker request if its one-click continuation expired.
         }
       }
+      if (!result.authorizationSufficient || result.scopeConflict) {
+        const retry = new URLSearchParams({
+          next: destination,
+          handle: result.handle,
+          permission: result.scopeConflict ? "concurrent" : "partial",
+        });
+        for (const capability of result.capabilities ?? ["identity"]) {
+          retry.append("capability", capability);
+        }
+        if (result.action) retry.set("action", result.action);
+        if (result.intent) retry.set("intent", result.intent);
+        if (result.targetName) retry.set("name", result.targetName);
+        destination = `/signin?${retry.toString()}`;
+      }
       const headers = new Headers({
         location: destination,
       });
@@ -170,28 +179,78 @@ export const handler = define.handlers({
       for (const cookie of rememberedCookies) {
         headers.append("set-cookie", cookie);
       }
-      if (
-        isPasskeyManagementReturnTo(returnTo) && result.reauthenticated
-      ) {
-        headers.append(
-          "set-cookie",
-          await buildPasskeyManagementCookie(result.did),
-        );
-      } else {
-        // OAuth can switch the active identity. Never carry a previous
-        // account's short-lived passkey-management elevation across it.
-        headers.append("set-cookie", clearPasskeyManagementCookie());
-      }
       return new Response(null, { status: 303, headers });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return new Response(`callback failed: ${message}`, { status: 400 });
+    } catch {
+      console.error("[oauth] callback failed");
+      return new Response(
+        "Login with Atmosphere could not be completed. Return to the previous page and try again.",
+        {
+          status: 400,
+          headers: { "cache-control": "no-store" },
+        },
+      );
     }
   },
 });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+export function oauthCancellationRedirect(
+  cancelled: CancelledOAuthFlow,
+): string {
+  const rawReturnTo = cancelled.returnTo;
+  const returnTo = rawReturnTo && isSafeRelativePath(rawReturnTo)
+    ? rawReturnTo
+    : "/account";
+  const capabilities = cancelled.capabilities ?? ["identity"];
+  const action = cancelled.action ?? "account";
+
+  if (
+    cancelled.prompt === "create" && isAccountCreationAction(action) &&
+    isOAuthActionCapabilityRequest(action, capabilities)
+  ) {
+    return oauthCreateAccountUrl({
+      next: returnTo,
+      intent: cancelled.intent,
+      capabilities,
+      action,
+      name: cancelled.targetName,
+      error: "authorization_cancelled",
+    });
+  }
+
+  if (cancelled.continuation === "login_selection") {
+    return appendSafeRelativeQuery(
+      returnTo,
+      "login_error",
+      "authorization_cancelled",
+    );
+  }
+
+  const retry = new URLSearchParams({
+    next: returnTo,
+    permission: "denied",
+  });
+  for (const capability of capabilities) {
+    retry.append("capability", capability);
+  }
+  retry.set("action", action);
+  if (cancelled.intent) retry.set("intent", cancelled.intent);
+  if (cancelled.targetName) retry.set("name", cancelled.targetName);
+  if (cancelled.handle) retry.set("handle", cancelled.handle);
+  return `/signin?${retry}`;
+}
+
+function appendSafeRelativeQuery(
+  path: string,
+  key: string,
+  value: string,
+): string {
+  const url = new URL(path, "https://local.invalid");
+  url.searchParams.set(key, value);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function appviewUnavailable(_scope: string, _err: unknown): Response {
+  console.error("[appview] OAuth callback proxy failed");
   return new Response("Sign in callback is temporarily unavailable.", {
     status: 503,
     headers: {

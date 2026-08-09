@@ -56,3 +56,46 @@ Deno.test("translated catalogs may change text while preserving shape", () => {
   } satisfies Messages;
   assert(translated.meta.title === "Translated title", "translation rejected");
 });
+
+Deno.test("account navigation uses the Apps and hosts information architecture", () => {
+  assert(
+    getMessages("en").nav.account.managedProducts === "Apps and hosts",
+    "legacy Managed products terminology returned",
+  );
+});
+
+Deno.test("contextual account actions use the universal login product name", () => {
+  const messages = getMessages("en");
+  assert(
+    messages.reviews.composer.signInTitle === "Login with Atmosphere",
+    "review login title drifted from the product name",
+  );
+  assert(
+    messages.reviews.app.like.signInTitle === "Login with Atmosphere",
+    "favorite login title drifted from the product name",
+  );
+  assert(
+    messages.developerResources.badgeAlt === "Login with Atmosphere",
+    "developer badge label drifted from the product name",
+  );
+});
+
+Deno.test("home explanation keeps the agreed account and open-internet language", () => {
+  const source = Deno.readTextFileSync(
+    new URL("./en.tsx", import.meta.url),
+  );
+  assert(
+    /Your\s*<strong>Atmosphere Account<\/strong>[\s\S]{0,40}is your passport/
+      .test(source),
+    "Atmosphere Account passport paragraph is missing",
+  );
+  assert(
+    source.includes("<strong>it’s an open social internet</strong>"),
+    "open social internet conclusion is missing",
+  );
+  assert(
+    !source.includes("open social web") &&
+      !source.includes("Of course, you can have"),
+    "superseded home copy returned",
+  );
+});

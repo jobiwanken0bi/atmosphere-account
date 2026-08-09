@@ -1,5 +1,6 @@
 import { useSignal } from "@preact/signals";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
+import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
 
 interface Props {
   reviewId: number;
@@ -29,7 +30,19 @@ export default function UserReviewRow(p: Props) {
         `/api/registry/reviews/${encodeURIComponent(String(p.reviewId))}`,
         { method: "DELETE" },
       );
-      if (!r.ok) throw new Error(await r.text());
+      const payload = await r.json().catch(() => null) as
+        | { error?: string; detail?: string; reauthUrl?: string }
+        | null;
+      if (!r.ok) {
+        if (payload?.error === "reauth_required") {
+          const reauthUrl = reauthUrlFromApiPayload(payload);
+          if (reauthUrl) {
+            globalThis.location.assign(reauthUrl);
+            return;
+          }
+        }
+        throw new Error(payload?.detail || payload?.error || p.copy.error);
+      }
       status.value = "deleted";
     } catch (err) {
       error.value = err instanceof Error ? err.message : p.copy.error;

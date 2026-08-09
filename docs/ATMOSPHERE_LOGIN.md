@@ -1,12 +1,12 @@
-# Atmosphere Login v0.1
+# Login with Atmosphere v0.1
 
-Atmosphere Login is a shared account picker for AT Protocol apps. It helps apps
-show a consistent "Continue with Atmosphere" experience while preserving the
+Login with Atmosphere is a shared account picker for AT Protocol apps. It helps
+apps show a consistent "Login with Atmosphere" experience while preserving the
 normal AT Protocol OAuth authority model.
 
-Atmosphere does **not** broker OAuth access tokens. The picker returns a signed
-account-selection token, then the relying app starts its own AT Protocol OAuth
-flow with the selected account.
+Login with Atmosphere does **not** broker OAuth access tokens. The picker
+returns a signed account-selection token, then the relying app starts its own AT
+Protocol OAuth flow with the selected account.
 
 ## Browser SDK
 
@@ -35,8 +35,8 @@ Required options:
 Optional options:
 
 - `state`: caller-provided nonce. If omitted, the SDK creates one.
-- `scope`: app-specific request hint displayed/preserved by Atmosphere.
-- `atmosphereOrigin`: alternate Atmosphere origin for dev/test.
+- `scope`: app-specific request hint displayed by Login with Atmosphere.
+- `atmosphereOrigin`: alternate Login with Atmosphere origin for dev/test.
 - `popup`: opt into a separate browser window. Redirecting the current page is
   the default and recommended behavior.
 - `closePopupOnComplete`: close an SDK-opened popup after a valid selection
@@ -64,57 +64,57 @@ status. Trusted and local development apps use a compact status pill. Unverified
 apps receive an expanded warning before account selection. Blocked apps cannot
 open the picker.
 
-“Add another account” expands the full sign-in flow inside the picker, so the
-requesting app and return path remain in place. Its Create Account tab searches
-the grouped account-host directory by host name, domain, description, or
-location. Only hosts that explicitly advertise direct OAuth account creation are
-offered. Atmosphere starts OAuth from that host with `prompt=create`; the host
-owns signup, invite-code entry, credentials, and recovery, then returns the new
-account to the picker. The picker immediately hands the account back to the
-requesting app, which starts its own AT Protocol OAuth flow. Atmosphere requests
-only the authentication-level `atproto` scope for this picker leg. Picker
-results must also be recently active or directly reachable, claimed, verified,
-or seeded, and backed by a safe public HTTPS signup URL. Raw relay-observed
-personal PDSes are never offered as account-creation providers.
+“Add another account” expands the full Login with Atmosphere flow inside the
+picker, so the requesting app and return path remain in place. Its Create
+Account tab searches the grouped account-host directory by host name, domain,
+description, or location. Only hosts that explicitly advertise direct OAuth
+account creation are offered. Login with Atmosphere starts OAuth from that host
+with `prompt=create`; the host owns signup, invite-code entry, credentials, and
+recovery, then returns the new account to the picker. The picker immediately
+hands the account back to the requesting app, which starts its own AT Protocol
+OAuth flow. Login with Atmosphere requests only the authentication-level
+`atproto` scope for this picker leg. Picker results must also be recently active
+or directly reachable, claimed, verified, or seeded, and backed by a safe public
+HTTPS signup URL. Raw relay-observed personal PDSes are never offered as
+account-creation providers.
+
+## App-owned login environments
+
+An owner-managed Login with Atmosphere configuration belongs to one live app
+profile. The signed-in DID must control that profile; an account that manages
+only an account host cannot create a login environment.
+
+The app profile supplies the name, homepage, and logo shown in the picker. Those
+fields are not copied into an editable registration form. A profile can have
+several technical environments—for example web, verified HTTPS app links for
+native apps, staging, or local development—and each environment keeps its own
+client ID, exact return-URL allow-list, review state, and optional preferred
+account host. Custom app URL schemes are not accepted. If the linked profile
+identity changes, its stored trust decision is reset before the new identity can
+be presented as trusted.
+
+Legacy registrations are linked automatically only when their owner DID controls
+exactly one live app profile. Ambiguous, host-only, and orphaned rows remain
+inactive; they are never trusted as standalone app identities. Resolve a legacy
+account with several app profiles before setting up a new environment. Owners
+can remove inactive environments from the cleanup view. If the same DID later
+controls exactly one app profile, those environments relink automatically;
+otherwise the site never guesses which app they belong to.
 
 A registered app may set an optional `preferredAccountHost`. The host is pinned
 first and labelled “Recommended by [app]”, but users can choose any other host.
-Atmosphere accepts this field only when the app owner has a current verified
-claim for that grouped host. The claim, signup URL, and joinable status are
-checked again when the picker opens. A request URL cannot nominate a preferred
-host.
+This field is accepted only when the host is joinable and either managed by the
+app's DID or connected to the app through a current, verified relationship.
+Ownership, relationship approval, signup URL, and joinable status are checked
+again when the picker opens. A request URL cannot nominate a preferred host.
 
 For local visual testing, `GET /dev/login-picker` seeds four fictional saved
 accounts with profile portraits and opens the redirect picker. The route and its
 avatar mapping are disabled in hosted production environments.
 
-## Passkey-assisted selection
-
-Atmosphere may offer a passkey as a faster way to authenticate a saved account
-and confirm its selection in the picker. A passkey is enrolled only after an AT
-Protocol OAuth login that capability-gates and sends `prompt=login`, and is
-bound to the account's immutable DID. Hosts that do not advertise that prompt
-cannot issue the short-lived passkey-management proof. Production credentials
-are scoped strictly to RP ID `login.atmosphereaccount.com` and origin
-`https://login.atmosphereaccount.com`.
-
-The passkey authenticates the user to **Atmosphere Login**, not to the
-destination app or the account's PDS. After a successful Face ID, Touch ID,
-device-PIN, or security-key assertion, Atmosphere returns the same short-lived
-selection token described below. The destination app must verify it and still
-start its own AT Protocol OAuth flow. The passkey neither transfers Atmosphere's
-PDS grant nor approves the app's requested PDS permissions.
-
-Enrollment is explicit, never silent. Credentials are discoverable, require user
-verification, and request no attestation. Existing OAuth selection remains the
-fallback for unsupported browsers, cancelled ceremonies, recovery, expired
-links, and revoked credentials. See
-[Passkeys in Atmosphere Login](./PASSKEYS.md) for the full architecture, threat
-model, recovery policy, and official sources.
-
 ## Selection Token
 
-After selection, Atmosphere redirects to `return_uri` with:
+After selection, Login with Atmosphere redirects to `return_uri` with:
 
 - `iss`
 - `client_id`
@@ -128,7 +128,7 @@ atmosphere-login+jwt`.
 
 Claims:
 
-- `iss`: Atmosphere Account origin.
+- `iss`: Login with Atmosphere origin.
 - `aud`: the requesting `client_id`.
 - `sub`: selected account DID.
 - `handle`: selected account handle.
@@ -147,7 +147,7 @@ Claims:
 Relying apps must verify:
 
 - JWT signature using `/oauth/jwks.json`.
-- `iss` equals the expected Atmosphere origin.
+- `iss` equals the expected Login with Atmosphere origin.
 - `aud` equals their `client_id`.
 - `state` equals the state they created.
 - `return_uri` equals the route receiving the token.
@@ -160,9 +160,9 @@ app and the user's account host.
 
 Users manage the resulting PDS OAuth grants, devices, passwords, account
 security, backups, recovery, deletion, and migration at their host-owned PDS
-account page, usually `/account` on their PDS service endpoint. Atmosphere Login
-can show picker history and apps that used the Atmosphere picker; it must not
-imply it can revoke every PDS-issued grant or operate PDS account controls. The
+account page, usually `/account` on their PDS service endpoint. This site can
+show picker history and apps that used Login with Atmosphere; it must not imply
+it can revoke every PDS-issued grant or operate PDS account controls. The
 reference interface is documented in the official
 [AT Protocol account-management guide](https://atproto.com/guides/account-management).
 
@@ -185,16 +185,14 @@ const result = await verifyAtmosphereSelectionToken({
 
 ## Security Boundary
 
-Atmosphere Login is an account picker and signed handoff. It is not:
+Login with Atmosphere is an account picker and signed handoff. It is not:
 
 - an OAuth token exchange service,
-- a passkey-based substitute for an app-owned PDS OAuth grant or consent,
 - a grant revocation authority,
 - a device or session manager,
 - a password, recovery, or account deletion surface,
 - a key backup service,
 - a PDS migration proxy.
 
-An Atmosphere passkey can authenticate and confirm account selection at the
-picker. OAuth authorization, PDS tokens, app sessions, account-host credentials,
-and host-owned recovery remain outside that passkey's authority.
+OAuth authorization, PDS tokens, app sessions, account-host credentials, and
+host-owned recovery remain outside the picker's authority.

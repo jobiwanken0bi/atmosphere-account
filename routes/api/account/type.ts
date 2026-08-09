@@ -6,10 +6,12 @@ import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import {
   type AccountType,
   setAppUserType,
+  updateAppUserProfile,
 } from "../../../lib/account-types.ts";
 import { loadSession } from "../../../lib/oauth.ts";
 import { getBskyProfile } from "../../../lib/pds.ts";
 import { getProfileByDid } from "../../../lib/registry.ts";
+import { microblogAccountIdentity } from "../../../lib/microblog-account-identity.ts";
 import {
   isSafeRelativePath,
   rejectLargeRequest,
@@ -57,34 +59,24 @@ export const handler = define.handlers({
 
     const session = await loadSession(user.did).catch(() => null);
 
-    const [bskyProfile, atmosphereProfile] = await Promise.all([
-      session
-        ? getBskyProfile(session.pdsUrl, user.did).catch(() => null)
-        : Promise.resolve(null),
-      getProfileByDid(user.did, {
-        includeTakenDown: true,
-        profileType: "user",
-      }).catch(() => null),
-    ]);
-    const identityProfile = accountType === "user" && atmosphereProfile
-      ? {
-        displayName: atmosphereProfile.name,
-        bio: atmosphereProfile.description,
-        avatarCid: atmosphereProfile.avatarCid,
-        avatarMime: atmosphereProfile.avatarMime,
-      }
-      : {
-        displayName: bskyProfile?.displayName ?? null,
-        bio: bskyProfile?.description ?? null,
-        avatarCid: bskyProfile?.avatar?.ref.$link ?? null,
-        avatarMime: bskyProfile?.avatar?.mimeType ?? null,
-      };
+    const bskyProfile = session
+      ? await getBskyProfile(session.pdsUrl, user.did).catch(() => null)
+      : null;
+    const identityProfile = microblogAccountIdentity(bskyProfile);
 
     await setAppUserType({
       did: user.did,
       handle: user.handle,
       ...identityProfile,
       accountType,
+    });
+    // setAppUserType preserves cached fields when an input is null. Follow it
+    // with an explicit identity update so a missing Bluesky profile cannot
+    // leave retired Atmosphere-user-profile values behind.
+    await updateAppUserProfile({
+      did: user.did,
+      handle: user.handle,
+      ...identityProfile,
     });
 
     return new Response(null, {

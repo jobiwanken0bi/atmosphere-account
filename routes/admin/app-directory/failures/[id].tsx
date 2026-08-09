@@ -71,7 +71,7 @@ function FailurePage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
-        <section class="admin-section">
+        <main id="main-content" class="admin-section">
           <div class="container" style={{ maxWidth: "920px" }}>
             <p>
               <a href="/admin/app-directory" class="text-link-button">
@@ -135,7 +135,7 @@ function FailurePage(
               </div>
             </section>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

@@ -133,39 +133,48 @@ When you add or modify a lexicon in `lexicons/`:
 
 ## OAuth integration notes
 
-The login flow currently requests a named permission set plus explicit granular
-fallback scopes (see `lib/oauth-scopes.ts`):
+This site uses action-specific OAuth authorization. The `scope` in
+`/oauth/client-metadata.json` is the **maximum** this client may request; it is
+not the scope sent with every authorization request. Each flow requests the
+smallest allowlisted capability bundle needed by the action that opened it (see
+`lib/oauth-scopes.ts`):
 
-```
-atproto include:com.atmosphereaccount.registry.fullPermissions include:fyi.atstore.authBasic repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update repo:fyi.atstore.profile repo:fyi.atstore.listing.detail repo:fyi.atstore.listing.review repo:fyi.atstore.listing.favorite repo:community.lexicon.app.profile repo:account.atmosphere.host.profile repo:account.atmosphere.host.service blob:image/*
-```
+| Action                                   | Requested permission                                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Sign in or use the hosted account picker | `atproto` only                                                                                             |
+| Write a new shared review                | `include:fyi.atstore.authThirdPartyReviews`                                                                |
+| Edit or delete a shared review           | `repo:fyi.atstore.listing.review?action=update&action=delete`                                              |
+| Favorite or unfavorite an app            | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                                            |
+| Register or manage an app                | the community app profile, ATStore profile/detail, transitional legacy app collections, and `blob:image/*` |
+| Claim or manage a host                   | `repo:account.atmosphere.host.profile`, `repo:account.atmosphere.host.service`, and `blob:image/*`         |
 
-- **`include:com.atmosphereaccount.registry.fullPermissions`** — lets compatible
-  authorization servers show the branded Atmosphere permission set.
-- **`include:fyi.atstore.authBasic`** — uses ATStore's own permission bundle for
-  interoperable listing, review, and favorite writes, including explicit create,
-  update, and delete actions.
-- **`repo:com.atmosphereaccount.registry.*`** — legacy Atmosphere app listing,
-  review, and update collections. New app listings should migrate to shared app
-  records, but these scopes keep older records editable while the migration
-  completes.
-- **`repo:fyi.atstore.*`** — shared ATStore profile, listing, review, and
-  favorite records used by the app directory and review/favorite flows.
-- **`repo:community.lexicon.app.profile`** — canonical community app identity
-  record used alongside ATStore listings.
-- **`repo:account.atmosphere.host.*`** — Atmosphere host profile and service
-  records used by the host directory and host account-page routing.
-- **`blob:image/*`** is a top-level scope on purpose. The atproto permission
-  spec
-  [explicitly disallows `blob` permissions inside
-  permission sets](https://atproto.com/specs/permission#permission-sets) — they
-  must always be requested separately.
+Every action bundle also includes `atproto`. When an already-authorized account
+adds a capability, this site requests the union of its existing grant and the
+new bundle. App and host management are independent, complete jobs. Each
+includes its profile images from the first contextual authorization so routine
+editing does not cause a second media prompt; their union is requested only for
+an explicit combined app-and-host action. Host permission identifies the
+repository that may publish the records, while DNS verification separately
+proves ownership before a claim becomes effective. Browser input may name only
+the capabilities allowlisted in `lib/oauth-scopes.ts`; arbitrary raw scope
+strings are rejected.
 
-We still publish `com.atmosphereaccount.registry.fullPermissions` so compatible
-authorization servers can present a human-friendly permission set in the future.
-If you change the permission set's `title`, `detail`, or `permissions[]`,
-remember compatible consent dialogs won't reflect it until you
-`lex:publish:update` **and** the cache on the user's auth server expires.
+The metadata maximum temporarily retains the pre-progressive broad scope union,
+including `include:com.atmosphereaccount.registry.fullPermissions` and
+`include:fyi.atstore.authBasic`, so existing refresh grants remain representable
+while they age out. New ordinary flows do not request that maximum. This
+distinction matters when reviewing consent screens: inspect the authorization
+request, not only the client metadata document.
+
+`blob:image/*` remains a top-level scope because the atproto permission spec
+[explicitly disallows `blob` permissions inside permission
+sets](https://atproto.com/specs/permission#permission-sets).
+
+We still publish `com.atmosphereaccount.registry.fullPermissions` for legacy
+grants and compatible authorization-server presentation. If you change the
+permission set's `title`, `detail`, or `permissions[]`, compatible consent
+dialogs won't reflect it until you `lex:publish:update` **and** the cache on the
+user's auth server expires.
 
 ---
 

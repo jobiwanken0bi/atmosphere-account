@@ -4,7 +4,7 @@ import BskyIcon from "./icons/BskyIcon.tsx";
 export default function WhatIsAtmosphere() {
   const t = useT();
   const blueskyIcon = (
-    <span class="what-is-bluesky-icon" aria-label="Bluesky">
+    <span class="what-is-bluesky-icon" aria-hidden="true">
       <BskyIcon class="what-is-bluesky-icon-svg" />
     </span>
   );
@@ -33,12 +33,6 @@ export default function WhatIsAtmosphere() {
             </p>
           ))}
         </div>
-        <p
-          class="text-body-sm text-center"
-          style={{ marginTop: "1.25rem", fontStyle: "italic", opacity: 0.78 }}
-        >
-          {t.whatIs.footnote()}
-        </p>
       </div>
     </section>
   );

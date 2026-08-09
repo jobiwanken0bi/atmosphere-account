@@ -16,6 +16,7 @@ import {
   getEffectiveAccountType,
   setAppUserType,
 } from "../../lib/account-types.ts";
+import { isSafeRelativePath } from "../../lib/security.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -33,9 +34,7 @@ export const handler = define.handlers({
     }
 
     const rawNext = ctx.url.searchParams.get("next");
-    const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
-      ? rawNext
-      : null;
+    const next = rawNext && isSafeRelativePath(rawNext) ? rawNext : null;
 
     let accountType = await getEffectiveAccountType(user.did).catch(() => null);
     /**

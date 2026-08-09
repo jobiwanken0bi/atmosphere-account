@@ -36,7 +36,17 @@ import {
   OAUTH_PRIVATE_JWK,
   redirectUri as defaultRedirectUri,
 } from "./env.ts";
-import { DEFAULT_OAUTH_SCOPE } from "./oauth-scopes.ts";
+import {
+  DEFAULT_OAUTH_SCOPE,
+  hasOAuthCapabilities,
+  IDENTITY_OAUTH_SCOPE,
+  type OAuthCapability,
+  scopeCoversScope,
+  scopeForCapabilities,
+  scopeSafelyCoversScope,
+  scopeTokens,
+} from "./oauth-scopes.ts";
+import type { OAuthAction } from "./oauth-action.ts";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
@@ -55,15 +65,68 @@ export interface OAuthClientOptions {
   clientId?: string;
   redirectUri?: string;
   scope?: string;
+  /** Allowlisted product capabilities attached to the action that started
+   * authorization. Existing granted scopes are retained during upgrades. */
+  capabilities?: readonly OAuthCapability[];
+  /** Defaults to true for capability-driven site authorization. The hosted
+   * login picker sets an explicit identity-only scope and does not use this. */
+  preserveExistingScopes?: boolean;
   persistSession?: boolean;
   continuation?: "login_selection";
-  reauthenticate?: boolean;
+  /** Context retained only to explain a partial/conflicting grant on retry. */
+  action?: OAuthAction;
+  targetName?: string;
 }
 
 interface OAuthClientConfig {
   metadataClientId: string;
   redirectUri: string;
   scope: string;
+}
+
+function shouldPersistOAuthSession(
+  requested: boolean | undefined,
+  continuation: "login_selection" | undefined,
+): boolean {
+  return requested !== false && continuation !== "login_selection";
+}
+
+export function shouldPersistOAuthSessionForTest(
+  requested: boolean | undefined,
+  continuation: "login_selection" | undefined,
+): boolean {
+  return shouldPersistOAuthSession(requested, continuation);
+}
+
+function persistentExistingSessionPolicy(
+  capabilities: readonly OAuthCapability[] | undefined,
+  persistSession: boolean,
+  preserveExistingScopes: boolean | undefined,
+): { validateForReplacement: boolean; unionValidScope: boolean } {
+  const addsProductCapability =
+    capabilities?.some((capability) => capability !== "identity") ?? false;
+  return {
+    // Even an identity-only callback needs a baseline for replacing the exact
+    // stale row it observed. Otherwise downgrade protection can retain a
+    // revoked broader grant forever.
+    validateForReplacement: persistSession,
+    // Identity-only login stays truly identity-only. Existing scopes are
+    // carried forward solely for product-capability upgrades.
+    unionValidScope: persistSession && addsProductCapability &&
+      preserveExistingScopes !== false,
+  };
+}
+
+export function persistentExistingSessionPolicyForTest(
+  capabilities: readonly OAuthCapability[] | undefined,
+  persistSession: boolean,
+  preserveExistingScopes: boolean | undefined,
+): { validateForReplacement: boolean; unionValidScope: boolean } {
+  return persistentExistingSessionPolicy(
+    capabilities,
+    persistSession,
+    preserveExistingScopes,
+  );
 }
 
 function oauthClientConfig(
@@ -150,23 +213,34 @@ interface FlowState {
   oauthClientId?: string;
   redirectUri?: string;
   scope?: string;
+  requiredScope?: string;
+  capabilities?: OAuthCapability[];
+  /** Hash of an unusable stored session observed when this upgrade began.
+   * A sufficient callback may replace that exact stale row without allowing
+   * an unrelated concurrent authorization to be overwritten. */
+  replaceableSessionHash?: string;
   persistSession?: boolean;
   asMeta: AuthServerMetadata;
   did?: string;
   handle?: string;
   pdsUrl: string;
-  prompt?: "create" | "login";
+  prompt?: "create";
   continuation?: "login_selection";
   returnTo?: string;
   intent?: SignInIntent;
+  action?: OAuthAction;
+  targetName?: string;
   asNonce?: string;
 }
 
-interface SessionData {
+export interface SessionData {
   did: string;
   handle: string;
   pdsUrl: string;
   asIssuer: string;
+  /** Exact OAuth client_id that received this refresh token. Older rows were
+   * issued by the site's default client before per-origin clients existed. */
+  oauthClientId?: string;
   accessToken: string;
   refreshToken: string;
   expiresAt: number; // ms epoch
@@ -175,6 +249,11 @@ interface SessionData {
   asNonce?: string;
   pdsNonce?: string;
   identityCheckedAt?: number;
+  /** Actual scopes returned by the authorization server. Rows created before
+   * progressive authorization omit this field. Those grants are treated as
+   * identity-only because older picker flows could also request `atproto`
+   * alone; a write action will safely request a one-time upgrade. */
+  scope?: string;
 }
 
 /* ---------------- DPoP ---------------- */
@@ -274,30 +353,233 @@ async function deleteFlowState(stateKey: string): Promise<void> {
   });
 }
 
-async function saveSession(session: SessionData): Promise<void> {
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `INSERT INTO oauth_session (did, value, expires_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(did) DO UPDATE SET
-           value = excluded.value,
-           expires_at = excluded.expires_at`,
-      args: [session.did, JSON.stringify(session), session.expiresAt],
-    });
-  });
+interface StoredSession {
+  session: SessionData;
+  serialized: string;
 }
 
-export async function loadSession(did: string): Promise<SessionData | null> {
+async function loadStoredSession(did: string): Promise<StoredSession | null> {
   return await withDb(async (c) => {
     const r = await c.execute({
       sql: `SELECT value FROM oauth_session WHERE did = ?`,
       args: [did],
     });
     if (r.rows.length === 0) return null;
-    return JSON.parse(
-      (r.rows[0] as Record<string, unknown>).value as string,
-    ) as SessionData;
+    const serialized = String(
+      (r.rows[0] as Record<string, unknown>).value,
+    );
+    return {
+      session: JSON.parse(serialized) as SessionData,
+      serialized,
+    };
   });
+}
+
+export async function loadSession(did: string): Promise<SessionData | null> {
+  return (await loadStoredSession(did))?.session ?? null;
+}
+
+async function insertSessionIfAbsent(session: SessionData): Promise<boolean> {
+  return await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `INSERT INTO oauth_session (did, value, expires_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(did) DO NOTHING`,
+      args: [session.did, JSON.stringify(session), session.expiresAt],
+    });
+    return Number(result.rowsAffected ?? 0) === 1;
+  });
+}
+
+async function replaceSessionIfUnchanged(
+  session: SessionData,
+  expectedSerialized: string,
+): Promise<boolean> {
+  return await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `UPDATE oauth_session
+         SET value = ?, expires_at = ?
+         WHERE did = ? AND value = ?`,
+      args: [
+        JSON.stringify(session),
+        session.expiresAt,
+        session.did,
+        expectedSerialized,
+      ],
+    });
+    return Number(result.rowsAffected ?? 0) === 1;
+  });
+}
+
+async function deleteSessionIfUnchangedOnClient(
+  c: {
+    execute: (query: { sql: string; args: unknown[] }) => Promise<{
+      rowsAffected?: number | bigint;
+    }>;
+  },
+  did: string,
+  expectedSerialized: string,
+): Promise<boolean> {
+  const result = await c.execute({
+    sql: `DELETE FROM oauth_session WHERE did = ? AND value = ?`,
+    args: [did, expectedSerialized],
+  });
+  return Number(result.rowsAffected ?? 0) === 1;
+}
+
+async function deleteSessionIfUnchanged(
+  session: SessionData,
+): Promise<boolean> {
+  const expectedSerialized = JSON.stringify(session);
+  return await withDb(async (c) =>
+    await deleteSessionIfUnchangedOnClient(
+      c,
+      session.did,
+      expectedSerialized,
+    )
+  );
+}
+
+export async function deleteSessionIfUnchangedForTest(
+  c: {
+    execute: (query: { sql: string; args: unknown[] }) => Promise<{
+      rowsAffected?: number | bigint;
+    }>;
+  },
+  session: SessionData,
+): Promise<boolean> {
+  return await deleteSessionIfUnchangedOnClient(
+    c,
+    session.did,
+    JSON.stringify(session),
+  );
+}
+
+function oauthClientIdForSession(session: SessionData): string {
+  if (session.oauthClientId) return session.oauthClientId;
+  // Production's legacy default is the site metadata URL. In local loopback
+  // mode the virtual client_id also embeds the granted scope, so retain it
+  // when reconstructing the safest available default for an older row.
+  return oauthClientId(oauthClientConfig({
+    scope: grantedScopeForSession(session),
+  }));
+}
+
+export function oauthClientIdForSessionForTest(session: SessionData): string {
+  return oauthClientIdForSession(session);
+}
+
+function sameRefreshAuthorization(
+  left: SessionData,
+  right: SessionData,
+): boolean {
+  return left.refreshToken === right.refreshToken &&
+    left.asIssuer === right.asIssuer &&
+    oauthClientIdForSession(left) === oauthClientIdForSession(right) &&
+    JSON.stringify(left.dpopPublicJwk) === JSON.stringify(right.dpopPublicJwk);
+}
+
+export function sameRefreshAuthorizationForTest(
+  left: SessionData,
+  right: SessionData,
+): boolean {
+  return sameRefreshAuthorization(left, right);
+}
+
+async function saveRefreshedSession(
+  previous: SessionData,
+  refreshed: SessionData,
+): Promise<SessionData> {
+  let expected = previous;
+  let next = refreshed;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (await replaceSessionIfUnchanged(next, JSON.stringify(expected))) {
+      return next;
+    }
+    const current = await loadStoredSession(previous.did);
+    if (!current) throw new Error("OAuth session was removed during refresh");
+    if (!sameRefreshAuthorization(current.session, previous)) {
+      // A callback or another refresh installed newer authorization. Never
+      // replace it with the result of this now-stale refresh request.
+      return current.session;
+    }
+    expected = current.session;
+    next = {
+      ...current.session,
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      expiresAt: refreshed.expiresAt,
+      asNonce: refreshed.asNonce,
+      scope: refreshed.scope,
+      oauthClientId: refreshed.oauthClientId,
+    };
+  }
+  return (await loadSession(previous.did)) ?? next;
+}
+
+type CallbackSessionSaveResult = "saved" | "narrower" | "conflict";
+
+function classifySessionScopeReplacement(
+  currentScope: string,
+  incomingScope: string,
+): "replace" | "narrower" | "conflict" {
+  if (scopeSafelyCoversScope(incomingScope, currentScope)) return "replace";
+  if (scopeSafelyCoversScope(currentScope, incomingScope)) return "narrower";
+  return "conflict";
+}
+
+export function classifySessionScopeReplacementForTest(
+  currentScope: string,
+  incomingScope: string,
+): "replace" | "narrower" | "conflict" {
+  return classifySessionScopeReplacement(currentScope, incomingScope);
+}
+
+/**
+ * Install a callback's token grant without letting two simultaneous upgrades
+ * overwrite each other. The serialized row is the compare-and-swap version,
+ * so this remains atomic on every supported database without a schema change.
+ */
+async function saveCallbackSession(
+  session: SessionData,
+  replaceableSessionHash?: string,
+): Promise<CallbackSessionSaveResult> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const current = await loadStoredSession(session.did);
+    if (!current) {
+      if (await insertSessionIfAbsent(session)) return "saved";
+      continue;
+    }
+    if (
+      replaceableSessionHash &&
+      await sha256B64u(current.serialized) === replaceableSessionHash
+    ) {
+      if (await replaceSessionIfUnchanged(session, current.serialized)) {
+        return "saved";
+      }
+      continue;
+    }
+    const currentScope = grantedScopeForSession(current.session);
+    const decision = classifySessionScopeReplacement(
+      currentScope,
+      session.scope ?? IDENTITY_OAUTH_SCOPE,
+    );
+    if (decision === "replace") {
+      if (await replaceSessionIfUnchanged(session, current.serialized)) {
+        return "saved";
+      }
+      continue;
+    }
+    if (decision === "narrower") return "narrower";
+    return "conflict";
+  }
+  // Sustained churn is handled like an incomparable grant: retain whichever
+  // session won and ask the user to authorize the fresh union once more.
+  return "conflict";
+}
+
+export function grantedScopeForSession(session: SessionData): string {
+  return session.scope?.trim() || IDENTITY_OAUTH_SCOPE;
 }
 
 export async function deleteSession(did: string): Promise<void> {
@@ -309,6 +591,41 @@ export async function deleteSession(did: string): Promise<void> {
   });
 }
 
+interface ExistingScopeUpgradeGrant {
+  session: SessionData | null;
+  replaceableSessionHash?: string;
+}
+
+/**
+ * Validate an existing authorization before carrying its scopes into a new
+ * request. `getValidSession` may refresh the row but never calls startLogin,
+ * so this does not recurse through OAuth initiation.
+ *
+ * If the exact row remains unusable, retain only a hash in the flow. A later
+ * sufficient callback may replace that stale baseline, while a concurrent
+ * callback that installs a different row remains protected by the hash.
+ */
+async function existingGrantForScopeUpgrade(
+  did: string,
+): Promise<ExistingScopeUpgradeGrant> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = await loadStoredSession(did).catch(() => null);
+    if (!before) return { session: null };
+    const valid = await getValidSession(did, { quiet: true }).catch(() => null);
+    if (valid) return { session: valid };
+    const after = await loadStoredSession(did).catch(() => null);
+    if (!after) return { session: null };
+    if (after.serialized === before.serialized) {
+      return {
+        session: null,
+        replaceableSessionHash: await sha256B64u(after.serialized),
+      };
+    }
+  }
+  // Sustained concurrent churn is not a safe source for a scope union.
+  return { session: null };
+}
+
 /* ---------------- Login (PAR) ---------------- */
 
 export async function startLogin(
@@ -317,15 +634,40 @@ export async function startLogin(
   intent?: SignInIntent | null,
   options: OAuthClientOptions | null = null,
 ): Promise<{ redirectUrl: string }> {
-  const config = oauthClientConfig(options);
   ensureConfigured(options);
   const id = await resolveIdentity(handleOrDid);
-  const asMeta = await discoverAuthServer(id.pdsUrl);
-  const prompt = oauthReauthenticationPrompt(
-    asMeta.prompt_values_supported,
-    options?.reauthenticate === true,
-    new URL(asMeta.issuer).hostname,
+  const capabilities = options?.capabilities
+    ? [...options.capabilities]
+    : undefined;
+  const persistSession = shouldPersistOAuthSession(
+    options?.persistSession,
+    options?.continuation,
   );
+  // Identity-only flows must remain a true `atproto` login even when this DID
+  // already has broader grants. The callback's downgrade protection retains
+  // that stored broader session without re-requesting its permissions.
+  const existingPolicy = persistentExistingSessionPolicy(
+    capabilities,
+    persistSession,
+    options?.preserveExistingScopes,
+  );
+  const existingGrant = existingPolicy.validateForReplacement
+    ? await existingGrantForScopeUpgrade(id.did)
+    : null;
+  const existing = existingPolicy.unionValidScope
+    ? existingGrant?.session ?? null
+    : null;
+  const requiredScope = capabilities
+    ? scopeForCapabilities(capabilities)
+    : undefined;
+  const requestedScope = options?.scope ?? (capabilities
+    ? scopeForCapabilities(
+      capabilities,
+      existing ? grantedScopeForSession(existing) : null,
+    )
+    : DEFAULT_OAUTH_SCOPE);
+  const config = oauthClientConfig({ ...options, scope: requestedScope });
+  const asMeta = await discoverAuthServer(id.pdsUrl);
   const clientId = oauthClientId(config);
 
   const dpop = await generateEs256KeyPair();
@@ -340,15 +682,19 @@ export async function startLogin(
     oauthClientId: clientId,
     redirectUri: config.redirectUri,
     scope: config.scope,
-    persistSession: options?.persistSession !== false,
+    requiredScope,
+    capabilities,
+    replaceableSessionHash: existingGrant?.replaceableSessionHash,
+    persistSession,
     asMeta,
     did: id.did,
     handle: id.handle,
     pdsUrl: id.pdsUrl,
-    prompt,
     continuation: options?.continuation,
     returnTo: returnTo ?? undefined,
     intent: intent ?? undefined,
+    action: options?.action,
+    targetName: options?.targetName,
   };
   await saveFlowState(flow);
 
@@ -358,34 +704,6 @@ export async function startLogin(
   authUrl.searchParams.set("request_uri", parRes.requestUri);
 
   return { redirectUrl: authUrl.toString() };
-}
-
-export class OAuthReauthenticationUnsupportedError extends Error {
-  constructor(host: string) {
-    super(
-      `${host} does not advertise the OAuth login prompt required for passkey changes`,
-    );
-    this.name = "OAuthReauthenticationUnsupportedError";
-  }
-}
-
-function oauthReauthenticationPrompt(
-  supported: readonly string[] | undefined,
-  required: boolean,
-  host: string,
-): "login" | undefined {
-  if (!required) return undefined;
-  if (!supported?.includes("login")) {
-    throw new OAuthReauthenticationUnsupportedError(host);
-  }
-  return "login";
-}
-
-export function oauthReauthenticationPromptForTest(
-  supported: readonly string[] | undefined,
-  required: boolean,
-): "login" | undefined {
-  return oauthReauthenticationPrompt(supported, required, "host.example");
 }
 
 export class OAuthAccountCreationUnsupportedError extends Error {
@@ -407,8 +725,16 @@ export async function startHostAccountCreation(
   options: OAuthClientOptions | null = null,
   continuation?: "login_selection" | null,
 ): Promise<{ redirectUrl: string }> {
-  const config = oauthClientConfig(options);
   ensureConfigured(options);
+  const capabilities = options?.capabilities
+    ? [...options.capabilities]
+    : undefined;
+  const requiredScope = capabilities
+    ? scopeForCapabilities(capabilities)
+    : undefined;
+  const requestedScope = options?.scope ?? requiredScope ??
+    DEFAULT_OAUTH_SCOPE;
+  const config = oauthClientConfig({ ...options, scope: requestedScope });
   const pdsUrl = normalizeServiceEndpoint(serviceEndpoint);
   const asMeta = await discoverAuthServer(pdsUrl);
   if (!asMeta.prompt_values_supported?.includes("create")) {
@@ -428,13 +754,20 @@ export async function startHostAccountCreation(
     oauthClientId: clientId,
     redirectUri: config.redirectUri,
     scope: config.scope,
-    persistSession: options?.persistSession !== false,
+    requiredScope,
+    capabilities,
+    persistSession: shouldPersistOAuthSession(
+      options?.persistSession,
+      continuation ?? undefined,
+    ),
     asMeta,
     pdsUrl,
     prompt: "create",
     continuation: continuation ?? undefined,
     returnTo: returnTo ?? undefined,
     intent: intent ?? undefined,
+    action: options?.action,
+    targetName: options?.targetName,
   };
   await saveFlowState(flow);
 
@@ -527,7 +860,43 @@ export interface CallbackResult {
   returnTo?: string;
   intent?: SignInIntent;
   continuation?: "login_selection";
-  reauthenticated: boolean;
+  capabilities?: OAuthCapability[];
+  grantedScope: string;
+  authorizationSufficient: boolean;
+  scopeConflict: boolean;
+  action?: OAuthAction;
+  targetName?: string;
+}
+
+export interface CancelledOAuthFlow {
+  returnTo?: string;
+  intent?: SignInIntent;
+  prompt?: "create";
+  continuation?: "login_selection";
+  capabilities?: OAuthCapability[];
+  action?: OAuthAction;
+  targetName?: string;
+  handle?: string;
+}
+
+/** Consume a denied authorization flow while retaining only the safe context
+ * needed to restore the action that initiated it. */
+export async function cancelOAuthFlow(
+  state: string,
+): Promise<CancelledOAuthFlow | null> {
+  const flow = await loadFlowState(state);
+  if (!flow) return null;
+  await deleteFlowState(state);
+  return {
+    returnTo: flow.returnTo,
+    intent: flow.intent,
+    prompt: flow.prompt,
+    continuation: flow.continuation,
+    capabilities: flow.capabilities,
+    action: flow.action,
+    targetName: flow.targetName,
+    handle: flow.handle,
+  };
 }
 
 export async function completeCallback(params: {
@@ -560,6 +929,10 @@ export async function completeCallback(params: {
     redirect_uri: flow.redirectUri ?? defaultRedirectUri(),
     code_verifier: flow.pkceVerifier,
   });
+  const requestedScope = flow.scope ?? DEFAULT_OAUTH_SCOPE;
+  if (!scopeSafelyCoversScope(requestedScope, tokenRes.scope)) {
+    throw new Error("token response scope exceeds requested authorization");
+  }
 
   if (flow.did && tokenRes.sub !== flow.did) {
     throw new Error(
@@ -583,7 +956,10 @@ export async function completeCallback(params: {
     pdsUrl = identity.pdsUrl;
   }
 
-  if (flow.persistSession !== false) {
+  const authorizationSufficient = !flow.requiredScope ||
+    scopeCoversScope(tokenRes.scope, flow.requiredScope);
+  let scopeConflict = false;
+  if (flow.persistSession !== false && authorizationSufficient) {
     if (!tokenRes.refresh_token) {
       throw new Error("token response missing refresh_token");
     }
@@ -592,6 +968,7 @@ export async function completeCallback(params: {
       handle,
       pdsUrl,
       asIssuer: flow.asMeta.issuer,
+      oauthClientId: flow.oauthClientId ?? oauthClientId(oauthClientConfig()),
       accessToken: tokenRes.access_token,
       refreshToken: tokenRes.refresh_token,
       expiresAt: Date.now() + tokenRes.expires_in * 1000,
@@ -599,8 +976,18 @@ export async function completeCallback(params: {
       dpopPublicJwk: flow.dpopPublicJwk,
       asNonce: flow.asNonce,
       identityCheckedAt: Date.now(),
+      scope: tokenRes.scope,
     };
-    await saveSession(session);
+    const saved = await saveCallbackSession(
+      session,
+      flow.replaceableSessionHash,
+    );
+    // Two capability upgrades may have started from the same older grant.
+    // Neither token can be merged with the other, so preserve the winner and
+    // have the callback restart authorization for the fresh union.
+    scopeConflict = saved === "conflict";
+    // A narrower identity-only callback never replaces a more capable stored
+    // session. The current tokens remain valid for this account.
   }
   await deleteFlowState(params.state);
 
@@ -611,7 +998,12 @@ export async function completeCallback(params: {
     returnTo: flow.returnTo,
     intent: flow.intent,
     continuation: flow.continuation,
-    reauthenticated: flow.prompt === "login",
+    capabilities: flow.capabilities,
+    grantedScope: tokenRes.scope,
+    authorizationSufficient,
+    scopeConflict,
+    action: flow.action,
+    targetName: flow.targetName,
   };
 }
 
@@ -620,8 +1012,7 @@ interface TokenResponse {
   refresh_token?: string;
   token_type: string;
   expires_in: number;
-  scope?: string;
-  scopes?: string;
+  scope: string;
   sub: string;
 }
 
@@ -637,11 +1028,7 @@ function parseTokenResponse(
   const refreshToken = record.refresh_token;
   const tokenType = record.token_type;
   const expiresIn = record.expires_in;
-  const scopes = typeof record.scopes === "string"
-    ? record.scopes
-    : typeof record.scope === "string"
-    ? record.scope
-    : null;
+  const scope = typeof record.scope === "string" ? record.scope.trim() : null;
   const sub = record.sub;
 
   if (typeof accessToken !== "string" || !accessToken) {
@@ -671,8 +1058,18 @@ function parseTokenResponse(
   if (typeof sub !== "string" || !sub.startsWith("did:")) {
     throw new Error("token response missing account DID");
   }
-  if (!scopes || !scopes.split(/\s+/).includes("atproto")) {
-    throw new Error("token response scopes must include atproto");
+  if (!scope) {
+    throw new Error("token response missing scope");
+  }
+  if (!scopeTokens(scope).includes("atproto")) {
+    throw new Error("token response scope must include atproto");
+  }
+  if (
+    record.scopes !== undefined &&
+    (typeof record.scopes !== "string" ||
+      !sameScopeTokenSet(scope, record.scopes))
+  ) {
+    throw new Error("token response has inconsistent scope fields");
   }
 
   return {
@@ -680,10 +1077,23 @@ function parseTokenResponse(
     refresh_token: typeof refreshToken === "string" ? refreshToken : undefined,
     token_type: tokenType,
     expires_in: expiresIn,
-    scope: typeof record.scope === "string" ? record.scope : scopes,
-    scopes,
+    scope,
     sub,
   };
+}
+
+export function tokenResponseScopeForTest(
+  value: unknown,
+  requireRefreshToken = true,
+): string {
+  return parseTokenResponse(value, { requireRefreshToken }).scope;
+}
+
+function sameScopeTokenSet(left: string, right: string): boolean {
+  const leftTokens = scopeTokens(left);
+  const rightTokens = new Set(scopeTokens(right));
+  return leftTokens.length === rightTokens.size &&
+    leftTokens.every((token) => rightTokens.has(token));
 }
 
 async function tokenRequest(
@@ -758,13 +1168,14 @@ async function tokenRequest(
 async function refreshSession(session: SessionData): Promise<SessionData> {
   const asMeta = await discoverAuthServer(session.pdsUrl);
   if (asMeta.issuer !== session.asIssuer) {
-    await deleteSession(session.did);
+    await deleteSessionIfUnchanged(session);
     throw new Error("authorization server issuer changed for session");
   }
   const tokenFlow = {
     asMeta,
     dpopPrivateJwk: session.dpopPrivateJwk,
     dpopPublicJwk: session.dpopPublicJwk,
+    oauthClientId: oauthClientIdForSession(session),
     asNonce: session.asNonce,
   };
   const tokenRes = await tokenRequest(
@@ -772,10 +1183,15 @@ async function refreshSession(session: SessionData): Promise<SessionData> {
     { grant_type: "refresh_token", refresh_token: session.refreshToken },
   );
   if (tokenRes.sub !== session.did) {
-    await deleteSession(session.did);
+    await deleteSessionIfUnchanged(session);
     throw new Error(
       `sub mismatch on refresh: token sub=${tokenRes.sub} session did=${session.did}`,
     );
+  }
+  if (
+    !scopeSafelyCoversScope(grantedScopeForSession(session), tokenRes.scope)
+  ) {
+    throw new Error("refreshed token scope exceeds existing authorization");
   }
   const updated: SessionData = {
     ...session,
@@ -783,9 +1199,10 @@ async function refreshSession(session: SessionData): Promise<SessionData> {
     refreshToken: tokenRes.refresh_token ?? session.refreshToken,
     expiresAt: Date.now() + tokenRes.expires_in * 1000,
     asNonce: tokenFlow.asNonce,
+    scope: tokenRes.scope,
+    oauthClientId: tokenFlow.oauthClientId,
   };
-  await saveSession(updated);
-  return updated;
+  return await saveRefreshedSession(session, updated);
 }
 
 async function refreshSessionIdentity(
@@ -803,7 +1220,7 @@ async function refreshSessionIdentity(
     if (identity.pdsUrl !== session.pdsUrl) {
       const asMeta = await discoverAuthServer(identity.pdsUrl);
       if (asMeta.issuer !== session.asIssuer) {
-        await deleteSession(session.did);
+        await deleteSessionIfUnchanged(session);
         return null;
       }
       asIssuer = asMeta.issuer;
@@ -815,8 +1232,10 @@ async function refreshSessionIdentity(
       asIssuer,
       identityCheckedAt: Date.now(),
     };
-    await saveSession(updated);
-    return updated;
+    if (await replaceSessionIfUnchanged(updated, JSON.stringify(session))) {
+      return updated;
+    }
+    return (await loadSession(session.did)) ?? null;
   } catch (err) {
     if (IS_DEV) console.warn("session identity refresh failed:", err);
     return session;
@@ -841,6 +1260,21 @@ export async function getValidSession(
     if (IS_DEV && !options.quiet) console.warn("session refresh failed:", err);
     return null;
   }
+}
+
+export async function getSessionForCapabilities(
+  did: string,
+  capabilities: readonly OAuthCapability[],
+  options: { quiet?: boolean } = {},
+): Promise<SessionData | null> {
+  const session = await getValidSession(did, options);
+  if (!session) return null;
+  return hasOAuthCapabilities(
+      grantedScopeForSession(session),
+      capabilities,
+    )
+    ? session
+    : null;
 }
 
 /* ---------------- Authed PDS request ---------------- */
@@ -881,8 +1315,8 @@ export async function authedFetch(
 
   const newNonce = res.headers.get("dpop-nonce");
   if (newNonce && newNonce !== session.pdsNonce) {
-    session.pdsNonce = newNonce;
-    await saveSession(session);
+    const updated = { ...session, pdsNonce: newNonce };
+    await replaceSessionIfUnchanged(updated, JSON.stringify(session));
     if (res.status === 401 && attempt === 0) {
       return await authedFetch(did, url, init, 1);
     }

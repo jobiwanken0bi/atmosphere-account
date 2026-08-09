@@ -18,10 +18,13 @@ function assertEquals(actual: unknown, expected: unknown): void {
 }
 
 Deno.test("CSRF rejects cross-site unsafe requests by default", () => {
-  const req = new Request("https://atmosphereaccount.com/api/account/profile", {
-    method: "POST",
-    headers: { origin: "https://evil.example" },
-  });
+  const req = new Request(
+    "https://atmosphereaccount.com/api/account/microblog-viewer",
+    {
+      method: "POST",
+      headers: { origin: "https://evil.example" },
+    },
+  );
   assertEquals(
     isSameOriginUnsafeRequest(req, "https://atmosphereaccount.com"),
     false,
@@ -73,7 +76,7 @@ Deno.test("Atmosphere Login selection verification is the only cross-origin POST
     true,
   );
   assertEquals(
-    isCrossOriginReadonlyRequest(req, "/api/account/profile"),
+    isCrossOriginReadonlyRequest(req, "/api/account/microblog-viewer"),
     false,
   );
 });
@@ -126,17 +129,20 @@ Deno.test("bounded response reader rejects oversized responses", async () => {
 });
 
 Deno.test("bounded JSON reader rejects oversized streamed requests", async () => {
-  const request = new Request("https://atmosphereaccount.com/api/passkeys", {
-    method: "POST",
-    body: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('{"value":"'));
-        controller.enqueue(new TextEncoder().encode("too-large"));
-        controller.enqueue(new TextEncoder().encode('"}'));
-        controller.close();
-      },
-    }),
-  });
+  const request = new Request(
+    "https://atmosphereaccount.com/api/account/type",
+    {
+      method: "POST",
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"value":"'));
+          controller.enqueue(new TextEncoder().encode("too-large"));
+          controller.enqueue(new TextEncoder().encode('"}'));
+          controller.close();
+        },
+      }),
+    },
+  );
   let tooLarge = false;
   try {
     await readJsonRequestWithLimit(request, 8);
@@ -160,9 +166,6 @@ Deno.test("token-bearing Atmosphere Login pages force private browser headers", 
       "/hosts/claim",
       "/hosts/register",
       "/hosts/pds.example/claim",
-      "/passkeys",
-      "/api/passkeys/authentication/options",
-      "/api/login/passkeys/options",
     ]
   ) {
     const headers = applySecurityHeadersForTest(pathname);
@@ -172,11 +175,14 @@ Deno.test("token-bearing Atmosphere Login pages force private browser headers", 
   }
 });
 
-Deno.test("security policy confines passkey ceremonies to the same origin", () => {
-  const headers = applySecurityHeadersForTest("/passkeys");
-  const policy = headers.get("permissions-policy") ?? "";
-  assertEquals(policy.includes("publickey-credentials-create=(self)"), true);
-  assertEquals(policy.includes("publickey-credentials-get=(self)"), true);
+Deno.test("security policy disables WebAuthn after passkey removal", () => {
+  const policy = applySecurityHeadersForTest("/apps").get(
+    "permissions-policy",
+  ) ?? "";
+  assertEquals(policy.includes("publickey-credentials-create=()"), true);
+  assertEquals(policy.includes("publickey-credentials-get=()"), true);
+  assertEquals(policy.includes("publickey-credentials-create=(self)"), false);
+  assertEquals(policy.includes("publickey-credentials-get=(self)"), false);
 });
 
 Deno.test("ordinary pages keep the default referrer policy", () => {
@@ -184,6 +190,46 @@ Deno.test("ordinary pages keep the default referrer policy", () => {
   assertEquals(
     headers.get("referrer-policy"),
     "strict-origin-when-cross-origin",
+  );
+  assertEquals(headers.has("cache-control"), false);
+});
+
+Deno.test("rendered account pages are always private and non-cacheable", () => {
+  for (const pathname of ["/account", "/account/apps-hosts"]) {
+    const headers = applySecurityHeadersForTest(
+      pathname,
+      new Headers({
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "public, max-age=300",
+      }),
+    );
+    assertEquals(headers.get("cache-control"), "private, no-store");
+  }
+});
+
+Deno.test("the legacy account redirect remains cacheable", () => {
+  const headers = applySecurityHeadersForTest(
+    "/account/products",
+    new Headers({ location: "/account/apps-hosts" }),
+  );
+  assertEquals(headers.has("cache-control"), false);
+});
+
+Deno.test("account cache policy does not override non-HTML responses", () => {
+  const headers = applySecurityHeadersForTest(
+    "/account/apps-hosts",
+    new Headers({
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "max-age=60",
+    }),
+  );
+  assertEquals(headers.get("cache-control"), "max-age=60");
+});
+
+Deno.test("public HTML pages are unaffected by the account cache policy", () => {
+  const headers = applySecurityHeadersForTest(
+    "/apps",
+    new Headers({ "content-type": "text/html; charset=utf-8" }),
   );
   assertEquals(headers.has("cache-control"), false);
 });

@@ -6,6 +6,7 @@ import HostMark from "../../components/hosts/HostMark.tsx";
 import BskyIcon from "../../components/icons/BskyIcon.tsx";
 import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
 import HostVisitLink from "../../islands/HostVisitLink.tsx";
+import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHost,
@@ -28,6 +29,10 @@ import { normalizeHostDirectoryReturnTo } from "../../lib/host-directory-navigat
 import { getResolvedAppLinksForHost } from "../../lib/app-directory.ts";
 import type { ResolvedDirectoryAppLink } from "../../lib/app-directory.ts";
 import { getMessages, type Messages } from "../../i18n/mod.ts";
+import {
+  HOST_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -121,7 +126,7 @@ function HostDetailPage(
       <div id="page-top">
         <div class="content-layer">
           <Nav account={account} active="hosts" />
-          <section class="explore-profile-detail">
+          <main class="explore-profile-detail" id="main-content">
             <div class="container" style={{ maxWidth: "880px" }}>
               <a href={backHref} class="text-link-button">
                 ← Back to hosts
@@ -133,7 +138,7 @@ function HostDetailPage(
                 </p>
               </div>
             </div>
-          </section>
+          </main>
           <Footer variant="compact" />
         </div>
       </div>
@@ -159,7 +164,10 @@ function HostDetailPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="explore-profile-detail host-detail-section">
+        <main
+          class="explore-profile-detail host-detail-section"
+          id="main-content"
+        >
           <div class="container" style={{ maxWidth: "880px" }}>
             <div class="project-page-toolbar">
               <a href={backHref} class="text-link-button">
@@ -327,6 +335,79 @@ function HostDetailPage(
               </article>
             </section>
 
+            <div class="glass host-detail-claim-row">
+              {managed && (
+                <p class="profile-form-status profile-form-status--ok">
+                  Host changes saved.
+                </p>
+              )}
+              {isManagedByCurrentAccount
+                ? (
+                  <>
+                    <div class="host-detail-claim-copy">
+                      <p class="text-eyebrow">Host operator</p>
+                      <p>
+                        Update this host’s profile, account links, and apps.
+                      </p>
+                    </div>
+                    <a
+                      class="directory-register-button host-detail-claim-button"
+                      href={manageHostHref(host)}
+                    >
+                      <span>Manage host</span>
+                    </a>
+                  </>
+                )
+                : claim && verifiedOwnerDid
+                ? (
+                  <p class="host-detail-claim-note">
+                    {claimed ? "Claim verified. " : ""}
+                    Managed by{" "}
+                    <AtmosphereHandle handle={claim.claimantHandle} />
+                  </p>
+                )
+                : claim
+                ? (
+                  <p class="host-detail-claim-note">
+                    Operator verification is temporarily unavailable. The stored
+                    claimant is not being shown as verified.
+                  </p>
+                )
+                : (
+                  <>
+                    <div class="host-detail-claim-copy">
+                      <p class="text-eyebrow">Host operators</p>
+                      <p>Verify this domain to manage its profile and links.</p>
+                    </div>
+                    {account.user
+                      ? (
+                        <a
+                          class="directory-register-button host-detail-claim-button"
+                          href={claimHostHref(host)}
+                        >
+                          <span class="directory-register-button-icon">+</span>
+                          <span>Claim this host</span>
+                        </a>
+                      )
+                      : (
+                        <ContextualSignInLink
+                          href={hostClaimSigninHref(host)}
+                          returnTo={claimHostHref(host)}
+                          action="host_claim"
+                          capabilities={HOST_MANAGEMENT_CAPABILITIES}
+                          targetName={host.displayName}
+                          title="Login with Atmosphere"
+                          body={`Choose the account that will claim and manage ${host.displayName}, including its public profile and images. DNS verification separately proves control of the host domain.`}
+                          label="Claim this host"
+                          className="directory-register-button host-detail-claim-button"
+                          leadingPlus
+                          rememberedAccounts={account.rememberedAccounts}
+                        />
+                      )}
+                  </>
+                )}
+            </div>
+
             <details class="glass account-home-details host-detail-details">
               <summary>Advanced</summary>
               <dl>
@@ -456,49 +537,8 @@ function HostDetailPage(
                 )}
               </dl>
             </details>
-
-            <div class="host-detail-claim-row">
-              {managed && (
-                <p class="profile-form-status profile-form-status--ok">
-                  Host changes saved.
-                </p>
-              )}
-              {isManagedByCurrentAccount
-                ? (
-                  <a
-                    class="directory-register-button host-detail-claim-button"
-                    href={manageHostHref(host)}
-                  >
-                    <span>Manage host</span>
-                  </a>
-                )
-                : claim && verifiedOwnerDid
-                ? (
-                  <p class="host-detail-claim-note">
-                    {claimed ? "Claim verified. " : ""}
-                    Managed by{" "}
-                    <AtmosphereHandle handle={claim.claimantHandle} />
-                  </p>
-                )
-                : claim
-                ? (
-                  <p class="host-detail-claim-note">
-                    Operator verification is temporarily unavailable. The stored
-                    claimant is not being shown as verified.
-                  </p>
-                )
-                : (
-                  <a
-                    class="directory-register-button host-detail-claim-button"
-                    href={claimHostHref(host)}
-                  >
-                    <span class="directory-register-button-icon">+</span>
-                    <span>Claim this host</span>
-                  </a>
-                )}
-            </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -554,6 +594,15 @@ function HostDetailIcon(
 
 function claimHostHref(host: AccountHost): string {
   return `/hosts/${encodeURIComponent(host.host)}/claim`;
+}
+
+function hostClaimSigninHref(host: AccountHost): string {
+  return oauthSigninUrl({
+    next: claimHostHref(host),
+    action: "host_claim",
+    capabilities: HOST_MANAGEMENT_CAPABILITIES,
+    name: host.displayName,
+  });
 }
 
 function manageHostHref(host: AccountHost): string {
@@ -675,7 +724,7 @@ function registryStatusLabel(host: AccountHost): string {
   }
   switch (host.source) {
     case "seeded":
-      return "Seeded by Atmosphere";
+      return "Seeded by this site";
     case "manual":
       return "Needs host record";
     default:

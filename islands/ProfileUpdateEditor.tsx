@@ -1,6 +1,7 @@
 import { useSignal } from "@preact/signals";
 import { useT } from "../i18n/mod.ts";
 import type { ProfileUpdateRow } from "../lib/profile-updates.ts";
+import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
 
 export type EditableProfileUpdate = Pick<
   ProfileUpdateRow,
@@ -96,6 +97,11 @@ export default function ProfileUpdateEditor(
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        const reauthUrl = reauthUrlFromApiPayload(data);
+        if (reauthUrl) {
+          globalThis.location.assign(reauthUrl);
+          return;
+        }
         throw new Error(data.detail || data.error || t.saveError);
       }
       const update = updateFromResponse(data.update);
@@ -128,7 +134,14 @@ export default function ProfileUpdateEditor(
         { method: "DELETE" },
       );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || data.error || t.deleteError);
+      if (!res.ok) {
+        const reauthUrl = reauthUrlFromApiPayload(data);
+        if (reauthUrl) {
+          globalThis.location.assign(reauthUrl);
+          return;
+        }
+        throw new Error(data.detail || data.error || t.deleteError);
+      }
       updates.value = updates.value.filter((update) => update.rkey !== rkey);
       if (editingRkey.value === rkey) resetForm();
       message.value = { kind: "ok", text: t.deleted };

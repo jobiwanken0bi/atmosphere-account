@@ -1,18 +1,17 @@
 # Atmosphere Host Account Routing v0.1
 
-Atmosphere Account should be a thin router for account management. The primary
+This site should be a thin router for account management. The primary
 account-management surface is the PDS-owned account page the host publishes, not
-an Atmosphere-owned dashboard.
+a dashboard owned by this site.
 
 PDS hosts remain responsible for passwords, app grants, sessions, devices,
-rotation keys, repo/blob exports, backups, restores, and migrations. Atmosphere
+rotation keys, repo/blob exports, backups, restores, and migrations. This site
 provides host discovery, friendly naming, account selection history, docs,
-conformance tests, and a route from the user's Atmosphere account page to
-host-owned controls. Atmosphere does not implement the PDS account-management
-tools itself.
+conformance tests, and a route from its account page to host-owned controls.
+This site does not implement the PDS account-management tools itself.
 
 The reference PDS now serves account management at `/account`. For a PDS service
-endpoint like `https://pds.example`, Atmosphere derives:
+endpoint like `https://pds.example`, this site derives:
 
 ```txt
 https://pds.example/account
@@ -41,7 +40,7 @@ The routing source of truth is the host service record:
 }
 ```
 
-If `accountManagementUrl` is omitted, Atmosphere links to `/account` on the
+If `accountManagementUrl` is omitted, this site links to `/account` on the
 declared `serviceEndpoint`. The host homepage remains a marketing or support
 link; it is never used as an account-management fallback.
 
@@ -56,7 +55,7 @@ https://host.example/.well-known/atmosphere-host-dashboard.json
 
 The `dashboard` name is legacy. This file describes optional compatibility
 metadata and deep links; it is not the account-management surface and does not
-delegate PDS controls to Atmosphere.
+delegate PDS controls to this site.
 
 Minimal example:
 
@@ -87,9 +86,9 @@ Minimal example:
 }
 ```
 
-This manifest is not required before Atmosphere can link users to a host's
+This manifest is not required before this site can link users to a host's
 published account page URL. It should not be used to mirror PDS-owned controls
-inside Atmosphere. An example file is available at
+inside this site. An example file is available at
 `/examples/atmosphere-host-dashboard.example.json`; the JSON schema is available
 at `/atmosphere-host-dashboard.schema.json`.
 
@@ -97,7 +96,7 @@ Capability states:
 
 - `supported`: this host supports the standardized route or module.
 - `host_owned`: this host owns the workflow, but it is not yet standardized.
-- `planned`: Atmosphere expects this to become a standard capability later.
+- `planned`: this site expects this to become a standard capability later.
 - `unknown`: capability status is not known.
 
 ## Capabilities
@@ -116,25 +115,25 @@ The v0.1 capability keys are:
 - `migration`
 - `support`
 
-Hosts may implement them gradually. Atmosphere must show unsupported or unknown
+Hosts may implement them gradually. This site must show unsupported or unknown
 states honestly and should not imply it can perform host-owned actions.
 
-## Atmosphere Account Page Behavior
+## Account Page Behavior on This Site
 
-Atmosphere `/account` should:
+This site's `/account` page should:
 
 - show the current account, avatar, handle, and friendly host name,
 - provide one primary "Manage account at host" route derived from the PDS
   endpoint or supplied as an explicit override,
-- show Atmosphere Login picker connections,
+- show Login with Atmosphere picker connections,
 - show remembered accounts for this browser,
 - hide technical identifiers behind disclosure UI,
 - never render first-party controls for PDS OAuth grant revocation, devices,
   passwords, keys, recovery, backup, account deletion, or migration.
 
-Atmosphere-specific sections may include picker connections, saved browser
-accounts, developer app registrations, app listings, and reviews. They should be
-visibly separate from host-owned account controls.
+Site-specific sections may include picker connections, saved browser accounts,
+developer app registrations, app listings, and reviews. They should be visibly
+separate from host-owned account controls.
 
 ## Conformance Direction
 

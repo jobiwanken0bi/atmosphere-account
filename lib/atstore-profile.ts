@@ -1,5 +1,4 @@
 import { ATSTORE_PROFILE_NSID } from "./app-lexicons.ts";
-import { getAppUser } from "./account-types.ts";
 import { getBskyProfile, getRecordPublic, putRecord } from "./pds.ts";
 
 const ATSTORE_PROFILE_RKEY = "self";
@@ -18,13 +17,13 @@ export async function ensureAtstoreReviewerProfile(input: {
   ).catch(() => null);
   if (existing) return;
 
-  const [bskyProfile, appUser] = await Promise.all([
-    getBskyProfile(input.pdsUrl, input.did).catch(() => null),
-    getAppUser(input.did).catch(() => null),
-  ]);
-  const displayName = normalizeDisplayName(
-    bskyProfile?.displayName ?? appUser?.displayName ?? input.handle ??
-      input.did,
+  const bskyProfile = await getBskyProfile(input.pdsUrl, input.did).catch(() =>
+    null
+  );
+  const displayName = atstoreReviewerDisplayName(
+    bskyProfile?.displayName,
+    input.handle,
+    input.did,
   );
 
   await putRecord(
@@ -34,6 +33,14 @@ export async function ensureAtstoreReviewerProfile(input: {
     ATSTORE_PROFILE_RKEY,
     { displayName },
   );
+}
+
+export function atstoreReviewerDisplayName(
+  bskyDisplayName: string | null | undefined,
+  handle: string | null | undefined,
+  did: string,
+): string {
+  return normalizeDisplayName(bskyDisplayName || handle || did);
 }
 
 function normalizeDisplayName(value: string): string {

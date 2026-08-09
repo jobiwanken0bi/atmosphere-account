@@ -1,5 +1,5 @@
 import type { InValue } from "@libsql/client";
-import { isPostgresBackend, withDb } from "./db.ts";
+import { type DbClient, isPostgresBackend, withDb } from "./db.ts";
 import {
   type AppDirectoryLink,
   type AppFavoriteDraft,
@@ -48,6 +48,17 @@ import {
 
 export type AppDirectorySort = "trending" | "newest" | "az";
 export type AppReviewSort = "newest" | "highest" | "lowest";
+
+/**
+ * Safety state used by Login with Atmosphere. This stays separate from public
+ * directory visibility: an owner hiding an app from discovery does not disable
+ * its login handoff. Only deletion and the two moderation planes suspend it.
+ */
+export type AppListingLoginAvailability =
+  | "available"
+  | "moderated"
+  | "taken_down"
+  | "deleted";
 
 export interface AppListingSourceRefs {
   atmosphere?: string;
@@ -2071,6 +2082,102 @@ export async function getVisibleAppListingByAccountDid(
 ): Promise<AppListing | null> {
   const listings = await listVisibleAppListingsByAccountDid(did, options);
   return listings[0] ?? null;
+}
+
+/**
+ * Return every non-deleted app controlled by an account DID, including apps
+ * hidden by moderation. Owner-management eligibility must not use the public
+ * visibility query: moderation may hide a listing, but it must never remove
+ * the owner's access to its management surface.
+ */
+export async function listManagedAppListingsByAccountDid(
+  did: string,
+  options: { syncLegacy?: boolean } = {},
+): Promise<AppListing[]> {
+  if (options.syncLegacy !== false) {
+    await syncLegacyAppProfilesToDirectory().catch(() => {});
+  }
+  const normalized = did.trim();
+  if (!normalized.startsWith("did:")) return [];
+  return await withDb((c) =>
+    listManagedAppListingsByAccountDidWithClient(c, normalized)
+  );
+}
+
+export async function listManagedAppListingsByAccountDidWithClient(
+  c: DbClient,
+  normalizedDid: string,
+): Promise<AppListing[]> {
+  const result = await c.execute({
+    sql: `
+      SELECT ${listSelect("l")}
+      FROM app_listing l
+      WHERE l.deleted_at IS NULL
+        AND (
+          l.product_did = ? OR
+          l.profile_did = ? OR
+          l.legacy_profile_did = ?
+        )
+      ORDER BY
+        CASE WHEN l.atstore_listing_uri IS NOT NULL THEN 0 ELSE 1 END,
+        l.updated_at DESC,
+        l.slug ASC
+    `,
+    args: [normalizedDid, normalizedDid, normalizedDid],
+  });
+  return result.rows.map(rowToAppListing);
+}
+
+export async function getManagedAppListingByAccountDid(
+  did: string,
+  options: { syncLegacy?: boolean } = {},
+): Promise<AppListing | null> {
+  const listings = await listManagedAppListingsByAccountDid(did, options);
+  return listings[0] ?? null;
+}
+
+/** Read explicit login-safety controls without conflating directory privacy. */
+export async function getAppListingLoginAvailability(
+  listingId: string,
+): Promise<AppListingLoginAvailability> {
+  return await withDb((c) =>
+    getAppListingLoginAvailabilityWithClient(c, listingId)
+  );
+}
+
+export async function getAppListingLoginAvailabilityWithClient(
+  c: DbClient,
+  listingId: string,
+): Promise<AppListingLoginAvailability> {
+  const result = await c.execute({
+    sql: `
+      SELECT
+        l.deleted_at,
+        COALESCE(m.status, 'visible') AS moderation_status,
+        CASE WHEN EXISTS (
+          SELECT 1
+          FROM profile p
+          WHERE p.profile_type = 'project'
+            AND p.takedown_status = 'taken_down'
+            AND p.did IN (
+              l.product_did,
+              l.profile_did,
+              l.legacy_profile_did
+            )
+        ) THEN 1 ELSE 0 END AS profile_taken_down
+      FROM app_listing l
+      LEFT JOIN app_moderation m ON m.listing_id = l.id
+      WHERE l.id = ?
+      LIMIT 1
+    `,
+    args: [listingId],
+  });
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  if (!row || row.deleted_at != null) return "deleted";
+  if (Number(row.profile_taken_down) === 1) return "taken_down";
+  return String(row.moderation_status ?? "visible").toLowerCase() === "visible"
+    ? "available"
+    : "moderated";
 }
 
 /**

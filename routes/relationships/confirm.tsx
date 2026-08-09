@@ -116,7 +116,7 @@ function RelationshipConfirmationPage(props: {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
-        <section class="signin-page-section">
+        <main id="main-content" class="signin-page-section">
           <div class="container signin-page-container relationship-confirm-container">
             <div class="glass signin-page-card relationship-confirm-card">
               <p class="text-eyebrow">Verified directory connection</p>
@@ -171,9 +171,15 @@ function RelationshipConfirmationPage(props: {
                 : (
                   <div class="relationship-confirm-next">
                     {canApprove && (
-                      <form method="POST">
-                        <button class="directory-register-button" type="submit">
-                          Approve as this account
+                      <form method="POST" data-submit-once="true">
+                        <button
+                          class="directory-register-button"
+                          type="submit"
+                          data-pending-label="Approving connection…"
+                        >
+                          <span data-submit-once-label>
+                            Approve as this account
+                          </span>
                         </button>
                       </form>
                     )}
@@ -200,7 +206,7 @@ function RelationshipConfirmationPage(props: {
                     {!canApprove && switchable.length === 0 && (
                       <p class="text-body">
                         Sign in with the other controlling account to finish the
-                        connection. Atmosphere never accepts an unverified DID
+                        connection. This site never accepts an unverified DID
                         from the request.
                       </p>
                     )}
@@ -216,7 +222,7 @@ function RelationshipConfirmationPage(props: {
                 )}
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -241,16 +247,16 @@ function ProofState(
   );
 }
 
-function relationshipDescription(
+export function relationshipDescription(
   relationship: DirectoryEntityLink["relationship"],
   host: string,
   app: string,
 ): string {
   if (relationship === "same_product") {
-    return `${host} is the account host for the ${app} product.`;
+    return `${host} provides account services for ${app}.`;
   }
   if (relationship === "same_operator") {
-    return `${host} and ${app} are separate services operated by the same organization.`;
+    return `${host} and ${app} are run by the same operator.`;
   }
   return `${host} is a host-only listing; the inferred app link will be suppressed.`;
 }

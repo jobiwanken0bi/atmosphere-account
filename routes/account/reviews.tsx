@@ -90,7 +90,7 @@ function AccountReviewsPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
-        <section class="account-reviews-section">
+        <main id="main-content" class="account-reviews-section">
           <div class="container" style={{ maxWidth: "820px" }}>
             <header class="account-reviews-header">
               <div class="account-reviews-header-row">
@@ -135,7 +135,7 @@ function AccountReviewsPage(
                 </div>
               )}
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

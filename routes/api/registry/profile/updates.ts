@@ -7,7 +7,11 @@
 import { define } from "../../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../../lib/appview-client.ts";
 import { getEffectiveAccountType } from "../../../../lib/account-types.ts";
-import { loadSession } from "../../../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../../../lib/oauth.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  oauthReauthorizationUrl,
+} from "../../../../lib/oauth-action.ts";
 import { deleteUpdateRecord, putUpdateRecord } from "../../../../lib/pds.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import {
@@ -49,10 +53,10 @@ export const handler = define.handlers({
     if (accountType !== "project") return jsonError(403, "project_required");
 
     const [session, profile] = await Promise.all([
-      loadSession(user.did),
+      getSessionForCapabilities(user.did, APP_MANAGEMENT_CAPABILITIES),
       getProfileByDid(user.did, { includeTakenDown: true }).catch(() => null),
     ]);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    if (!session) return appReauthRequired(profile?.name);
     if (!profile || profile.profileType !== "project") {
       return jsonError(403, "project_profile_required");
     }
@@ -143,8 +147,11 @@ export const handler = define.handlers({
     );
     if (accountType !== "project") return jsonError(403, "project_required");
 
-    const session = await loadSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    const session = await getSessionForCapabilities(
+      user.did,
+      APP_MANAGEMENT_CAPABILITIES,
+    );
+    if (!session) return appReauthRequired();
 
     const url = new URL(ctx.req.url);
     const rkey = url.searchParams.get("rkey")?.trim();
@@ -178,4 +185,16 @@ function jsonError(status: number, code: string): Response {
 function appviewProxyError(err: unknown): Response {
   console.warn("[api/registry/profile/updates] appview proxy failed:", err);
   return jsonResponse(503, { error: "appview_unavailable" });
+}
+
+function appReauthRequired(name = "your app"): Response {
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: oauthReauthorizationUrl({
+      next: "/apps/manage",
+      action: "app",
+      capabilities: APP_MANAGEMENT_CAPABILITIES,
+      name,
+    }),
+  });
 }

@@ -45,7 +45,7 @@ Deno.test("example handoff verifies selection and builds app OAuth start URL", a
     return_uri: new URL("/examples/atmosphere-login/callback", origin)
       .toString(),
     state: "state-123",
-    app_name: "Atmosphere Login reference app",
+    app_name: "Login with Atmosphere reference app",
     iat: 1_000,
     exp: 1_120,
     jti: "selection-123",

@@ -7,6 +7,12 @@ import type { HostVerificationStatus } from "./lib/account-hosts.ts";
 export interface SessionUser {
   did: string;
   handle: string;
+  /** Whether this DID manages a live app profile. */
+  hasManagedAppProfile?: boolean;
+  /** Whether this DID manages at least one claimed host profile. */
+  hasManagedHostProfiles?: boolean;
+  /** Whether this DID manages a live app or claimed host profile. */
+  hasManagedProfiles?: boolean;
 }
 
 /**

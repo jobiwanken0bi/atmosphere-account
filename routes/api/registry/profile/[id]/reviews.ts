@@ -7,8 +7,14 @@
 import { define } from "../../../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../../../lib/appview-client.ts";
 import { withRateLimit } from "../../../../../lib/rate-limit.ts";
-import { loadSession } from "../../../../../lib/oauth.ts";
-import { putReviewRecord } from "../../../../../lib/pds.ts";
+import {
+  getValidSession,
+  grantedScopeForSession,
+} from "../../../../../lib/oauth.ts";
+import {
+  isPdsScopeMissingError,
+  putReviewRecord,
+} from "../../../../../lib/pds.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
@@ -28,6 +34,8 @@ import {
   validateReview,
 } from "../../../../../lib/lexicons.ts";
 import { rejectLargeRequest } from "../../../../../lib/security.ts";
+import { hasOAuthCapabilities } from "../../../../../lib/oauth-scopes.ts";
+import { oauthReauthorizationUrl } from "../../../../../lib/oauth-action.ts";
 
 interface ReviewPayload {
   rating?: unknown;
@@ -87,8 +95,23 @@ export const handler = define.handlers({
     if (target.did === user.did) return jsonError(400, "cannot_review_self");
     if (target.profileType !== "project") return jsonError(400, "not_project");
 
-    const session = await loadSession(user.did);
-    if (!session) return jsonError(401, "oauth_session_expired");
+    const existing = await getOwnReview(target.did, user.did).catch(() => null);
+    const oauthAction = existing
+      ? "legacy_review_manage" as const
+      : "legacy_review" as const;
+    const session = await getValidSession(user.did);
+    if (
+      !session ||
+      !hasOAuthCapabilities(grantedScopeForSession(session), [
+        "legacy_review",
+      ])
+    ) {
+      return reauthorizationRequired(
+        user.handle,
+        target.handle,
+        oauthAction,
+      );
+    }
 
     const body = await ctx.req.json().catch(() => null) as
       | ReviewPayload
@@ -101,7 +124,6 @@ export const handler = define.handlers({
     const reviewBody = normalizeReviewBody(body.body);
     if (reviewBody == null) return jsonError(400, "body_too_long");
 
-    const existing = await getOwnReview(target.did, user.did).catch(() => null);
     const now = new Date();
     const rkey = existing?.reviewRkey ?? await reviewRkeyForTarget(target.did);
     const createdAt = existing
@@ -128,6 +150,13 @@ export const handler = define.handlers({
       validation.value,
     ).catch((err) => err instanceof Error ? err : new Error(String(err)));
     if (result instanceof Error) {
+      if (isPdsScopeMissingError(result)) {
+        return reauthorizationRequired(
+          user.handle,
+          target.handle,
+          oauthAction,
+        );
+      }
       return jsonResponse(502, {
         error: "put_record_failed",
         detail: result.message,
@@ -176,6 +205,24 @@ function jsonResponse(
 
 function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
+}
+
+function reauthorizationRequired(
+  handle: string,
+  target: string,
+  action: "legacy_review" | "legacy_review_manage",
+): Response {
+  const next = `/apps/${encodeURIComponent(target)}?review=compose`;
+  return jsonResponse(403, {
+    error: "reauth_required",
+    reauthUrl: oauthReauthorizationUrl({
+      next,
+      action,
+      capabilities: ["legacy_review"],
+      name: target,
+    }),
+    handle,
+  });
 }
 
 function appviewProxyError(err: unknown): Response {

@@ -11,17 +11,24 @@ function assertEquals(actual: unknown, expected: unknown): void {
 }
 
 Deno.test("PDS scope failures are distinguishable from other write errors", () => {
+  const scopeErrorBody = JSON.stringify({
+    error: "ScopeMissingError",
+    message:
+      'Missing required scope "repo:fyi.atstore.listing.favorite?action=create"',
+  });
   assertEquals(
     isPdsScopeMissingError(
       new PdsRecordWriteError(
-        "putRecord",
+        "createRecord",
         403,
-        JSON.stringify({
-          error: "ScopeMissingError",
-          message:
-            'Missing required scope "repo:fyi.atstore.listing.favorite?action=create"',
-        }),
+        scopeErrorBody,
       ),
+    ),
+    true,
+  );
+  assertEquals(
+    isPdsScopeMissingError(
+      new PdsRecordWriteError("putRecord", 403, scopeErrorBody),
     ),
     true,
   );

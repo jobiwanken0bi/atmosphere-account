@@ -7,7 +7,6 @@ export interface DatabaseMaintenanceResult {
   expiredLoginSelectionReplays: number;
   expiredLoginPickerIntents: number;
   expiredAppHostLinkIntents: number;
-  expiredPasskeyCeremonies: number;
   expiredRateLimitBuckets: number;
   expiredWorkerLeases: number;
   optimized: boolean;
@@ -44,12 +43,11 @@ export async function runDatabaseMaintenanceForClient(
       args: [now],
     }),
   );
-  const expiredOauthSessions = rowsAffected(
-    await c.execute({
-      sql: `DELETE FROM oauth_session WHERE expires_at < ?`,
-      args: [now],
-    }),
-  );
+  // `oauth_session.expires_at` tracks the short-lived access token so request
+  // paths know when to refresh it. The row also holds a longer-lived refresh
+  // token and must survive access-token expiry; invalid rows are replaced or
+  // explicitly removed by the OAuth lifecycle instead of periodic cleanup.
+  const expiredOauthSessions = 0;
   const expiredAppSessions = rowsAffected(
     await c.execute({
       sql: `DELETE FROM app_session WHERE expires_at < ?`,
@@ -71,12 +69,6 @@ export async function runDatabaseMaintenanceForClient(
   const expiredAppHostLinkIntents = rowsAffected(
     await c.execute({
       sql: `DELETE FROM app_host_link_intent_consumption WHERE expires_at <= ?`,
-      args: [now],
-    }),
-  );
-  const expiredPasskeyCeremonies = rowsAffected(
-    await c.execute({
-      sql: `DELETE FROM passkey_ceremony WHERE expires_at <= ?`,
       args: [now],
     }),
   );
@@ -111,7 +103,6 @@ export async function runDatabaseMaintenanceForClient(
     expiredLoginSelectionReplays,
     expiredLoginPickerIntents,
     expiredAppHostLinkIntents,
-    expiredPasskeyCeremonies,
     expiredRateLimitBuckets,
     expiredWorkerLeases,
     optimized,

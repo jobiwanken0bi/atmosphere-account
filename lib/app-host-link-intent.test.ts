@@ -2,6 +2,8 @@ import type { AppListing } from "./app-directory.ts";
 import {
   bindAppHostLinkIntent,
   createAppHostLinkIntent,
+  createBoundAppHostLinkIntent,
+  inspectExpiredBoundAppHostLinkIntent,
   readAppHostLinkIntent,
   resolveAppHostLinkSelectorIntent,
   resolveBoundAppHostLinkIntent,
@@ -169,6 +171,60 @@ Deno.test("app-host link intents reject forgery and expiry", async () => {
       signingSecret,
     }),
     { ok: false, reason: "expired" },
+  );
+});
+
+Deno.test("expired bound intents can only degrade the matching host claim", async () => {
+  const token = await createBoundAppHostLinkIntent(
+    {
+      appListingId: "app-123",
+      relationship: "same_product",
+      appOwnerDid: "did:plc:app-owner",
+      host: "pds.example",
+    },
+    {
+      now,
+      ttlMs: 1_000,
+      signingSecret,
+      randomJti: () => "E".repeat(32),
+    },
+  );
+  assertEquals(
+    await inspectExpiredBoundAppHostLinkIntent(token, "pds.example", {
+      now: now + 1_000,
+      signingSecret,
+    }),
+    {
+      ok: true,
+      value: {
+        token,
+        intent: {
+          appListingId: "app-123",
+          relationship: "same_product",
+          appOwnerDid: "did:plc:app-owner",
+          jti: "E".repeat(32),
+          issuedAt: now,
+          expiresAt: now + 1_000,
+          kind: "bound",
+          host: "pds.example",
+        },
+      },
+    },
+  );
+  assertEquals(
+    await inspectExpiredBoundAppHostLinkIntent(token, "other.example", {
+      now: now + 1_000,
+      signingSecret,
+    }),
+    { ok: false, reason: "host_mismatch" },
+  );
+  const forged = `${token.slice(0, -1)}${token.endsWith("a") ? "b" : "a"}`;
+  assertEquals(
+    await inspectExpiredBoundAppHostLinkIntent(forged, "pds.example", {
+      now: now + 1_000,
+      signingSecret,
+    }),
+    { ok: false, reason: "invalid" },
   );
 });
 

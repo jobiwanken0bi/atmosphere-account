@@ -3,6 +3,12 @@ import {
   appLikeEndpoint,
   appLikeReauthHref,
 } from "./AppLikeButton.tsx";
+import {
+  favoriteRequestMethod,
+  favoriteResumeIntent,
+  favoriteResumeReturnPath,
+  favoriteTargetLiked,
+} from "../lib/favorite-resume.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -20,7 +26,7 @@ Deno.test("app like endpoint preserves identifiers as one path segment", () => {
 Deno.test("app like reauthorization returns to the current app", () => {
   assertEquals(
     appLikeReauthHref("alice.example", "/apps/grain?from=featured"),
-    "/oauth/login?handle=alice.example&next=%2Fapps%2Fgrain%3Ffrom%3Dfeatured",
+    "/oauth/login?next=%2Fapps%2Fgrain%3Ffrom%3Dfeatured&action=favorite&capability=favorite&handle=alice.example",
   );
 });
 
@@ -32,4 +38,29 @@ Deno.test("app like count copy crosses the island boundary as strings", () => {
   assertEquals(appLikeCountLabel(0, copy), "0 likes");
   assertEquals(appLikeCountLabel(1, copy), "1 like");
   assertEquals(appLikeCountLabel(2, copy), "2 likes");
+});
+
+Deno.test("favorite resume URLs preserve absolute save/remove intent", () => {
+  assertEquals(
+    favoriteResumeReturnPath("feed/reader", "save"),
+    "/apps/feed%2Freader?favorite=save",
+  );
+  assertEquals(
+    favoriteResumeReturnPath("feed/reader", "remove"),
+    "/apps/feed%2Freader?favorite=remove",
+  );
+  assertEquals(favoriteResumeIntent("save"), "save");
+  assertEquals(favoriteResumeIntent("remove"), "remove");
+  assertEquals(favoriteResumeIntent("toggle"), null);
+});
+
+Deno.test("favorite resume mutations are absolute and idempotent", () => {
+  assertEquals(favoriteRequestMethod(false, "save"), "POST");
+  assertEquals(favoriteRequestMethod(true, "save"), null);
+  assertEquals(favoriteTargetLiked(false, "save"), true);
+  assertEquals(favoriteRequestMethod(true, "remove"), "DELETE");
+  assertEquals(favoriteRequestMethod(false, "remove"), null);
+  assertEquals(favoriteTargetLiked(true, "remove"), false);
+  assertEquals(favoriteRequestMethod(false, "toggle"), "POST");
+  assertEquals(favoriteRequestMethod(true, "toggle"), "DELETE");
 });

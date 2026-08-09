@@ -1,8 +1,8 @@
-import { listAppUsersByDids } from "./account-types.ts";
+import { type AppUserRow, listAppUsersByDids } from "./account-types.ts";
 import type { AppMirroredReview } from "./app-directory.ts";
 import { bskyCdnAvatarUrl } from "./avatar.ts";
+import { getProfileMicroblogViewer } from "./bsky-clients.ts";
 import { resolveIdentity } from "./identity.ts";
-import { listProfilesByDids } from "./registry.ts";
 
 const DID_HANDLE_CACHE_TTL_MS = 30 * 60 * 1000;
 const DID_HANDLE_CACHE_MAX = 500;
@@ -18,19 +18,44 @@ export interface DisplayAppReview extends AppMirroredReview {
   authorHref: string | null;
 }
 
+export interface ReviewAuthorIdentity {
+  handle: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+  href: string | null;
+}
+
 export async function enrichAppMirroredReviews(
   reviews: AppMirroredReview[],
 ): Promise<DisplayAppReview[]> {
   const authorDids = uniqueDids(reviews.map((review) => review.authorDid));
-  const [appUsers, profiles] = await Promise.all([
-    listAppUsersByDids(authorDids).catch(() => new Map()),
-    listProfilesByDids(authorDids, { profileType: "user" }).catch(() =>
-      new Map()
-    ),
-  ]);
-  const unresolvedDids = authorDids.filter((did) =>
-    !appUsers.has(did) && !profiles.has(did)
+  const identities = await loadReviewAuthorIdentities(authorDids);
+  return reviews.map((review) => {
+    const identity = identities.get(review.authorDid) ?? emptyAuthorIdentity();
+    return {
+      ...review,
+      authorHandle: identity.handle,
+      authorName: identity.name,
+      authorAvatarUrl: identity.avatarUrl,
+      authorHref: identity.href,
+    };
+  });
+}
+
+/**
+ * Resolve reviewer presentation from the Bluesky-derived local account cache.
+ * Legacy Atmosphere user-profile records intentionally do not participate:
+ * reviewers keep their microblog identity while app and host profiles remain
+ * separate product identities.
+ */
+export async function loadReviewAuthorIdentities(
+  authorDids: string[],
+): Promise<Map<string, ReviewAuthorIdentity>> {
+  const uniqueAuthorDids = uniqueDids(authorDids);
+  const appUsers = await listAppUsersByDids(uniqueAuthorDids).catch(() =>
+    new Map<string, AppUserRow>()
   );
+  const unresolvedDids = uniqueAuthorDids.filter((did) => !appUsers.has(did));
   const resolvedHandles = new Map(
     await Promise.all(
       unresolvedDids.map(
@@ -41,36 +66,48 @@ export async function enrichAppMirroredReviews(
       ),
     ),
   );
-  return reviews.map((review) => {
-    const appUser = appUsers.get(review.authorDid) ?? null;
-    const profile = profiles.get(review.authorDid) ?? null;
-    const authorHandle = appUser?.handle ?? profile?.handle ??
-      resolvedHandles.get(review.authorDid) ?? null;
-    const authorName = profile?.name ?? appUser?.displayName ?? null;
-    const authorAvatarUrl = profile?.avatarCid
-      ? bskyCdnAvatarUrl(review.authorDid, profile.avatarCid)
-      : appUser?.avatarCid && appUser.avatarMime
-      ? bskyCdnAvatarUrl(review.authorDid, appUser.avatarCid)
-      : null;
-    return {
-      ...review,
-      authorHandle,
-      authorName,
-      authorAvatarUrl,
-      authorHref: profile
-        ? `/users/${encodeURIComponent(profile.handle)}`
-        : microblogProfileHref(authorHandle),
-    };
-  });
+  return new Map(
+    uniqueAuthorDids.map((did) => [
+      did,
+      reviewAuthorIdentity({
+        did,
+        appUser: appUsers.get(did) ?? null,
+        resolvedHandle: resolvedHandles.get(did) ?? null,
+      }),
+    ]),
+  );
+}
+
+export function reviewAuthorIdentity(input: {
+  did: string;
+  appUser: AppUserRow | null;
+  resolvedHandle: string | null;
+}): ReviewAuthorIdentity {
+  const handle = input.appUser?.handle ?? input.resolvedHandle;
+  return {
+    handle,
+    name: input.appUser?.displayName ?? null,
+    avatarUrl: input.appUser?.avatarCid && input.appUser.avatarMime
+      ? bskyCdnAvatarUrl(input.did, input.appUser.avatarCid)
+      : null,
+    href: microblogProfileHref(handle, input.appUser?.bskyClientId),
+  };
 }
 
 function uniqueDids(dids: string[]): string[] {
   return [...new Set(dids.map((did) => did.trim()).filter(Boolean))];
 }
 
-function microblogProfileHref(handle: string | null): string | null {
+function microblogProfileHref(
+  handle: string | null,
+  clientId?: string | null,
+): string | null {
   const clean = handle?.replace(/^@/, "").trim();
-  return clean ? `https://bsky.app/profile/${encodeURIComponent(clean)}` : null;
+  return clean ? getProfileMicroblogViewer(clientId).profileUrl(clean) : null;
+}
+
+function emptyAuthorIdentity(): ReviewAuthorIdentity {
+  return { handle: null, name: null, avatarUrl: null, href: null };
 }
 
 async function resolveHandleForDid(did: string): Promise<string | null> {

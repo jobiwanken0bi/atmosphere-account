@@ -11,16 +11,116 @@ import { hmacSign, hmacVerify, randomB64u } from "./jose.ts";
 import { IS_DEV, sessionSecret } from "./env.ts";
 import { readRememberedAccounts } from "./remembered-accounts.ts";
 import { getEffectiveAccountType } from "./account-types.ts";
-import { lookupAccountHost, lookupAccountHostHint } from "./account-hosts.ts";
+import {
+  lookupAccountHost,
+  lookupAccountHostHint,
+  pinnedSeededAccountHostNames,
+} from "./account-hosts.ts";
 import { loadSession } from "./oauth.ts";
 
 export interface SessionUser {
   did: string;
   handle: string;
+  /** True when this DID controls a live app listing. */
+  hasManagedAppProfile?: boolean;
+  /** True when this DID owns at least one verified account-host claim. */
+  hasManagedHostProfiles?: boolean;
+  /** True when this DID currently manages a live app or claimed host. */
+  hasManagedProfiles?: boolean;
 }
 
 const SESSION_COOKIE = "atmo_sid";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_SELF_CONTAINED_HOST_CLAIM_METHODS = [
+  "dns_txt",
+  "pds_contact_email",
+] as const;
+const SESSION_ORDINARY_HOST_SOURCES = ["manual", "observed"] as const;
+const SESSION_PINNED_HOSTS = new Set(pinnedSeededAccountHostNames());
+
+export interface SessionHostClaimCandidate {
+  host: string;
+  method: string;
+  source: string | null | undefined;
+}
+
+/**
+ * Network-free policy behind the global Apps and hosts menu hint. Exact
+ * account/management pages perform the deeper seeded-host DID revalidation.
+ */
+export function sessionHostClaimCanSetMenuFlag(
+  claim: SessionHostClaimCandidate,
+  isDev = IS_DEV,
+): boolean {
+  const host = claim.host.trim().toLowerCase();
+  if (!host) return false;
+  if (
+    SESSION_SELF_CONTAINED_HOST_CLAIM_METHODS.some((method) =>
+      method === claim.method
+    )
+  ) return true;
+  if (claim.method === "local_dev_fixture") {
+    return isDev && host.endsWith(".test");
+  }
+  return claim.method === "oauth_atproto_account" &&
+    SESSION_ORDINARY_HOST_SOURCES.some((source) => source === claim.source) &&
+    !SESSION_PINNED_HOSTS.has(host);
+}
+
+function sqlStringList(values: readonly string[]): string {
+  return values.map((value) => `'${value.replaceAll("'", "''")}'`).join(", ");
+}
+
+/**
+ * Keep the global account menu's host-management hint conservative and cheap.
+ * DNS and grandfathered email claims are self-contained proof. Ordinary
+ * legacy OAuth claims remain usable, but curated seeded hosts need a live DID
+ * re-resolution and are therefore left to exact account/management pages.
+ * Local fixture claims are valid only for `.test` hosts in a real dev process.
+ */
+export function sessionManagedHostOwnershipSql(isDev = IS_DEV): string {
+  const localFixtureRuntime = isDev ? "1 = 1" : "1 = 0";
+  const selfContainedMethods = sqlStringList(
+    SESSION_SELF_CONTAINED_HOST_CLAIM_METHODS,
+  );
+  const ordinarySources = sqlStringList(SESSION_ORDINARY_HOST_SOURCES);
+  const pinnedHosts = sqlStringList([...SESSION_PINNED_HOSTS]);
+  return `EXISTS (
+    SELECT 1
+    FROM account_host_claim claim
+    INNER JOIN account_host host ON host.host = claim.host
+    WHERE claim.claimant_did = s.did
+      AND claim.verified_at IS NOT NULL
+      AND (
+        claim.method IN (${selfContainedMethods})
+        OR (
+          claim.method = 'oauth_atproto_account'
+          AND host.source IN (${ordinarySources})
+          AND lower(host.host) NOT IN (${pinnedHosts})
+        )
+        OR (
+          claim.method = 'local_dev_fixture'
+          AND ${localFixtureRuntime}
+          AND lower(host.host) LIKE '%.test'
+        )
+      )
+  )`;
+}
+
+export const SESSION_LOOKUP_SQL = `SELECT s.did, s.handle, s.expires_at,
+  EXISTS (
+    SELECT 1
+    FROM app_listing listing
+    WHERE listing.deleted_at IS NULL
+      AND (
+        listing.product_did = s.did
+        OR listing.profile_did = s.did
+        OR listing.legacy_profile_did = s.did
+      )
+  ) AS has_managed_app_profile,
+  ${sessionManagedHostOwnershipSql()} AS has_managed_host_profiles
+  FROM app_session s
+  WHERE s.id = ?`;
 
 function readCookieValue(req: Request, name: string): string | null {
   const cookieHeader = req.headers.get("cookie");
@@ -73,7 +173,7 @@ async function readSessionCookie(req: Request): Promise<SessionUser | null> {
 
   return await withDb(async (c) => {
     const r = await c.execute({
-      sql: `SELECT did, handle, expires_at FROM app_session WHERE id = ?`,
+      sql: SESSION_LOOKUP_SQL,
       args: [sid],
     });
     if (r.rows.length === 0) return null;
@@ -85,8 +185,25 @@ async function readSessionCookie(req: Request): Promise<SessionUser | null> {
       });
       return null;
     }
-    return { did: String(row.did), handle: String(row.handle) };
+    const hasManagedAppProfile = databaseBoolean(
+      row.has_managed_app_profile,
+    );
+    const hasManagedHostProfiles = databaseBoolean(
+      row.has_managed_host_profiles,
+    );
+    return {
+      did: String(row.did),
+      handle: String(row.handle),
+      hasManagedAppProfile,
+      hasManagedHostProfiles,
+      hasManagedProfiles: hasManagedAppProfile || hasManagedHostProfiles,
+    };
   });
+}
+
+export function databaseBoolean(value: unknown): boolean {
+  return value === true || value === 1 || value === 1n || value === "1" ||
+    value === "true";
 }
 
 export async function destroySession(req: Request): Promise<void> {

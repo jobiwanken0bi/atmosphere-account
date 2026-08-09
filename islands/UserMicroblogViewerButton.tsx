@@ -82,8 +82,8 @@ export default function UserMicroblogViewerButton(
         ref={triggerRef}
         type="button"
         class="account-microblog-viewer-button"
-        title={`Atmosphere microblog viewer: ${active.name}`}
-        aria-label={`Atmosphere microblog viewer: ${active.name}`}
+        title={`Review profile links: ${active.name}`}
+        aria-label={`Review profile links open in ${active.name}`}
         aria-expanded={open.value}
         onClick={() => {
           open.value = !open.value;
@@ -119,14 +119,14 @@ export default function UserMicroblogViewerButton(
         <div class="account-microblog-viewer-popover" role="dialog">
           <header class="account-microblog-viewer-popover-head">
             <div>
-              <h3>Atmosphere microblog viewer</h3>
+              <h3>Review profile links</h3>
               <p>
-                Choose where Atmosphere microblog profiles open for you.
+                Choose where reviewer handles open for you.
               </p>
             </div>
             <button
               type="button"
-              class="account-profile-edit-close account-microblog-viewer-close"
+              class="account-microblog-viewer-close"
               aria-label="Close microblog viewer settings"
               onClick={() =>
                 open.value = false}

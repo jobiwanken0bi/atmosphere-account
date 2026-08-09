@@ -8,6 +8,7 @@ import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
+import { APP_MANAGEMENT_CAPABILITIES } from "../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -65,13 +66,17 @@ async function renderLegacyAppMigrationPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-create" style={{ paddingTop: "8rem" }}>
+        <main
+          id="main-content"
+          class="explore-create"
+          style={{ paddingTop: "8rem" }}
+        >
           <div class="container" style={{ maxWidth: "680px" }}>
             <p class="text-eyebrow">Shared app records</p>
             <h1 class="text-section">Migrate this app listing</h1>
             <p class="text-body mt-2">
               Sign in with the app account for{" "}
-              {expected}. Atmosphere will preview the existing legacy listing,
+              {expected}. This site will preview the existing legacy listing,
               then publish a community app profile and an ATStore listing from
               that account.
             </p>
@@ -97,6 +102,9 @@ async function renderLegacyAppMigrationPage(
                   <SignInForm
                     returnTo={returnTo}
                     intent="project"
+                    capabilities={APP_MANAGEMENT_CAPABILITIES}
+                    action="app"
+                    targetName="your app"
                     rememberedAccounts={account.rememberedAccounts}
                   />
                 )
@@ -107,7 +115,7 @@ async function renderLegacyAppMigrationPage(
                 )}
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

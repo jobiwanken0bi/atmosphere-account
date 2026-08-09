@@ -111,9 +111,9 @@ export const handler = define.handlers({
       });
     }
     ctx.state.pageMeta = {
-      title: "Atmosphere Login Reference Callback",
+      title: "Login with Atmosphere Reference Callback",
       description:
-        "Reference callback for verifying an Atmosphere Login selection token.",
+        "Reference callback for verifying a Login with Atmosphere selection token.",
       canonicalUrl: expectedReturnUri,
     };
     return ctx.render(
@@ -151,10 +151,13 @@ function CallbackPage(props: CallbackProps) {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} disableScrollEffects />
-        <section class="signin-page-section login-example-section">
+        <main
+          id="main-content"
+          class="signin-page-section login-example-section"
+        >
           <div class="container signin-page-container">
             <a href="/docs/atmosphere-login" class="text-link-button">
-              Back to Atmosphere Login docs
+              Back to Login with Atmosphere docs
             </a>
             <div class="glass signin-page-card login-example-card">
               <p class="text-eyebrow">Reference callback</p>
@@ -244,7 +247,7 @@ function CallbackPage(props: CallbackProps) {
               )}
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -255,7 +258,8 @@ function PopupCompletionPage(
   { clientId, sdkSrc, handle }: PopupCompletionProps,
 ) {
   return (
-    <div
+    <main
+      id="main-content"
       class="login-popup-callback-shell"
       data-example-popup-callback
       data-client-id={clientId}
@@ -268,7 +272,7 @@ function PopupCompletionPage(
           height="34"
           class="login-popup-callback-icon"
         />
-        <p class="text-eyebrow">Continue with Atmosphere</p>
+        <p class="text-eyebrow">Login with Atmosphere</p>
         <h1>Account selected</h1>
         <p data-example-popup-callback-status>
           Sending{" "}
@@ -279,7 +283,7 @@ function PopupCompletionPage(
       <script src={sdkSrc} defer></script>
       <script src="/example-atmosphere-login-popup-callback.js" defer>
       </script>
-    </div>
+    </main>
   );
 }
 
@@ -295,7 +299,7 @@ function buildChecks(input: {
       label: "Signature and expiry",
       ok: false,
       detail:
-        "The token could not be verified with this deployment's Atmosphere Login JWKS.",
+        "The token could not be verified with this deployment's Login with Atmosphere JWKS.",
     }];
   }
   return [

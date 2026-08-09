@@ -249,13 +249,13 @@ export async function main(): Promise<void> {
   );
   assertStatus(pickerResponse, loginUrl);
   assertContentType(pickerResponse, loginUrl, "html");
-  assertContains(pickerHtml, "Continue with", "picker HTML");
+  assertContains(pickerHtml, "Login with Atmosphere", "picker HTML");
   assertContains(pickerHtml, "login-picker-title-brand", "picker HTML");
   assertContains(pickerHtml, "/union.svg", "picker Atmosphere logo");
   assertContains(pickerHtml, ">Atmosphere</span>", "picker HTML");
   assertNotContains(
     pickerHtml,
-    "Continue with Atmosphere...",
+    "Login with Atmosphere...",
     "picker HTML",
   );
   assertContains(pickerHtml, "SignInForm", "picker island boot script");

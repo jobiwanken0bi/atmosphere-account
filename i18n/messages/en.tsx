@@ -17,10 +17,10 @@ const en = {
   meta: {
     title: "Atmosphere Account — The last social account you’ll ever need.",
     description:
-      "Your Atmosphere account is your passport to a growing ecosystem of apps. One account, all your data, your choice.",
+      "Already use Bluesky, Blacksky, Spark, Tangled, or another AT Protocol service? You already have an Atmosphere account.",
     ogTitle: "Atmosphere Account",
     ogDescription:
-      "The last social account you’ll ever need. One account for all your apps.",
+      "You may already have one account for a growing open ecosystem of apps.",
     ogImageAlt: "Atmosphere Account — sky, glass clouds, and hero headline",
   },
 
@@ -30,17 +30,19 @@ const en = {
     explore: "Apps",
     hosts: "Hosts",
     apps: "Apps",
+    docs: "Docs",
     exploreComingSoon: "Coming soon",
     protocol: "Protocol",
     account: {
       menuLabel: "Account menu",
       signedInAs: "Signed in as",
       signedOut: "Signed out",
-      signIn: "Sign in",
+      signIn: "Login with Atmosphere",
       signInHint:
         "Sign in with your Atmosphere account to publish an app listing.",
       hostedBy: (host: string): string => `Hosted by ${host}`,
       manageAccount: "Manage account",
+      managedProducts: "Apps and hosts",
       manageProfile: "Manage app listing",
       manageReviews: "Your reviews",
       viewProfile: "View app listing",
@@ -88,8 +90,8 @@ const en = {
       (): VNode => (
         <>
           The Atmosphere isn’t owned or controlled by any single big-tech
-          company. This isn’t just another “Sign in with Google”, it’s an{" "}
-          <strong>open social web</strong>.
+          company. This isn’t just another “Sign in with Google”,{" "}
+          <strong>it’s an open social internet</strong>.
         </>
       ),
     ],
@@ -98,13 +100,6 @@ const en = {
         You might have heard of Bluesky {icon}{" "}
         — that’s the first Atmosphere app, but there are many more. Anyone can
         build one, and new ones appear every day.
-      </>
-    ),
-    footnote: (): VNode => (
-      <>
-        Of course, you can have <strong>multiple accounts</strong>{" "}
-        if you want — great for keeping different personas separate. Whatever
-        you choose, every account you own works across the entire Atmosphere.
       </>
     ),
   },
@@ -196,7 +191,7 @@ const en = {
       eyebrow: "Your handle travels with you",
       body:
         "By default, your handle ends with your account host, like @you.bsky.social or @you.sprk.so. If you have your own domain, you can use that instead, like @you.com.",
-      demoButton: "Continue with Atmosphere",
+      demoButton: "Login with Atmosphere",
       demoAriaLabel:
         "Animated examples of handles on different account hosts and a custom domain",
       examples: [
@@ -380,12 +375,12 @@ const en = {
   developerResources: {
     heading: "For developers.",
     intro:
-      "Building an Atmosphere app? Let your users know they can sign in with their Atmosphere account.",
-    badgeAlt: "Sign in with your Atmosphere Account",
+      "Building an Atmosphere app? Let your users know they can use Login with Atmosphere.",
+    badgeAlt: "Login with Atmosphere",
     downloadBadge: "Download badge (SVG)",
     downloadLogo: "Download logo (SVG)",
     badgeFootnote:
-      "Add this badge to your sign-in page to help users understand the Atmosphere.",
+      "Add this badge to your login page to make the shared account experience clear.",
     lottieHeading: "Atmosphere Lottie animation",
     lottieIntro:
       "The original Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
@@ -1020,7 +1015,7 @@ const en = {
     body: (handle: string): string =>
       `You’re signed in as @${handle}. Choose whether this account represents you as a person or a project you want listed in Explore.`,
     userTitle: "I’m a user",
-    userBody: "Create a user profile to write and manage your reviews.",
+    userBody: "Use this account to review and like apps.",
     projectTitle: "I’m a project",
     projectBody:
       "Create and manage a public project profile in Explore with app links, screenshots, and developer details.",
@@ -1033,44 +1028,11 @@ const en = {
     reviewsHeading: "Review history",
     empty: "You haven’t reviewed any apps yet.",
     explore: "Browse apps",
-    viewProfile: "View public profile",
-    nameLabel: "Display name",
-    namePlaceholder: "Your name",
-    bioLabel: "Bio",
-    bioPlaceholder: "A short note about you",
-    clientLabel: "Microblog profile",
-    displayBskyButton: "Display microblog profile",
-    configureBskyClient: "Choose microblog viewer",
-    saveClient: "Save profile",
-    saving: "Saving…",
-    saved: "Profile saved.",
-    saveError: "Could not save your profile.",
-    cancel: "Cancel",
-    done: "Done",
     viewProject: "View project",
     delete: "Delete review",
     deleting: "Deleting…",
     deleted: "Review deleted.",
     error: "Couldn’t update the review",
-    upgrade: {
-      button: "Register an app",
-      modalTitle: "Is this account a project?",
-      modalBody:
-        "Choosing yes converts this account into a project profile and unlocks the project dashboard. If this isn’t your project’s account,",
-      signInWithProjectLink: "sign in with your project’s account here",
-      signInWithProjectSuffix: ".",
-      yes: "Yes, convert this account",
-      cancel: "Cancel",
-      submitting: "Converting…",
-      error: "Couldn’t convert this account.",
-    },
-  },
-
-  userProfile: {
-    backToExplore: "Back to Apps",
-    notFoundTitle: "User not found",
-    notFoundBody: "That user profile is not available.",
-    openIn: (clientName: string): string => `Open in ${clientName}`,
   },
 
   reviews: {
@@ -1102,6 +1064,9 @@ const en = {
       submitting: "Saving…",
       delete: "Delete review",
       signIn: "Sign in",
+      signInTitle: "Login with Atmosphere",
+      signInBody:
+        "Choose the Atmosphere account that will own your review. We’ll only request the records needed to publish it.",
       cancel: "Cancel",
       saved: "Review saved.",
       deleted: "Review deleted.",
@@ -1123,6 +1088,10 @@ const en = {
         like: "Like",
         unlike: "Unlike this app",
         signIn: "Sign in to like this app",
+        signInTitle: "Login with Atmosphere",
+        signInBody:
+          "Choose the Atmosphere account that will save this app. We’ll only request permission to create or remove its AT Store favorite record.",
+        cancel: "Cancel",
         error: "Couldn’t update your like. Please try again.",
         countOne: "{count} like",
         countMany: "{count} likes",

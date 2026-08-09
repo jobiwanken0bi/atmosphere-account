@@ -18,10 +18,6 @@ export default define.page(function App(ctx) {
   const htmlClass = "sky-static";
   const bodyClass = "sky-bg";
   const isStandaloneLoginPicker = url.pathname === "/login/select";
-  const needsSigninPreview = url.pathname === "/signin" ||
-    isStandaloneLoginPicker ||
-    url.pathname === "/apps/create" ||
-    url.pathname === "/account";
   const needsDocsScript = url.pathname === "/docs" ||
     url.pathname.startsWith("/docs/");
   const needsAppMediaFallback = url.pathname === "/apps" ||
@@ -30,8 +26,7 @@ export default define.page(function App(ctx) {
     url.pathname.startsWith("/hosts") ||
     url.pathname.startsWith("/account") ||
     url.pathname.startsWith("/signin") ||
-    url.pathname.startsWith("/login") ||
-    url.pathname.startsWith("/users");
+    url.pathname.startsWith("/login");
   const socialImagePath = url.pathname.startsWith("/docs") ||
       url.pathname.startsWith("/developer-resources")
     ? "/og-developer.png"
@@ -132,6 +127,7 @@ export default define.page(function App(ctx) {
           <Component />
         </I18nProvider>
         <script type="module" src="/page-skeleton.js" />
+        <script type="module" src="/submit-once.js" />
         <script type="module" src="/login-handoff.js" />
         {!isStandaloneLoginPicker && (
           <script type="module" src="/nav-scroll.js" />
@@ -142,9 +138,12 @@ export default define.page(function App(ctx) {
         {needsAppMediaFallback && (
           <script type="module" src="/app-media-fallback.js" />
         )}
-        {needsSigninPreview && (
-          <script type="module" src="/signin-preview.js" />
-        )}
+        {
+          /* Contextual sign-in forms can be portal-mounted from any public
+             action. Keep the enhancer available globally; it is inert until
+             a matching form appears. */
+        }
+        <script type="module" src="/signin-preview.js" />
       </body>
     </html>
   );

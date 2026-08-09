@@ -35,7 +35,6 @@ function matchButton(match, onSelect) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "signin-form-preview-row";
-  button.setAttribute("role", "option");
 
   const avatarUrl = safeAvatarUrl(match.avatarUrl);
   if (avatarUrl) {
@@ -69,6 +68,8 @@ function matchButton(match, onSelect) {
 
   button.addEventListener("pointerdown", (event) => {
     event.preventDefault();
+  });
+  button.addEventListener("click", () => {
     onSelect(match);
   });
   return button;
@@ -121,18 +122,48 @@ function hideSelected(target) {
 }
 
 function renderFormError(form, message) {
+  const input = form.querySelector("[data-signin-preview-input]");
   let error = form.querySelector("[data-signin-form-error]");
   if (!error) {
     error = document.createElement("p");
     error.className = "signin-form-error";
     error.setAttribute("data-signin-form-error", "true");
+    error.setAttribute("role", "alert");
+    error.setAttribute("aria-live", "assertive");
     form.append(error);
+  }
+  if (input instanceof HTMLInputElement) {
+    const errorId = `${input.id || "signin-handle"}-error`;
+    error.id = errorId;
+    input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-errormessage", errorId);
+    const describedBy = new Set(
+      (input.getAttribute("aria-describedby") || "").split(/\s+/).filter(
+        Boolean,
+      ),
+    );
+    describedBy.add(errorId);
+    input.setAttribute("aria-describedby", [...describedBy].join(" "));
   }
   error.textContent = message;
 }
 
 function clearFormError(form) {
-  form.querySelector("[data-signin-form-error]")?.remove();
+  const error = form.querySelector("[data-signin-form-error]");
+  const input = form.querySelector("[data-signin-preview-input]");
+  if (input instanceof HTMLInputElement && error && error.id) {
+    const describedBy = (input.getAttribute("aria-describedby") || "")
+      .split(/\s+/)
+      .filter((id) => id && id !== error.id);
+    if (describedBy.length > 0) {
+      input.setAttribute("aria-describedby", describedBy.join(" "));
+    } else {
+      input.removeAttribute("aria-describedby");
+    }
+    input.removeAttribute("aria-invalid");
+    input.removeAttribute("aria-errormessage");
+  }
+  error?.remove();
 }
 
 function enhanceForm(form, index) {
@@ -146,19 +177,16 @@ function enhanceForm(form, index) {
   const loadingLabel = form.dataset.previewLoading || "Searching…";
   const notFoundLabel = form.dataset.previewNotFound ||
     "No matching account found.";
-  const submitLabel = form.dataset.submitLabel || "Continue";
+  const submitLabel = form.dataset.submitLabel || "Login with Atmosphere";
   const submittingLabel = form.dataset.submittingLabel || "Redirecting…";
+  const errorLabel = form.dataset.errorLabel ||
+    "Login with Atmosphere could not be started. Check the handle or try again shortly.";
   const submitButton = form.querySelector(".signin-form-submit");
   const selectedBox = form.querySelector("[data-signin-selected]");
-  const previewId = input.getAttribute("aria-controls") ||
-    `signin-handle-preview-${index}`;
-  input.setAttribute("aria-controls", previewId);
-  input.setAttribute("aria-expanded", "false");
-
   const preview = document.createElement("div");
-  preview.id = previewId;
+  preview.id = `signin-handle-preview-${index}`;
   preview.className = "signin-form-preview glass";
-  preview.setAttribute("role", "listbox");
+  preview.setAttribute("aria-live", "polite");
   preview.hidden = true;
   field.append(preview);
 
@@ -175,12 +203,10 @@ function enhanceForm(form, index) {
 
   function show() {
     preview.hidden = false;
-    input.setAttribute("aria-expanded", "true");
   }
 
   function hide() {
     preview.hidden = true;
-    input.setAttribute("aria-expanded", "false");
   }
 
   function clearSelected() {
@@ -211,6 +237,7 @@ function enhanceForm(form, index) {
         selectedMatch = selected;
         input.value = selected.handle;
         hide();
+        input.focus();
         renderSelected(selectedBox, selected, () => {
           input.value = "";
           clearSelected();
@@ -274,6 +301,40 @@ function enhanceForm(form, index) {
   input.addEventListener("focus", () => {
     if (input.value.trim()) schedule(input.value);
   });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hide();
+      return;
+    }
+    if (event.key !== "ArrowDown" || preview.hidden) return;
+    const first = preview.querySelector(".signin-form-preview-row");
+    if (first instanceof HTMLButtonElement) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  preview.addEventListener("keydown", (event) => {
+    const options = Array.from(
+      preview.querySelectorAll(".signin-form-preview-row"),
+    );
+    const current = options.indexOf(document.activeElement);
+    let next = current;
+    if (event.key === "ArrowDown") {
+      next = Math.min(options.length - 1, current + 1);
+    } else if (event.key === "ArrowUp") next = Math.max(0, current - 1);
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = options.length - 1;
+    else if (event.key === "Escape") {
+      event.preventDefault();
+      hide();
+      input.focus();
+      return;
+    } else return;
+    if (next >= 0 && options[next] instanceof HTMLButtonElement) {
+      event.preventDefault();
+      options[next].focus();
+    }
+  });
   document.addEventListener("pointerdown", (event) => {
     if (!form.contains(event.target)) hide();
   });
@@ -301,16 +362,11 @@ function enhanceForm(form, index) {
       });
       const body = await res.json().catch(() => null);
       if (!res.ok || !body || typeof body.redirectUrl !== "string") {
-        throw new Error(
-          body && typeof body.error === "string"
-            ? body.error
-            : "Could not start sign in.",
-        );
+        throw new Error(errorLabel);
       }
       globalThis.location.assign(body.redirectUrl);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      renderFormError(form, message);
+    } catch {
+      renderFormError(form, errorLabel);
       if (submitButton instanceof HTMLButtonElement) {
         submitButton.disabled = false;
         submitButton.textContent = submitLabel;
@@ -326,8 +382,6 @@ function enhanceForm(form, index) {
 function enhanceFlow(flow) {
   if (flow.getAttribute(FLOW_ENHANCED_ATTR) === "true") return;
   flow.setAttribute(FLOW_ENHANCED_ATTR, "true");
-  const tabs = Array.from(flow.querySelectorAll("[data-signin-tab]"));
-  const panels = Array.from(flow.querySelectorAll("[data-signin-panel]"));
   const showManualButtons = Array.from(
     flow.querySelectorAll("[data-signin-show-manual]"),
   );
@@ -340,26 +394,9 @@ function enhanceFlow(flow) {
     'form.signin-form[data-signin-preview="true"]',
   );
 
-  function setMode(mode) {
-    for (const tab of tabs) {
-      const active = tab.getAttribute("data-signin-tab") === mode;
-      tab.classList.toggle("is-active", active);
-      tab.setAttribute("aria-selected", active ? "true" : "false");
-    }
-    for (const panel of panels) {
-      panel.hidden = panel.getAttribute("data-signin-panel") !== mode;
-    }
-  }
-
   function setSigninView(view) {
     if (savedView) savedView.hidden = view !== "saved";
     if (manualView) manualView.hidden = view !== "manual";
-  }
-
-  for (const tab of tabs) {
-    tab.addEventListener("click", () => {
-      setMode(tab.getAttribute("data-signin-tab") || "signin");
-    });
   }
 
   if (manualForm) {
@@ -376,7 +413,6 @@ function enhanceFlow(flow) {
   }
 
   setSigninView(flow.getAttribute("data-initial-signin-view") || "manual");
-  setMode(flow.getAttribute("data-initial-mode") || "signin");
 }
 
 function hasSigninPreviewTargets() {
@@ -395,19 +431,19 @@ function bootSigninPreviews() {
     .forEach((form, index) => enhanceForm(form, index));
 }
 
-if (hasSigninPreviewTargets()) {
-  bootSigninPreviews();
-  setTimeout(bootSigninPreviews, 0);
-  document.addEventListener("DOMContentLoaded", bootSigninPreviews);
+if (hasSigninPreviewTargets()) bootSigninPreviews();
+setTimeout(bootSigninPreviews, 0);
+document.addEventListener("DOMContentLoaded", bootSigninPreviews);
 
-  let observerTimer = 0;
-  const observer = new MutationObserver(() => {
-    clearTimeout(observerTimer);
-    observerTimer = setTimeout(bootSigninPreviews, 25);
-  });
+// Portal-based contextual modals are mounted after this module evaluates, so
+// observe unconditionally rather than only when a form exists at page load.
+let observerTimer = 0;
+const observer = new MutationObserver(() => {
+  clearTimeout(observerTimer);
+  observerTimer = setTimeout(bootSigninPreviews, 25);
+});
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
-}
+observer.observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+});

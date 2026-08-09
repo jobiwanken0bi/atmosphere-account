@@ -109,27 +109,6 @@ export async function listAppUsersByDids(
   });
 }
 
-export async function getAppUserByHandle(
-  handle: string,
-): Promise<AppUserRow | null> {
-  return await withDb(async (c) => {
-    const r = await c.execute({
-      sql: `
-        SELECT did, handle, display_name, avatar_cid, avatar_mime,
-               bio, bsky_client_id, bsky_button_visible,
-               website_url, website_visible, account_type,
-               created_at, updated_at
-        FROM app_user
-        WHERE lower(handle) = lower(?)
-        LIMIT 1
-      `,
-      args: [handle],
-    });
-    const row = r.rows[0] as unknown as RawAppUserRow | undefined;
-    return row ? rowToAppUser(row) : null;
-  });
-}
-
 export async function setAppUserType(input: {
   did: string;
   handle: string;
@@ -227,49 +206,6 @@ export async function updateAppUserBskyClient(
         WHERE did = ? AND account_type = 'user'
       `,
       args: [client.id, visible ? 1 : 0, Date.now(), did],
-    });
-  });
-}
-
-export async function updateAppUserSettings(input: {
-  did: string;
-  displayName: string;
-  bio: string;
-  bskyClientId: string;
-  bskyButtonVisible: boolean;
-  websiteUrl?: string | null;
-  websiteVisible?: boolean;
-  avatarCid?: string | null;
-  avatarMime?: string | null;
-}): Promise<void> {
-  const client = getBskyClient(input.bskyClientId);
-  await withDb(async (c) => {
-    await c.execute({
-      sql: `
-        UPDATE app_user SET
-          display_name = ?,
-          bio = ?,
-          bsky_client_id = ?,
-          bsky_button_visible = ?,
-          website_url = ?,
-          website_visible = ?,
-          avatar_cid = COALESCE(?, avatar_cid),
-          avatar_mime = COALESCE(?, avatar_mime),
-          updated_at = ?
-        WHERE did = ? AND account_type = 'user'
-      `,
-      args: [
-        input.displayName.trim(),
-        input.bio.trim(),
-        client.id,
-        input.bskyButtonVisible ? 1 : 0,
-        input.websiteUrl?.trim() || null,
-        input.websiteVisible ? 1 : 0,
-        input.avatarCid ?? null,
-        input.avatarMime ?? null,
-        Date.now(),
-        input.did,
-      ],
     });
   });
 }

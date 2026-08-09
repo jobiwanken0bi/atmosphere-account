@@ -11,7 +11,12 @@
  */
 import { define } from "../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
-import { loadSession } from "../../../lib/oauth.ts";
+import { getSessionForCapabilities } from "../../../lib/oauth.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  oauthReauthorizationUrl,
+} from "../../../lib/oauth-action.ts";
+import type { OAuthCapability } from "../../../lib/oauth-scopes.ts";
 import {
   deleteProfileRecord,
   deleteRecord,
@@ -38,11 +43,13 @@ import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
 import {
   deleteAppRecord,
+  getManagedAppListingByAccountDid,
   upsertLegacyProfileAsApp,
 } from "../../../lib/app-directory.ts";
 import {
   atmosphereProfileAtUri,
   findExistingAtstoreListingForProfile,
+  findExistingAtstoreListingsForProfile,
   publishAtstoreListingFromProfileRecord,
 } from "../../../lib/atstore-migration.ts";
 import {
@@ -55,6 +62,17 @@ import {
   publishCommunityAppProfileFromProfileRecord,
 } from "../../../lib/community-app-profile.ts";
 import { resolveAppListingWriteTarget } from "../../../lib/app-listing-lifecycle.ts";
+import { appProfileWriteCapabilities } from "../../../lib/profile-write-capabilities.ts";
+import { isSafeRelativePath } from "../../../lib/security.ts";
+import {
+  appOwnershipUnavailableResponse,
+  appProfileConflictResponse,
+  appProfileCreateListingKeyError,
+  appProfileRegistrationInProgressResponse,
+  releaseAppProfileTarget,
+  reserveAppProfileTarget,
+  rotateStaleAppProfileTarget,
+} from "../../../lib/app-profile-cardinality.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
@@ -185,9 +203,11 @@ interface ProfileFormPayload {
   /** Existing screenshots to keep plus new uploads to append. */
   screenshots?: ScreenshotEntry[];
   screenshotUploads?: { dataBase64: string; mimeType: string }[];
-  /** Create a distinct ATStore listing instead of updating the first one. */
+  /** Create this DID's first ATStore app listing. */
   createNewListing?: boolean;
-  /** Existing ATStore record to update when this DID owns several apps. */
+  /** Client-stable TID that makes first publication retry idempotent. */
+  createListingRkey?: string;
+  /** Exact existing ATStore record to update. */
   atstoreListingUri?: string | null;
 }
 
@@ -391,17 +411,81 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const body = await readJsonBodyLimited<ProfileFormPayload>(
+      ctx.req,
+      PROFILE_JSON_MAX_BYTES,
+    );
+    if (body === JSON_BODY_TOO_LARGE) {
+      return new Response("request body too large", { status: 413 });
+    }
+    if (!body) return new Response("invalid JSON body", { status: 400 });
+
+    if (
+      body.atstoreListingUri != null &&
+      typeof body.atstoreListingUri !== "string"
+    ) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    const requestedAtstoreTarget = body.atstoreListingUri
+      ? ownedAtstoreTarget(body.atstoreListingUri, user.did)
+      : null;
+    if (body.atstoreListingUri && !requestedAtstoreTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    if (body.createNewListing === true && requestedAtstoreTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    const creationKeyError = appProfileCreateListingKeyError(
+      body.createNewListing,
+      body.createListingRkey,
+    );
+    if (creationKeyError) {
+      return new Response(creationKeyError, { status: 400 });
+    }
+    const requestedCreateRkey = typeof body.createListingRkey === "string"
+      ? body.createListingRkey.trim()
+      : null;
+    const requestedCreateUri = requestedCreateRkey
+      ? `at://${user.did}/${ATSTORE_LISTING_NSID}/${requestedCreateRkey}`
+      : null;
+
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
-    if (accountType !== "project") {
-      return new Response("project account required", { status: 403 });
+    const targetedAtstoreWrite = Boolean(requestedAtstoreTarget);
+    let managedApp: Awaited<
+      ReturnType<typeof getManagedAppListingByAccountDid>
+    >;
+    try {
+      managedApp = await getManagedAppListingByAccountDid(user.did);
+    } catch {
+      return appOwnershipUnavailableResponse();
+    }
+    const locallyIndexedCreateRetry = body.createNewListing === true &&
+      requestedCreateUri &&
+      managedApp?.atstoreListingUri === requestedCreateUri;
+    if (
+      body.createNewListing === true && managedApp && !locallyIndexedCreateRetry
+    ) {
+      return appProfileConflictResponse(managedApp ?? undefined);
+    }
+    if (
+      accountType !== "project" && body.createNewListing !== true &&
+      !targetedAtstoreWrite
+    ) {
+      return new Response("owned app listing required", { status: 403 });
     }
 
-    const session = await loadSession(user.did);
+    const requiredCapabilities = appProfileWriteCapabilities(body);
+    const session = await getSessionForCapabilities(
+      user.did,
+      requiredCapabilities,
+    );
     if (!session) {
-      return new Response("OAuth session expired, please sign in again", {
-        status: 401,
+      return appReauthRequired({
+        capabilities: requiredCapabilities,
+        name: trimOrNull(body.name) ?? "your app",
+        next: safeReauthNext(ctx.url),
       });
     }
 
@@ -415,8 +499,15 @@ export const handler = define.handlers({
      * later republish would face the report queue afresh, which is
      * fine).
      */
-    const existing = await getProfileByDid(user.did, { includeTakenDown: true })
-      .catch(() => null);
+    let existing: Awaited<ReturnType<typeof getProfileByDid>>;
+    try {
+      existing = await getProfileByDid(user.did, {
+        includeTakenDown: true,
+        profileType: "project",
+      });
+    } catch {
+      return appOwnershipUnavailableResponse();
+    }
     if (existing?.takedownStatus === "taken_down") {
       return new Response(
         "This app listing has been taken down by an Atmosphere admin. " +
@@ -425,14 +516,52 @@ export const handler = define.handlers({
       );
     }
 
-    const body = await readJsonBodyLimited<ProfileFormPayload>(
-      ctx.req,
-      PROFILE_JSON_MAX_BYTES,
-    );
-    if (body === JSON_BODY_TOO_LARGE) {
-      return new Response("request body too large", { status: 413 });
+    let preflightCreateRecord: Awaited<
+      ReturnType<typeof findExistingAtstoreListingForProfile>
+    > = null;
+    if (body.createNewListing === true && requestedCreateRkey) {
+      let remoteApps: Awaited<
+        ReturnType<typeof findExistingAtstoreListingsForProfile>
+      >;
+      try {
+        remoteApps = await findExistingAtstoreListingsForProfile(
+          user.did,
+          session.pdsUrl,
+        );
+      } catch {
+        return appOwnershipUnavailableResponse();
+      }
+      preflightCreateRecord = remoteApps.find((record) =>
+        record.rkey === requestedCreateRkey
+      ) ?? null;
+      if (remoteApps.some((record) => record.rkey !== requestedCreateRkey)) {
+        return appProfileConflictResponse(managedApp ?? undefined);
+      }
+      let reservation;
+      try {
+        reservation = await reserveAppProfileTarget(
+          user.did,
+          requestedCreateRkey,
+        );
+        const candidateIsOnlyKnownApp =
+          (!managedApp || locallyIndexedCreateRetry) && !existing &&
+          (remoteApps.length === 0 || Boolean(preflightCreateRecord));
+        if (
+          reservation.rkey !== requestedCreateRkey && candidateIsOnlyKnownApp
+        ) {
+          reservation = await rotateStaleAppProfileTarget(
+            user.did,
+            reservation.rkey,
+            requestedCreateRkey,
+          );
+        }
+      } catch {
+        return appOwnershipUnavailableResponse();
+      }
+      if (reservation.rkey !== requestedCreateRkey) {
+        return appProfileRegistrationInProgressResponse();
+      }
     }
-    if (!body) return new Response("invalid JSON body", { status: 400 });
 
     let avatar = body.avatar ?? undefined;
     if (body.avatarUpload?.dataBase64) {
@@ -709,12 +838,6 @@ export const handler = define.handlers({
       });
     }
 
-    const requestedAtstoreTarget = body.atstoreListingUri
-      ? ownedAtstoreTarget(body.atstoreListingUri, user.did)
-      : null;
-    if (body.atstoreListingUri && !requestedAtstoreTarget) {
-      return new Response("invalid app listing target", { status: 400 });
-    }
     const targetedAtstore = requestedAtstoreTarget
       ? await getRecordPublic(
         session.pdsUrl,
@@ -733,12 +856,25 @@ export const handler = define.handlers({
     if (requestedAtstoreTarget && !targetedAtstore) {
       return new Response("app listing target not found", { status: 404 });
     }
-    const existingAtstore = body.createNewListing === true
-      ? null
-      : targetedAtstore ?? await findExistingAtstoreListingForProfile(
-        user.did,
-        session.pdsUrl,
-      ).catch(() => null);
+    let existingAtstore = body.createNewListing === true
+      ? preflightCreateRecord
+      : targetedAtstore;
+    if (body.createNewListing !== true && !existingAtstore) {
+      try {
+        existingAtstore = await findExistingAtstoreListingForProfile(
+          user.did,
+          session.pdsUrl,
+        );
+      } catch {
+        return appOwnershipUnavailableResponse();
+      }
+    }
+    if (
+      body.createNewListing !== true && managedApp?.atstoreListingUri &&
+      !existingAtstore
+    ) {
+      return appOwnershipUnavailableResponse();
+    }
     const writeTarget = body.createNewListing === true
       ? "atstore_listing" as const
       : resolveAppListingWriteTarget({
@@ -747,6 +883,33 @@ export const handler = define.handlers({
         categories: validation.value.categories,
       });
     if (writeTarget === "atstore_listing") {
+      let publishRkey = requestedCreateRkey;
+      if (!existingAtstore) {
+        if (!publishRkey) {
+          return new Response("app listing creation key required", {
+            status: 400,
+          });
+        }
+        let reservation;
+        try {
+          reservation = await reserveAppProfileTarget(user.did, publishRkey);
+          if (
+            reservation.rkey !== publishRkey && !managedApp && !existing
+          ) {
+            reservation = await rotateStaleAppProfileTarget(
+              user.did,
+              reservation.rkey,
+              publishRkey,
+            );
+          }
+        } catch {
+          return appOwnershipUnavailableResponse();
+        }
+        if (reservation.rkey !== publishRkey) {
+          return appProfileRegistrationInProgressResponse();
+        }
+        publishRkey = reservation.rkey;
+      }
       try {
         const atstoreResult = await publishAtstoreListingFromProfileRecord({
           did: user.did,
@@ -755,6 +918,7 @@ export const handler = define.handlers({
           record: validation.value,
           existingRecord: existingAtstore,
           createDistinctListing: body.createNewListing === true,
+          rkeyOverride: publishRkey,
         });
         const communityResult = body.createNewListing === true
           ? null
@@ -889,17 +1053,27 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const requestedListing = ctx.url.searchParams.get("listing");
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
-    if (accountType !== "project") {
-      return new Response("project account required", { status: 403 });
+    if (accountType !== "project" && !requestedListing) {
+      return new Response("owned app listing required", { status: 403 });
     }
 
-    const session = await loadSession(user.did);
-    if (!session) return new Response("OAuth session expired", { status: 401 });
+    const requiredCapabilities = APP_MANAGEMENT_CAPABILITIES;
+    const session = await getSessionForCapabilities(
+      user.did,
+      requiredCapabilities,
+    );
+    if (!session) {
+      return appReauthRequired({
+        capabilities: requiredCapabilities,
+        name: "your app",
+        next: safeReauthNext(ctx.url),
+      });
+    }
 
-    const requestedListing = ctx.url.searchParams.get("listing");
     if (requestedListing) {
       const target = ownedAtstoreTarget(requestedListing, user.did);
       if (!target) {
@@ -913,6 +1087,7 @@ export const handler = define.handlers({
           target.rkey,
         );
         await deleteAppRecord(target.uri);
+        await releaseAppProfileTarget(user.did, target.rkey);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return new Response(`ATStore listing delete failed: ${message}`, {
@@ -945,6 +1120,7 @@ export const handler = define.handlers({
           existingAtstore.rkey,
         );
         await deleteAppRecord(existingAtstore.uri);
+        await releaseAppProfileTarget(user.did, existingAtstore.rkey);
       }
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
@@ -999,4 +1175,31 @@ function appviewProxyError(err: unknown): Response {
     status: 503,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+function appReauthRequired(input: {
+  capabilities: readonly OAuthCapability[];
+  name: string;
+  next?: string;
+}): Response {
+  return new Response(
+    JSON.stringify({
+      error: "reauth_required",
+      reauthUrl: oauthReauthorizationUrl({
+        next: input.next ?? "/apps/manage",
+        action: "app",
+        capabilities: input.capabilities,
+        name: input.name,
+      }),
+    }),
+    {
+      status: 403,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    },
+  );
+}
+
+function safeReauthNext(url: URL): string | undefined {
+  const next = url.searchParams.get("next");
+  return next && isSafeRelativePath(next) ? next : undefined;
 }

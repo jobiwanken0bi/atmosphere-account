@@ -10,28 +10,28 @@ import {
   type AccountHostClaim,
   type AccountHostClaimAuthority,
   claimAccountHost,
-  claimAccountHostWithContactEmail,
+  claimAccountHostWithDns,
   getAccountHost,
   getAccountHostClaim,
   resolveAccountHostClaimAuthority,
   verifiedAccountHostOwnerDid,
 } from "../../../lib/account-hosts.ts";
 import {
-  hostClaimProofMessage,
   hostSelfServiceClaimPolicy,
   verifyHostClaimDomainProof,
 } from "../../../lib/host-claim-proof.ts";
 import {
-  getHostContactEmailAvailability,
-  type HostContactEmailAvailability,
-  hostContactEmailVerificationFailureMessage,
-  type HostContactEmailVerificationFailureReason,
-  inspectHostContactEmailChallenge,
-  isHostContactEmailVerificationFailureReason,
-  requestHostContactEmailChallenge,
-} from "../../../lib/host-claim-email.ts";
-import { trustedRequestOrigin } from "../../../lib/atmosphere-origins.ts";
-import { IS_DEV } from "../../../lib/env.ts";
+  hostDnsChallengeVerificationFailureMessage,
+  type HostDnsChallengeVerificationFailureReason,
+  type InspectedHostDnsChallengeResult,
+  inspectHostDnsChallenge,
+  isHostDnsChallengeVerificationFailureReason,
+  requestHostDnsChallenge,
+} from "../../../lib/host-claim-dns.ts";
+import {
+  type ResolvedHostOwnerTransferContext,
+  resolveHostOwnerTransferIntent,
+} from "../../../lib/host-owner-transfer-intent.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 import { type AppListing } from "../../../lib/app-directory.ts";
 import {
@@ -40,17 +40,39 @@ import {
 import {
   appHostLinkIntentErrorMessage,
   type BoundAppHostLinkIntent,
+  inspectExpiredBoundAppHostLinkIntent,
   resolveBoundAppHostLinkIntent,
   type ResolvedAppHostLinkIntent,
 } from "../../../lib/app-host-link-intent.ts";
+import {
+  HOST_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../../../lib/oauth-action.ts";
+import { getSessionForCapabilities } from "../../../lib/oauth.ts";
+import { oauthAddAccountHref } from "../oauth-entry.ts";
+import {
+  readFormDataRequestWithLimit,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
+import {
+  rejectLegacyHostClaimAction,
+  stripLegacyHostClaimToken,
+} from "../../../lib/host-claim-legacy.ts";
+
+export {
+  rejectLegacyHostClaimAction,
+  stripLegacyHostClaimToken,
+} from "../../../lib/host-claim-legacy.ts";
+
+const MAX_HOST_CLAIM_BODY_BYTES = 32_768;
 
 type ClaimState =
   | "ready"
   | "claimed-by-you"
   | "claimed-by-other"
   | "not-authorized"
-  | "email"
-  | "email-token"
+  | "verification"
+  | "dns"
   | "not-claimable"
   | "error";
 
@@ -63,13 +85,14 @@ interface ClaimPageProps {
   error: string | null;
   account: ReturnType<typeof buildAccountMenuProps>;
   linkContext: HostClaimLinkContext | null;
-  contactEmail: HostContactEmailAvailability | null;
-  token: string | null;
-  tokenFailure: HostContactEmailVerificationFailureReason | null;
-  notice: string | null;
-  previewUrl: string | null;
+  dnsChallenge: Extract<InspectedHostDnsChallengeResult, { ok: true }> | null;
+  dnsToken: string | null;
+  dnsFailure: HostDnsChallengeVerificationFailureReason | null;
   directoryListing: boolean;
   detectedLookup: boolean;
+  transferContext: ResolvedHostOwnerTransferContext | null;
+  repairingClaim: boolean;
+  linkError: boolean;
 }
 
 interface HostClaimLinkContext {
@@ -82,8 +105,8 @@ interface HostClaimLinkContext {
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const capturedToken = captureHostClaimToken(ctx.url, ctx.params.host);
-    if (capturedToken) return capturedToken;
+    const legacyEmailLink = stripLegacyHostClaimToken(ctx.url);
+    if (legacyEmailLink) return legacyEmailLink;
 
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
       (err) => appviewUnavailable("host claim page", err),
@@ -110,42 +133,82 @@ export const handler = define.handlers({
           error="Host not found."
           account={buildAccountMenuProps(ctx.state)}
           linkContext={null}
-          contactEmail={null}
-          token={null}
-          tokenFailure={null}
-          notice={null}
-          previewUrl={null}
+          dnsChallenge={null}
+          dnsToken={null}
+          dnsFailure={null}
           directoryListing
           detectedLookup={false}
+          transferContext={null}
+          repairingClaim={false}
+          linkError={false}
         />,
         { status: 404 },
       );
     }
-    if (!ctx.state.user) {
-      return redirectToSignin(host.host, ctx.url);
+    const transferResolution = await loadTransferContext(ctx.url, host.host);
+    if (!transferResolution.ok && transferResolution.reason !== "missing") {
+      return invalidHostTransferResponse(
+        hostTransferFailureMessage(transferResolution.reason),
+      );
     }
-    const linkContext = await loadLinkContext(ctx.url, host.host);
-    if (linkContext instanceof Response) return linkContext;
+    const transferContext = transferResolution.ok
+      ? transferResolution.value
+      : null;
+    if (!ctx.state.user) {
+      return redirectToSignin(host, ctx.url, transferContext);
+    }
+    if (
+      !await getSessionForCapabilities(
+        ctx.state.user.did,
+        HOST_MANAGEMENT_CAPABILITIES,
+        {
+          quiet: true,
+        },
+      )
+    ) {
+      return redirectToSignin(host, ctx.url, transferContext);
+    }
+    const loadedLinkContext = await loadLinkContext(ctx.url, host.host);
+    if (loadedLinkContext instanceof Response) return loadedLinkContext;
+    const linkError = loadedLinkContext === "expired" ||
+      ctx.url.searchParams.get("linkError") === "1";
+    const linkContext = loadedLinkContext === "expired"
+      ? null
+      : loadedLinkContext;
+    if (transferContext && linkContext) {
+      return invalidHostTransferResponse(
+        "A managing-account change cannot also connect an app.",
+      );
+    }
+    const dnsToken = ctx.url.searchParams.get("dns_token")?.trim() || null;
+    const dnsFailure = readDnsFailureIntent(ctx.url);
     const page = await buildClaimPageProps(
       host,
       ctx.state.user,
       buildAccountMenuProps(ctx.state),
       linkContext,
+      transferContext,
       {
-        error: ctx.url.searchParams.get("linkError") === "1"
-          ? "The host is claimed, but its app connection could not be completed. Try connecting it again below."
+        error: linkError
+          ? "The app connection could not be completed. You can still claim or manage the host, then reconnect it from app hosting."
+          : ctx.url.searchParams.get("legacy_email") === "1"
+          ? "Email links are no longer used for new host claims. Existing claims are unchanged; new claims require DNS."
           : null,
-        token: readHostClaimToken(ctx.req),
+        dnsToken,
+        dnsFailure,
         directoryListing: readDirectoryListingIntent(ctx.url),
         detectedLookup: readDetectedLookupIntent(ctx.url),
+        linkError,
       },
     );
     const response = await ctx.render(<HostClaimPage {...page} />);
-    if (page.tokenFailure && page.tokenFailure !== "account_mismatch") {
-      response.headers.append(
-        "set-cookie",
-        clearHostClaimTokenCookie(host.host),
-      );
+    if (
+      dnsToken || ctx.url.searchParams.has("transfer_intent") ||
+      ctx.url.searchParams.has("link_intent") || linkError
+    ) {
+      response.headers.set("cache-control", "no-store");
+      response.headers.set("referrer-policy", "no-referrer");
+      response.headers.set("x-robots-tag", "noindex, nofollow");
     }
     return response;
   },
@@ -161,24 +224,74 @@ export const handler = define.handlers({
     if (!host) {
       return new Response("Host not found.", { status: 404 });
     }
-    if (!ctx.state.user) {
-      return redirectToSignin(host.host, ctx.url);
+    const transferResolution = await loadTransferContext(ctx.url, host.host);
+    if (!transferResolution.ok && transferResolution.reason !== "missing") {
+      return invalidHostTransferResponse(
+        hostTransferFailureMessage(transferResolution.reason),
+      );
     }
+    const transferContext = transferResolution.ok
+      ? transferResolution.value
+      : null;
+    if (!ctx.state.user) {
+      return redirectToSignin(host, ctx.url, transferContext);
+    }
+    if (
+      !await getSessionForCapabilities(
+        ctx.state.user.did,
+        HOST_MANAGEMENT_CAPABILITIES,
+        {
+          quiet: true,
+        },
+      )
+    ) {
+      return redirectToSignin(host, ctx.url, transferContext);
+    }
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_HOST_CLAIM_BODY_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "Request too large."
+          : "Invalid request.",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
+    const action = textValue(form?.get("action"));
+    const legacyEmailResponse = rejectLegacyHostClaimAction(action);
+    if (legacyEmailResponse) return legacyEmailResponse;
     const limited = await enforceDurableRateLimit(ctx.req, {
-      scope: "host-claim-update",
-      capacity: 8,
+      scope: action === "verify_dns"
+        ? "host-claim-dns-check"
+        : "host-claim-update",
+      capacity: action === "verify_dns" ? 30 : 8,
       refillMs: 60 * 60_000,
     });
     if (limited) return limited;
-    const linkContext = await loadLinkContext(ctx.url, host.host);
-    if (linkContext instanceof Response) return linkContext;
-    const form = await ctx.req.formData().catch(() => null);
-    const action = textValue(form?.get("action"));
-    const listingSelection = readDirectoryListingSelection(form);
-    const directoryListing = listingSelection ??
-      readDirectoryListingIntent(ctx.url);
+    const loadedLinkContext = await loadLinkContext(ctx.url, host.host);
+    if (loadedLinkContext instanceof Response) return loadedLinkContext;
+    const linkError = loadedLinkContext === "expired" ||
+      ctx.url.searchParams.get("linkError") === "1";
+    const linkContext = loadedLinkContext === "expired"
+      ? null
+      : loadedLinkContext;
+    if (transferContext && linkContext) {
+      return invalidHostTransferResponse(
+        "A managing-account change cannot also connect an app.",
+      );
+    }
+    const listingSelection = transferContext
+      ? undefined
+      : readDirectoryListingSelection(form);
+    const directoryListing = transferContext
+      ? host.operatorListingOptIn !== false
+      : listingSelection ?? readDirectoryListingIntent(ctx.url);
     const detectedLookup = readDetectedLookupIntent(ctx.url);
-    if (action === "connect_app" && linkContext) {
+    if (action === "connect_app" && (linkContext || linkError)) {
       const existingClaim = await getAccountHostClaim(host.host).catch(() =>
         null
       );
@@ -193,111 +306,141 @@ export const handler = define.handlers({
           ctx.state.user,
           buildAccountMenuProps(ctx.state),
           linkContext,
+          transferContext,
           {
             error: "This account does not control the verified claimed host.",
             directoryListing,
             detectedLookup,
+            linkError,
           },
         );
         return ctx.render(<HostClaimPage {...page} />, { status: 403 });
       }
-      return await completeAppHostLink(
-        host,
-        ctx.state.user.did,
-        linkContext,
-      );
+      if (linkContext) {
+        return await completeAppHostLink(
+          host,
+          ctx.state.user.did,
+          linkContext,
+        );
+      }
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: `/hosts/${
+            encodeURIComponent(host.host)
+          }/manage?linkError=1`,
+        },
+      });
     }
-    if (action === "request_email") {
+    if (action === "request_dns") {
       const existingClaim = await getAccountHostClaim(host.host).catch(() =>
         null
       );
       if (existingClaim) {
-        const page = await buildClaimPageProps(
+        const verifiedOwnerDid = await verifiedAccountHostOwnerDid(
           host,
-          ctx.state.user,
-          buildAccountMenuProps(ctx.state),
-          linkContext,
-          {
-            error: "This host has already been claimed.",
-            directoryListing,
-            detectedLookup,
-          },
-        );
-        return ctx.render(<HostClaimPage {...page} />, { status: 409 });
+          existingClaim,
+        ).catch(() => null);
+        const validTransfer = transferContext &&
+          transferContext.intent.previousOwnerDid ===
+            existingClaim.claimantDid &&
+          existingClaim.claimantDid !== ctx.state.user.did;
+        const validRepair = !transferContext &&
+          existingClaim.claimantDid === ctx.state.user.did &&
+          verifiedOwnerDid !== ctx.state.user.did;
+        if (!validTransfer && !validRepair) {
+          const page = await buildClaimPageProps(
+            host,
+            ctx.state.user,
+            buildAccountMenuProps(ctx.state),
+            linkContext,
+            transferContext,
+            {
+              error: "This host has already been claimed.",
+              directoryListing,
+              detectedLookup,
+              linkError,
+            },
+          );
+          return ctx.render(<HostClaimPage {...page} />, { status: 409 });
+        }
       }
-      const availability = await getHostContactEmailAvailability({
-        host: host.host,
-        displayName: host.displayName,
-        serviceEndpoint: host.serviceEndpoint,
-      });
-      if (!availability.available) {
-        const page = await buildClaimPageProps(
-          host,
-          ctx.state.user,
-          buildAccountMenuProps(ctx.state),
-          linkContext,
-          {
-            error: "This PDS no longer announces a contact email.",
-            directoryListing,
-            detectedLookup,
-          },
-        );
-        return ctx.render(<HostClaimPage {...page} />, { status: 409 });
-      }
-      const requested = await requestHostContactEmailChallenge(
-        {
-          host: host.host,
-          displayName: host.displayName,
-          serviceEndpoint: host.serviceEndpoint,
-        },
+      const requested = await requestHostDnsChallenge(
+        { host: host.host },
         ctx.state.user,
-        trustedRequestOrigin(ctx.url, ctx.req.headers),
+      );
+      if (!requested.ok) {
+        const page = await buildClaimPageProps(
+          host,
+          ctx.state.user,
+          buildAccountMenuProps(ctx.state),
+          linkContext,
+          transferContext,
+          {
+            error: requested.reason === "rate_limited"
+              ? "Too many DNS verifications were started. Try again in an hour."
+              : "DNS verification is not available for this host.",
+            directoryListing,
+            detectedLookup,
+            linkError,
+          },
+        );
+        return ctx.render(<HostClaimPage {...page} />, { status: 409 });
+      }
+      const location = new URL(
         claimPathForContext(
           host.host,
           linkContext,
           directoryListing,
           detectedLookup,
+          linkError,
+          transferContext,
         ),
+        ctx.url,
       );
-      const feedback = emailRequestFeedback(requested);
-      const page = await buildClaimPageProps(
-        host,
-        ctx.state.user,
-        buildAccountMenuProps(ctx.state),
-        linkContext,
-        { ...feedback, directoryListing, detectedLookup },
-      );
-      return ctx.render(<HostClaimPage {...page} />, {
-        status: requested.ok ? 200 : 409,
+      location.searchParams.set("dns_token", requested.verificationToken);
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: `${location.pathname}${location.search}`,
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        },
       });
     }
 
-    const verificationToken = action === "verify_email"
-      ? textValue(form?.get("token")) || readHostClaimToken(ctx.req)
-      : "";
-    const result = action === "verify_email"
-      ? await claimAccountHostWithContactEmail(
+    const dnsToken = textValue(form?.get("dns_token")) ||
+      ctx.url.searchParams.get("dns_token")?.trim() || "";
+    const isLocalDevClaim = action === "claim" &&
+      hostSelfServiceClaimPolicy(host.host) === "local-dev";
+    if (action !== "verify_dns" && !isLocalDevClaim) {
+      return new Response("Invalid host claim action.", {
+        status: 400,
+        headers: {
+          "cache-control": "no-store",
+          "content-type": "text/plain; charset=utf-8",
+        },
+      });
+    }
+    const result = action === "verify_dns"
+      ? await claimAccountHostWithDns(
         host.host,
         ctx.state.user,
-        verificationToken,
+        dnsToken,
+        {
+          ...(listingSelection == null
+            ? {}
+            : { operatorListingOptIn: listingSelection }),
+          ...(transferContext ? { transfer: transferContext } : {}),
+        },
+      )
+      : await claimAccountHost(
+        host.host,
+        ctx.state.user,
         listingSelection == null
           ? {}
           : { operatorListingOptIn: listingSelection },
-      )
-      : action === "claim" &&
-          hostSelfServiceClaimPolicy(host.host) === "local-dev"
-      ? await claimAccountHost(
-        host.host,
-        ctx.state.user,
-        listingSelection == null
-          ? {}
-          : { operatorListingOptIn: listingSelection },
-      )
-      : {
-        ok: false as const,
-        reason: "contact_email_required" as const,
-        host,
-      };
+      );
     if (result.ok) {
       if (linkContext) {
         return await completeAppHostLink(
@@ -309,14 +452,15 @@ export const handler = define.handlers({
       return new Response(null, {
         status: 303,
         headers: {
-          location: `/hosts/${
-            encodeURIComponent(result.host.host)
-          }/manage?claimed=1`,
-          "set-cookie": clearHostClaimTokenCookie(host.host),
+          location: hostClaimManageLocation(
+            result.host.host,
+            !!transferContext,
+            linkError,
+          ),
         },
       });
     }
-    const emailFailure = isHostContactEmailVerificationFailureReason(
+    const dnsFailure = isHostDnsChallengeVerificationFailureReason(
         result.reason,
       )
       ? result.reason
@@ -326,36 +470,42 @@ export const handler = define.handlers({
       ctx.state.user,
       buildAccountMenuProps(ctx.state),
       linkContext,
+      transferContext,
       {
-        error: emailFailure
-          ? hostContactEmailVerificationFailureMessage(emailFailure)
+        error: dnsFailure
+          ? hostDnsChallengeVerificationFailureMessage(dnsFailure)
           : result.reason === "already_claimed"
           ? "This host has already been claimed."
           : result.reason === "not_authorized"
-          ? hostClaimProofMessage()
-          : result.reason === "contact_email_required"
-          ? hostClaimProofMessage()
+          ? "This account is not authorized to claim or transfer this host."
+          : result.reason === "dns_required"
+          ? "Verify control of the host with its DNS TXT challenge."
           : "This host is not ready to be claimed yet.",
-        token: action === "verify_email" ? verificationToken : null,
-        tokenFailure: emailFailure,
+        dnsToken: action === "verify_dns" ? dnsToken : null,
+        dnsFailure,
         directoryListing,
         detectedLookup,
+        linkError,
       },
     );
-    const response = await ctx.render(<HostClaimPage {...page} />, {
+    return await ctx.render(<HostClaimPage {...page} />, {
       status: 403,
     });
-    if (
-      action === "verify_email" && emailFailure !== "account_mismatch"
-    ) {
-      response.headers.append(
-        "set-cookie",
-        clearHostClaimTokenCookie(host.host),
-      );
-    }
-    return response;
   },
 });
+
+export function hostClaimManageLocation(
+  host: string,
+  transferred: boolean,
+  linkError: boolean,
+): string {
+  const search = new URLSearchParams({
+    [transferred ? "transferred" : "claimed"]: "1",
+    dns: "1",
+  });
+  if (linkError) search.set("linkError", "1");
+  return `/hosts/${encodeURIComponent(host)}/manage?${search}`;
+}
 
 async function completeAppHostLink(
   host: AccountHost,
@@ -374,10 +524,7 @@ async function completeAppHostLink(
     : `/hosts/${encodeURIComponent(host.host)}/manage?linkError=1`;
   return new Response(null, {
     status: 303,
-    headers: {
-      location,
-      "set-cookie": clearHostClaimTokenCookie(host.host),
-    },
+    headers: { location },
   });
 }
 
@@ -397,14 +544,14 @@ async function buildClaimPageProps(
   user: { did: string; handle: string },
   account: ReturnType<typeof buildAccountMenuProps>,
   linkContext: HostClaimLinkContext | null,
+  transferContext: ResolvedHostOwnerTransferContext | null,
   feedback: {
     error?: string | null;
-    notice?: string | null;
-    previewUrl?: string | null;
-    token?: string | null;
-    tokenFailure?: HostContactEmailVerificationFailureReason | null;
+    dnsToken?: string | null;
+    dnsFailure?: HostDnsChallengeVerificationFailureReason | null;
     directoryListing?: boolean;
     detectedLookup?: boolean;
+    linkError?: boolean;
   } = {},
 ): Promise<ClaimPageProps> {
   const [claim, authority] = await Promise.all([
@@ -415,25 +562,28 @@ async function buildClaimPageProps(
     ? await verifiedAccountHostOwnerDid(host, claim).catch(() => null)
     : null;
   let state: ClaimState = "not-claimable";
-  let contactEmail: HostContactEmailAvailability | null = null;
-  const token = feedback.token?.trim() || null;
-  let tokenFailure: HostContactEmailVerificationFailureReason | null =
-    feedback.tokenFailure ?? null;
-  let tokenIsReady = false;
-  if (token && !tokenFailure) {
-    const inspected = await inspectHostContactEmailChallenge(
-      {
-        host: host.host,
-        displayName: host.displayName,
-        serviceEndpoint: host.serviceEndpoint,
-      },
+  const dnsToken = feedback.dnsToken?.trim() || null;
+  let dnsFailure = feedback.dnsFailure ?? null;
+  let dnsChallenge:
+    | Extract<InspectedHostDnsChallengeResult, { ok: true }>
+    | null = null;
+  if (dnsToken && !dnsFailure) {
+    const inspected = await inspectHostDnsChallenge(
+      { host: host.host },
       user,
-      token,
+      dnsToken,
     ).catch(() => ({ ok: false as const, reason: "invalid" as const }));
-    if (inspected.ok) tokenIsReady = true;
-    else tokenFailure = inspected.reason;
+    if (inspected.ok) dnsChallenge = inspected;
+    else dnsFailure = inspected.reason;
   }
-  if (verifiedClaimOwnerDid === user.did) {
+  const repairingClaim = !transferContext && !!claim &&
+    claim.claimantDid === user.did && verifiedClaimOwnerDid !== user.did;
+  const validTransfer = !!transferContext && !!claim &&
+    claim.claimantDid === transferContext.intent.previousOwnerDid &&
+    claim.claimantDid !== user.did;
+  if (validTransfer || repairingClaim) {
+    state = dnsChallenge ? "dns" : "verification";
+  } else if (verifiedClaimOwnerDid === user.did) {
     state = "claimed-by-you";
   } else if (verifiedClaimOwnerDid) {
     state = "claimed-by-other";
@@ -443,16 +593,7 @@ async function buildClaimPageProps(
     const proof = verifyHostClaimDomainProof(host, user);
     state = proof.ok ? "ready" : "not-claimable";
   } else {
-    contactEmail = await getHostContactEmailAvailability({
-      host: host.host,
-      displayName: host.displayName,
-      serviceEndpoint: host.serviceEndpoint,
-    }).catch(() => null);
-    state = tokenIsReady
-      ? "email-token"
-      : contactEmail?.available
-      ? "email"
-      : "not-claimable";
+    state = dnsChallenge ? "dns" : "verification";
   }
   return {
     host,
@@ -461,28 +602,49 @@ async function buildClaimPageProps(
     state,
     activeHandle: user.handle,
     error: feedback.error ??
-      (tokenFailure
-        ? hostContactEmailVerificationFailureMessage(tokenFailure)
+      (dnsFailure
+        ? hostDnsChallengeVerificationFailureMessage(dnsFailure)
         : null),
     account,
     linkContext,
-    contactEmail,
-    token,
-    tokenFailure,
-    notice: feedback.notice ?? null,
-    previewUrl: feedback.previewUrl ?? null,
+    dnsChallenge,
+    dnsToken,
+    dnsFailure,
     directoryListing: feedback.directoryListing ?? true,
     detectedLookup: feedback.detectedLookup ?? false,
+    transferContext,
+    repairingClaim,
+    linkError: feedback.linkError ?? false,
   };
 }
 
-function redirectToSignin(host: string, url: URL): Response {
-  const next = `/hosts/${encodeURIComponent(host)}/claim${url.search}`;
-  const signin = new URL("/signin", url.origin);
-  signin.searchParams.set("next", next);
+function redirectToSignin(
+  host: AccountHost,
+  url: URL,
+  transferContext: ResolvedHostOwnerTransferContext | null,
+): Response {
   return new Response(null, {
     status: 303,
-    headers: { location: `${signin.pathname}${signin.search}` },
+    headers: {
+      location: hostClaimAuthorizationHref(
+        host,
+        url,
+        transferContext ? "host_transfer" : "host_claim",
+      ),
+    },
+  });
+}
+
+export function hostClaimAuthorizationHref(
+  host: Pick<AccountHost, "host" | "displayName">,
+  url: URL,
+  action: "host_claim" | "host_transfer" = "host_claim",
+): string {
+  return oauthSigninUrl({
+    next: `/hosts/${encodeURIComponent(host.host)}/claim${url.search}`,
+    action,
+    capabilities: HOST_MANAGEMENT_CAPABILITIES,
+    name: host.displayName,
   });
 }
 
@@ -496,19 +658,23 @@ function HostClaimPage(props: ClaimPageProps) {
     error,
     account,
     linkContext,
-    contactEmail,
-    token,
-    tokenFailure,
-    notice,
-    previewUrl,
+    dnsChallenge,
+    dnsToken,
+    dnsFailure,
     directoryListing,
     detectedLookup,
+    transferContext,
+    repairingClaim,
+    linkError,
   } = props;
   return (
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="signin-page-section host-claim-section">
+        <main
+          id="main-content"
+          class="signin-page-section host-claim-section"
+        >
           <div class="container signin-page-container">
             <a
               href={detectedLookup
@@ -542,8 +708,10 @@ function HostClaimPage(props: ClaimPageProps) {
                     </div>
                     <p class="text-body host-claim-copy">
                       {linkContext
-                        ? `Claiming this host proves control and connects it to ${linkContext.app.name} in the same flow.`
-                        : "Claiming verifies that you operate this PDS. Once claimed, your signed-in Atmosphere account can manage the host details here."}
+                        ? `DNS verification proves control of this host and then connects it to ${linkContext.app.name}.`
+                        : transferContext
+                        ? "The new managing account must prove control of this host with DNS before anything changes."
+                        : "A temporary DNS record proves that you operate this host. Once claimed, this Atmosphere account can manage its public profile and images."}
                     </p>
                     <DetectedHostSummary host={host} />
                     <ClaimBody
@@ -554,13 +722,14 @@ function HostClaimPage(props: ClaimPageProps) {
                       activeHandle={activeHandle}
                       error={error}
                       linkContext={linkContext}
-                      contactEmail={contactEmail}
-                      token={token}
-                      tokenFailure={tokenFailure}
-                      notice={notice}
-                      previewUrl={previewUrl}
+                      dnsChallenge={dnsChallenge}
+                      dnsToken={dnsToken}
+                      dnsFailure={dnsFailure}
                       directoryListing={directoryListing}
                       detectedLookup={detectedLookup}
+                      transferContext={transferContext}
+                      repairingClaim={repairingClaim}
+                      linkError={linkError}
                     />
                   </>
                 )
@@ -575,7 +744,7 @@ function HostClaimPage(props: ClaimPageProps) {
                 )}
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -591,13 +760,14 @@ function ClaimBody(
     activeHandle,
     error,
     linkContext,
-    contactEmail,
-    token,
-    tokenFailure,
-    notice,
-    previewUrl,
+    dnsChallenge,
+    dnsToken,
+    dnsFailure,
     directoryListing,
     detectedLookup,
+    transferContext,
+    repairingClaim,
+    linkError,
   }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
@@ -606,13 +776,14 @@ function ClaimBody(
     activeHandle: string | null;
     error: string | null;
     linkContext: HostClaimLinkContext | null;
-    contactEmail: HostContactEmailAvailability | null;
-    token: string | null;
-    tokenFailure: HostContactEmailVerificationFailureReason | null;
-    notice: string | null;
-    previewUrl: string | null;
+    dnsChallenge: Extract<InspectedHostDnsChallengeResult, { ok: true }> | null;
+    dnsToken: string | null;
+    dnsFailure: HostDnsChallengeVerificationFailureReason | null;
     directoryListing: boolean;
     detectedLookup: boolean;
+    transferContext: ResolvedHostOwnerTransferContext | null;
+    repairingClaim: boolean;
+    linkError: boolean;
   },
 ) {
   if (state === "claimed-by-you") {
@@ -665,10 +836,11 @@ function ClaimBody(
           <a
             class="directory-register-button host-claim-secondary-action"
             href={switchAccountHref(
-              host.host,
+              host,
               linkContext,
               directoryListing,
               detectedLookup,
+              linkError,
             )}
           >
             <span>Use the verified host operator account</span>
@@ -689,8 +861,8 @@ function ClaimBody(
             Signed in as <AtmosphereHandle handle={activeHandle} />
           </p>
           <p class="text-body">
-            This local development fixture can be claimed without sending an
-            email.
+            This explicit local <code>.test</code>{" "}
+            fixture can be claimed without a public DNS lookup.
           </p>
         </div>
         <DirectoryListingChoice checked={directoryListing} />
@@ -705,98 +877,136 @@ function ClaimBody(
       </form>
     );
   }
-  if (state === "email-token" && token) {
+  if (state === "dns" && dnsToken && dnsChallenge) {
     return (
-      <form method="POST" class="host-claim-form">
-        <input type="hidden" name="action" value="verify_email" />
+      <form method="POST" class="host-claim-form" data-submit-once="true">
+        <input type="hidden" name="action" value="verify_dns" />
+        <input type="hidden" name="dns_token" value={dnsToken} />
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <div class="host-claim-panel host-claim-panel-ok">
-          <p class="host-claim-panel-title">Finish email verification</p>
+          <p class="host-claim-panel-title">Add this DNS TXT record</p>
           <p class="text-body">
-            This link was sent to the contact address announced by the PDS.
-            Confirm that <AtmosphereHandle handle={activeHandle} />{" "}
-            should manage {host.displayName}.
+            Add the exact record below with your DNS provider. Keep this page
+            open while DNS updates, then verify it.
           </p>
+          <dl class="host-claim-detected-summary">
+            <div>
+              <dt>Name</dt>
+              <dd>
+                <code>{dnsChallenge.recordName}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd>
+                <code>TXT</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Value</dt>
+              <dd>
+                <code>{dnsChallenge.recordValue}</code>
+              </dd>
+            </div>
+          </dl>
         </div>
-        <DirectoryListingChoice checked={directoryListing} />
-        <button type="submit" class="directory-register-button">
-          <span>Verify and claim host</span>
+        {!transferContext && (
+          <DirectoryListingChoice checked={directoryListing} />
+        )}
+        <button
+          type="submit"
+          class="directory-register-button"
+          data-pending-label="Verifying DNS…"
+        >
+          <span data-submit-once-label>
+            {transferContext
+              ? "Verify DNS and change manager"
+              : repairingClaim
+              ? "Verify DNS and restore management"
+              : "Verify DNS and claim host"}
+          </span>
         </button>
+        <a
+          class="text-link-button"
+          href={switchAccountHref(
+            host,
+            linkContext,
+            directoryListing,
+            detectedLookup,
+            linkError,
+            transferContext,
+            dnsToken,
+          )}
+        >
+          {dnsFailure === "account_mismatch"
+            ? "Return to the account that started verification"
+            : "Choose another account"}
+        </a>
       </form>
     );
   }
-  if (state === "email") {
+  if (state === "verification") {
     return (
-      <form method="POST" class="host-claim-form">
-        <input type="hidden" name="action" value="request_email" />
+      <form method="POST" class="host-claim-form" data-submit-once="true">
+        <input type="hidden" name="action" value="request_dns" />
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
-        )}
-        {notice && (
-          <p class="profile-form-status profile-form-status--ok">
-            {notice}
-          </p>
-        )}
-        {tokenFailure === "account_mismatch" && token && (
-          <a
-            class="directory-register-button host-claim-secondary-action"
-            href={`/oauth/add-account?next=${
-              encodeURIComponent(
-                claimPathForContext(
-                  host.host,
-                  linkContext,
-                  directoryListing,
-                  detectedLookup,
-                ),
-              )
-            }`}
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
           >
-            <span class="directory-register-button-icon" aria-hidden="true">
-              +
-            </span>
-            <span>Switch or add account</span>
-          </a>
+            {error}
+          </p>
         )}
         <div class="host-claim-panel host-claim-panel-ok">
-          <p class="host-claim-panel-title">Verify through the PDS</p>
+          <p class="host-claim-panel-title">
+            {transferContext
+              ? "Change the managing account"
+              : repairingClaim
+              ? "Restore verified management"
+              : "Verify host ownership"}
+          </p>
           <p class="text-body">
-            {host.displayName} announces {contactEmail?.maskedEmail}{" "}
-            as its PDS contact. Atmosphere will send a one-time link bound to
-            <AtmosphereHandle handle={activeHandle} />.
+            {transferContext
+              ? `The existing manager remains in control until the new account proves control of ${host.host} with DNS.`
+              : `Add a temporary DNS record to prove that you control ${host.host}. Permission alone does not claim the host.`}
+          </p>
+          <p class="text-body">
+            Managing account:{" "}
+            <strong>
+              <AtmosphereHandle handle={activeHandle} />
+            </strong>
           </p>
         </div>
-        {linkContext && tokenFailure !== "account_mismatch" && (
-          <a
-            class="text-link-button"
-            href={switchAccountHref(
-              host.host,
-              linkContext,
-              directoryListing,
-              detectedLookup,
-            )}
-          >
-            Use the host operator account instead
-          </a>
+        {!transferContext && (
+          <DirectoryListingChoice checked={directoryListing} />
         )}
-        <DirectoryListingChoice checked={directoryListing} />
-        {previewUrl && (
-          <a class="text-link-button" href={previewUrl}>
-            Open local email preview
-          </a>
-        )}
-        {contactEmail?.deliveryConfigured
-          ? (
-            <button type="submit" class="directory-register-button">
-              <span>Send verification email</span>
-            </button>
-          )
-          : (
-            <p class="text-body">
-              Email delivery is temporarily unavailable. Try again later.
-            </p>
+        <button
+          type="submit"
+          class="directory-register-button"
+          data-pending-label="Preparing DNS record…"
+        >
+          <span data-submit-once-label>Show DNS record</span>
+        </button>
+        <a
+          class="text-link-button"
+          href={switchAccountHref(
+            host,
+            linkContext,
+            directoryListing,
+            detectedLookup,
+            linkError,
+            transferContext,
           )}
+        >
+          Choose another account
+        </a>
       </form>
     );
   }
@@ -813,8 +1023,8 @@ function ClaimBody(
             Operator verification unavailable
           </p>
           <p class="text-body">
-            Atmosphere could not live-verify the account currently recorded as
-            this host’s operator. Nothing has been changed; try again later.
+            This site could not verify the account currently recorded as this
+            host’s operator. Nothing has been changed; try again later.
           </p>
         </div>
       );
@@ -837,16 +1047,13 @@ function ClaimBody(
         </p>
         <a
           class="directory-register-button host-claim-secondary-action"
-          href={`/oauth/add-account?next=${
-            encodeURIComponent(
-              claimPathForContext(
-                host.host,
-                linkContext,
-                directoryListing,
-                detectedLookup,
-              ),
-            )
-          }`}
+          href={switchAccountHref(
+            host,
+            linkContext,
+            directoryListing,
+            detectedLookup,
+            linkError,
+          )}
         >
           <span class="directory-register-button-icon" aria-hidden="true">
             +
@@ -861,22 +1068,20 @@ function ClaimBody(
       {error && (
         <p class="profile-form-status profile-form-status--error">{error}</p>
       )}
-      <p class="host-claim-panel-title">More verification needed</p>
+      <p class="host-claim-panel-title">DNS verification required</p>
       <p class="text-body">
-        This PDS does not expose a usable contact email. Configure{" "}
-        <code>contact.email</code> in its live{" "}
-        <code>com.atproto.server.describeServer</code>{" "}
-        response, then retry. Atmosphere will send that address a one-time link
-        to verify the management account.
+        Verify the host with a temporary DNS TXT record. Social handles, email
+        addresses, and repository records do not prove control of its domain.
       </p>
       {linkContext && (
         <a
           class="directory-register-button host-claim-secondary-action"
           href={switchAccountHref(
-            host.host,
+            host,
             linkContext,
             directoryListing,
             detectedLookup,
+            linkError,
           )}
         >
           <span>Use the host operator account</span>
@@ -890,42 +1095,14 @@ function textValue(value: FormDataEntryValue | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function emailRequestFeedback(
-  result: Awaited<ReturnType<typeof requestHostContactEmailChallenge>>,
-): {
-  error?: string;
-  notice?: string;
-  previewUrl?: string;
-} {
-  if (result.ok) {
-    return {
-      notice:
-        `Verification email sent to ${result.maskedEmail}. The link expires in 20 minutes.`,
-      previewUrl: result.previewUrl,
-    };
-  }
-  if (result.reason === "rate_limited") {
-    return {
-      error:
-        "Too many verification emails were requested. Try again in an hour.",
-    };
-  }
-  if (result.reason === "contact_unavailable") {
-    return { error: "This PDS no longer announces a valid contact email." };
-  }
-  if (result.reason === "delivery_unavailable") {
-    return { error: "Email delivery is not configured yet." };
-  }
-  return {
-    error: "The verification email could not be sent. Try again shortly.",
-  };
-}
-
 function claimPathForContext(
   host: string,
   linkContext: HostClaimLinkContext | null,
   directoryListing = true,
   detectedLookup = false,
+  linkError = false,
+  transferContext: ResolvedHostOwnerTransferContext | null = null,
+  dnsToken: string | null = null,
 ): string {
   const path = `/hosts/${encodeURIComponent(host)}/claim`;
   const search = new URLSearchParams({
@@ -934,101 +1111,82 @@ function claimPathForContext(
   if (linkContext) {
     search.set("link_intent", linkContext.intentToken);
   }
+  if (transferContext) search.set("transfer_intent", transferContext.token);
+  if (dnsToken) search.set("dns_token", dnsToken);
   if (detectedLookup) search.set("from", "detected");
+  if (linkError) search.set("linkError", "1");
   return `${path}?${search}`;
 }
 
-function switchAccountHref(
+export function hostClaimExpiredLinkContinuationPathForTest(
   host: string,
+): string {
+  return claimPathForContext(host, null, true, false, true);
+}
+
+function switchAccountHref(
+  host: Pick<AccountHost, "host" | "displayName">,
   linkContext: HostClaimLinkContext | null,
   directoryListing: boolean,
   detectedLookup: boolean,
+  linkError: boolean,
+  transferContext: ResolvedHostOwnerTransferContext | null = null,
+  dnsToken: string | null = null,
 ): string {
-  return `/oauth/add-account?next=${
-    encodeURIComponent(
-      claimPathForContext(
-        host,
-        linkContext,
-        directoryListing,
-        detectedLookup,
-      ),
-    )
-  }`;
+  const next = claimPathForContext(
+    host.host,
+    linkContext,
+    directoryListing,
+    detectedLookup,
+    linkError,
+    transferContext,
+    dnsToken,
+  );
+  return oauthAddAccountHref(oauthSigninUrl({
+    next,
+    action: transferContext ? "host_transfer" : "host_claim",
+    capabilities: HOST_MANAGEMENT_CAPABILITIES,
+    name: host.displayName,
+  }));
 }
 
-const HOST_CLAIM_TOKEN_COOKIE = "atmo_host_claim_token";
-const HOST_CLAIM_TOKEN_MAX_AGE_SECONDS = 20 * 60;
-
-function captureHostClaimToken(
+async function loadTransferContext(
   url: URL,
-  routeHost: string,
-): Response | null {
-  if (!url.searchParams.has("token")) return null;
-  const rawToken = url.searchParams.get("token")?.trim() ?? "";
-  const token = /^[A-Za-z0-9_-]{43}$/.test(rawToken) ? rawToken : "invalid";
-  const host = normalizeClaimCookieHost(routeHost);
-  const clean = new URL(url);
-  clean.searchParams.delete("token");
-  const headers = new Headers({
-    location: `${clean.pathname}${clean.search}`,
-    "cache-control": "no-store",
-    "referrer-policy": "no-referrer",
-    "x-robots-tag": "noindex, nofollow",
+  expectedHost: string,
+): Promise<Awaited<ReturnType<typeof resolveHostOwnerTransferIntent>>> {
+  return await resolveHostOwnerTransferIntent(
+    url.searchParams.get("transfer_intent")?.trim() || null,
+    expectedHost,
+  );
+}
+
+function hostTransferFailureMessage(
+  reason: "invalid" | "expired" | "host_mismatch" | "owner_changed",
+): string {
+  return reason === "expired"
+    ? "This managing-account change has expired. Ask the current manager to start it again."
+    : reason === "owner_changed"
+    ? "The managing account changed after this request began. Nothing else was changed."
+    : "This managing-account change is invalid. Nothing was changed.";
+}
+
+function invalidHostTransferResponse(message: string): Response {
+  return new Response(message, {
+    status: 400,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+      "referrer-policy": "no-referrer",
+      "x-robots-tag": "noindex, nofollow",
+    },
   });
-  if (host) {
-    headers.append("set-cookie", buildHostClaimTokenCookie(host, token));
-  }
-  return new Response(null, { status: 303, headers });
 }
 
-function readHostClaimToken(req: Request): string {
-  const cookie = req.headers.get("cookie");
-  if (!cookie) return "";
-  for (const part of cookie.split(";").map((value) => value.trim())) {
-    if (!part.startsWith(`${HOST_CLAIM_TOKEN_COOKIE}=`)) continue;
-    try {
-      const value = decodeURIComponent(
-        part.slice(HOST_CLAIM_TOKEN_COOKIE.length + 1),
-      );
-      return value.length <= 256 ? value : "";
-    } catch {
-      return "";
-    }
-  }
-  return "";
-}
-
-function buildHostClaimTokenCookie(host: string, token: string): string {
-  const flags = [
-    `Path=/hosts/${encodeURIComponent(host)}/claim`,
-    `Max-Age=${HOST_CLAIM_TOKEN_MAX_AGE_SECONDS}`,
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (!IS_DEV) flags.push("Secure");
-  return `${HOST_CLAIM_TOKEN_COOKIE}=${encodeURIComponent(token)}; ${
-    flags.join("; ")
-  }`;
-}
-
-function clearHostClaimTokenCookie(host: string): string {
-  const flags = [
-    `Path=/hosts/${encodeURIComponent(host)}/claim`,
-    "Max-Age=0",
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (!IS_DEV) flags.push("Secure");
-  return `${HOST_CLAIM_TOKEN_COOKIE}=; ${flags.join("; ")}`;
-}
-
-function normalizeClaimCookieHost(value: string): string | null {
-  try {
-    const host = decodeURIComponent(value).trim().toLowerCase();
-    return /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(host) ? host : null;
-  } catch {
-    return null;
-  }
+function readDnsFailureIntent(
+  url: URL,
+): HostDnsChallengeVerificationFailureReason | null {
+  const value = url.searchParams.get("dns_failure");
+  return isHostDnsChallengeVerificationFailureReason(value) ? value : null;
 }
 
 function readDirectoryListingIntent(url: URL): boolean {
@@ -1104,11 +1262,22 @@ function DetectedHostSummary({ host }: { host: AccountHost }) {
 async function loadLinkContext(
   url: URL,
   expectedHost: string,
-): Promise<HostClaimLinkContext | null | Response> {
+): Promise<HostClaimLinkContext | "expired" | null | Response> {
   const token = url.searchParams.get("link_intent")?.trim();
   if (!token) return null;
   const resolved = await resolveBoundAppHostLinkIntent(token, expectedHost);
   if (!resolved.ok) {
+    if (resolved.reason === "expired") {
+      const inspected = await inspectExpiredBoundAppHostLinkIntent(
+        token,
+        expectedHost,
+      );
+      if (inspected.ok) return "expired";
+      return new Response(appHostLinkIntentErrorMessage(inspected.reason), {
+        status: 400,
+        headers: { "cache-control": "no-store" },
+      });
+    }
     return new Response(appHostLinkIntentErrorMessage(resolved.reason), {
       status: 400,
       headers: { "cache-control": "no-store" },

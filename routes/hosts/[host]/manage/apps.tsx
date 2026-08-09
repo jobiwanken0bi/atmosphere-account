@@ -2,6 +2,7 @@ import { define } from "../../../../utils.ts";
 import Nav from "../../../../components/Nav.tsx";
 import Footer from "../../../../components/Footer.tsx";
 import HostMark from "../../../../components/hosts/HostMark.tsx";
+import ConfirmedActionForm from "../../../../islands/ConfirmedActionForm.tsx";
 import { buildAccountMenuProps } from "../../../../lib/account-menu-props.ts";
 import {
   type AccountHost,
@@ -27,7 +28,18 @@ import { proxyAppviewPageResponse } from "../../../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../../../lib/security.ts";
 import { loadManagedAppPortfolio } from "../../../../lib/managed-products.ts";
-import { loadSession } from "../../../../lib/oauth.ts";
+import {
+  getSessionForCapabilities,
+  loadSession,
+} from "../../../../lib/oauth.ts";
+import {
+  HOST_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../../../../lib/oauth-action.ts";
+import {
+  appHostRelationshipLabel,
+  appHostRelationshipOption,
+} from "../../../../lib/app-host-relationship-copy.ts";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -184,7 +196,7 @@ async function loadOwnedHost(ctx: {
   const host = await getAccountHost(hostId).catch(() => null);
   if (!host) return new Response("Host not found.", { status: 404 });
   if (!ctx.state.user) {
-    return redirect(`/signin?next=${encodeURIComponent(ctx.url.pathname)}`);
+    return redirect(hostAuthorizationHref(host, ctx.url));
   }
   const claim = await getAccountHostClaim(host.host).catch(() => null);
   const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
@@ -196,7 +208,28 @@ async function loadOwnedHost(ctx: {
       { status: 403 },
     );
   }
+  if (
+    !await getSessionForCapabilities(
+      ctx.state.user.did,
+      HOST_MANAGEMENT_CAPABILITIES,
+      { quiet: true },
+    )
+  ) {
+    return redirect(hostAuthorizationHref(host, ctx.url));
+  }
   return host;
+}
+
+export function hostAuthorizationHref(
+  host: Pick<AccountHost, "displayName">,
+  url: URL,
+): string {
+  return oauthSigninUrl({
+    next: `${url.pathname}${url.search}`,
+    action: "host_manage",
+    capabilities: HOST_MANAGEMENT_CAPABILITIES,
+    name: host.displayName,
+  });
 }
 
 function HostAppRelationshipsPage(props: {
@@ -214,7 +247,10 @@ function HostAppRelationshipsPage(props: {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="signin-page-section host-manage-section">
+        <main
+          class="signin-page-section host-manage-section"
+          id="main-content"
+        >
           <div class="container signin-page-container relationship-manage-container">
             <a
               href={`/hosts/${encodeURIComponent(host.host)}/manage`}
@@ -226,15 +262,15 @@ function HostAppRelationshipsPage(props: {
               <div class="host-claim-heading">
                 <HostMark host={host} />
                 <div>
-                  <p class="text-eyebrow">Apps and host identity</p>
+                  <p class="text-eyebrow">App connections</p>
                   <h1 class="host-claim-title">{host.displayName}</h1>
                   <p class="text-body">{host.host}</p>
                 </div>
               </div>
               <p class="text-body host-claim-copy">
-                Explicit connections take precedence over Atmosphere's DID-based
-                fallback. If the app uses a different owner account, both
-                accounts must approve it.
+                Connections describe how apps use this host. If an app uses a
+                different managing account, both accounts must approve the
+                connection.
               </p>
               {error && (
                 <p class="profile-form-status profile-form-status--error">
@@ -278,20 +314,19 @@ function HostAppRelationshipsPage(props: {
                             Continue approval
                           </a>
                         )}
-                        <form method="POST">
-                          <input type="hidden" name="action" value="remove" />
-                          <input
-                            type="hidden"
-                            name="appListingId"
-                            value={link.appListingId}
-                          />
-                          <button
-                            class="profile-form-button-secondary"
-                            type="submit"
-                          >
-                            Remove
-                          </button>
-                        </form>
+                        <ConfirmedActionForm
+                          action={`/hosts/${
+                            encodeURIComponent(host.host)
+                          }/manage/apps`}
+                          fields={{
+                            action: "remove",
+                            appListingId: link.appListingId,
+                          }}
+                          label="Remove"
+                          confirmation={`Remove the connection between ${link.appName} and ${host.displayName}? You can connect them again later.`}
+                          buttonClass="account-dashboard-mini-button account-dashboard-mini-button--danger"
+                          ariaLabel={`Remove ${link.appName} from ${host.displayName}`}
+                        />
                       </div>
                     </article>
                   ))}
@@ -299,8 +334,12 @@ function HostAppRelationshipsPage(props: {
               )}
 
               <section class="relationship-create">
-                <h2>Define a connection</h2>
-                <form method="POST" class="host-manage-form">
+                <h2>Connect an app</h2>
+                <form
+                  method="POST"
+                  class="host-manage-form"
+                  data-submit-once="true"
+                >
                   <input type="hidden" name="action" value="define" />
                   <label class="profile-form-field">
                     <span class="profile-form-label">App</span>
@@ -331,10 +370,10 @@ function HostAppRelationshipsPage(props: {
                     <span class="profile-form-label">Relationship</span>
                     <select class="profile-form-input" name="relationship">
                       <option value="same_product">
-                        Same product — this host is part of the app
+                        {appHostRelationshipOption("same_product")}
                       </option>
                       <option value="same_operator">
-                        Same operator — we run this separate app
+                        {appHostRelationshipOption("same_operator")}
                       </option>
                       <option value="host_only">
                         Host only — suppress the inferred App badge
@@ -342,17 +381,21 @@ function HostAppRelationshipsPage(props: {
                     </select>
                   </label>
                   <p class="profile-form-hint">
-                    Same product and same operator require the app account's
-                    approval when its DID differs from the host owner.
+                    App service and shared operator connections require the app
+                    account's approval when its DID differs from the host owner.
                   </p>
-                  <button class="directory-register-button" type="submit">
-                    Save connection
+                  <button
+                    class="directory-register-button"
+                    type="submit"
+                    data-pending-label="Saving connection…"
+                  >
+                    <span data-submit-once-label>Save connection</span>
                   </button>
                 </form>
               </section>
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -362,9 +405,7 @@ function HostAppRelationshipsPage(props: {
 function relationshipLabel(
   value: DirectoryEntityAppLink["relationship"],
 ): string {
-  if (value === "same_product") return "Same product";
-  if (value === "same_operator") return "Same organization, separate app";
-  return "Host-only override";
+  return appHostRelationshipLabel(value);
 }
 
 function confirmHref(host: string, appListingId: string): string {

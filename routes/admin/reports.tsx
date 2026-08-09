@@ -52,7 +52,7 @@ function AdminReportsPage({ account, reports, locale }: PageProps) {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
-        <section class="admin-section">
+        <main id="main-content" class="admin-section">
           <div class="container" style={{ maxWidth: "920px" }}>
             <p>
               <a href="/admin" class="text-link-button">
@@ -101,7 +101,7 @@ function AdminReportsPage({ account, reports, locale }: PageProps) {
                 </div>
               )}
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

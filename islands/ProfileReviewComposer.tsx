@@ -1,13 +1,26 @@
 import { useSignal } from "@preact/signals";
+import { useEffect } from "preact/hooks";
 import { createPortal } from "preact/compat";
 import type { ReviewRow } from "../lib/reviews.ts";
 import { useDialog } from "../lib/use-dialog.ts";
+import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
+import type { OAuthCapability } from "../lib/oauth-scopes.ts";
+import type { OAuthAction } from "../lib/oauth-action.ts";
+import {
+  isPlainPrimaryActivation,
+  LoginWithAtmosphereDialog,
+} from "./ContextualSignInLink.tsx";
 
 interface Props {
   targetId: string;
   signedIn: boolean;
   isOwner: boolean;
   loginHref: string;
+  returnTo: string;
+  authCapabilities: readonly OAuthCapability[];
+  authAction: OAuthAction;
+  authTargetName: string;
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
   ownReview: Pick<ReviewRow, "id" | "rating" | "body"> | null;
   submitEndpoint?: string;
   deleteEndpoint?: string;
@@ -26,6 +39,8 @@ interface Props {
     submitting: string;
     delete: string;
     signIn: string;
+    signInTitle: string;
+    signInBody: string;
     cancel: string;
     saved: string;
     deleted: string;
@@ -41,6 +56,11 @@ export default function ProfileReviewComposer(
     signedIn,
     isOwner,
     loginHref,
+    returnTo,
+    authCapabilities,
+    authAction,
+    authTargetName,
+    rememberedAccounts = [],
     ownReview,
     submitEndpoint,
     deleteEndpoint,
@@ -52,12 +72,41 @@ export default function ProfileReviewComposer(
   const rating = useSignal<1 | 2 | 3 | 4 | 5>(ownReview?.rating ?? 5);
   const body = useSignal(ownReview?.body ?? "");
   const open = useSignal(false);
+  const authOpen = useSignal(false);
   const submitting = useSignal(false);
   const status = useSignal<
     | { kind: "idle" }
     | { kind: "ok"; text: string }
     | { kind: "error"; text: string }
   >({ kind: "idle" });
+  const draftKey = `atmosphere:review-draft:${targetId}`;
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(draftKey);
+    if (saved) {
+      try {
+        const draft = JSON.parse(saved) as { rating?: number; body?: string };
+        if (draft.rating && draft.rating >= 1 && draft.rating <= 5) {
+          rating.value = draft.rating as 1 | 2 | 3 | 4 | 5;
+        }
+        if (typeof draft.body === "string") body.value = draft.body;
+      } catch {
+        sessionStorage.removeItem(draftKey);
+      }
+    }
+    const url = new URL(globalThis.location.href);
+    if (
+      url.searchParams.get("review") === "compose" && signedIn && !isOwner
+    ) {
+      open.value = true;
+      url.searchParams.delete("review");
+      globalThis.history.replaceState(
+        null,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    }
+  }, []);
 
   const close = () => {
     open.value = false;
@@ -66,6 +115,10 @@ export default function ProfileReviewComposer(
   const dialogRef = useDialog<HTMLDivElement>(
     open.value && signedIn && !isOwner,
     close,
+  );
+  const authDialogRef = useDialog<HTMLDivElement>(
+    authOpen.value && !signedIn,
+    () => authOpen.value = false,
   );
 
   const submit = async () => {
@@ -84,7 +137,27 @@ export default function ProfileReviewComposer(
           }),
         },
       );
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) {
+        const payload = await r.json().catch(() => null) as
+          | { error?: string; detail?: string; reauthUrl?: string }
+          | null;
+        if (payload?.error === "reauth_required") {
+          const reauthUrl = reauthUrlFromApiPayload(payload);
+          if (reauthUrl) {
+            sessionStorage.setItem(
+              draftKey,
+              JSON.stringify({
+                rating: rating.value,
+                body: body.value,
+              }),
+            );
+            globalThis.location.assign(reauthUrl);
+            return;
+          }
+        }
+        throw new Error(payload?.detail || copy.error);
+      }
+      sessionStorage.removeItem(draftKey);
       status.value = { kind: "ok", text: copy.saved };
       globalThis.location.reload();
     } catch (err) {
@@ -106,7 +179,20 @@ export default function ProfileReviewComposer(
           `/api/registry/profile/${encodeURIComponent(targetId)}/reviews/me`,
         { method: "DELETE" },
       );
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) {
+        const payload = await r.json().catch(() => null) as
+          | { error?: string; detail?: string; reauthUrl?: string }
+          | null;
+        if (payload?.error === "reauth_required") {
+          const reauthUrl = reauthUrlFromApiPayload(payload);
+          if (reauthUrl) {
+            globalThis.location.assign(reauthUrl);
+            return;
+          }
+        }
+        throw new Error(payload?.detail || copy.error);
+      }
+      sessionStorage.removeItem(draftKey);
       status.value = { kind: "ok", text: copy.deleted };
       globalThis.location.reload();
     } catch (err) {
@@ -126,7 +212,16 @@ export default function ProfileReviewComposer(
           ? (
             <>
               <span class="profile-review-action-hint">{copy.signedOut}</span>
-              <a class="explore-cta-primary" href={loginHref}>
+              <a
+                class="explore-cta-primary"
+                href={loginHref}
+                aria-haspopup="dialog"
+                onClick={(event) => {
+                  if (!isPlainPrimaryActivation(event)) return;
+                  event.preventDefault();
+                  authOpen.value = true;
+                }}
+              >
                 {copy.signIn}
               </a>
             </>
@@ -244,6 +339,28 @@ export default function ProfileReviewComposer(
               </p>
             )}
           </div>
+        </div>,
+        document.body,
+      )}
+
+      {authOpen.value && !signedIn && createPortal(
+        <div
+          class="modal-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) authOpen.value = false;
+          }}
+        >
+          <LoginWithAtmosphereDialog
+            id="review-signin-title"
+            body={copy.signInBody}
+            onClose={() => authOpen.value = false}
+            dialogRef={authDialogRef}
+            returnTo={returnTo}
+            capabilities={authCapabilities}
+            action={authAction}
+            targetName={authTargetName}
+            rememberedAccounts={rememberedAccounts}
+          />
         </div>,
         document.body,
       )}

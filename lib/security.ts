@@ -66,6 +66,39 @@ export async function readJsonRequestWithLimit(
   req: Request,
   maxBytes: number,
 ): Promise<unknown> {
+  const bytes = await readRequestBytesWithLimit(req, maxBytes);
+  if (bytes === null) return null;
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+/** Parse form data only after enforcing a runtime byte ceiling. */
+export async function readFormDataRequestWithLimit(
+  req: Request,
+  maxBytes: number,
+): Promise<FormData | null> {
+  const contentType = req.headers.get("content-type") ?? "";
+  if (
+    !contentType.toLowerCase().includes("application/x-www-form-urlencoded") &&
+    !contentType.toLowerCase().includes("multipart/form-data")
+  ) return null;
+  const bytes = await readRequestBytesWithLimit(req, maxBytes);
+  if (bytes === null) return new FormData();
+  const parsed = new Request("https://request.invalid/", {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body: new Uint8Array(bytes).buffer,
+  });
+  return await parsed.formData().catch(() => null);
+}
+
+async function readRequestBytesWithLimit(
+  req: Request,
+  maxBytes: number,
+): Promise<Uint8Array | null> {
   if (requestBodyTooLarge(req, maxBytes)) {
     throw new RequestBodyTooLargeError();
   }
@@ -94,11 +127,7 @@ export async function readJsonRequestWithLimit(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    return null;
-  }
+  return bytes;
 }
 
 export async function readResponseTextWithLimit(
@@ -263,6 +292,14 @@ function isPopupCompatibleLoginRoute(pathname: string): boolean {
     pathname === "/examples/atmosphere-login/callback";
 }
 
+function isRenderedAccountHtml(headers: Headers, pathname: string): boolean {
+  if (pathname !== "/account" && !pathname.startsWith("/account/")) {
+    return false;
+  }
+  return headers.get("content-type")?.toLowerCase().startsWith("text/html") ===
+    true;
+}
+
 function applySecurityHeaders(headers: Headers, pathname: string): void {
   setDefault(headers, "x-content-type-options", "nosniff");
   setDefault(headers, "x-frame-options", "DENY");
@@ -270,7 +307,7 @@ function applySecurityHeaders(headers: Headers, pathname: string): void {
   setDefault(
     headers,
     "permissions-policy",
-    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-create=(self), publickey-credentials-get=(self)",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-create=(), publickey-credentials-get=()",
   );
   setDefault(headers, "cross-origin-opener-policy", "same-origin");
   setDefault(headers, "content-security-policy", IS_DEV ? DEV_CSP : PROD_CSP);
@@ -286,13 +323,8 @@ function applySecurityHeaders(headers: Headers, pathname: string): void {
     headers.set("cache-control", "no-store");
     headers.set("x-robots-tag", "noindex, nofollow");
   }
-  if (
-    pathname === "/passkeys" || pathname.startsWith("/api/passkeys") ||
-    pathname.startsWith("/api/login/passkeys")
-  ) {
-    headers.set("referrer-policy", "no-referrer");
-    headers.set("cache-control", "no-store");
-    headers.set("x-robots-tag", "noindex, nofollow");
+  if (isRenderedAccountHtml(headers, pathname)) {
+    headers.set("cache-control", "private, no-store");
   }
   if (isPopupCompatibleLoginRoute(pathname)) {
     headers.set("cross-origin-opener-policy", "same-origin-allow-popups");
