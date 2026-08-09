@@ -259,7 +259,17 @@ export async function main(): Promise<void> {
     "picker HTML",
   );
   assertContains(pickerHtml, "SignInForm", "picker island boot script");
-  assertContains(pickerHtml, "/app-icon.svg", "picker reference app logo");
+  assertContains(pickerHtml, "login-picker-app-mark", "picker app identity");
+  assertContains(
+    pickerHtml,
+    ">Atmosphere Account</h2>",
+    "picker canonical app-profile name",
+  );
+  assertNotContains(
+    pickerHtml,
+    "/app-icon.svg",
+    "picker canonical app-profile identity",
+  );
 
   const assets = extractHtmlAssetPaths(pickerHtml);
   if (assets.stylesheets.length === 0) {
