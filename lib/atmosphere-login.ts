@@ -205,7 +205,20 @@ function readReviewStatus(value: unknown): LoginAppReviewStatus {
 }
 
 function nullableNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "bigint") {
+    const normalized = Number(value);
+    return Number.isSafeInteger(normalized) ? normalized : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^-?\d+$/.test(trimmed)) return null;
+    const normalized = Number(trimmed);
+    return Number.isSafeInteger(normalized) ? normalized : null;
+  }
+  return null;
 }
 
 function readLinkStatus(value: unknown): LoginAppLinkStatus {
