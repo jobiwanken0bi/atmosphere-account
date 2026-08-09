@@ -393,15 +393,18 @@ export async function fetchHostDashboardManifest(
       signal: AbortSignal.timeout(opts.timeoutMs ?? 5000),
     });
   } catch (err) {
+    console.warn(
+      `[host-dashboard] manifest fetch failed: ${
+        err instanceof Error ? err.name : typeof err
+      }`,
+    );
     return {
       ok: false,
       manifest: null,
       issues: [{
         severity: "error",
         path: "$",
-        message: `Could not fetch manifest: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        message: "Could not fetch manifest.",
       }],
       url,
       status: null,
@@ -416,6 +419,22 @@ export async function fetchHostDashboardManifest(
         severity: "error",
         path: "$",
         message: `Manifest request returned HTTP ${res.status}.`,
+      }],
+      url,
+      status: res.status,
+    };
+  }
+
+  const contentType = res.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("json")) {
+    await res.body?.cancel().catch(() => {});
+    return {
+      ok: false,
+      manifest: null,
+      issues: [{
+        severity: "error",
+        path: "$",
+        message: "Manifest response must be JSON.",
       }],
       url,
       status: res.status,
@@ -443,16 +462,14 @@ export async function fetchHostDashboardManifest(
   let json: unknown;
   try {
     json = JSON.parse(body.text);
-  } catch (err) {
+  } catch {
     return {
       ok: false,
       manifest: null,
       issues: [{
         severity: "error",
         path: "$",
-        message: `Manifest is not valid JSON: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        message: "Manifest is not valid JSON.",
       }],
       url,
       status: res.status,

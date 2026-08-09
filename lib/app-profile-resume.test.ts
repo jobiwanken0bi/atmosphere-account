@@ -2,6 +2,7 @@ import {
   APP_PROFILE_RESUME_PARAM,
   appProfilePendingKey,
   appProfileResumeLocation,
+  appProfileResumeProofKey,
   appProfileResumeReturnTo,
   appProfileReturnToWithoutResume,
 } from "./app-profile-resume.ts";
@@ -33,6 +34,10 @@ Deno.test("app profile pending key ignores the completed-return marker", () => {
     appProfilePendingKey(did, marked),
     appProfilePendingKey(did, base),
   );
+  assertEquals(
+    appProfileResumeProofKey(appProfilePendingKey(did, marked)),
+    appProfileResumeProofKey(appProfilePendingKey(did, base)),
+  );
 });
 
 Deno.test("app profile resume is consumed only by the originating DID", () => {
@@ -48,6 +53,15 @@ Deno.test("app profile resume is consumed only by the originating DID", () => {
   assertEquals(mismatched.hadMarker, true);
   assertEquals(mismatched.shouldResume, false);
   assertEquals(mismatched.cleanLocation, "/apps/manage?app=one#form");
+});
+
+Deno.test("duplicate app profile return markers never authorize resume", () => {
+  const href =
+    "https://example.test/apps/manage?app-profile-resume=did%3Aplc%3Aalice&app-profile-resume=did%3Aplc%3Aalice&app=one";
+  const resume = appProfileResumeLocation(href, "did:plc:alice");
+  assertEquals(resume.hadMarker, true);
+  assertEquals(resume.shouldResume, false);
+  assertEquals(resume.cleanLocation, "/apps/manage?app=one");
 });
 
 Deno.test("app profile return helper rejects an external destination", () => {

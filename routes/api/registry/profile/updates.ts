@@ -22,7 +22,11 @@ import {
   upsertProfileUpdate,
 } from "../../../../lib/profile-updates.ts";
 import { type UpdateRecord, validateUpdate } from "../../../../lib/lexicons.ts";
-import { rejectLargeRequest } from "../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../lib/security.ts";
 
 interface UpdatePayload {
   rkey?: unknown;
@@ -64,9 +68,18 @@ export const handler = define.handlers({
       return jsonError(403, "profile_taken_down");
     }
 
-    const payload = await ctx.req.json().catch(() => null) as
-      | UpdatePayload
-      | null;
+    let payload: UpdatePayload | null;
+    try {
+      payload = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_PROFILE_UPDATE_BODY_BYTES,
+      ) as UpdatePayload | null;
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      payload = null;
+    }
     if (!payload) return jsonError(400, "invalid_body");
 
     const rkey = typeof payload.rkey === "string" && payload.rkey.trim()

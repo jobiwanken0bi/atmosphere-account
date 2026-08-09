@@ -10,13 +10,19 @@
 import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import {
+  type CallbackResult,
   type CancelledOAuthFlow,
   cancelOAuthFlow,
   completeCallback,
   isOAuthConfigured,
+  type SignInIntent,
 } from "../../lib/oauth.ts";
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
-import { buildSessionCookie, createSession } from "../../lib/session.ts";
+import {
+  buildSessionCookie,
+  createSession,
+  destroySession,
+} from "../../lib/session.ts";
 import { getBskyProfile } from "../../lib/pds.ts";
 import {
   addRememberedAccountCookies,
@@ -37,13 +43,111 @@ import { createLoginSelectionIntent } from "../../lib/login-selection-intent.ts"
 import {
   isAccountCreationAction,
   isOAuthActionCapabilityRequest,
+  type OAuthAction,
   oauthCreateAccountUrl,
 } from "../../lib/oauth-action.ts";
+import type { OAuthCapability } from "../../lib/oauth-scopes.ts";
+import {
+  InvalidOAuthRequestInputError,
+  singleSearchValue,
+} from "../../lib/oauth-request-input.ts";
+import {
+  clearOAuthFlowBindingCookie,
+  readOAuthFlowBindingCookie,
+} from "../../lib/oauth-flow-binding.ts";
+
+const MAX_OAUTH_CALLBACK_QUERY_BYTES = 16_384;
+
+interface OAuthRetryContext {
+  next: string;
+  permission: "denied" | "failed" | "partial" | "concurrent";
+  capabilities: readonly OAuthCapability[];
+  intent?: SignInIntent;
+  mode?: "create";
+  chooseAnotherAccount?: boolean;
+  action?: OAuthAction;
+  targetName?: string;
+  handle?: string;
+}
+
+export function oauthRetryLocation(context: OAuthRetryContext): string {
+  const retry = new URLSearchParams({
+    next: context.next,
+    permission: context.permission,
+  });
+  if (context.mode) retry.set("mode", context.mode);
+  if (context.chooseAnotherAccount) retry.set("choose", "another");
+  if (context.handle) retry.set("handle", context.handle);
+  if (context.intent) retry.set("intent", context.intent);
+  if (context.action) retry.set("action", context.action);
+  if (context.targetName) retry.set("name", context.targetName);
+  for (const capability of context.capabilities) {
+    retry.append("capability", capability);
+  }
+  return `/signin?${retry.toString()}`;
+}
+
+export function oauthErrorPermission(error: string): "denied" | "failed" {
+  return error === "access_denied" || error === "user_cancelled"
+    ? "denied"
+    : "failed";
+}
+
+export function oauthCompletedFailureLocation(
+  result:
+    & Pick<
+      CallbackResult,
+      | "returnTo"
+      | "continuation"
+      | "capabilities"
+      | "intent"
+      | "mode"
+      | "chooseAnotherAccount"
+      | "action"
+      | "targetName"
+    >
+    & { handle?: string },
+): string {
+  const returnTo = result.returnTo && isSafeRelativePath(result.returnTo)
+    ? result.returnTo
+    : "/account";
+  if (result.continuation === "login_selection") return returnTo;
+  return oauthRetryLocation({
+    next: returnTo,
+    permission: "failed",
+    capabilities: result.capabilities ?? ["identity"],
+    intent: result.intent,
+    mode: result.mode,
+    chooseAnotherAccount: true,
+    action: result.action,
+    targetName: result.targetName,
+    handle: result.handle,
+  });
+}
+
+export function readOAuthCallbackParameters(url: URL): {
+  state: string | null;
+  code: string | null;
+  iss: string | null;
+  error: string | null;
+} {
+  if (url.search.length > MAX_OAUTH_CALLBACK_QUERY_BYTES) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  const state = singleSearchValue(url.searchParams, "state");
+  const code = singleSearchValue(url.searchParams, "code");
+  const iss = singleSearchValue(url.searchParams, "iss");
+  const error = singleSearchValue(url.searchParams, "error");
+  if (error !== null && code !== null) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  return { state, code, iss, error };
+}
 
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("oauth callback", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
@@ -54,33 +158,88 @@ export const handler = define.handlers({
         redirectUri: oauth.redirectUri,
       })
     ) {
-      return new Response("OAuth is not configured", { status: 503 });
-    }
-    const state = ctx.url.searchParams.get("state");
-    const code = ctx.url.searchParams.get("code");
-    const iss = ctx.url.searchParams.get("iss");
-    const error = ctx.url.searchParams.get("error");
-    if (error) {
-      if (state) {
-        const cancelled = await cancelOAuthFlow(state).catch(() => null);
-        if (cancelled) {
-          return new Response(null, {
-            status: 303,
-            headers: { location: oauthCancellationRedirect(cancelled) },
-          });
-        }
-      }
-      return new Response(`authorization denied: ${error}`, { status: 400 });
-    }
-    if (!state || !code || !iss) {
-      return new Response("missing state, code, or iss", { status: 400 });
-    }
-    try {
-      const result = await completeCallback({ state, code, iss });
-      await observeAccountHost(result.pdsUrl).catch(() => {});
-      const sessionCookie = buildSessionCookie(
-        await createSession({ did: result.did, handle: result.handle }),
+      return new Response(
+        "Login with Atmosphere isn’t available right now. Try again shortly.",
+        { status: 503, headers: { "cache-control": "no-store" } },
       );
+    }
+    let callback;
+    try {
+      callback = readOAuthCallbackParameters(ctx.url);
+    } catch {
+      return new Response("This sign-in link is invalid.", {
+        status: 400,
+        headers: { "cache-control": "no-store" },
+      });
+    }
+    const { state, code, iss, error } = callback;
+    if (!state) {
+      return new Response(
+        "This sign-in link has expired or is incomplete. Return to the previous page and try again.",
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    const browserBinding = readOAuthFlowBindingCookie(ctx.req, state);
+    if (!browserBinding) {
+      return new Response(
+        "This sign-in link was opened in a different browser or has expired. Return to the previous page and try again.",
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    if (error) {
+      const cancelled = await cancelOAuthFlow(
+        state,
+        { clientId: oauth.clientId, redirectUri: oauth.redirectUri },
+        browserBinding,
+      ).catch(() => null);
+      if (cancelled) {
+        const permission = oauthErrorPermission(error);
+        const location = permission === "denied"
+          ? oauthCancellationRedirect(cancelled)
+          : oauthFailureRedirect(cancelled);
+        return withClearedOAuthFlowBinding(
+          new Response(null, {
+            status: 303,
+            headers: { location, "cache-control": "no-store" },
+          }),
+          state,
+        );
+      }
+      return withClearedOAuthFlowBinding(
+        new Response(null, {
+          status: 303,
+          headers: {
+            location: oauthRetryLocation({
+              next: "/account",
+              permission: oauthErrorPermission(error),
+              capabilities: ["identity"],
+              action: "account",
+            }),
+            "cache-control": "no-store",
+          },
+        }),
+        state,
+      );
+    }
+    if (!code || !iss) {
+      return withClearedOAuthFlowBinding(
+        new Response(
+          "This sign-in link has expired or is incomplete. Return to the previous page and try again.",
+          { status: 400, headers: { "cache-control": "no-store" } },
+        ),
+        state,
+      );
+    }
+    let completedResult: Awaited<ReturnType<typeof completeCallback>> | null =
+      null;
+    try {
+      const result = await completeCallback(
+        { state, code, iss },
+        { clientId: oauth.clientId, redirectUri: oauth.redirectUri },
+        browserBinding,
+      );
+      completedResult = result;
+      await observeAccountHost(result.pdsUrl).catch(() => {});
 
       /** Append to the per-device remembered list so the next visit
        *  can offer this account in the switcher even if the active
@@ -159,35 +318,70 @@ export const handler = define.handlers({
         }
       }
       if (!result.authorizationSufficient || result.scopeConflict) {
-        const retry = new URLSearchParams({
+        destination = oauthRetryLocation({
           next: destination,
           handle: result.handle,
           permission: result.scopeConflict ? "concurrent" : "partial",
+          capabilities: result.capabilities ?? ["identity"],
+          intent: result.intent,
+          mode: result.mode,
+          chooseAnotherAccount: result.chooseAnotherAccount,
+          action: result.action,
+          targetName: result.targetName,
         });
-        for (const capability of result.capabilities ?? ["identity"]) {
-          retry.append("capability", capability);
-        }
-        if (result.action) retry.set("action", result.action);
-        if (result.intent) retry.set("intent", result.intent);
-        if (result.targetName) retry.set("name", result.targetName);
-        destination = `/signin?${retry.toString()}`;
       }
+      // Mint the replacement before revoking the old app session. Deliver it
+      // only after the old SID has been durably removed.
+      const sessionCookie = buildSessionCookie(
+        await createSession({ did: result.did, handle: result.handle }),
+      );
+      await destroySession(ctx.req);
       const headers = new Headers({
         location: destination,
+        "cache-control": "no-store",
       });
       headers.append("set-cookie", sessionCookie);
       for (const cookie of rememberedCookies) {
         headers.append("set-cookie", cookie);
       }
+      const clearBinding = clearOAuthFlowBindingCookie(state);
+      if (clearBinding) headers.append("set-cookie", clearBinding);
       return new Response(null, { status: 303, headers });
     } catch {
       console.error("[oauth] callback failed");
-      return new Response(
-        "Login with Atmosphere could not be completed. Return to the previous page and try again.",
-        {
-          status: 400,
-          headers: { "cache-control": "no-store" },
-        },
+      if (completedResult) {
+        return withClearedOAuthFlowBinding(
+          new Response(null, {
+            status: 303,
+            headers: {
+              location: oauthCompletedFailureLocation(completedResult),
+              "cache-control": "no-store",
+            },
+          }),
+          state,
+        );
+      }
+      const failed = await cancelOAuthFlow(
+        state,
+        { clientId: oauth.clientId, redirectUri: oauth.redirectUri },
+        browserBinding,
+      ).catch(() => null);
+      return withClearedOAuthFlowBinding(
+        new Response(null, {
+          status: 303,
+          headers: {
+            location: failed
+              ? oauthFailureRedirect(failed)
+              : oauthRetryLocation({
+                next: "/account",
+                permission: "failed",
+                capabilities: ["identity"],
+                action: "account",
+              }),
+            "cache-control": "no-store",
+          },
+        }),
+        state,
       );
     }
   },
@@ -229,6 +423,7 @@ export function oauthCancellationRedirect(
     next: returnTo,
     permission: "denied",
   });
+  if (cancelled.chooseAnotherAccount) retry.set("choose", "another");
   for (const capability of capabilities) {
     retry.append("capability", capability);
   }
@@ -237,6 +432,45 @@ export function oauthCancellationRedirect(
   if (cancelled.targetName) retry.set("name", cancelled.targetName);
   if (cancelled.handle) retry.set("handle", cancelled.handle);
   return `/signin?${retry}`;
+}
+
+function oauthFailureRedirect(failed: CancelledOAuthFlow): string {
+  const returnTo = failed.returnTo && isSafeRelativePath(failed.returnTo)
+    ? failed.returnTo
+    : "/account";
+  const capabilities = failed.capabilities ?? ["identity"];
+  const action = failed.action ?? "account";
+  if (
+    failed.mode === "create" && isAccountCreationAction(action) &&
+    isOAuthActionCapabilityRequest(action, capabilities)
+  ) {
+    return oauthCreateAccountUrl({
+      next: returnTo,
+      intent: failed.intent,
+      capabilities,
+      action,
+      name: failed.targetName,
+      error: "creation_unavailable",
+    });
+  }
+  if (failed.continuation === "login_selection") {
+    return appendSafeRelativeQuery(
+      returnTo,
+      "login_error",
+      "authorization_failed",
+    );
+  }
+  return oauthRetryLocation({
+    next: returnTo,
+    permission: "failed",
+    capabilities,
+    intent: failed.intent,
+    mode: failed.mode,
+    chooseAnotherAccount: failed.chooseAnotherAccount,
+    action,
+    targetName: failed.targetName,
+    handle: failed.handle,
+  });
 }
 
 function appendSafeRelativeQuery(
@@ -249,7 +483,17 @@ function appendSafeRelativeQuery(
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-function appviewUnavailable(_scope: string, _err: unknown): Response {
+function withClearedOAuthFlowBinding(
+  response: Response,
+  state: string | null,
+): Response {
+  if (!state) return response;
+  const cookie = clearOAuthFlowBindingCookie(state);
+  if (cookie) response.headers.append("set-cookie", cookie);
+  return response;
+}
+
+function appviewUnavailable(): Response {
   console.error("[appview] OAuth callback proxy failed");
   return new Response("Sign in callback is temporarily unavailable.", {
     status: 503,

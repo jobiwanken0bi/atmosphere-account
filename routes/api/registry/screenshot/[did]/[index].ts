@@ -7,9 +7,13 @@ import { define } from "../../../../../utils.ts";
 import { getProfileByDid } from "../../../../../lib/registry.ts";
 import { withRateLimit } from "../../../../../lib/rate-limit.ts";
 import { fetchScreenshotBlobWithPdsFallback } from "../../../../../lib/screenshot-blob.ts";
+import { secureRasterImageProxyResponse } from "../../../../../lib/raster-image-security.ts";
 
 const NEGATIVE_CACHE_MS = 60_000;
 const NEGATIVE_CACHE_MAX_ENTRIES = 500;
+const MAX_SCREENSHOT_BYTES = 5_000_000;
+const CACHE_CONTROL =
+  "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400";
 const negativeCache = new Map<string, number>();
 
 export const handler = define.handlers({
@@ -46,21 +50,19 @@ export const handler = define.handlers({
         return negativeResponse();
       }
       negativeCache.delete(cacheKey);
-      const headers = new Headers();
-      headers.set(
-        "content-type",
-        upstream.headers.get("content-type") ??
-          screenshot.image.mimeType ??
-          "application/octet-stream",
-      );
-      headers.set(
-        "cache-control",
-        // The blob CID is immutable, but this route is keyed by did/index, so
-        // keep shared caching bounded in case a profile replaces a screenshot.
-        "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
-      );
-      headers.set("etag", cid);
-      return new Response(upstream.body, { status: 200, headers });
+      return await secureRasterImageProxyResponse(upstream, {
+        cid,
+        declaredMime: screenshot.image.mimeType,
+        maxBytes: Math.min(
+          MAX_SCREENSHOT_BYTES,
+          Math.max(0, screenshot.image.size || MAX_SCREENSHOT_BYTES),
+        ),
+        // The route is keyed by did/index rather than immutable CID, so keep
+        // shared caching bounded when a profile replaces a screenshot.
+        cacheControl: CACHE_CONTROL,
+        etag: cid,
+        filename: `atmosphere-screenshot-${index + 1}`,
+      });
     } catch (err) {
       rememberNegative(cacheKey);
       console.info(

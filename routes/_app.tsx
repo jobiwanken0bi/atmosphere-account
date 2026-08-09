@@ -1,5 +1,22 @@
 import { define } from "../utils.ts";
+import { asset } from "fresh/runtime";
 import { getMessages, I18nProvider, localeDirection } from "../i18n/mod.ts";
+
+/**
+ * Pages with a sign-in form in the initial HTML need the enhancer eagerly.
+ * Contextual sign-in dialogs load it only when they open, so public directory
+ * pages do not pay for the form runtime during their initial render.
+ */
+export function needsEagerSigninEnhancer(
+  pathname: string,
+  signedIn = false,
+): boolean {
+  return pathname === "/signin" ||
+    pathname === "/login/select" ||
+    pathname === "/apps/create" ||
+    pathname === "/apps/migrate-from-legacy" ||
+    (pathname === "/account" && !signedIn);
+}
 
 /** Open Graph / social crawlers prefer absolute image URLs. Set FRESH_PUBLIC_SITE_URL on Deno Deploy (e.g. https://atmosphereaccount.com). */
 function socialImageUrl(path: string): string {
@@ -18,6 +35,9 @@ export default define.page(function App(ctx) {
   const htmlClass = "sky-static";
   const bodyClass = "sky-bg";
   const isStandaloneLoginPicker = url.pathname === "/login/select";
+  const signedIn = Boolean(state.user);
+  const needsSigninPreview = needsEagerSigninEnhancer(url.pathname, signedIn);
+  const needsLoginHandoff = needsSigninPreview || signedIn;
   const needsDocsScript = url.pathname === "/docs" ||
     url.pathname.startsWith("/docs/");
   const needsAppMediaFallback = url.pathname === "/apps" ||
@@ -26,7 +46,8 @@ export default define.page(function App(ctx) {
     url.pathname.startsWith("/hosts") ||
     url.pathname.startsWith("/account") ||
     url.pathname.startsWith("/signin") ||
-    url.pathname.startsWith("/login");
+    url.pathname.startsWith("/login") ||
+    url.pathname.startsWith("/users");
   const socialImagePath = url.pathname.startsWith("/docs") ||
       url.pathname.startsWith("/developer-resources")
     ? "/og-developer.png"
@@ -56,7 +77,7 @@ export default define.page(function App(ctx) {
   const pageOgType = pageMeta.ogType ?? "website";
   const pageOgImage = pageMeta.imageUrl
     ? socialImageUrl(pageMeta.imageUrl)
-    : socialImageUrl(socialImagePath);
+    : socialImageUrl(asset(socialImagePath));
   const pageOgImageAlt = pageMeta.imageAlt ?? defaultSocialImageAlt;
   const pageOgImageWidth = pageMeta.imageWidth ?? 1200;
   const pageOgImageHeight = pageMeta.imageHeight ?? 630;
@@ -104,46 +125,45 @@ export default define.page(function App(ctx) {
         <meta property="og:image:alt" content={pageOgImageAlt} />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:image" content={pageOgImage} />
-        <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="icon" type="image/svg+xml" href="/union.svg" />
-        <link rel="apple-touch-icon" href="/union.svg" />
-        <link rel="stylesheet" href="/styles.css" />
+        <link rel="icon" href={asset("/favicon.ico")} sizes="any" />
+        <link rel="icon" type="image/svg+xml" href={asset("/union.svg")} />
+        <link rel="apple-touch-icon" href={asset("/union.svg")} />
+        <link rel="stylesheet" href={asset("/styles.css")} />
         {needsBskyCdnPreconnect && (
           <link rel="preconnect" href="https://cdn.bsky.app" />
         )}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossorigin="anonymous"
-        />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap"
-        />
       </head>
       <body class={bodyClass}>
         <I18nProvider locale={locale}>
           <Component />
         </I18nProvider>
-        <script type="module" src="/page-skeleton.js" />
-        <script type="module" src="/submit-once.js" />
-        <script type="module" src="/login-handoff.js" />
+        <script type="module" src={asset("/page-skeleton.js")} />
+        <script
+          id="submit-once-runtime"
+          type="module"
+          src={asset("/submit-once.js")}
+        />
+        {needsLoginHandoff && (
+          <script
+            id="login-handoff-runtime"
+            type="module"
+            src={asset("/login-handoff.js")}
+          />
+        )}
         {!isStandaloneLoginPicker && (
-          <script type="module" src="/nav-scroll.js" />
+          <script type="module" src={asset("/nav-scroll.js")} />
         )}
-        {needsDocsScript && (
-          <script type="module" src="/docs.js?v=scrollspy2" />
-        )}
+        {needsDocsScript && <script type="module" src={asset("/docs.js")} />}
         {needsAppMediaFallback && (
-          <script type="module" src="/app-media-fallback.js" />
+          <script type="module" src={asset("/app-media-fallback.js")} />
         )}
-        {
-          /* Contextual sign-in forms can be portal-mounted from any public
-             action. Keep the enhancer available globally; it is inert until
-             a matching form appears. */
-        }
-        <script type="module" src="/signin-preview.js" />
+        {needsSigninPreview && (
+          <script
+            id="signin-preview-runtime"
+            type="module"
+            src={asset("/signin-preview.js")}
+          />
+        )}
       </body>
     </html>
   );

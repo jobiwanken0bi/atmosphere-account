@@ -54,6 +54,7 @@ export default function AppDirectoryOwnerCta(
           <ContextualSignInLink
             href={appRegistrationSigninHref()}
             returnTo="/apps/manage?new=1"
+            intent="project"
             action="app"
             capabilities={APP_MANAGEMENT_CAPABILITIES}
             targetName="your app"
@@ -75,5 +76,6 @@ export function appRegistrationSigninHref(): string {
     action: "app",
     capabilities: APP_MANAGEMENT_CAPABILITIES,
     name: "your app",
+    intent: "project",
   });
 }

@@ -34,7 +34,11 @@ import {
   uploadBlob,
 } from "../../lib/pds.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
-import { rejectLargeRequest } from "../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
 import {
   hostSelfServiceClaimPolicy,
@@ -180,7 +184,18 @@ export const handler = define.handlers({
     if (limited) return limited;
     const large = rejectLargeRequest(ctx.req, MAX_HOST_REGISTER_FORM_BYTES);
     if (large) return large;
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_HOST_REGISTER_FORM_BYTES,
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      form = null;
+    }
     const values = valuesFromForm(form);
     const requestedLinkIntent = textValue(form?.get("linkIntent"));
     if (hostSelfServiceClaimPolicy(values.host) !== "local-dev") {

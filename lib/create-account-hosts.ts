@@ -93,11 +93,9 @@ export async function listCreateAccountHostOptions(
         avatarUrl: host.avatarUrl,
         signupStatus: host.signupStatus,
         oauthAccountCreation,
-        statusLabel: oauthAccountCreation
-          ? "Direct"
-          : host.signupStatus === "open"
-          ? "Open"
-          : "Invite accepted",
+        statusLabel: host.signupStatus === "open"
+          ? "Open signup"
+          : "Invite required",
         recommended,
         recommendationLabel: recommended && options.app
           ? `Recommended by ${options.app.appName}`

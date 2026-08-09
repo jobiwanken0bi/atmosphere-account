@@ -1,6 +1,9 @@
 import { useSignal } from "@preact/signals";
 import { createPortal } from "preact/compat";
 import type { Ref } from "preact";
+import ManagementActionIcon, {
+  type ManagementActionIconName,
+} from "../components/ManagementActionIcon.tsx";
 import type { OAuthAction } from "../lib/oauth-action.ts";
 import type { OAuthCapability } from "../lib/oauth-scopes.ts";
 import { useDialog } from "../lib/use-dialog.ts";
@@ -12,14 +15,16 @@ interface Props {
   action: OAuthAction;
   capabilities: readonly OAuthCapability[];
   targetName: string;
-  title: string;
+  title?: string;
   body: string;
   label: string;
   className: string;
   leadingPlus?: boolean;
   trailingArrow?: boolean;
+  leadingIcon?: ManagementActionIconName;
   intent?: "user" | "project";
   rememberedAccounts?: Array<{ did: string; handle: string }>;
+  initialHandle?: string;
 }
 
 interface PrimaryActivation {
@@ -48,6 +53,7 @@ export function LoginWithAtmosphereDialog(
     targetName,
     intent,
     rememberedAccounts = [],
+    initialHandle,
   }: {
     id: string;
     body: string;
@@ -59,6 +65,7 @@ export function LoginWithAtmosphereDialog(
     targetName: string;
     intent?: "user" | "project";
     rememberedAccounts?: Array<{ did: string; handle: string }>;
+    initialHandle?: string;
   },
 ) {
   return (
@@ -92,6 +99,7 @@ export function LoginWithAtmosphereDialog(
         action={action}
         targetName={targetName}
         rememberedAccounts={rememberedAccounts}
+        initialHandle={initialHandle}
       />
     </div>
   );
@@ -114,8 +122,10 @@ export default function ContextualSignInLink(
     className,
     leadingPlus = false,
     trailingArrow = false,
+    leadingIcon,
     intent,
     rememberedAccounts = [],
+    initialHandle,
   }: Props,
 ) {
   const open = useSignal(false);
@@ -135,6 +145,7 @@ export default function ContextualSignInLink(
           open.value = true;
         }}
       >
+        {leadingIcon && <ManagementActionIcon name={leadingIcon} />}
         {leadingPlus && (
           <span class="directory-register-button-icon" aria-hidden="true">
             +
@@ -161,6 +172,7 @@ export default function ContextualSignInLink(
             action={action}
             targetName={targetName}
             rememberedAccounts={rememberedAccounts}
+            initialHandle={initialHandle}
           />
         </div>,
         document.body,

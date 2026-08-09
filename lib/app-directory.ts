@@ -45,6 +45,7 @@ import {
   listVerifiedDirectoryEntityLinksForApp,
   listVerifiedDirectoryEntityLinksForHosts,
 } from "./directory-entity-links.ts";
+import { escapeSqlLikePattern } from "./sql-pattern.ts";
 
 export type AppDirectorySort = "trending" | "newest" | "az";
 export type AppReviewSort = "newest" | "highest" | "lowest";
@@ -1654,14 +1655,14 @@ function appWhere(query?: string, tags?: string | string[]) {
     const raw = query.trim();
     if (isPostgresBackend()) {
       where.push(
-        `(l.search_vector @@ plainto_tsquery('simple', ?) OR l.slug ILIKE ? OR l.name ILIKE ?)`,
+        `(l.search_vector @@ plainto_tsquery('simple', ?) OR l.slug ILIKE ? ESCAPE '!' OR l.name ILIKE ? ESCAPE '!')`,
       );
-      const like = `%${raw}%`;
+      const like = `%${escapeSqlLikePattern(raw)}%`;
       args.push(raw, like, like);
     } else {
-      const q = `%${raw.toLowerCase()}%`;
+      const q = `%${escapeSqlLikePattern(raw.toLowerCase())}%`;
       where.push(
-        `(lower(l.name) LIKE ? OR lower(l.description) LIKE ? OR lower(l.tagline) LIKE ? OR lower(l.tags_json) LIKE ? OR lower(l.category_slugs_json) LIKE ?)`,
+        `(lower(l.name) LIKE ? ESCAPE '!' OR lower(l.description) LIKE ? ESCAPE '!' OR lower(l.tagline) LIKE ? ESCAPE '!' OR lower(l.tags_json) LIKE ? ESCAPE '!' OR lower(l.category_slugs_json) LIKE ? ESCAPE '!')`,
       );
       args.push(q, q, q, q, q);
     }

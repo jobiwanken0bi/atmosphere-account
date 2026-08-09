@@ -4,22 +4,41 @@ import {
   proxyAppviewResponse,
 } from "../../../lib/appview-client.ts";
 import {
+  type AccountHostDirectoryOptions,
+  type AccountHostDirectoryResult,
   type AccountHostSort,
   DEFAULT_ACCOUNT_HOST_SORT,
   type HostSignupStatus,
   type HostVerificationStatus,
 } from "../../../lib/account-hosts.ts";
+import { EdgeStaleCache } from "../../../lib/edge-cache.ts";
+import { withRateLimit } from "../../../lib/rate-limit.ts";
+
+const hostDirectoryCache = new EdgeStaleCache<AccountHostDirectoryResult>({
+  freshMs: 30_000,
+  staleMs: 2 * 60_000,
+  maxEntries: 128,
+});
 
 export const handler = define.handlers({
-  async GET(ctx): Promise<Response> {
+  GET: withRateLimit(async (ctx): Promise<Response> => {
     const proxied = await proxyAppviewResponse(
       `${ctx.url.pathname}${ctx.url.search}`,
       ctx.url,
       ctx.req.headers,
     );
     if (proxied) return proxied;
+    if (!validDirectorySearch(ctx.url.searchParams)) {
+      return json({ error: "invalid_directory_search" }, {
+        status: 400,
+        headers: { "cache-control": "no-store" },
+      });
+    }
     const input = readDirectoryInput(ctx.url.searchParams);
-    const hosts = await listPublicAccountHosts(input);
+    const hosts = await hostDirectoryCache.get(
+      hostDirectoryCacheKey(input),
+      () => listPublicAccountHosts(input),
+    );
     return json(hosts, {
       headers: {
         // Page links must not combine totals from independently cached
@@ -27,8 +46,48 @@ export const handler = define.handlers({
         "cache-control": "no-store",
       },
     });
-  },
+  }, {
+    scope: "appview-host-directory",
+    capacity: 120,
+    refillMs: 60_000,
+  }),
 });
+
+function validDirectorySearch(search: URLSearchParams): boolean {
+  const queries = search.getAll("q");
+  if (queries.length > 1 || (queries[0]?.length ?? 0) > 128) return false;
+  if (search.getAll("signup").length > 4) return false;
+  for (const name of ["page", "pageSize"] as const) {
+    const values = search.getAll(name);
+    if (values.length > 1 || values.some((value) => !/^\d{1,6}$/.test(value))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function validHostDirectorySearchForTest(
+  search: URLSearchParams,
+): boolean {
+  return validDirectorySearch(search);
+}
+
+export function hostDirectoryCacheKey(
+  input: AccountHostDirectoryOptions,
+): string {
+  return JSON.stringify({
+    q: input.query?.trim().toLowerCase() ?? "",
+    includeApps: input.includeLinkedApps === true,
+    sort: input.sort ?? DEFAULT_ACCOUNT_HOST_SORT,
+    signup: [...new Set(input.signupStatuses ?? [])].sort(),
+    signupStatus: input.signupStatus ?? "all",
+    verification: input.verificationStatus ?? "all",
+    hasSignupUrl: input.hasSignupUrl === true,
+    trusted: input.trustedOnly === true,
+    page: input.page ?? 1,
+    pageSize: input.pageSize ?? 24,
+  });
+}
 
 function readDirectoryInput(search: URLSearchParams) {
   const signupStatuses = search.getAll("signup")

@@ -14,6 +14,12 @@ export function hostProfilePendingKey(did: string, host: string): string {
   }`;
 }
 
+export function hostProfileResumeProofKey(pendingKey: string): string {
+  return `atmosphere:browser-resume-marker:host-profile:${
+    encodeURIComponent(pendingKey)
+  }`;
+}
+
 export function pendingHostProfileAction(
   did: string,
   host: string,
@@ -42,13 +48,24 @@ export function hostProfileResumePath(url: URL): string {
 }
 
 export function hasHostProfileResumeMarker(url: URL): boolean {
-  return url.searchParams.get(HOST_PROFILE_RESUME_PARAM) === "1";
+  return url.searchParams.has(HOST_PROFILE_RESUME_PARAM);
 }
 
 export function withoutHostProfileResumeMarker(url: URL): string {
   const clean = new URL(url);
   clean.searchParams.delete(HOST_PROFILE_RESUME_PARAM);
   return `${clean.pathname}${clean.search}${clean.hash}`;
+}
+
+export function hostProfileResumeLocation(
+  url: URL,
+): { hadMarker: boolean; shouldResume: boolean; cleanLocation: string } {
+  const values = url.searchParams.getAll(HOST_PROFILE_RESUME_PARAM);
+  return {
+    hadMarker: values.length > 0,
+    shouldResume: values.length === 1 && values[0] === "1",
+    cleanLocation: withoutHostProfileResumeMarker(url),
+  };
 }
 
 function normalizeHost(host: string): string {

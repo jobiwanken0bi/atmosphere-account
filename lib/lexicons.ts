@@ -264,9 +264,14 @@ function isBlob(v: unknown): v is BlobRef {
   const b = v as Record<string, unknown>;
   if (b.$type !== "blob") return false;
   const ref = b.ref as Record<string, unknown> | undefined;
-  if (!ref || typeof ref.$link !== "string") return false;
-  if (typeof b.mimeType !== "string") return false;
-  if (typeof b.size !== "number") return false;
+  if (
+    !ref || typeof ref.$link !== "string" || !ref.$link ||
+    ref.$link.length > 256 || !/^[a-zA-Z0-9]+$/.test(ref.$link)
+  ) return false;
+  if (
+    typeof b.mimeType !== "string" || !b.mimeType || b.mimeType.length > 128
+  ) return false;
+  if (!Number.isSafeInteger(b.size) || (b.size as number) < 0) return false;
   return true;
 }
 
@@ -612,8 +617,20 @@ export function validateProfile(
   if (!isStr(v.createdAt)) {
     return { ok: false, error: "createdAt required (ISO 8601)" };
   }
-  if (v.avatar !== undefined && !isBlob(v.avatar)) {
-    return { ok: false, error: "avatar: invalid blob ref" };
+  if (v.avatar !== undefined) {
+    if (!isBlob(v.avatar)) {
+      return { ok: false, error: "avatar: invalid blob ref" };
+    }
+    const avatar = v.avatar as BlobRef;
+    if (
+      avatar.mimeType !== "image/png" && avatar.mimeType !== "image/jpeg" &&
+      avatar.mimeType !== "image/webp"
+    ) {
+      return { ok: false, error: "avatar: must be png, jpeg, or webp" };
+    }
+    if (avatar.size > 1_000_000) {
+      return { ok: false, error: "avatar: max 1MB" };
+    }
   }
   if (v.banner !== undefined) {
     if (!isBlob(v.banner)) {
@@ -636,6 +653,9 @@ export function validateProfile(
     if ((v.icon as BlobRef).mimeType !== "image/svg+xml") {
       return { ok: false, error: "icon: must be image/svg+xml" };
     }
+    if ((v.icon as BlobRef).size > 200_000) {
+      return { ok: false, error: "icon: max 200KB" };
+    }
   }
   if (v.iconBw !== undefined) {
     if (!isBlob(v.iconBw)) {
@@ -643,6 +663,9 @@ export function validateProfile(
     }
     if ((v.iconBw as BlobRef).mimeType !== "image/svg+xml") {
       return { ok: false, error: "iconBw: must be image/svg+xml" };
+    }
+    if ((v.iconBw as BlobRef).size > 200_000) {
+      return { ok: false, error: "iconBw: max 200KB" };
     }
   }
   const screenshotsRes = validateScreenshots(v.screenshots);

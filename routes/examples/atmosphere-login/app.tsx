@@ -1,9 +1,11 @@
 import Nav from "../../../components/Nav.tsx";
+import { asset } from "fresh/runtime";
 import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import { loginPickerOriginForRequest } from "../../../lib/atmosphere-origins.ts";
 import {
+  buildExampleLoginState,
   type ExampleAppSession,
   exampleAtmosphereLoginCallbackUri,
   exampleAtmosphereLoginClientId,
@@ -25,6 +27,7 @@ interface ExampleAppProps {
   oauthClientId: string;
   oauthCallbackUri: string;
   exampleSession: ExampleAppSession | null;
+  loginState: string;
 }
 
 export const handler = define.handlers({
@@ -45,7 +48,8 @@ export const handler = define.handlers({
         .toString(),
     };
     const pickerOrigin = loginPickerOriginForRequest(ctx.url);
-    return ctx.render(
+    const loginState = await buildExampleLoginState();
+    const response = await ctx.render(
       <ExampleApp
         account={buildAccountMenuProps(ctx.state)}
         clientId={clientId}
@@ -57,8 +61,12 @@ export const handler = define.handlers({
         oauthClientId={exampleAtprotoOAuthClientId(ctx.url.origin)}
         oauthCallbackUri={exampleAtprotoOAuthCallbackUri(ctx.url.origin)}
         exampleSession={await readExampleAppSession(ctx.req).catch(() => null)}
+        loginState={loginState.state}
       />,
     );
+    response.headers.append("set-cookie", loginState.cookie);
+    response.headers.set("cache-control", "no-store");
+    return response;
   },
 });
 
@@ -74,12 +82,14 @@ function ExampleApp(
     oauthClientId,
     oauthCallbackUri,
     exampleSession,
+    loginState,
   }: ExampleAppProps,
 ) {
   const buttonSnippet = `<button
   data-atmosphere-login
   data-client-id="${clientId}"
   data-return-uri="${returnUri}"
+  data-state="${loginState}"
   data-scope="atproto"
   data-app-name="Login with Atmosphere reference app"
   data-app-homepage="${appHomepage}"
@@ -89,6 +99,7 @@ function ExampleApp(
   data-atmosphere-login
   data-client-id="${clientId}"
   data-return-uri="${popupReturnUri}"
+  data-state="${loginState}"
   data-scope="atproto"
   data-app-name="Login with Atmosphere reference app"
   data-app-homepage="${appHomepage}"
@@ -210,6 +221,7 @@ return createAppSession(account);`;
                       data-atmosphere-login
                       data-client-id={clientId}
                       data-return-uri={returnUri}
+                      data-state={loginState}
                       data-scope="atproto"
                       data-app-name="Login with Atmosphere reference app"
                       data-app-homepage={appHomepage}
@@ -219,6 +231,7 @@ return createAppSession(account);`;
                       data-atmosphere-login
                       data-client-id={clientId}
                       data-return-uri={popupReturnUri}
+                      data-state={loginState}
                       data-scope="atproto"
                       data-app-name="Login with Atmosphere reference app"
                       data-app-homepage={appHomepage}
@@ -277,7 +290,7 @@ return createAppSession(account);`;
         </main>
         <Footer variant="compact" />
         <script src={sdkSrc} defer></script>
-        <script src="/example-atmosphere-login-app.js" defer></script>
+        <script src={asset("/example-atmosphere-login-app.js")} defer></script>
       </div>
     </div>
   );

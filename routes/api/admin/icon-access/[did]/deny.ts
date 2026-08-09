@@ -11,6 +11,7 @@
 import { define } from "../../../../../utils.ts";
 import { requireAdminApi } from "../../../../../lib/admin.ts";
 import { denyIconAccess } from "../../../../../lib/registry.ts";
+import { readAdminJsonRequest } from "../../../../../lib/admin-request.ts";
 
 interface DenyPayload {
   reason?: unknown;
@@ -24,14 +25,18 @@ export const handler = define.handlers({
     const did = decodeURIComponent(ctx.params.did);
     if (!did.startsWith("did:")) return jsonError(400, "invalid_did");
 
-    const body = await ctx.req.json().catch(() => null) as DenyPayload | null;
-    const reason = typeof body?.reason === "string" ? body.reason : undefined;
+    const parsed = await readAdminJsonRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.value as DenyPayload;
+    const reason = typeof body.reason === "string"
+      ? body.reason.trim().slice(0, 1000) || undefined
+      : undefined;
 
     try {
       await denyIconAccess(did, gate.did, reason);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "deny_failed", m);
+      console.error("[admin] icon-access denial failed:", err);
+      return jsonError(500, "deny_failed");
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -40,9 +45,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

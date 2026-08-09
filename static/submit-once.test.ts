@@ -13,6 +13,9 @@ Deno.test("submit-once enhancer locks synchronously and preserves submitter valu
       "hidden.value = submitter.value",
       "button.disabled = true",
       'form.setAttribute("aria-busy", "true")',
+      "submitter.dataset.pendingLabel ?? form.dataset.pendingLabel",
+      "target.setAttribute(ORIGINAL_LABEL_ATTRIBUTE, target.textContent",
+      "target.textContent = label",
     ]
   ) {
     if (!source.includes(expected)) {
@@ -33,6 +36,8 @@ Deno.test("submit-once enhancer restores forms after failure or page return", as
       "resetSubmitOnce(target)",
       'button.disabled = wasDisabled === "true"',
       'button.removeAttribute("aria-busy")',
+      "target.getAttribute(ORIGINAL_LABEL_ATTRIBUTE)",
+      "target.removeAttribute(ORIGINAL_LABEL_ATTRIBUTE)",
     ]
   ) {
     if (!source.includes(expected)) {
@@ -56,6 +61,25 @@ Deno.test("high-latency host and relationship forms opt into submit-once", async
     }
     if (!source.includes("data-pending-label=")) {
       throw new Error(`Expected action-specific pending copy in ${path}`);
+    }
+  }
+});
+
+Deno.test("submit-once stays a progressive enhancement over native forms", async () => {
+  const source = await Deno.readTextFile(
+    new URL("../routes/account/developer/apps.tsx", import.meta.url),
+  );
+  for (
+    const expected of [
+      '<form\n                method="post"',
+      'data-submit-once="true"',
+      'type="submit"',
+      'data-pending-label="Adding environment…"',
+      "<span data-submit-once-label>Add environment</span>",
+    ]
+  ) {
+    if (!source.includes(expected)) {
+      throw new Error(`Missing native submit fallback behavior: ${expected}`);
     }
   }
 });

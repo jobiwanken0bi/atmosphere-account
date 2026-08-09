@@ -62,6 +62,7 @@ Deno.test("signed-out registration keeps contextual app authorization", () => {
   const url = new URL(href ?? "", "https://atmosphereaccount.com");
   assertEquals(url.pathname, "/signin");
   assertEquals(url.searchParams.get("next"), "/apps/manage?new=1");
+  assertEquals(url.searchParams.get("intent"), "project");
   assertEquals(url.searchParams.getAll("capability"), ["app", "media"]);
   assertStringIncludes(
     APP_REGISTRATION_SIGNIN_BODY,

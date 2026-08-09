@@ -1,26 +1,111 @@
 import { useSignal } from "@preact/signals";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useId, useRef } from "preact/hooks";
 import {
   getProfileMicroblogViewer,
+  isProfileMicroblogViewerId,
   PROFILE_MICROBLOG_VIEWERS,
 } from "../lib/bsky-clients.ts";
+import {
+  type ContextualReauthorization,
+  contextualReauthorization,
+  contextualReauthorizationFromApiPayload,
+} from "../lib/reauth-required.ts";
+import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
+import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
 
 interface Props {
   selectedClientId: string | null;
   visible: boolean;
+  currentDid: string;
+  currentHandle: string;
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
+}
+
+export function microblogViewerReauthorization(
+  status: number,
+  payload: unknown,
+  currentHandle: string,
+): ContextualReauthorization | null {
+  return contextualReauthorizationFromApiPayload(payload) ??
+    (status === 401 ||
+        (payload && typeof payload === "object" && !Array.isArray(payload) &&
+          ["not_authenticated", "oauth_session_expired"].includes(
+            String((payload as Record<string, unknown>).error ?? ""),
+          ))
+      ? contextualReauthorization({
+        returnTo: "/account?resume_viewer=1",
+        action: "account",
+        capabilities: ["identity"],
+        targetName: currentHandle,
+      })
+      : null);
+}
+
+const VIEWER_PENDING_TTL_MS = 30 * 60 * 1_000;
+
+export function microblogViewerPendingKey(ownerDid: string): string {
+  return `atmosphere:microblog-viewer:${encodeURIComponent(ownerDid)}`;
+}
+
+export function microblogViewerPendingValue(
+  ownerDid: string,
+  clientId: string,
+  visible: boolean,
+  savedAt = Date.now(),
+): string {
+  return JSON.stringify({ ownerDid, clientId, visible, savedAt });
+}
+
+export function parseMicroblogViewerPending(
+  value: string | null,
+  ownerDid: string,
+  now = Date.now(),
+): { clientId: string; visible: boolean } | null {
+  if (!value) return null;
+  try {
+    const pending = JSON.parse(value) as Record<string, unknown>;
+    const clientId = typeof pending.clientId === "string"
+      ? pending.clientId
+      : null;
+    if (
+      pending.ownerDid !== ownerDid ||
+      !isProfileMicroblogViewerId(clientId) ||
+      typeof pending.visible !== "boolean" ||
+      typeof pending.savedAt !== "number" ||
+      !Number.isFinite(pending.savedAt) ||
+      pending.savedAt > now || now - pending.savedAt > VIEWER_PENDING_TTL_MS
+    ) return null;
+    return { clientId, visible: pending.visible };
+  } catch {
+    return null;
+  }
 }
 
 export default function UserMicroblogViewerButton(
-  { selectedClientId, visible: initialVisible }: Props,
+  {
+    selectedClientId,
+    visible: initialVisible,
+    currentDid,
+    currentHandle,
+    rememberedAccounts = [],
+  }: Props,
 ) {
   const selected = useSignal(getProfileMicroblogViewer(selectedClientId).id);
   const visible = useSignal(initialVisible);
   const open = useSignal(false);
   const saving = useSignal(false);
   const message = useSignal<string | null>(null);
+  const reauthorization = useSignal<ContextualReauthorization | null>(null);
+  const pendingPreference = useSignal<
+    { clientId: string; visible: boolean } | null
+  >(null);
+  const pendingKey = microblogViewerPendingKey(currentDid);
   const active = getProfileMicroblogViewer(selected.value);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const popoverId = `microblog-viewer-dialog-${id}`;
+  const popoverTitleId = `microblog-viewer-title-${id}`;
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {
@@ -50,6 +135,7 @@ export default function UserMicroblogViewerButton(
     nextClientId: string,
     nextVisible = visible.value,
   ) => {
+    if (saving.value) return;
     saving.value = true;
     message.value = null;
     try {
@@ -62,19 +148,84 @@ export default function UserMicroblogViewerButton(
         }),
       });
       if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(text || "Could not save viewer");
+        const payload = response.headers.get("content-type")?.includes(
+            "application/json",
+          )
+          ? await response.clone().json().catch(() => null)
+          : null;
+        const contextual = microblogViewerReauthorization(
+          response.status,
+          payload,
+          currentHandle,
+        );
+        if (contextual) {
+          pendingPreference.value = {
+            clientId: nextClientId,
+            visible: nextVisible,
+          };
+          reauthorization.value = contextual;
+          return;
+        }
+        throw new Error("Could not save viewer");
+      }
+      const successPayload = await response.json().catch(() => null) as
+        | { ok?: unknown }
+        | null;
+      if (successPayload?.ok !== true) {
+        throw new Error("Could not save viewer");
       }
       selected.value = nextClientId;
       visible.value = nextVisible;
+      try {
+        sessionStorage.removeItem(pendingKey);
+      } catch {
+        // The preference was saved remotely; unavailable browser storage does
+        // not turn that successful mutation into a visible failure.
+      }
       message.value = "Saved";
       open.value = false;
-    } catch (err) {
-      message.value = err instanceof Error ? err.message : "Network error";
+    } catch {
+      message.value = "Could not save viewer. Try again.";
     } finally {
       saving.value = false;
     }
   };
+
+  useEffect(() => {
+    const cancellation = oauthCancellationLocation(
+      globalThis.location.href,
+      "microblog-viewer",
+    );
+    if (cancellation.wasCancelled) {
+      globalThis.history.replaceState(null, "", cancellation.cleanLocation);
+      try {
+        sessionStorage.removeItem(pendingKey);
+      } catch {
+        // Storage can be disabled without breaking the account page.
+      }
+      return;
+    }
+    const url = new URL(globalThis.location.href);
+    if (url.searchParams.get("resume_viewer") !== "1") return;
+    url.searchParams.delete("resume_viewer");
+    globalThis.history.replaceState(
+      null,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+    let pending: { clientId: string; visible: boolean } | null = null;
+    try {
+      pending = parseMicroblogViewerPending(
+        sessionStorage.getItem(pendingKey),
+        currentDid,
+      );
+      sessionStorage.removeItem(pendingKey);
+    } catch {
+      // A privacy-restricted browser simply cannot resume this optional
+      // preference; it must still be able to render and use the page.
+    }
+    if (pending) void savePreference(pending.clientId, pending.visible);
+  }, []);
 
   return (
     <div class="account-microblog-viewer" ref={wrapRef}>
@@ -82,8 +233,10 @@ export default function UserMicroblogViewerButton(
         ref={triggerRef}
         type="button"
         class="account-microblog-viewer-button"
-        title={`Review profile links: ${active.name}`}
-        aria-label={`Review profile links open in ${active.name}`}
+        title={`Atmosphere microblog viewer: ${active.name}`}
+        aria-label={`Atmosphere microblog viewer: ${active.name}`}
+        aria-haspopup="dialog"
+        aria-controls={popoverId}
         aria-expanded={open.value}
         onClick={() => {
           open.value = !open.value;
@@ -116,20 +269,24 @@ export default function UserMicroblogViewerButton(
       </button>
 
       {open.value && (
-        <div class="account-microblog-viewer-popover" role="dialog">
+        <div
+          id={popoverId}
+          class="account-microblog-viewer-popover"
+          role="dialog"
+          aria-labelledby={popoverTitleId}
+        >
           <header class="account-microblog-viewer-popover-head">
             <div>
-              <h3>Review profile links</h3>
+              <h3 id={popoverTitleId}>Atmosphere microblog viewer</h3>
               <p>
-                Choose where reviewer handles open for you.
+                Choose where Atmosphere microblog profiles open for you.
               </p>
             </div>
             <button
               type="button"
-              class="account-microblog-viewer-close"
+              class="account-profile-edit-close account-microblog-viewer-close"
               aria-label="Close microblog viewer settings"
-              onClick={() =>
-                open.value = false}
+              onClick={() => open.value = false}
             >
               ×
             </button>
@@ -145,6 +302,7 @@ export default function UserMicroblogViewerButton(
                   class={`account-microblog-viewer-option ${
                     isSelected ? "is-selected" : ""
                   }`}
+                  aria-pressed={isSelected}
                   disabled={saving.value}
                   onClick={() => savePreference(client.id)}
                 >
@@ -177,6 +335,41 @@ export default function UserMicroblogViewerButton(
             </p>
           )}
         </div>
+      )}
+      {reauthorization.value && (
+        <ContextualReauthorizationDialog
+          authorization={reauthorization.value}
+          currentDid={currentDid}
+          currentHandle={currentHandle}
+          rememberedAccounts={rememberedAccounts}
+          restrictToCurrentAccount
+          onAuthorizationStart={() => {
+            const pending = pendingPreference.value;
+            if (!pending) return;
+            try {
+              sessionStorage.setItem(
+                pendingKey,
+                microblogViewerPendingValue(
+                  currentDid,
+                  pending.clientId,
+                  pending.visible,
+                ),
+              );
+            } catch {
+              // Reauthorization may continue, but the mutation cannot replay
+              // without an owner-bound same-tab marker.
+            }
+          }}
+          onClose={() => {
+            try {
+              sessionStorage.removeItem(pendingKey);
+            } catch {
+              // Storage can be disabled without breaking dismissal.
+            }
+            pendingPreference.value = null;
+            reauthorization.value = null;
+          }}
+        />
       )}
     </div>
   );

@@ -15,7 +15,27 @@ interface PendingRecord<T> {
   key: string;
   value: T;
   savedAt: number;
+  ownerDid?: string;
 }
+
+interface SavePendingBrowserActionOptions {
+  /** Account that initiated the pending write. A later account switch clears
+   * actions owned by a different DID before they can be replayed. */
+  ownerDid?: string;
+}
+
+interface PendingOwnerRecord {
+  key?: unknown;
+  ownerDid?: unknown;
+}
+
+const RESUME_MARKER_PREFIX = "atmosphere:resume-";
+const OWNER_BOUND_SESSION_DRAFT_PREFIXES = [
+  "atmosphere:review-draft:",
+  "atmosphere:review-response-draft:",
+  "atmosphere:review-report-draft:",
+  "atmosphere:microblog-viewer:",
+] as const;
 
 export function isPendingBrowserActionFresh(
   savedAt: unknown,
@@ -61,16 +81,19 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
 export async function savePendingBrowserAction<T>(
   key: string,
   value: T,
+  options: SavePendingBrowserActionOptions = {},
 ): Promise<void> {
   const db = await openPendingDb();
   try {
     const transaction = db.transaction(STORE_NAME, "readwrite");
+    const ownerDid = options.ownerDid?.trim();
     await requestResult(
       transaction.objectStore(STORE_NAME).put(
         {
           key,
           value,
           savedAt: Date.now(),
+          ...(ownerDid ? { ownerDid } : {}),
         } satisfies PendingRecord<T>,
       ),
     );
@@ -109,6 +132,132 @@ export async function clearPendingBrowserAction(key: string): Promise<void> {
   try {
     const transaction = db.transaction(STORE_NAME, "readwrite");
     await requestResult(transaction.objectStore(STORE_NAME).delete(key));
+  } finally {
+    db.close();
+  }
+}
+
+/** Return only valid action keys whose recorded owner differs from the active
+ * account. Legacy unowned records are left to their action-specific one-shot
+ * marker and normal TTL rather than being guessed at. */
+export function pendingBrowserActionKeysForOtherOwner(
+  records: readonly PendingOwnerRecord[],
+  currentDid: string,
+): string[] {
+  return records.flatMap((record) =>
+    typeof record.key === "string" && record.key &&
+      typeof record.ownerDid === "string" && record.ownerDid &&
+      record.ownerDid !== currentDid
+      ? [record.key]
+      : []
+  );
+}
+
+/** DID-valued session markers are consumed synchronously on an account switch
+ * so returning to their old account cannot reopen an editor while IndexedDB
+ * cleanup is still in flight. */
+export function pendingBrowserResumeMarkerKeysForOtherOwner(
+  entries: readonly (readonly [string, string | null])[],
+  currentDid: string,
+): string[] {
+  return entries.flatMap(([key, ownerDid]) =>
+    key.startsWith(RESUME_MARKER_PREFIX) && ownerDid && ownerDid !== currentDid
+      ? [key]
+      : []
+  );
+}
+
+export function clearPendingBrowserResumeMarkersForOtherOwner(
+  currentDid: string,
+  storage: Pick<Storage, "length" | "key" | "getItem" | "removeItem"> =
+    globalThis.sessionStorage,
+): void {
+  const entries: Array<readonly [string, string | null]> = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (key) entries.push([key, storage.getItem(key)]);
+  }
+  for (
+    const key of pendingBrowserResumeMarkerKeysForOtherOwner(
+      entries,
+      currentDid,
+    )
+  ) {
+    storage.removeItem(key);
+  }
+}
+
+export function pendingBrowserSessionDraftKeysForOtherOwner(
+  entries: readonly (readonly [string, string | null])[],
+  currentDid: string,
+): string[] {
+  return entries.flatMap(([key, rawValue]) => {
+    if (
+      !OWNER_BOUND_SESSION_DRAFT_PREFIXES.some((prefix) =>
+        key.startsWith(prefix)
+      )
+    ) return [];
+    if (!rawValue) return [key];
+    try {
+      const value = JSON.parse(rawValue) as Record<string, unknown>;
+      return value.ownerDid === currentDid ? [] : [key];
+    } catch {
+      // Legacy plaintext/unowned drafts are not safe to retain across an
+      // account change.
+      return [key];
+    }
+  });
+}
+
+export function clearPendingBrowserSessionDraftsForOtherOwner(
+  currentDid: string,
+  storage: Pick<Storage, "length" | "key" | "getItem" | "removeItem"> =
+    globalThis.sessionStorage,
+): void {
+  const entries: Array<readonly [string, string | null]> = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (key) entries.push([key, storage.getItem(key)]);
+  }
+  for (
+    const key of pendingBrowserSessionDraftKeysForOtherOwner(
+      entries,
+      currentDid,
+    )
+  ) storage.removeItem(key);
+}
+
+/**
+ * Cancel browser-stored writes when the active account changes. This runs from
+ * the signed-in account shell, so it still executes when a protected route
+ * redirects away before the editor that created the draft can mount.
+ */
+export async function clearPendingBrowserActionsForOtherOwners(
+  currentDid: string,
+): Promise<void> {
+  try {
+    clearPendingBrowserResumeMarkersForOtherOwner(currentDid);
+    clearPendingBrowserSessionDraftsForOtherOwner(currentDid);
+  } catch {
+    // Storage can be unavailable in hardened/private browser contexts. The
+    // IndexedDB ownership check below remains the write-safety boundary.
+  }
+
+  const db = await openPendingDb();
+  try {
+    const readTransaction = db.transaction(STORE_NAME, "readonly");
+    const records = await requestResult(
+      readTransaction.objectStore(STORE_NAME).getAll(),
+    ) as PendingRecord<unknown>[];
+    const staleKeys = pendingBrowserActionKeysForOtherOwner(
+      records,
+      currentDid,
+    );
+    if (staleKeys.length === 0) return;
+
+    const writeTransaction = db.transaction(STORE_NAME, "readwrite");
+    const store = writeTransaction.objectStore(STORE_NAME);
+    await Promise.all(staleKeys.map((key) => requestResult(store.delete(key))));
   } finally {
     db.close();
   }

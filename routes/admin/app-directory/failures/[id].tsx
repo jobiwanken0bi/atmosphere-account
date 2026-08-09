@@ -4,11 +4,14 @@ import Footer from "../../../../components/Footer.tsx";
 import { buildAccountMenuProps } from "../../../../lib/account-menu-props.ts";
 import {
   type AppRecordFailure,
+  appRecordFailureId,
   clearAppRecordFailure,
   getAppRecordFailure,
   uriFromAppRecordFailureId,
 } from "../../../../lib/app-directory-failures.ts";
 import { retryAppRecordFailure } from "../../../../lib/atstore-backfill.ts";
+import { readAdminFormRequest } from "../../../../lib/admin-request.ts";
+import ConfirmedActionForm from "../../../../islands/ConfirmedActionForm.tsx";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -26,7 +29,9 @@ export const handler = define.handlers({
   async POST(ctx) {
     const failure = await loadFailure(ctx.params.id);
     if (!failure) return new Response("Not found", { status: 404 });
-    const form = await ctx.req.formData().catch(() => null);
+    const parsed = await readAdminFormRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const form = parsed.value;
     const action = formText(form, "action");
 
     if (action === "clear") {
@@ -107,12 +112,15 @@ function FailurePage(
                       Retry this record
                     </button>
                   </form>
-                  <form method="POST">
-                    <input type="hidden" name="action" value="clear" />
-                    <button class="directory-register-button" type="submit">
-                      Clear if obsolete
-                    </button>
-                  </form>
+                  <ConfirmedActionForm
+                    action={`/admin/app-directory/failures/${
+                      encodeURIComponent(appRecordFailureId(failure.uri))
+                    }`}
+                    fields={{ action: "clear" }}
+                    label="Clear if obsolete"
+                    confirmation="Clear this stored failure? Only clear it if the source record is obsolete."
+                    buttonClass="directory-register-button"
+                  />
                 </div>
               </div>
               <dl class="admin-app-directory-facts">

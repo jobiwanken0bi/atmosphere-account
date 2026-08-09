@@ -3,6 +3,7 @@ import AtmosphereHandle from "../AtmosphereHandle.tsx";
 import type { ReviewRow } from "../../lib/reviews.ts";
 import ReportReviewButton from "../../islands/ReportReviewButton.tsx";
 import ReviewResponseComposer from "../../islands/ReviewResponseComposer.tsx";
+import { oauthSigninUrl } from "../../lib/oauth-action.ts";
 
 export interface DisplayReview extends ReviewRow {
   reviewerName: string | null;
@@ -11,11 +12,20 @@ export interface DisplayReview extends ReviewRow {
   reviewerProfileHref: string | null;
 }
 
+interface ReportAuth {
+  returnTo: string;
+  targetName: string;
+  rememberedAccounts: Array<{ did: string; handle: string }>;
+  currentDid?: string;
+  currentHandle?: string;
+}
+
 interface Props {
   reviews: DisplayReview[];
   signedIn: boolean;
   isOwner: boolean;
   action?: ComponentChildren;
+  reportAuth: ReportAuth;
   copy: {
     heading: string;
     empty: string;
@@ -32,9 +42,9 @@ interface Props {
       submit: string;
       submitting: string;
       cancel: string;
+      done: string;
       sentTitle: string;
       sentBody: string;
-      signInRequired: string;
       error: string;
       reasons: Record<"harmful" | "spam" | "off_topic" | "other", string>;
     };
@@ -42,6 +52,8 @@ interface Props {
       button: string;
       updateButton: string;
       deleteButton: string;
+      confirmDelete: string;
+      bodyLabel: string;
       placeholder: string;
       submit: string;
       submitting: string;
@@ -52,7 +64,7 @@ interface Props {
 }
 
 export default function ProfileReviewList(
-  { reviews, signedIn, isOwner, action, copy }: Props,
+  { reviews, signedIn, isOwner, action, reportAuth, copy }: Props,
 ) {
   return (
     <section class="profile-reviews-panel glass">
@@ -128,16 +140,31 @@ export default function ProfileReviewList(
                     <p>{review.response.body}</p>
                   </div>
                 )}
-                {isOwner && (
+                {isOwner && reportAuth.currentDid &&
+                  reportAuth.currentHandle && (
                   <ReviewResponseComposer
                     reviewId={review.id}
                     initialBody={review.response?.body ?? ""}
+                    returnTo={reportAuth.returnTo}
+                    targetName={reportAuth.targetName}
+                    currentDid={reportAuth.currentDid}
+                    currentHandle={reportAuth.currentHandle}
+                    rememberedAccounts={reportAuth.rememberedAccounts}
                     copy={copy.response}
                   />
                 )}
                 <ReportReviewButton
                   reviewId={review.id}
                   signedIn={signedIn}
+                  loginHref={reviewReportSigninHref(reportAuth, review.id)}
+                  returnTo={reviewReportReturnTo(
+                    reportAuth.returnTo,
+                    review.id,
+                  )}
+                  targetName={reportAuth.targetName}
+                  rememberedAccounts={reportAuth.rememberedAccounts}
+                  currentDid={reportAuth.currentDid}
+                  currentHandle={reportAuth.currentHandle}
                   copy={copy.report}
                 />
               </article>
@@ -146,4 +173,25 @@ export default function ProfileReviewList(
         )}
     </section>
   );
+}
+
+export function reviewReportReturnTo(
+  returnTo: string,
+  reviewId: number,
+): string {
+  const url = new URL(returnTo, "https://atmosphereaccount.invalid");
+  url.searchParams.set("report", String(reviewId));
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function reviewReportSigninHref(
+  auth: ReportAuth,
+  reviewId: number,
+): string {
+  return oauthSigninUrl({
+    action: "report_review",
+    name: auth.targetName,
+    next: reviewReportReturnTo(auth.returnTo, reviewId),
+    capabilities: ["identity"],
+  });
 }

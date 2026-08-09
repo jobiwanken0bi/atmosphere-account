@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Review dependency changes
         uses: actions/dependency-review-action@v5
 
@@ -34,6 +36,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Deno
         uses: denoland/setup-deno@v2
@@ -41,7 +45,10 @@ jobs:
           deno-version: 2.7.12
 
       - name: Install dependencies
-        run: deno install
+        run: deno install --frozen
+
+      - name: Audit dependencies
+        run: deno task audit
 
       - name: Check
         run: deno task check
@@ -66,6 +73,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Deno
         uses: denoland/setup-deno@v2
@@ -73,7 +82,7 @@ jobs:
           deno-version: 2.7.12
 
       - name: Install dependencies
-        run: deno install
+        run: deno install --frozen
 
       - name: Install Chromium
         run: npx --yes playwright@1.61.1 install --with-deps chromium

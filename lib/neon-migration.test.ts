@@ -134,6 +134,35 @@ Deno.test("Postgres baseline adds durable public host intent evidence", async ()
   }
 });
 
+Deno.test("Postgres CREATE TABLE blocks never define a column twice", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const tables = createTableColumns(schema);
+  if (tables.length === 0) {
+    throw new Error("Expected to find Postgres CREATE TABLE definitions");
+  }
+
+  for (const { table, columns } of tables) {
+    const seen = new Set<string>();
+    for (const column of columns) {
+      if (seen.has(column)) {
+        throw new Error(`${table} defines column ${column} more than once`);
+      }
+      seen.add(column);
+    }
+  }
+
+  const accountHost = tables.find(({ table }) => table === "account_host");
+  if (!accountHost) throw new Error("Expected account_host CREATE TABLE block");
+  const publicIntentCount =
+    accountHost.columns.filter((column) => column === "public_intent_status")
+      .length;
+  if (publicIntentCount !== 1) {
+    throw new Error(
+      `account_host must define public_intent_status exactly once, got ${publicIntentCount}`,
+    );
+  }
+});
+
 Deno.test("Postgres baseline adds explicit operator directory visibility", async () => {
   const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
   for (
@@ -158,4 +187,30 @@ function assertStringArrayEquals(actual: string[], expected: string[]): void {
   throw new Error(
     `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
   );
+}
+
+function createTableColumns(
+  schema: string,
+): Array<{ table: string; columns: string[] }> {
+  const tableConstraintKeywords = new Set([
+    "check",
+    "constraint",
+    "exclude",
+    "foreign",
+    "primary",
+    "unique",
+  ]);
+  return [
+    ...schema.matchAll(
+      /CREATE TABLE IF NOT EXISTS\s+([a-z_][a-z0-9_]*)\s*\(([\s\S]*?)^\);/gim,
+    ),
+  ].map((match) => ({
+    table: match[1].toLowerCase(),
+    columns: [
+      ...match[2].matchAll(
+        /^ {2}([a-z_][a-z0-9_]*)\s+/gim,
+      ),
+    ].map((column) => column[1].toLowerCase())
+      .filter((column) => !tableConstraintKeywords.has(column)),
+  }));
 }

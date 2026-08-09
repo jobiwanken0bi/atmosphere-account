@@ -176,6 +176,7 @@ export async function enforceDurableRateLimit(
       "content-type": "application/json; charset=utf-8",
       "retry-after": String(result.retryAfter),
       "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
     },
   });
 }
@@ -312,6 +313,8 @@ export function withRateLimit<H extends FreshHandler>(
             // Suggest waiting a full window for capacity to refill;
             // callers can retry sooner since the bucket refills linearly.
             "retry-after": String(result.retryAfter),
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
           },
         },
       );

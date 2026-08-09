@@ -1,6 +1,7 @@
 const FORM_SELECTOR = "form[data-submit-once]";
 const PENDING_ATTRIBUTE = "data-submit-once-pending";
 const GENERATED_SUBMITTER_ATTRIBUTE = "data-submit-once-submitter";
+const ORIGINAL_LABEL_ATTRIBUTE = "data-submit-once-original-label";
 
 function submitButtons(form) {
   return form.querySelectorAll(
@@ -47,7 +48,7 @@ export function beginSubmitOnce(form, submitter) {
     const target = pendingLabelTarget(submitter);
     const label = submitter.dataset.pendingLabel ?? form.dataset.pendingLabel;
     if (target instanceof HTMLElement && label) {
-      target.dataset.submitOnceLabel = target.textContent ?? "";
+      target.setAttribute(ORIGINAL_LABEL_ATTRIBUTE, target.textContent ?? "");
       target.textContent = label;
     }
   }
@@ -69,11 +70,12 @@ export function resetSubmitOnce(form) {
     }
     button.removeAttribute("aria-busy");
     const target = pendingLabelTarget(button);
-    if (
-      target instanceof HTMLElement && target.dataset.submitOnceLabel != null
-    ) {
-      target.textContent = target.dataset.submitOnceLabel;
-      delete target.dataset.submitOnceLabel;
+    if (target instanceof HTMLElement) {
+      const originalLabel = target.getAttribute(ORIGINAL_LABEL_ATTRIBUTE);
+      if (originalLabel !== null) {
+        target.textContent = originalLabel;
+        target.removeAttribute(ORIGINAL_LABEL_ATTRIBUTE);
+      }
     }
   }
 }

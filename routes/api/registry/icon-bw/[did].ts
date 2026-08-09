@@ -10,10 +10,17 @@ import { define } from "../../../../utils.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import { fetchBlobPublic } from "../../../../lib/pds.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
+import { iconProxyCacheControl } from "../../../../lib/icon-proxy-cache.ts";
+import { isDid } from "../../../../lib/identity.ts";
+import {
+  readSecureSvgBlob,
+  secureSvgErrorResponse,
+} from "../../../../lib/svg-blob-security.ts";
 
 export const handler = define.handlers({
   GET: withRateLimit(async (ctx) => {
-    const did = decodeURIComponent(ctx.params.did);
+    const did = routeDid(ctx.params.did);
+    if (!did) return new Response("not found", { status: 404 });
     const profile = await getProfileByDid(did).catch(() => null);
     if (!profile || !profile.iconBwCid) {
       return new Response("not found", { status: 404 });
@@ -33,15 +40,14 @@ export const handler = define.handlers({
         did,
         profile.iconBwCid,
       );
-      if (!upstream.ok) {
-        return new Response("not found", { status: 404 });
-      }
+      const secured = await readSecureSvgBlob(upstream, profile.iconBwCid);
+      if (!secured.ok) return secureSvgErrorResponse(secured);
       const headers = new Headers();
       headers.set("content-type", "image/svg+xml; charset=utf-8");
       headers.set("x-content-type-options", "nosniff");
       headers.set(
         "content-security-policy",
-        "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+        "default-src 'none'; sandbox; style-src 'unsafe-inline'; img-src data:",
       );
       headers.set(
         "content-disposition",
@@ -49,15 +55,29 @@ export const handler = define.handlers({
       );
       headers.set(
         "cache-control",
-        profile.iconBwStatus === "approved"
-          ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
-          : "private, max-age=60",
+        iconProxyCacheControl(
+          profile.iconAccessStatus,
+          profile.iconBwStatus,
+        ),
       );
       headers.set("etag", profile.iconBwCid);
-      return new Response(upstream.body, { status: 200, headers });
+      headers.set("content-length", String(secured.bytes.byteLength));
+      headers.set("cross-origin-resource-policy", "same-origin");
+      const body = new Uint8Array(secured.bytes.byteLength);
+      body.set(secured.bytes);
+      return new Response(body, { status: 200, headers });
     } catch (err) {
       console.warn("icon-bw proxy error:", err);
       return new Response("upstream error", { status: 502 });
     }
   }),
 });
+
+function routeDid(raw: string): string | null {
+  try {
+    const did = decodeURIComponent(raw);
+    return isDid(did) ? did : null;
+  } catch {
+    return null;
+  }
+}

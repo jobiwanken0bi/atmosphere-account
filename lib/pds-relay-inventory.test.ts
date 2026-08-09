@@ -210,7 +210,11 @@ Deno.test("relay inventory fetch paginates and summarizes without DID scans", as
     fetchImpl: ((input: URL | Request | string) => {
       seen.push(String(input));
       const page = pages.shift();
-      return Promise.resolve(new Response(JSON.stringify(page)));
+      return Promise.resolve(
+        new Response(JSON.stringify(page), {
+          headers: { "content-type": "application/json" },
+        }),
+      );
     }) as typeof fetch,
   });
 
@@ -241,7 +245,9 @@ Deno.test("relay inventory follows an empty page when it has a cursor", async ()
   const result = await fetchRelayPdsInventory({
     fetchImpl: (() =>
       Promise.resolve(
-        new Response(JSON.stringify(pages.shift())),
+        new Response(JSON.stringify(pages.shift()), {
+          headers: { "content-type": "application/json" },
+        }),
       )) as typeof fetch,
   });
 
@@ -250,6 +256,72 @@ Deno.test("relay inventory follows an empty page when it has a cursor", async ()
   assertEquals(result.instances.map((row) => row.serviceHost), [
     "pds.example.com",
   ]);
+});
+
+Deno.test("relay inventory refuses redirects and unbounded or non-JSON pages", async () => {
+  let redirectMode: RequestRedirect | undefined;
+  await assertRejects(
+    () =>
+      fetchRelayPdsInventory({
+        fetchImpl: ((_input, init) => {
+          redirectMode = init?.redirect;
+          return Promise.resolve(
+            new Response(null, {
+              status: 302,
+              headers: { location: "http://127.0.0.1/private" },
+            }),
+          );
+        }) as typeof fetch,
+      }),
+    "HTTP 302",
+  );
+  assertEquals(redirectMode, "manual");
+
+  await assertRejects(
+    () =>
+      fetchRelayPdsInventory({
+        fetchImpl: (() =>
+          Promise.resolve(
+            new Response('{"hosts":[]}', {
+              headers: { "content-type": "text/html" },
+            }),
+          )) as typeof fetch,
+      }),
+    "non-JSON",
+  );
+
+  await assertRejects(
+    () =>
+      fetchRelayPdsInventory({
+        fetchImpl: (() =>
+          Promise.resolve(
+            new Response("x".repeat(2 * 1024 * 1024 + 1), {
+              headers: { "content-type": "application/json" },
+            }),
+          )) as typeof fetch,
+      }),
+    "response too large",
+  );
+});
+
+Deno.test("relay pages cap cursor and host collection work", () => {
+  assertThrows(
+    () =>
+      parseRelayListHostsPage({
+        cursor: "x".repeat(2_049),
+        hosts: [],
+      }),
+    "invalid cursor",
+  );
+  assertThrows(
+    () =>
+      parseRelayListHostsPage({
+        hosts: Array.from({ length: 1_001 }, () => ({
+          hostname: "pds.example.com",
+        })),
+      }),
+    "too many hosts",
+  );
 });
 
 Deno.test("relay inventory persistence aggregates mushrooms and marks stale rows", async () => {

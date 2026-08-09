@@ -60,6 +60,17 @@ Deno.test("verifyAtmosphereSelectionToken accepts a valid signed selection", asy
   assertEquals(result.claims.pds_url, "https://pds.example");
 });
 
+Deno.test("verifyAtmosphereSelectionToken rejects oversized tokens before verification", async () => {
+  const { publicJwk } = await signedSelection();
+  const result = await verifyAtmosphereSelectionToken({
+    token: "a".repeat(8 * 1024 + 1),
+    publicJwk,
+  });
+
+  assertEquals(result.ok, false);
+  assertEquals(result.ok ? null : result.error, "invalid token");
+});
+
 Deno.test("verifyAtmosphereSelectionToken rejects state mismatch", async () => {
   const { token, publicJwk } = await signedSelection();
   const result = await verifyAtmosphereSelectionToken({

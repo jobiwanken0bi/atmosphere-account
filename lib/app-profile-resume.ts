@@ -33,6 +33,12 @@ export function appProfilePendingKey(did: string, returnTo: string): string {
   return `app-profile:${did}:${appProfileReturnToWithoutResume(returnTo)}`;
 }
 
+export function appProfileResumeProofKey(pendingKey: string): string {
+  return `atmosphere:browser-resume-marker:app-profile:${
+    encodeURIComponent(pendingKey)
+  }`;
+}
+
 export interface AppProfileResumeLocation {
   hadMarker: boolean;
   shouldResume: boolean;
@@ -44,11 +50,11 @@ export function appProfileResumeLocation(
   did: string,
 ): AppProfileResumeLocation {
   const url = new URL(href, PARSE_ORIGIN);
-  const marker = url.searchParams.get(APP_PROFILE_RESUME_PARAM);
+  const markers = url.searchParams.getAll(APP_PROFILE_RESUME_PARAM);
   url.searchParams.delete(APP_PROFILE_RESUME_PARAM);
   return {
-    hadMarker: marker !== null,
-    shouldResume: marker === did,
+    hadMarker: markers.length > 0,
+    shouldResume: markers.length === 1 && markers[0] === did,
     cleanLocation: relativeLocation(url),
   };
 }

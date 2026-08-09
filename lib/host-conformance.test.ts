@@ -8,11 +8,11 @@ import type { DbClient } from "./db.ts";
 Deno.test("host conformance requires manifest, account route, and PDS health", async () => {
   const calls: string[] = [];
   const report = await runHostConformance({
-    host: "host.example",
+    host: "host.social",
     manifestUrl:
-      "https://host.example/.well-known/atmosphere-host-dashboard.json",
-    accountUrl: "https://pds.host.example/account",
-    serviceEndpoint: "https://pds.host.example",
+      "https://host.social/.well-known/atmosphere-host-dashboard.json",
+    accountUrl: "https://pds.host.social/account",
+    serviceEndpoint: "https://pds.host.social",
     now: 1_000,
     fetchImpl: (input) => {
       const url = String(input);
@@ -22,10 +22,13 @@ Deno.test("host conformance requires manifest, account route, and PDS health", a
           new Response(
             JSON.stringify({
               version: "atmosphere.hostDashboard.v0.1",
-              host: "host.example",
-              dashboardUrl: "https://pds.host.example/account",
+              host: "host.social",
+              dashboardUrl: "https://pds.host.social/account",
             }),
-            { status: 200 },
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
           ),
         );
       }
@@ -61,11 +64,11 @@ Deno.test("host conformance requires manifest, account route, and PDS health", a
 
 Deno.test("host conformance failures persist without unlocking a badge", async () => {
   const report = await runHostConformance({
-    host: "host.example",
+    host: "host.social",
     manifestUrl:
-      "https://host.example/.well-known/atmosphere-host-dashboard.json",
-    accountUrl: "https://pds.host.example/account",
-    serviceEndpoint: "https://pds.host.example",
+      "https://host.social/.well-known/atmosphere-host-dashboard.json",
+    accountUrl: "https://pds.host.social/account",
+    serviceEndpoint: "https://pds.host.social",
     fetchImpl: () =>
       Promise.resolve(new Response("unavailable", { status: 503 })),
   });
@@ -95,20 +98,25 @@ Deno.test("host conformance failures persist without unlocking a badge", async (
 
 Deno.test("host conformance reports malformed account redirects as failures", async () => {
   const report = await runHostConformance({
-    host: "host.example",
+    host: "host.social",
     manifestUrl:
-      "https://host.example/.well-known/atmosphere-host-dashboard.json",
-    accountUrl: "https://host.example/account",
-    serviceEndpoint: "https://host.example",
+      "https://host.social/.well-known/atmosphere-host-dashboard.json",
+    accountUrl: "https://host.social/account",
+    serviceEndpoint: "https://host.social",
     fetchImpl: (input) => {
       const url = String(input);
       if (url.endsWith("atmosphere-host-dashboard.json")) {
         return Promise.resolve(
-          new Response(JSON.stringify({
-            version: "atmosphere.hostDashboard.v0.1",
-            host: "host.example",
-            dashboardUrl: "https://host.example/account",
-          })),
+          new Response(
+            JSON.stringify({
+              version: "atmosphere.hostDashboard.v0.1",
+              host: "host.social",
+              dashboardUrl: "https://host.social/account",
+            }),
+            {
+              headers: { "content-type": "application/json" },
+            },
+          ),
         );
       }
       if (url.endsWith("/account")) {
@@ -119,11 +127,61 @@ Deno.test("host conformance reports malformed account redirects as failures", as
           }),
         );
       }
-      return Promise.resolve(new Response("{}"));
+      return Promise.resolve(
+        new Response("{}", {
+          headers: { "content-type": "application/json" },
+        }),
+      );
     },
   });
   const account = report.checks.find((item) => item.id === "account_route");
   if (report.status !== "failed" || account?.ok !== false) {
     throw new Error("malformed redirect must produce a failed report");
+  }
+});
+
+Deno.test("host conformance refuses non-JSON manifests and health responses", async () => {
+  const report = await runHostConformance({
+    host: "host.social",
+    manifestUrl:
+      "https://host.social/.well-known/atmosphere-host-dashboard.json",
+    accountUrl: "https://host.social/account",
+    serviceEndpoint: "https://host.social",
+    fetchImpl: (input, init) => {
+      if (init?.redirect !== "manual") {
+        throw new Error("outbound checks must not follow redirects");
+      }
+      const url = String(input);
+      if (url.endsWith("atmosphere-host-dashboard.json")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              version: "atmosphere.hostDashboard.v0.1",
+              host: "host.social",
+              dashboardUrl: "https://host.social/account",
+            }),
+            { headers: { "content-type": "text/html" } },
+          ),
+        );
+      }
+      if (url.endsWith("/account")) {
+        return Promise.resolve(
+          new Response("<html></html>", {
+            headers: { "content-type": "text/html" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response("{}", {
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    },
+  });
+
+  const manifest = report.checks.find((item) => item.id === "manifest");
+  const health = report.checks.find((item) => item.id === "pds_health");
+  if (manifest?.ok !== false || health?.ok !== false) {
+    throw new Error("non-JSON conformance responses must not pass");
   }
 });

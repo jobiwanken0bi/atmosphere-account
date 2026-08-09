@@ -22,7 +22,11 @@ import {
   isCollectionNsid,
 } from "../lib/collection-nsid.ts";
 import type { CollectionSuggestion } from "../lib/collection-catalog.ts";
-import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
+import {
+  type ContextualReauthorization,
+  contextualReauthorization,
+  contextualReauthorizationFromApiPayload,
+} from "../lib/reauth-required.ts";
 import {
   clearPendingBrowserAction,
   loadPendingBrowserAction,
@@ -31,9 +35,20 @@ import {
 import {
   appProfilePendingKey,
   appProfileResumeLocation,
+  appProfileResumeProofKey,
   appProfileResumeReturnTo,
   appProfileReturnToWithoutResume,
 } from "../lib/app-profile-resume.ts";
+import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
+import {
+  browserResumeMarkerValue,
+  isFreshBrowserResumeMarker,
+} from "../lib/browser-resume-marker.ts";
+import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
+import {
+  appProfileWriteCapabilities,
+  type AppProfileWritePayload,
+} from "../lib/profile-write-capabilities.ts";
 import { createAtprotoTid, isAtprotoTid } from "../lib/tid.ts";
 
 interface ExistingProfile {
@@ -105,12 +120,14 @@ interface Props {
   publicProfileHandle?: string | null;
   /** Directory identifier used to continue into verified host connection. */
   managedAppIdentifier?: string | null;
-  /** Publish this DID's first ATStore app record. */
+  /** Publish this DID's first and only ATStore app record. */
   createNewListing?: boolean;
   /** Exact shared record managed by this form, used for targeted removal. */
   atstoreListingUri?: string | null;
-  /** Exact safe page restored after a progressive permission upgrade. */
+  /** Exact safe page restored after management reauthorization. */
   reauthReturnTo?: string;
+  /** Saved accounts offered by the contextual permission chooser. */
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
 }
 
 interface BlobRefShape {
@@ -584,17 +601,11 @@ async function responseErrorText(res: Response): Promise<string> {
   return await res.text().catch(() => "") || `HTTP ${res.status}`;
 }
 
-async function followRequiredReauth(
+async function contextualReauthorizationFromResponse(
   res: Response,
-  beforeNavigate?: () => Promise<void>,
-): Promise<boolean> {
-  if (res.status !== 403) return false;
+): Promise<ContextualReauthorization | null> {
   const body = await res.clone().json().catch(() => null);
-  const reauthUrl = reauthUrlFromApiPayload(body);
-  if (!reauthUrl) return false;
-  await beforeNavigate?.();
-  globalThis.location.assign(reauthUrl);
-  return true;
+  return contextualReauthorizationFromApiPayload(body);
 }
 
 interface CustomLinkRow {
@@ -721,6 +732,7 @@ export default function CreateProfileForm(
     createNewListing = false,
     atstoreListingUri = null,
     reauthReturnTo = "/apps/manage",
+    rememberedAccounts = [],
     collectionSuggestions = [],
   }: Props,
 ) {
@@ -881,6 +893,7 @@ export default function CreateProfileForm(
   const message = useSignal<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
+  const reauthorization = useSignal<ContextualReauthorization | null>(null);
   const publicPath = useSignal<string | null>(
     publicProfileHandle
       ? `/apps/${encodeURIComponent(publicProfileHandle)}`
@@ -893,11 +906,15 @@ export default function CreateProfileForm(
     atstoreListingUri,
   );
   const createNewListingPending = useSignal(createNewListing);
-  const baseReauthReturnTo = appProfileReturnToWithoutResume(reauthReturnTo);
+  // A retry must address the same repository record. Otherwise a successful
+  // PDS write followed by a failed local index could create a duplicate app.
   const createListingRkey = useSignal(createAtprotoTid());
   const shouldPersistCreationRkey = createNewListing ||
     (!initialPublished && !atstoreListingUri);
+  const resumeRetryAvailable = useSignal(false);
+  const baseReauthReturnTo = appProfileReturnToWithoutResume(reauthReturnTo);
   const pendingPublishKey = appProfilePendingKey(did, baseReauthReturnTo);
+  const resumeProofKey = appProfileResumeProofKey(pendingPublishKey);
   const resumeReturnTo = appProfileResumeReturnTo(baseReauthReturnTo, did);
   const profileEndpoint = `/api/registry/profile?${new URLSearchParams({
     next: resumeReturnTo,
@@ -917,15 +934,45 @@ export default function CreateProfileForm(
         sessionStorage,
       );
     } catch {
-      // The server lease provides bounded recovery when storage is blocked.
+      // The server-side DID reservation still converges retries when browser
+      // storage is unavailable; the in-memory key covers this page lifetime.
     }
   }, []);
 
   useEffect(() => {
+    const cancellation = oauthCancellationLocation(
+      globalThis.location.href,
+      "app-profile",
+    );
+    if (cancellation.wasCancelled) {
+      globalThis.history.replaceState(null, "", cancellation.cleanLocation);
+      try {
+        sessionStorage.removeItem(resumeProofKey);
+      } catch {
+        // Storage restrictions already prevent automatic replay.
+      }
+      void clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      resumeRetryAvailable.value = false;
+      return;
+    }
     const resume = appProfileResumeLocation(globalThis.location.href, did);
-    if (!resume.hadMarker) return;
-    globalThis.history.replaceState(null, "", resume.cleanLocation);
-    if (!resume.shouldResume) return;
+    if (resume.hadMarker) {
+      globalThis.history.replaceState(null, "", resume.cleanLocation);
+    }
+    let proof: string | null = null;
+    try {
+      proof = sessionStorage.getItem(resumeProofKey);
+      sessionStorage.removeItem(resumeProofKey);
+    } catch {
+      // Fail closed: a return marker without same-tab proof never writes.
+    }
+    if (!resume.shouldResume || !isFreshBrowserResumeMarker(proof)) {
+      // This also clears drafts left by an abandoned authorization when the
+      // person later reaches the editor through an ordinary navigation.
+      void clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      resumeRetryAvailable.value = false;
+      return;
+    }
     let cancelled = false;
     (async () => {
       const pending = await loadPendingBrowserAction<Record<string, unknown>>(
@@ -939,10 +986,36 @@ export default function CreateProfileForm(
         headers: { "content-type": "application/json" },
         body: JSON.stringify(pending),
       }).catch(() => null);
-      if (!res || cancelled) return;
+      if (cancelled) return;
+      if (!res) {
+        resumeRetryAvailable.value = true;
+        message.value = {
+          kind: "error",
+          text: "Your saved changes are still here. Try publishing them again.",
+        };
+        submitting.value = false;
+        return;
+      }
       if (!res.ok) {
-        if (await followRequiredReauth(res)) return;
-        await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+        const contextual = await contextualReauthorizationFromResponse(res) ??
+          (res.status === 401
+            ? contextualReauthorization({
+              returnTo: resumeReturnTo,
+              action: "app",
+              capabilities: appProfileWriteCapabilities(
+                pending as AppProfileWritePayload,
+              ),
+              targetName: typeof pending.name === "string"
+                ? pending.name
+                : name.value || "your app",
+            })
+            : null);
+        if (contextual) {
+          reauthorization.value = contextual;
+          submitting.value = false;
+          return;
+        }
+        resumeRetryAvailable.value = true;
         message.value = {
           kind: "error",
           text: await responseErrorText(res),
@@ -950,7 +1023,20 @@ export default function CreateProfileForm(
         submitting.value = false;
         return;
       }
+      const saved = await res.json().catch(() => null) as
+        | { ok?: unknown }
+        | null;
+      if (saved?.ok !== true) {
+        resumeRetryAvailable.value = true;
+        message.value = {
+          kind: "error",
+          text: "Your saved changes are still here. Try publishing them again.",
+        };
+        submitting.value = false;
+        return;
+      }
       await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      resumeRetryAvailable.value = false;
       clearAppProfileCreationRkey(did, baseReauthReturnTo);
       globalThis.location.reload();
     })();
@@ -1151,6 +1237,12 @@ export default function CreateProfileForm(
   };
 
   const onSubmit = async (event: Event) => {
+    // Buttons such as Sign out deliberately override this editor form's
+    // destination. Let the browser perform those real POSTs instead of
+    // accidentally publishing the app profile.
+    if (!shouldHandleProfileEditorSubmit((event as SubmitEvent).submitter)) {
+      return;
+    }
     event.preventDefault();
     if (submitting.value) return;
     const trimmedMainLink = mainLink.value.trim();
@@ -1283,21 +1375,45 @@ export default function CreateProfileForm(
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        if (
-          await followRequiredReauth(
-            res,
-            () => savePendingBrowserAction(pendingPublishKey, payload),
-          )
-        ) return;
+        const contextual = await contextualReauthorizationFromResponse(res) ??
+          (res.status === 401
+            ? contextualReauthorization({
+              returnTo: resumeReturnTo,
+              action: "app",
+              capabilities: appProfileWriteCapabilities(payload),
+              targetName: name.value || "your app",
+            })
+            : null);
+        if (contextual) {
+          try {
+            await savePendingBrowserAction(pendingPublishKey, payload, {
+              ownerDid: did,
+            });
+          } catch {
+            throw new Error(
+              "Could not preserve this app profile and its images for authorization. Try again without leaving this page.",
+            );
+          }
+          reauthorization.value = contextual;
+          return;
+        }
         const text = await responseErrorText(res);
         throw new Error(text || `HTTP ${res.status}`);
       }
       const saved = await res.json() as {
+        ok?: unknown;
         publicPath?: string | null;
         slug?: string | null;
         atstoreListingUri?: string | null;
         writeTarget?: "atstore_listing" | "legacy_profile";
       };
+      if (saved.ok !== true) {
+        throw new Error(
+          "The app profile returned an invalid response. Try again.",
+        );
+      }
+      await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      resumeRetryAvailable.value = false;
       published.value = true;
       publicPath.value = saved.publicPath ??
         (saved.slug ? `/apps/${encodeURIComponent(saved.slug)}` : null) ??
@@ -1337,9 +1453,29 @@ export default function CreateProfileForm(
         method: "DELETE",
       });
       if (!res.ok) {
-        if (await followRequiredReauth(res)) return;
+        const contextual = await contextualReauthorizationFromResponse(res) ??
+          (res.status === 401
+            ? contextualReauthorization({
+              returnTo: baseReauthReturnTo,
+              action: "app",
+              capabilities: ["app", "media"],
+              targetName: name.value || "your app",
+            })
+            : null);
+        if (contextual) {
+          reauthorization.value = contextual;
+          return;
+        }
         throw new Error(await responseErrorText(res));
       }
+      const deleted = await res.json().catch(() => null) as
+        | { ok?: unknown }
+        | null;
+      if (deleted?.ok !== true) {
+        throw new Error("The app profile returned an invalid response.");
+      }
+      await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      resumeRetryAvailable.value = false;
       published.value = false;
       publicPath.value = null;
       currentAtstoreListingUri.value = null;
@@ -1857,17 +1993,61 @@ export default function CreateProfileForm(
       </div>
 
       <div class="profile-form-actions">
-        <button
-          type="submit"
-          disabled={submitting.value}
-          class="profile-form-button-primary"
-        >
-          {submitting.value
-            ? tManage.savingButton
-            : published.value
-            ? tManage.updateButton
-            : tManage.publishButton}
-        </button>
+        {resumeRetryAvailable.value
+          ? (
+            <>
+              <button
+                type="button"
+                disabled={submitting.value}
+                class="profile-form-button-primary"
+                onClick={() => {
+                  if (!armAppProfileResume(resumeProofKey)) {
+                    message.value = {
+                      kind: "error",
+                      text:
+                        "This browser could not safely resume your saved changes. Submit the form again instead.",
+                    };
+                    return;
+                  }
+                  globalThis.location.assign(resumeReturnTo);
+                }}
+              >
+                Retry saved changes
+              </button>
+              <button
+                type="button"
+                disabled={submitting.value}
+                class="profile-form-button-link"
+                onClick={() => {
+                  if (
+                    !globalThis.confirm(
+                      "Discard the saved changes from before authorization?",
+                    )
+                  ) return;
+                  void clearPendingBrowserAction(pendingPublishKey).catch(
+                    () => {},
+                  );
+                  resumeRetryAvailable.value = false;
+                  message.value = null;
+                }}
+              >
+                Discard saved changes
+              </button>
+            </>
+          )
+          : (
+            <button
+              type="submit"
+              disabled={submitting.value}
+              class="profile-form-button-primary"
+            >
+              {submitting.value
+                ? tManage.savingButton
+                : published.value
+                ? tManage.updateButton
+                : tManage.publishButton}
+            </button>
+          )}
         {
           /*
           "View public profile" sits between Update and Remove so it
@@ -1954,6 +2134,22 @@ export default function CreateProfileForm(
           />
         );
       })()}
+      {reauthorization.value && (
+        <ContextualReauthorizationDialog
+          authorization={reauthorization.value}
+          currentDid={did}
+          currentHandle={handle}
+          rememberedAccounts={rememberedAccounts}
+          restrictToCurrentAccount
+          onAuthorizationStart={() => {
+            armAppProfileResume(resumeProofKey);
+          }}
+          onClose={() => {
+            reauthorization.value = null;
+            void cancelAppProfileReauthorization(pendingPublishKey);
+          }}
+        />
+      )}
     </form>
   );
 }
@@ -2015,6 +2211,57 @@ export function clearAppProfileCreationRkey(
     );
   } catch {
     // Session storage is only a same-tab retry aid.
+  }
+}
+
+export function shouldHandleProfileEditorSubmit(
+  submitter: EventTarget | null,
+): boolean {
+  if (!submitter || typeof submitter !== "object") return true;
+  const element = submitter as EventTarget & {
+    hasAttribute?: (name: string) => boolean;
+  };
+  return element.hasAttribute?.("formaction") !== true;
+}
+
+export async function cancelAppProfileReauthorization(
+  pendingKey: string,
+  options: {
+    href?: string;
+    replaceLocation?: (location: string) => void;
+    clearPending?: (key: string) => Promise<void>;
+    storage?: Pick<Storage, "removeItem">;
+  } = {},
+): Promise<void> {
+  const href = options.href ?? globalThis.location.href;
+  const resume = appProfileResumeLocation(href, "");
+  if (resume.hadMarker) {
+    (options.replaceLocation ??
+      ((location) => globalThis.history.replaceState(null, "", location)))(
+        resume.cleanLocation,
+      );
+  }
+  try {
+    (options.storage ?? globalThis.sessionStorage).removeItem(
+      appProfileResumeProofKey(pendingKey),
+    );
+  } catch {
+    // IndexedDB cleanup below remains necessary when storage is blocked.
+  }
+  await (options.clearPending ?? clearPendingBrowserAction)(pendingKey).catch(
+    () => {},
+  );
+}
+
+export function armAppProfileResume(
+  proofKey: string,
+  storage: Pick<Storage, "setItem"> = globalThis.sessionStorage,
+): boolean {
+  try {
+    storage.setItem(proofKey, browserResumeMarkerValue());
+    return true;
+  } catch {
+    return false;
   }
 }
 

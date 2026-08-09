@@ -20,6 +20,7 @@ import {
 import { putRecord } from "../../../lib/pds.ts";
 import { getValidSession } from "../../../lib/oauth.ts";
 import { ATMOSPHERE_DID } from "../../../lib/env.ts";
+import { readAdminJsonRequest } from "../../../lib/admin-request.ts";
 
 interface PayloadEntry {
   did?: unknown;
@@ -33,18 +34,21 @@ export const handler = define.handlers({
     if (!gate.ok) return gate.response;
 
     if (!ATMOSPHERE_DID) {
-      return jsonError(500, "atmosphere_did_unset", "Set ATMOSPHERE_DID");
+      return jsonError(500, "atmosphere_did_unset");
     }
 
-    const body = await ctx.req.json().catch(() => null) as
-      | { entries?: PayloadEntry[] }
-      | null;
-    if (!body || !Array.isArray(body.entries)) {
+    const parsed = await readAdminJsonRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.value as { entries?: PayloadEntry[] };
+    if (!Array.isArray(body.entries)) {
       return jsonError(400, "invalid_body");
     }
 
     const entries: { did: string; badges?: string[]; position?: number }[] = [];
     for (const [i, raw] of body.entries.entries()) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return jsonError(400, `invalid_entry_at_${i}`);
+      }
       const did = typeof raw.did === "string" ? raw.did.trim() : "";
       if (!did.startsWith("did:")) {
         return jsonError(400, `invalid_did_at_${i}`);
@@ -64,16 +68,12 @@ export const handler = define.handlers({
     const record = { entries };
     const validation = validateFeatured(record);
     if (!validation.ok || !validation.value) {
-      return jsonError(400, "invalid_record", validation.error);
+      return jsonError(400, "invalid_record");
     }
 
     const session = await getValidSession(ATMOSPHERE_DID);
     if (!session) {
-      return jsonError(
-        401,
-        "atmosphere_session_missing",
-        "Sign in once with the curator account at /oauth/login first.",
-      );
+      return jsonError(401, "atmosphere_session_missing");
     }
 
     let result: Awaited<ReturnType<typeof putRecord>>;
@@ -85,9 +85,9 @@ export const handler = define.handlers({
         "self",
         record as unknown as Record<string, unknown>,
       );
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(502, "put_record_failed", m);
+    } catch {
+      console.error("[admin] featured directory publish failed");
+      return jsonError(502, "put_record_failed");
     }
 
     return new Response(
@@ -100,9 +100,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

@@ -9,6 +9,7 @@ import {
   findIconAccessTarget,
   grantIconAccess,
 } from "../../../../lib/registry.ts";
+import { readAdminJsonRequest } from "../../../../lib/admin-request.ts";
 
 interface GrantPayload {
   identifier?: unknown;
@@ -19,7 +20,9 @@ export const handler = define.handlers({
     const gate = requireAdminApi(ctx);
     if (!gate.ok) return gate.response;
 
-    const body = await ctx.req.json().catch(() => null) as GrantPayload | null;
+    const parsed = await readAdminJsonRequest(ctx.req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.value as GrantPayload;
     const identifier = typeof body?.identifier === "string"
       ? body.identifier.trim()
       : "";
@@ -32,8 +35,8 @@ export const handler = define.handlers({
       const ok = await grantIconAccess(target.did, gate.did);
       if (!ok) return jsonError(404, "profile_not_found");
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "grant_failed", m);
+      console.error("[admin] icon-access grant failed:", err);
+      return jsonError(500, "grant_failed");
     }
 
     return new Response(
@@ -53,9 +56,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

@@ -25,6 +25,7 @@ import {
 } from "../../lib/atstore-migration.ts";
 import { findExistingCommunityAppProfile } from "../../lib/community-app-profile.ts";
 import {
+  type AppListing,
   getAppListingById,
   getAppListingByIdentifier,
   getManagedAppListingByAccountDid,
@@ -42,6 +43,19 @@ import {
   oauthSigninUrl,
 } from "../../lib/oauth-action.ts";
 import { existingAppRegistrationRedirect } from "../../lib/app-profile-cardinality.ts";
+
+/**
+ * An explicit edit target is trusted only when this DID owns the exact
+ * repository record. Perform this check before requesting app-management
+ * access so a foreign app URL cannot trigger an irrelevant permission prompt.
+ */
+export function isEditableRequestedApp(
+  app: AppListing,
+  userDid: string,
+): boolean {
+  return userControlsAppListing(app, userDid) &&
+    Boolean(app.atstoreListingUri?.startsWith(`at://${userDid}/`));
+}
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -89,6 +103,22 @@ export const handler = define.handlers({
         },
       });
     }
+    let requestedManagedApp: AppListing | null = null;
+    if (requestedAppId) {
+      try {
+        requestedManagedApp = await getAppListingById(requestedAppId);
+      } catch (error) {
+        return appviewUnavailable("app management", error);
+      }
+      if (!requestedManagedApp) {
+        return new Response("App listing not found.", { status: 404 });
+      }
+      if (!isEditableRequestedApp(requestedManagedApp, user.did)) {
+        return new Response("This account cannot manage that app listing.", {
+          status: 403,
+        });
+      }
+    }
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
@@ -118,7 +148,7 @@ export const handler = define.handlers({
             next,
             action: "app",
             capabilities: requiredCapabilities,
-            name: "your app",
+            name: requestedManagedApp?.name ?? "your app",
           }),
         },
       });
@@ -277,46 +307,34 @@ export const handler = define.handlers({
       }
     }
 
-    if (requestedAppId && session) {
-      const candidate = await getAppListingById(requestedAppId).catch(() =>
-        null
-      );
-      const ownedRecordPrefix = `at://${user.did}/`;
-      if (
-        candidate && userControlsAppListing(candidate, user.did) &&
-        candidate.atstoreListingUri?.startsWith(ownedRecordPrefix)
-      ) {
-        const rkey = candidate.atstoreListingUri.split("/").at(-1) ?? "";
-        const record = rkey
-          ? await getRecordPublic(
-            session.pdsUrl,
-            user.did,
-            ATSTORE_LISTING_NSID,
-            rkey,
-          ).catch(() => null)
-          : null;
-        const selectedInitial = record
-          ? initialFromAtstoreRecord(record.value, user.did)
-          : null;
-        if (selectedInitial) {
-          selectedManagedApp = candidate;
-          initial = selectedInitial.initial;
-          initialAvatarUrl = selectedInitial.initialAvatarUrl;
-          initialBannerUrl = selectedInitial.initialBannerUrl;
-          hasAtstoreListing = true;
-          atstoreListingUri = candidate.atstoreListingUri;
-          remoteAtstoreListingUri = null;
-          atstoreMigrationIssues = [];
-          atstoreMigrationPreview = null;
-        }
+    if (requestedManagedApp && session) {
+      const rkey = requestedManagedApp.atstoreListingUri!.split("/").at(-1) ??
+        "";
+      const record = rkey
+        ? await getRecordPublic(
+          session.pdsUrl,
+          user.did,
+          ATSTORE_LISTING_NSID,
+          rkey,
+        ).catch(() => null)
+        : null;
+      const selectedInitial = record
+        ? initialFromAtstoreRecord(record.value, user.did)
+        : null;
+      if (!selectedInitial) {
+        return new Response("The app listing record could not be loaded.", {
+          status: 503,
+        });
       }
-    }
-    if (
-      accountType !== "project" && requestedAppId && !selectedManagedApp
-    ) {
-      return new Response("This account cannot manage that app listing.", {
-        status: 403,
-      });
+      selectedManagedApp = requestedManagedApp;
+      initial = selectedInitial.initial;
+      initialAvatarUrl = selectedInitial.initialAvatarUrl;
+      initialBannerUrl = selectedInitial.initialBannerUrl;
+      hasAtstoreListing = true;
+      atstoreListingUri = requestedManagedApp.atstoreListingUri;
+      remoteAtstoreListingUri = null;
+      atstoreMigrationIssues = [];
+      atstoreMigrationPreview = null;
     }
 
     /** Surface profile-level takedowns to the owner so they understand
@@ -806,6 +824,7 @@ function ManagePage(
                 createNewListing={createNewListing}
                 atstoreListingUri={atstoreListingUri}
                 reauthReturnTo={reauthReturnTo}
+                rememberedAccounts={account.rememberedAccounts}
               />
             </div>
           </div>

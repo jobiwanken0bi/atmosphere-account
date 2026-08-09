@@ -280,6 +280,9 @@ CREATE INDEX IF NOT EXISTS account_host_signup ON account_host(signup_status);
 CREATE INDEX IF NOT EXISTS account_host_source ON account_host(source);
 CREATE INDEX IF NOT EXISTS account_host_profile_did ON account_host(profile_did);
 
+-- Keep these additive upgrades after the canonical CREATE TABLE definition.
+-- Existing databases may predate individual account_host columns; ADD COLUMN
+-- IF NOT EXISTS is intentionally safe for both upgraded and newly created DBs.
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS data_location text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location text;
 ALTER TABLE account_host ADD COLUMN IF NOT EXISTS inferred_location_source text;

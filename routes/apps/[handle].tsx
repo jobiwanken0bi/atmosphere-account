@@ -507,6 +507,8 @@ function ProfileDetailPage(
                     authAction="legacy_review"
                     authTargetName={profile.name}
                     rememberedAccounts={account.rememberedAccounts}
+                    currentDid={signedInUser?.did}
+                    currentHandle={signedInUser?.handle}
                     ownReview={ownReview
                       ? {
                         id: ownReview.id,
@@ -530,8 +532,6 @@ function ProfileDetailPage(
                       submitting: messages.reviews.composer.submitting,
                       delete: messages.reviews.composer.delete,
                       signIn: messages.reviews.composer.signIn,
-                      signInTitle: messages.reviews.composer.signInTitle,
-                      signInBody: messages.reviews.composer.signInBody,
                       cancel: messages.reviews.composer.cancel,
                       saved: messages.reviews.composer.saved,
                       deleted: messages.reviews.composer.deleted,
@@ -539,6 +539,13 @@ function ProfileDetailPage(
                     }}
                   />
                 }
+                reportAuth={{
+                  returnTo: `/apps/${encodeURIComponent(profile.handle)}`,
+                  targetName: profile.name,
+                  rememberedAccounts: account.rememberedAccounts,
+                  currentDid: signedInUser?.did,
+                  currentHandle: signedInUser?.handle,
+                }}
                 copy={{
                   heading: messages.reviews.list.heading,
                   empty: messages.reviews.list.empty,
@@ -579,7 +586,6 @@ function ProfileDetailPage(
             {!isOwner && (
               <ReportProfileButton
                 targetId={profile.handle}
-                signedIn={!!signedInUser}
                 copy={{
                   button: messages.report.button,
                   modalTitle: messages.report.modalTitle,
@@ -590,6 +596,7 @@ function ProfileDetailPage(
                   submit: messages.report.submit,
                   submitting: messages.report.submitting,
                   cancel: messages.report.cancel,
+                  done: messages.report.done,
                   sentTitle: messages.report.sentTitle,
                   sentBody: messages.report.sentBody,
                   duplicate: messages.report.duplicate,
@@ -1057,6 +1064,8 @@ function AppReviewsSection(
               authAction="review"
               authTargetName={app.name}
               rememberedAccounts={rememberedAccounts}
+              currentDid={signedInUser?.did}
+              currentHandle={signedInUser?.handle}
               submitEndpoint={`/api/apps/${encodedIdentifier}/reviews`}
               deleteEndpoint={`/api/apps/${encodedIdentifier}/reviews/me`}
               maxBodyLength={8000}
@@ -1082,8 +1091,6 @@ function AppReviewsSection(
                 submitting: messages.reviews.composer.submitting,
                 delete: messages.reviews.composer.delete,
                 signIn: messages.reviews.composer.signIn,
-                signInTitle: messages.reviews.composer.signInTitle,
-                signInBody: messages.reviews.composer.signInBody,
                 cancel: messages.reviews.composer.cancel,
                 saved: messages.reviews.composer.saved,
                 deleted: messages.reviews.composer.deleted,

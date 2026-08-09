@@ -14,12 +14,17 @@ import { isDid, isHandle, resolveIdentity } from "../../../lib/identity.ts";
 import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
 import { getBskyProfile } from "../../../lib/pds.ts";
 import { withRateLimit } from "../../../lib/rate-limit.ts";
+import {
+  isJsonMediaType,
+  readResponseTextWithLimit,
+} from "../../../lib/security.ts";
 
 const BSKY_SEARCH =
   "https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors";
 const MAX_QUERY_LENGTH = 253;
 const SEARCH_LIMIT = "8";
 const SEARCH_TIMEOUT_MS = 4_000;
+const MAX_SEARCH_RESPONSE_BYTES = 256 * 1024;
 
 export interface PreviewMatch {
   did: string;
@@ -58,13 +63,25 @@ function parseActor(a: unknown): PreviewMatch | null {
   if (!a || typeof a !== "object") return null;
   const o = a as Record<string, unknown>;
   const did = typeof o.did === "string" ? o.did : "";
-  const handle = typeof o.handle === "string" ? o.handle : "";
-  if (!did || !handle) return null;
+  const handle = typeof o.handle === "string" ? o.handle.toLowerCase() : "";
+  if (!isDid(did) || !isHandle(handle)) return null;
   const displayName = typeof o.displayName === "string"
-    ? o.displayName
+    ? o.displayName.slice(0, 256)
     : undefined;
-  const avatarUrl = typeof o.avatar === "string" ? o.avatar : undefined;
+  const avatarUrl = safeAvatarUrl(o.avatar);
   return { did, handle, displayName, avatarUrl };
+}
+
+function safeAvatarUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > 2_048) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Prefer exact handle, then handle prefix, then substring / display name. */
@@ -93,18 +110,39 @@ async function searchActors(query: string): Promise<PreviewMatch[]> {
   url.searchParams.set("limit", SEARCH_LIMIT);
   const res = await fetch(url.toString(), {
     signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    redirect: "manual",
     headers: { accept: "application/json" },
   });
   if (!res.ok) {
     throw new Error(`searchActors HTTP ${res.status}`);
   }
-  const json = await res.json() as { actors?: unknown[] };
+  if (!isJsonMediaType(res.headers.get("content-type"))) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error("searchActors returned a non-JSON response");
+  }
+  const body = await readResponseTextWithLimit(
+    res,
+    MAX_SEARCH_RESPONSE_BYTES,
+  );
+  if (!body.ok) throw new Error(`searchActors ${body.error}`);
+  const json = JSON.parse(body.text) as { actors?: unknown[] };
   const out: PreviewMatch[] = [];
-  for (const a of json.actors ?? []) {
+  const actors = Array.isArray(json.actors) ? json.actors.slice(0, 32) : [];
+  for (const a of actors) {
     const m = parseActor(a);
     if (m) out.push(m);
   }
   return out;
+}
+
+export function parsePreviewActorForTest(value: unknown): PreviewMatch | null {
+  return parseActor(value);
+}
+
+export async function searchPreviewActorsForTest(
+  query: string,
+): Promise<PreviewMatch[]> {
+  return await searchActors(query);
 }
 
 export const handler = define.handlers({

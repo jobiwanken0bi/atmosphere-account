@@ -29,7 +29,11 @@ import {
   checkDurableRateLimit,
   checkProxyAwareRateLimit,
 } from "../../lib/rate-limit.ts";
-import { rejectLargeRequest } from "../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../lib/security.ts";
 import {
   createLoginSelectionIntent,
   readLoginSelectionIntent,
@@ -162,6 +166,13 @@ export const handler = define.handlers({
         ? browserHandoffDocument(redirectUrl)
         : browserHandoffResponse(redirectUrl, { json: wantsJson });
     } catch (err) {
+      if (err instanceof RequestBodyTooLargeError) {
+        return browserHandoffError(
+          "request body too large",
+          413,
+          wantsJson,
+        );
+      }
       const { message, status } = safePickerFailure(err);
       return browserHandoffError(message, status, wantsJson);
     }
@@ -181,9 +192,9 @@ function appviewUnavailable(_scope: string, _err: unknown): Response {
 
 async function optionalFormData(req: Request): Promise<FormData> {
   const contentType = req.headers.get("content-type") ?? "";
-  return contentType
-    ? await req.formData().catch(() => new FormData())
-    : new FormData();
+  if (!contentType) return new FormData();
+  return await readFormDataRequestWithLimit(req, MAX_PICKER_FORM_BYTES) ??
+    new FormData();
 }
 
 function inputValue(sourceUrl: URL, form: FormData, key: string): string {

@@ -5,6 +5,8 @@ import {
   type PublicHostDetail,
 } from "../../../../lib/appview-client.ts";
 import { EdgeStaleCache } from "../../../../lib/edge-cache.ts";
+import { withRateLimit } from "../../../../lib/rate-limit.ts";
+import { isHandle } from "../../../../lib/identity.ts";
 
 const hostDetailCache = new EdgeStaleCache<PublicHostDetail>({
   freshMs: 60_000,
@@ -13,7 +15,7 @@ const hostDetailCache = new EdgeStaleCache<PublicHostDetail>({
 });
 
 export const handler = define.handlers({
-  async GET(ctx): Promise<Response> {
+  GET: withRateLimit(async (ctx): Promise<Response> => {
     const proxied = await proxyAppviewResponse(
       `${ctx.url.pathname}${ctx.url.search}`,
       ctx.url,
@@ -21,7 +23,13 @@ export const handler = define.handlers({
     );
     if (proxied) return proxied;
 
-    const hostId = decodeURIComponent(ctx.params.host).toLowerCase();
+    const hostId = normalizePublicHostParam(ctx.params.host);
+    if (!hostId) {
+      return json({ host: null, claim: null }, {
+        status: 404,
+        headers: { "cache-control": "public, max-age=15" },
+      });
+    }
     const detail = await hostDetailCache.get(
       hostId,
       () => getPublicHostDetail(hostId),
@@ -34,8 +42,25 @@ export const handler = define.handlers({
           : "public, max-age=15, stale-while-revalidate=60",
       },
     });
-  },
+  }, {
+    scope: "appview-host-detail",
+    capacity: 120,
+    refillMs: 60_000,
+  }),
 });
+
+function normalizePublicHostParam(raw: string): string | null {
+  try {
+    const host = decodeURIComponent(raw).toLowerCase().replace(/\.$/, "");
+    return isHandle(host) ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+export function normalizePublicHostParamForTest(raw: string): string | null {
+  return normalizePublicHostParam(raw);
+}
 
 function json(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {

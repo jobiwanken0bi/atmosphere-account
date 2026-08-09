@@ -28,7 +28,13 @@ import {
 } from "../../lib/session.ts";
 import { readRememberedAccountsFromHeader } from "../../lib/remembered-accounts.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
-import { isSafeRelativePath, rejectLargeRequest } from "../../lib/security.ts";
+import {
+  isSafeRelativePath,
+  readFormDataRequestWithLimit,
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../lib/security.ts";
 import {
   browserHandoffError,
   browserHandoffResponse,
@@ -76,8 +82,10 @@ async function readInput(
     null;
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
-    const body = await req.json().catch(() => null) as
-      | {
+    const parsed = await readJsonRequestWithLimit(req, MAX_SWITCH_BODY_BYTES);
+    const body = parsed && typeof parsed === "object" &&
+        !Array.isArray(parsed)
+      ? parsed as {
         did?: string;
         next?: string;
         intent?: string;
@@ -85,7 +93,7 @@ async function readInput(
         action?: string;
         name?: string;
       }
-      | null;
+      : null;
     const bodyCapabilities = Array.isArray(body?.capability)
       ? body.capability
       : typeof body?.capability === "string"
@@ -102,7 +110,7 @@ async function readInput(
       targetName: safeOAuthTargetName(body?.name) ?? queryTargetName,
     };
   }
-  const form = await req.formData().catch(() => null);
+  const form = await readFormDataRequestWithLimit(req, MAX_SWITCH_BODY_BYTES);
   if (!form) {
     return {
       did: url.searchParams.get("did")?.trim() || null,
@@ -251,11 +259,19 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     );
   }
   const wantsJson = wantsBrowserHandoffJson(ctx.req);
-  const { did, next, intent, capabilities, action, targetName } =
-    await readInput(
-      ctx.req,
-      url,
+  let input: Awaited<ReturnType<typeof readInput>>;
+  try {
+    input = await readInput(ctx.req, url);
+  } catch (error) {
+    return browserHandoffError(
+      error instanceof RequestBodyTooLargeError
+        ? "request body too large"
+        : "invalid authorization context",
+      error instanceof RequestBodyTooLargeError ? 413 : 400,
+      wantsJson,
     );
+  }
+  const { did, next, intent, capabilities, action, targetName } = input;
   if (!did) return browserHandoffError("missing did", 400, wantsJson);
   if (!capabilities) {
     return browserHandoffError("invalid capability", 400, wantsJson);

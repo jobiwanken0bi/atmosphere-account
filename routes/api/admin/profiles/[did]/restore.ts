@@ -20,8 +20,8 @@ export const handler = define.handlers({
     try {
       await restoreProfile(did);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return jsonError(500, "restore_failed", m);
+      console.error("[admin] profile restore failed:", err);
+      return jsonError(500, "restore_failed");
     }
 
     return new Response(JSON.stringify({ ok: true }), {
@@ -31,9 +31,9 @@ export const handler = define.handlers({
   },
 });
 
-function jsonError(status: number, code: string, detail?: string): Response {
+function jsonError(status: number, code: string): Response {
   return new Response(
-    JSON.stringify(detail ? { error: code, detail } : { error: code }),
+    JSON.stringify({ error: code }),
     {
       status,
       headers: { "content-type": "application/json; charset=utf-8" },

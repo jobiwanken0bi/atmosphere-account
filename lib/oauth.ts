@@ -5,8 +5,8 @@
  * https://atproto.com/specs/oauth
  *
  * Usage from routes:
- *   - startLogin(handle)         -> { redirectUrl, stateKey }
- *   - completeCallback(params)   -> session bound to a DID
+ *   - startLogin(handle)         -> redirect URL + state/browser binding
+ *   - completeCallback(...)      -> session bound to a DID
  *   - getValidSession(did)       -> tokens (auto-refreshes if needed)
  *   - authedFetch(did, url, init) -> calls PDS with DPoP-bound access token
  *
@@ -47,10 +47,13 @@ import {
   scopeTokens,
 } from "./oauth-scopes.ts";
 import type { OAuthAction } from "./oauth-action.ts";
+import { hasValidLoginSelectionContinuationBinding } from "./oauth-continuation.ts";
+import { readResponseTextWithLimit } from "./security.ts";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
 const IDENTITY_RECHECK_INTERVAL_MS = 10 * 60 * 1000;
+const MAX_OAUTH_SERVER_RESPONSE_BYTES = 64 * 1024;
 
 export class OAuthNotConfiguredError extends Error {
   constructor() {
@@ -73,6 +76,8 @@ export interface OAuthClientOptions {
   preserveExistingScopes?: boolean;
   persistSession?: boolean;
   continuation?: "login_selection";
+  /** Restore the alternate-account chooser if authorization is interrupted. */
+  chooseAnotherAccount?: boolean;
   /** Context retained only to explain a partial/conflicting grant on retry. */
   action?: OAuthAction;
   targetName?: string;
@@ -207,6 +212,8 @@ export type SignInIntent = "user" | "project";
 
 interface FlowState {
   state: string;
+  /** Hash of the secret held only by the browser that initiated this state. */
+  browserBindingHash: string;
   pkceVerifier: string;
   dpopPrivateJwk: JsonWebKey;
   dpopPublicJwk: JsonWebKey;
@@ -226,6 +233,7 @@ interface FlowState {
   pdsUrl: string;
   prompt?: "create";
   continuation?: "login_selection";
+  chooseAnotherAccount?: boolean;
   returnTo?: string;
   intent?: SignInIntent;
   action?: OAuthAction;
@@ -267,12 +275,20 @@ interface DpopProofOptions {
   accessToken?: string;
 }
 
+/** RFC 9449 binds a proof to the request URI without query or fragment. */
+export function normalizeDpopHtu(value: string): string {
+  const url = new URL(value);
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
 async function buildDpopProof(opts: DpopProofOptions): Promise<string> {
   const privateKey = await importEs256PrivateKey(opts.privateJwk);
   const payload: Record<string, unknown> = {
     jti: randomB64u(16),
     htm: opts.htm,
-    htu: opts.htu,
+    htu: normalizeDpopHtu(opts.htu),
     iat: Math.floor(Date.now() / 1000),
   };
   if (opts.nonce) payload.nonce = opts.nonce;
@@ -633,12 +649,21 @@ export async function startLogin(
   returnTo?: string | null,
   intent?: SignInIntent | null,
   options: OAuthClientOptions | null = null,
-): Promise<{ redirectUrl: string }> {
+): Promise<{ redirectUrl: string; state: string; browserBinding: string }> {
   ensureConfigured(options);
-  const id = await resolveIdentity(handleOrDid);
   const capabilities = options?.capabilities
     ? [...options.capabilities]
     : undefined;
+  if (
+    !hasValidLoginSelectionContinuationBinding(
+      returnTo ?? null,
+      options?.continuation,
+      intent ?? null,
+      options?.action ?? null,
+      capabilities ?? ["identity"],
+    )
+  ) throw new Error("invalid OAuth continuation binding");
+  const id = await resolveIdentity(handleOrDid);
   const persistSession = shouldPersistOAuthSession(
     options?.persistSession,
     options?.continuation,
@@ -672,10 +697,12 @@ export async function startLogin(
 
   const dpop = await generateEs256KeyPair();
   const state = randomB64u(24);
+  const browserBinding = randomB64u(32);
   const pkceVerifier = randomB64u(48);
 
   const flow: FlowState = {
     state,
+    browserBindingHash: await sha256B64u(browserBinding),
     pkceVerifier,
     dpopPrivateJwk: dpop.privateJwk,
     dpopPublicJwk: dpop.publicJwk,
@@ -691,6 +718,7 @@ export async function startLogin(
     handle: id.handle,
     pdsUrl: id.pdsUrl,
     continuation: options?.continuation,
+    chooseAnotherAccount: options?.chooseAnotherAccount,
     returnTo: returnTo ?? undefined,
     intent: intent ?? undefined,
     action: options?.action,
@@ -703,7 +731,7 @@ export async function startLogin(
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("request_uri", parRes.requestUri);
 
-  return { redirectUrl: authUrl.toString() };
+  return { redirectUrl: authUrl.toString(), state, browserBinding };
 }
 
 export class OAuthAccountCreationUnsupportedError extends Error {
@@ -724,11 +752,20 @@ export async function startHostAccountCreation(
   intent?: SignInIntent | null,
   options: OAuthClientOptions | null = null,
   continuation?: "login_selection" | null,
-): Promise<{ redirectUrl: string }> {
+): Promise<{ redirectUrl: string; state: string; browserBinding: string }> {
   ensureConfigured(options);
   const capabilities = options?.capabilities
     ? [...options.capabilities]
     : undefined;
+  if (
+    !hasValidLoginSelectionContinuationBinding(
+      returnTo ?? null,
+      continuation,
+      intent ?? null,
+      options?.action ?? null,
+      capabilities ?? ["identity"],
+    )
+  ) throw new Error("invalid OAuth continuation binding");
   const requiredScope = capabilities
     ? scopeForCapabilities(capabilities)
     : undefined;
@@ -745,9 +782,11 @@ export async function startHostAccountCreation(
   const clientId = oauthClientId(config);
   const dpop = await generateEs256KeyPair();
   const state = randomB64u(24);
+  const browserBinding = randomB64u(32);
   const pkceVerifier = randomB64u(48);
   const flow: FlowState = {
     state,
+    browserBindingHash: await sha256B64u(browserBinding),
     pkceVerifier,
     dpopPrivateJwk: dpop.privateJwk,
     dpopPublicJwk: dpop.publicJwk,
@@ -775,7 +814,7 @@ export async function startHostAccountCreation(
   const authUrl = new URL(asMeta.authorization_endpoint);
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("request_uri", parRes.requestUri);
-  return { redirectUrl: authUrl.toString() };
+  return { redirectUrl: authUrl.toString(), state, browserBinding };
 }
 
 interface ParResponse {
@@ -827,6 +866,7 @@ async function pushParRequest(
       dpop: dpopProof,
     },
     body,
+    redirect: "manual",
     signal: AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
   });
 
@@ -837,17 +877,26 @@ async function pushParRequest(
   }
 
   if (res.status === 400 || res.status === 401) {
-    const errBody = await res.json().catch(() => ({})) as { error?: string };
-    if (errBody.error === "use_dpop_nonce" && attempt === 0) {
+    const errBody = await readOAuthServerJson(res).catch(() => ({})) as {
+      error?: string;
+    };
+    if (errBody.error === "use_dpop_nonce" && attempt === 0 && newNonce) {
       return await pushParRequest(flow, 1);
     }
-    throw new Error(`PAR error: ${JSON.stringify(errBody)}`);
+    throw new Error(`PAR error: ${oauthServerErrorCode(errBody.error)}`);
   }
   if (!res.ok) {
     throw new Error(`PAR failed: HTTP ${res.status}`);
   }
 
-  const json = await res.json() as { request_uri: string; expires_in: number };
+  requireDpopNonce(newNonce, "PAR");
+  const json = await readOAuthServerJson(res) as Record<string, unknown>;
+  if (
+    typeof json.request_uri !== "string" || !json.request_uri ||
+    json.request_uri.length > 2_048 ||
+    typeof json.expires_in !== "number" ||
+    !Number.isFinite(json.expires_in) || json.expires_in <= 0
+  ) throw new Error("PAR response was invalid");
   return { requestUri: json.request_uri, expiresIn: json.expires_in };
 }
 
@@ -860,6 +909,8 @@ export interface CallbackResult {
   returnTo?: string;
   intent?: SignInIntent;
   continuation?: "login_selection";
+  chooseAnotherAccount?: boolean;
+  mode?: "create";
   capabilities?: OAuthCapability[];
   grantedScope: string;
   authorizationSufficient: boolean;
@@ -873,25 +924,83 @@ export interface CancelledOAuthFlow {
   intent?: SignInIntent;
   prompt?: "create";
   continuation?: "login_selection";
+  chooseAnotherAccount?: boolean;
+  mode?: "create";
   capabilities?: OAuthCapability[];
   action?: OAuthAction;
   targetName?: string;
   handle?: string;
 }
 
+export interface OAuthCallbackClientBinding {
+  clientId: string;
+  redirectUri: string;
+}
+
+function flowMatchesCallbackClient(
+  flow: Pick<FlowState, "oauthClientId" | "redirectUri" | "scope">,
+  expected: OAuthCallbackClientBinding,
+): boolean {
+  const flowClientId = flow.oauthClientId ?? oauthClientId(oauthClientConfig({
+    scope: flow.scope,
+  }));
+  const flowRedirectUri = flow.redirectUri ?? defaultRedirectUri();
+  return flowClientId === expected.clientId &&
+    flowRedirectUri === expected.redirectUri;
+}
+
+export function flowMatchesCallbackClientForTest(
+  flow: { oauthClientId?: string; redirectUri?: string; scope?: string },
+  expected: OAuthCallbackClientBinding,
+): boolean {
+  return flowMatchesCallbackClient(flow, expected);
+}
+
+export function oauthRecoveryModeForPrompt(
+  prompt: "create" | "login" | undefined,
+): "create" | undefined {
+  return prompt === "create" ? "create" : undefined;
+}
+
+async function flowMatchesBrowserBinding(
+  flow: Pick<FlowState, "browserBindingHash">,
+  browserBinding?: string,
+): Promise<boolean> {
+  return typeof browserBinding === "string" && browserBinding.length > 0 &&
+    await sha256B64u(browserBinding) === flow.browserBindingHash;
+}
+
+export async function flowMatchesBrowserBindingForTest(
+  browserBindingHash: string,
+  browserBinding?: string,
+): Promise<boolean> {
+  return await flowMatchesBrowserBinding(
+    { browserBindingHash },
+    browserBinding,
+  );
+}
+
 /** Consume a denied authorization flow while retaining only the safe context
  * needed to restore the action that initiated it. */
 export async function cancelOAuthFlow(
   state: string,
+  expectedClient: OAuthCallbackClientBinding,
+  browserBinding: string,
 ): Promise<CancelledOAuthFlow | null> {
   const flow = await loadFlowState(state);
   if (!flow) return null;
+  if (!flowMatchesCallbackClient(flow, expectedClient)) {
+    return null;
+  }
+  if (!await flowMatchesBrowserBinding(flow, browserBinding)) return null;
   await deleteFlowState(state);
   return {
     returnTo: flow.returnTo,
     intent: flow.intent,
     prompt: flow.prompt,
     continuation: flow.continuation,
+    chooseAnotherAccount: flow.chooseAnotherAccount,
+    mode: oauthRecoveryModeForPrompt(flow.prompt),
     capabilities: flow.capabilities,
     action: flow.action,
     targetName: flow.targetName,
@@ -899,13 +1008,28 @@ export async function cancelOAuthFlow(
   };
 }
 
-export async function completeCallback(params: {
-  state: string;
-  code: string;
-  iss: string;
-}): Promise<CallbackResult> {
+export async function completeCallback(
+  params: { state: string; code: string; iss: string },
+  expectedClient: OAuthCallbackClientBinding,
+  browserBinding: string,
+): Promise<CallbackResult> {
   const flow = await loadFlowState(params.state);
   if (!flow) throw new Error("invalid or expired state");
+  if (!flowMatchesCallbackClient(flow, expectedClient)) {
+    throw new Error("OAuth callback client mismatch");
+  }
+  if (!await flowMatchesBrowserBinding(flow, browserBinding)) {
+    throw new Error("OAuth callback browser mismatch");
+  }
+  if (
+    !hasValidLoginSelectionContinuationBinding(
+      flow.returnTo ?? null,
+      flow.continuation,
+      flow.intent ?? null,
+      flow.action ?? null,
+      flow.capabilities ?? ["identity"],
+    )
+  ) throw new Error("invalid OAuth continuation binding");
   ensureConfigured({
     clientId: flow.oauthClientId,
     redirectUri: flow.redirectUri,
@@ -998,6 +1122,8 @@ export async function completeCallback(params: {
     returnTo: flow.returnTo,
     intent: flow.intent,
     continuation: flow.continuation,
+    chooseAnotherAccount: flow.chooseAnotherAccount,
+    mode: oauthRecoveryModeForPrompt(flow.prompt),
     capabilities: flow.capabilities,
     grantedScope: tokenRes.scope,
     authorizationSufficient,
@@ -1138,6 +1264,7 @@ async function tokenRequest(
       dpop: dpopProof,
     },
     body,
+    redirect: "manual",
     signal: AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
   });
 
@@ -1147,17 +1274,20 @@ async function tokenRequest(
   }
 
   if (res.status === 400 || res.status === 401) {
-    const errBody = await res.json().catch(() => ({})) as { error?: string };
-    if (errBody.error === "use_dpop_nonce" && attempt === 0) {
+    const errBody = await readOAuthServerJson(res).catch(() => ({})) as {
+      error?: string;
+    };
+    if (errBody.error === "use_dpop_nonce" && attempt === 0 && newNonce) {
       return tokenRequest(flow, bodyParams, 1);
     }
-    throw new Error(`token error: ${JSON.stringify(errBody)}`);
+    throw new Error(`token error: ${oauthServerErrorCode(errBody.error)}`);
   }
   if (!res.ok) {
     throw new Error(`token request failed: HTTP ${res.status}`);
   }
 
-  const tokenBody = await res.json().catch(() => null);
+  requireDpopNonce(newNonce, "token");
+  const tokenBody = await readOAuthServerJson(res).catch(() => null);
   return parseTokenResponse(tokenBody, {
     requireRefreshToken: bodyParams.grant_type === "authorization_code",
   });
@@ -1236,8 +1366,9 @@ async function refreshSessionIdentity(
       return updated;
     }
     return (await loadSession(session.did)) ?? null;
-  } catch (err) {
-    if (IS_DEV) console.warn("session identity refresh failed:", err);
+  } catch {
+    // Discovery errors can retain authorization details in their cause chain.
+    if (IS_DEV) console.warn("session identity refresh failed");
     return session;
   }
 }
@@ -1256,8 +1387,9 @@ export async function getValidSession(
   try {
     session = await refreshSession(session);
     return await refreshSessionIdentity(session);
-  } catch (err) {
-    if (IS_DEV && !options.quiet) console.warn("session refresh failed:", err);
+  } catch {
+    // Refresh errors can retain access, refresh, DPoP, or private-key data.
+    if (IS_DEV && !options.quiet) console.warn("session refresh failed");
     return null;
   }
 }
@@ -1291,6 +1423,9 @@ export async function authedFetch(
 ): Promise<Response> {
   const session = await getValidSession(did);
   if (!session) throw new Error(`no session for ${did}`);
+  if (!isAuthedPdsTargetForSession(session.pdsUrl, url)) {
+    throw new Error("authenticated request target does not match session PDS");
+  }
 
   const method = (init.method ?? "GET").toUpperCase();
   const dpop = await buildDpopProof({
@@ -1305,6 +1440,7 @@ export async function authedFetch(
   const res = await fetch(url, {
     ...init,
     method,
+    redirect: "manual",
     signal: init.signal ?? AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
     headers: {
       ...(init.headers ?? {}),
@@ -1314,6 +1450,7 @@ export async function authedFetch(
   });
 
   const newNonce = res.headers.get("dpop-nonce");
+  requireDpopNonce(newNonce, "PDS");
   if (newNonce && newNonce !== session.pdsNonce) {
     const updated = { ...session, pdsNonce: newNonce };
     await replaceSessionIfUnchanged(updated, JSON.stringify(session));
@@ -1323,4 +1460,59 @@ export async function authedFetch(
   }
 
   return res;
+}
+
+function isAuthedPdsTargetForSession(pdsUrl: string, target: string): boolean {
+  try {
+    const pds = new URL(normalizeServiceEndpoint(pdsUrl));
+    const url = new URL(target);
+    return !url.username && !url.password && url.origin === pds.origin;
+  } catch {
+    return false;
+  }
+}
+
+export function isAuthedPdsTargetForSessionForTest(
+  pdsUrl: string,
+  target: string,
+): boolean {
+  return isAuthedPdsTargetForSession(pdsUrl, target);
+}
+
+function requireDpopNonce(
+  nonce: string | null,
+  source: "PAR" | "token" | "PDS",
+): asserts nonce is string {
+  if (!nonce) throw new Error(`${source} response missing DPoP nonce`);
+}
+
+function oauthServerErrorCode(value: unknown): string {
+  return typeof value === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(value)
+    ? value
+    : "unknown_error";
+}
+
+async function readOAuthServerJson(response: Response): Promise<unknown> {
+  const contentType = (response.headers.get("content-type") ?? "")
+    .toLowerCase();
+  if (!contentType.includes("application/json")) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("OAuth server returned a non-JSON response");
+  }
+  const body = await readResponseTextWithLimit(
+    response,
+    MAX_OAUTH_SERVER_RESPONSE_BYTES,
+  );
+  if (!body.ok) throw new Error(`OAuth server ${body.error}`);
+  try {
+    return JSON.parse(body.text);
+  } catch {
+    throw new Error("OAuth server returned invalid JSON");
+  }
+}
+
+export async function readOAuthServerJsonForTest(
+  response: Response,
+): Promise<unknown> {
+  return await readOAuthServerJson(response);
 }

@@ -4,6 +4,7 @@ import {
   accountHostClaimUpdateQueryForTest,
   accountHostDashboardSettingsUpdateQueryForTest,
   DEFAULT_ACCOUNT_HOST_SORT,
+  fetchHostProfileForTest,
   isAccountHostPubliclyListable,
   isCompletedDnsClaimReplayForTest,
   listSeededAccountHostFallback,
@@ -32,6 +33,73 @@ function assertEquals(actual: unknown, expected: unknown): void {
   const e = JSON.stringify(expected);
   if (a !== e) throw new Error(`Expected ${e}, got ${a}`);
 }
+
+Deno.test("fixed Bluesky profile fetch bounds and validates upstream responses", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    let response = new Response(null, { status: 302 });
+    globalThis.fetch =
+      ((_input: string | URL | Request, init?: RequestInit) => {
+        assertEquals(init?.redirect, "manual");
+        return Promise.resolve(response);
+      }) as typeof fetch;
+
+    for (
+      const malicious of [
+        new Response(null, { status: 302 }),
+        new Response("<html></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(256 * 1024));
+              controller.enqueue(new Uint8Array([0x20]));
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+      ]
+    ) {
+      response = malicious;
+      let rejected = false;
+      try {
+        await fetchHostProfileForTest("host.example");
+      } catch {
+        rejected = true;
+      }
+      assert(rejected, "expected malicious upstream response rejection");
+    }
+
+    for (
+      const invalidIdentity of [
+        { did: "not-a-did", handle: "host.example" },
+        { did: "did:plc:host", handle: "not a handle" },
+      ]
+    ) {
+      response = Response.json(invalidIdentity);
+      assertEquals(await fetchHostProfileForTest("host.example"), null);
+    }
+
+    response = Response.json({
+      did: "did:plc:host",
+      handle: "HOST.EXAMPLE",
+      displayName: " Host operator ",
+      description: " Account hosting ",
+      avatar: "http://127.0.0.1/avatar.png",
+    });
+    assertEquals(await fetchHostProfileForTest("host.example"), {
+      did: "did:plc:host",
+      handle: "host.example",
+      displayName: "Host operator",
+      description: "Account hosting",
+      avatarUrl: null,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 function resolvedTransferForTest(): ResolvedHostOwnerTransferContext {
   return {
@@ -704,7 +772,7 @@ Deno.test("public host policy requires recent reachability and public intent", (
   assertEquals(
     isAccountHostPubliclyListable({
       ...base,
-      signupUrl: "https://host.example/signup",
+      signupUrl: "https://host.example.com/signup",
     }, now),
     true,
   );

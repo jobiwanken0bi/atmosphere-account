@@ -418,19 +418,22 @@ Deno.test("browser SDK consumeSelection posts popup selections to opener", async
 
 Deno.test("browser SDK popup listener accepts only matching origin client and state", async () => {
   const clientId = "https://app.example/client.json";
-  type MessageHandler = (event: { origin: string; data: unknown }) => void;
+  type MessageHandler = (
+    event: { origin: string; source?: unknown; data: unknown },
+  ) => void;
   const messageHandlers: MessageHandler[] = [];
   let removed = false;
   let popupClosed = false;
   const dispatched: Event[] = [];
   let intervalCleared = false;
+  const popup = {
+    closed: false,
+    close: () => {
+      popupClosed = true;
+    },
+  };
   const sdk = await loadBrowserSdk("https://app.example/start", {
-    open: () => ({
-      closed: false,
-      close: () => {
-        popupClosed = true;
-      },
-    }),
+    open: () => popup,
     addEventListener: (type: string, handler: MessageHandler) => {
       if (type === "message") messageHandlers.push(handler);
     },
@@ -460,6 +463,7 @@ Deno.test("browser SDK popup listener accepts only matching origin client and st
     if (!messageHandler) throw new Error("Expected popup message listener");
     messageHandler({
       origin: "https://evil.example",
+      source: popup,
       data: {
         type: "atmosphere-login:selection",
         version: 1,
@@ -471,6 +475,19 @@ Deno.test("browser SDK popup listener accepts only matching origin client and st
 
     messageHandler({
       origin: "https://app.example",
+      source: {},
+      data: {
+        type: "atmosphere-login:selection",
+        version: 1,
+        selection: { clientId, state: "state-123", token: "bad-source" },
+      },
+    });
+    assertEquals(dispatched.length, 0);
+    assertEquals(popupClosed, false);
+
+    messageHandler({
+      origin: "https://app.example",
+      source: popup,
       data: {
         type: "atmosphere-login:selection",
         version: 1,
@@ -482,6 +499,7 @@ Deno.test("browser SDK popup listener accepts only matching origin client and st
 
     messageHandler({
       origin: "https://app.example",
+      source: popup,
       data: {
         type: "atmosphere-login:selection",
         version: 1,

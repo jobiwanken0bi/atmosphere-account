@@ -12,7 +12,14 @@ import {
 import { searchAppsFromAppview } from "../../lib/appview-client.ts";
 import { appCollectionLabel } from "../../lib/app-collections.ts";
 import { EdgeStaleCache } from "../../lib/edge-cache.ts";
-import AppDirectoryOwnerCta from "../../components/explore/AppDirectoryOwnerCta.tsx";
+import AppDirectoryOwnerCta, {
+  appRegistrationSigninHref as ownerRegistrationSigninHref,
+} from "../../components/explore/AppDirectoryOwnerCta.tsx";
+
+/** Shared registration URL retained for route-level and no-JS contract tests. */
+export function appRegistrationSigninHref(): string {
+  return ownerRegistrationSigninHref();
+}
 
 interface BrowseAppsData {
   query: string;

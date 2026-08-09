@@ -13,7 +13,6 @@ import {
 } from "../lib/atmosphere-login.ts";
 import { getSessionForCapabilities, isOAuthConfigured } from "../lib/oauth.ts";
 import { refreshRememberedAccountCookies } from "../lib/remembered-accounts.ts";
-import { isSafeRelativePath } from "../lib/security.ts";
 import {
   normalizeOAuthCapabilities,
   type OAuthCapability,
@@ -21,51 +20,67 @@ import {
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import {
   accountCreationErrorMessage,
-  isAccountCreationAction,
   isAccountCreationError,
   isOAuthAction,
   isOAuthActionCapabilityRequest,
   type OAuthAction,
   safeOAuthTargetName,
 } from "../lib/oauth-action.ts";
+import {
+  authActionCopy,
+  oauthActionAllowsAccountCreation,
+} from "../lib/oauth-action-copy.ts";
+import { oauthAuthorizationExitHref } from "../lib/oauth-cancellation.ts";
+import { hasValidLoginSelectionContinuationBinding } from "../lib/oauth-continuation.ts";
+import {
+  InvalidOAuthRequestInputError,
+  optionalEnum,
+  optionalSafeRelativePath,
+  repeatedSearchValues,
+  singleSearchValue,
+} from "../lib/oauth-request-input.ts";
+
+export { authActionCopy } from "../lib/oauth-action-copy.ts";
+
+const MAX_SIGNIN_QUERY_BYTES = 16_384;
 
 export const handler = define.handlers({
   async GET(ctx) {
-    const next = safeNext(ctx.url.searchParams.get("next"));
-    const rawMode = ctx.url.searchParams.get("mode");
-    if (rawMode !== null && rawMode !== "signin" && rawMode !== "create") {
-      return new Response("invalid sign-in mode", { status: 400 });
+    let request;
+    try {
+      request = readSignInAuthorizationRequest(ctx.url);
+    } catch {
+      return new Response(
+        "This sign-in link is invalid. Return to the previous page and try again.",
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
     }
-    const mode = rawMode === "create" ? "create" : "signin";
-    const initialHandle = safeHandle(ctx.url.searchParams.get("handle"));
-    const rawIntent = ctx.url.searchParams.get("intent");
-    const intent = rawIntent === "project" || rawIntent === "user"
-      ? rawIntent
-      : undefined;
-    const capabilities = normalizeOAuthCapabilities(
-      ctx.url.searchParams.getAll("capability"),
-    );
-    if (!capabilities) {
-      return new Response("invalid capability", { status: 400 });
+    const {
+      next,
+      initialHandle,
+      intent,
+      requestedMode: mode,
+      choosingAnotherAccount,
+      continuation,
+      capabilities,
+      action,
+      targetName,
+      permissionState,
+      createError,
+    } = request;
+    const allowAccountCreation = oauthActionAllowsAccountCreation(action);
+    if (mode === "create" && !allowAccountCreation) {
+      return new Response(
+        "This account-creation link is invalid. Return to the previous page and try again.",
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
     }
-    const rawAction = ctx.url.searchParams.get("action");
-    if (rawAction !== null && !isOAuthAction(rawAction)) {
-      return new Response("invalid action", { status: 400 });
-    }
-    const action = safeAuthAction(rawAction);
-    if (!isOAuthActionCapabilityRequest(action, capabilities)) {
-      return new Response("invalid action capability combination", {
-        status: 400,
-      });
-    }
-    if (mode === "create" && !isAccountCreationAction(action)) {
-      return new Response("account creation is not available for this action", {
-        status: 400,
-      });
-    }
-    const targetName = safeTargetName(ctx.url.searchParams.get("name"));
-    const permissionState = ctx.url.searchParams.get("permission");
-    if (ctx.state.user && mode === "signin") {
+    if (
+      ctx.state.user && shouldUseExistingAccount(
+        mode,
+        choosingAnotherAccount,
+      )
+    ) {
       // Validate and refresh the token before auto-continuing. Trusting only
       // the stored scope can bounce a revoked/expired session endlessly
       // between this route and the protected destination.
@@ -77,7 +92,8 @@ export const handler = define.handlers({
       if (
         oauthSession &&
         permissionState !== "partial" && permissionState !== "concurrent" &&
-        permissionState !== "denied" && permissionState !== "required"
+        permissionState !== "denied" && permissionState !== "required" &&
+        permissionState !== "failed"
       ) {
         return new Response(null, {
           status: 303,
@@ -96,9 +112,8 @@ export const handler = define.handlers({
       next,
       createAccountApp,
     );
-    const rawCreateError = ctx.url.searchParams.get("create_error");
-    const createAccountError = isAccountCreationError(rawCreateError)
-      ? accountCreationErrorMessage(rawCreateError)
+    const createAccountError = createError
+      ? accountCreationErrorMessage(createError)
       : null;
     const response = await ctx.render(
       (
@@ -111,11 +126,15 @@ export const handler = define.handlers({
           action={action}
           targetName={targetName}
           permissionState={permissionState}
+          choosingAnotherAccount={choosingAnotherAccount}
+          continuation={continuation ?? undefined}
+          allowAccountCreation={allowAccountCreation}
           initialHandle={initialHandle}
           createAccountHosts={createAccountHosts.hosts}
           createAccountHostsUnavailable={createAccountHosts.unavailable}
           createAccountHostsEndpoint={createAccountHostsEndpoint}
           createAccountError={createAccountError}
+          oauthConfigured={isOAuthConfigured()}
         />
       ),
       { headers: { "cache-control": "no-store" } },
@@ -132,8 +151,81 @@ export const handler = define.handlers({
   },
 });
 
-function safeNext(raw: string | null): string | null {
-  return isSafeRelativePath(raw) ? raw : null;
+export function readSignInAuthorizationRequest(url: URL) {
+  if (url.search.length > MAX_SIGNIN_QUERY_BYTES) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  const next = optionalSafeRelativePath(
+    singleSearchValue(url.searchParams, "next"),
+  );
+  const rawHandle = singleSearchValue(url.searchParams, "handle");
+  const initialHandle = rawHandle === null ? undefined : safeHandle(rawHandle);
+  if (rawHandle !== null && !initialHandle) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  const intent = optionalEnum(
+    singleSearchValue(url.searchParams, "intent"),
+    ["project", "user"] as const,
+  ) ?? undefined;
+  const mode = optionalEnum(
+    singleSearchValue(url.searchParams, "mode"),
+    ["signin", "create"] as const,
+  );
+  const choose = optionalEnum(
+    singleSearchValue(url.searchParams, "choose"),
+    ["another"] as const,
+  );
+  const continuation = optionalEnum(
+    singleSearchValue(url.searchParams, "continuation"),
+    ["login_selection"] as const,
+  );
+  const capabilities = normalizeOAuthCapabilities(
+    repeatedSearchValues(url.searchParams, "capability"),
+  );
+  if (!capabilities) throw new InvalidOAuthRequestInputError();
+  const rawAction = singleSearchValue(url.searchParams, "action");
+  if (rawAction !== null && !isOAuthAction(rawAction)) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  const action = safeAuthAction(rawAction);
+  if (!isOAuthActionCapabilityRequest(action, capabilities)) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  if (
+    !hasValidLoginSelectionContinuationBinding(
+      next,
+      continuation,
+      intent ?? null,
+      action,
+      capabilities,
+    )
+  ) throw new InvalidOAuthRequestInputError();
+  const rawName = singleSearchValue(url.searchParams, "name");
+  const targetName = safeTargetName(rawName);
+  if (rawName !== null && !targetName) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  const permissionState = optionalEnum(
+    singleSearchValue(url.searchParams, "permission"),
+    ["denied", "failed", "partial", "concurrent", "required"] as const,
+  );
+  const createErrorRaw = singleSearchValue(url.searchParams, "create_error");
+  if (createErrorRaw !== null && !isAccountCreationError(createErrorRaw)) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  return {
+    next,
+    initialHandle,
+    intent,
+    requestedMode: mode === "create" ? "create" as const : "signin" as const,
+    choosingAnotherAccount: choose === "another",
+    continuation,
+    capabilities,
+    action,
+    targetName,
+    permissionState,
+    createError: isAccountCreationError(createErrorRaw) ? createErrorRaw : null,
+  };
 }
 
 function safeHandle(raw: string | null): string | undefined {
@@ -156,7 +248,7 @@ function safeTargetName(raw: string | null): string | null {
   return safeOAuthTargetName(raw) ?? null;
 }
 
-function SignInPageContent(
+export function SignInPageContent(
   {
     account,
     mode,
@@ -166,11 +258,15 @@ function SignInPageContent(
     action,
     targetName,
     permissionState,
+    choosingAnotherAccount,
+    continuation,
+    allowAccountCreation,
     initialHandle,
     createAccountHosts,
     createAccountHostsUnavailable,
     createAccountHostsEndpoint,
     createAccountError,
+    oauthConfigured,
   }: {
     account: ReturnType<typeof buildAccountMenuProps>;
     mode: "signin" | "create";
@@ -180,27 +276,41 @@ function SignInPageContent(
     action: OAuthAction;
     targetName: string | null;
     permissionState: string | null;
+    choosingAnotherAccount: boolean;
+    continuation?: "login_selection";
+    allowAccountCreation: boolean;
     initialHandle?: string;
     createAccountHosts: CreateAccountHostOption[];
     createAccountHostsUnavailable: boolean;
     createAccountHostsEndpoint: string;
     createAccountError: string | null;
+    oauthConfigured: boolean;
   },
 ) {
   const copy = authActionCopy(action, targetName);
-  const signedInUser = account.user;
+  const signedInUser = shouldUseExistingAccount(
+      mode,
+      choosingAnotherAccount,
+    )
+    ? account.user
+    : null;
   const createMode = mode === "create";
-  const oauthConfigured = isOAuthConfigured();
   return (
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} disableScrollEffects />
         <main id="main-content" class="signin-page-section">
-          <div class="container signin-page-container">
+          <div
+            class="container signin-page-container"
+            data-signin-page-copy="true"
+          >
             <p class="text-eyebrow">
               {createMode ? "One account, every app" : copy.eyebrow}
             </p>
-            <h1 class="text-section signin-page-brand-title">
+            <h1
+              class="text-section signin-page-brand-title"
+              data-initial-mode={mode}
+            >
               {!signedInUser || createMode
                 ? <img src="/union.svg" alt="" width="40" height="40" />
                 : null}
@@ -220,18 +330,11 @@ function SignInPageContent(
               </p>
             )}
             <div class="glass signin-page-card">
-              {!createMode && (permissionState === "partial" ||
-                permissionState === "concurrent" ||
-                permissionState === "denied") &&
-                (
-                  <p class="profile-form-status profile-form-status--error">
-                    {permissionState === "denied"
-                      ? "Authorization was cancelled. Nothing was changed. You can try again or return to the page you came from."
-                      : permissionState === "concurrent"
-                      ? "Your account gained another permission while this request was open. Continue once more so the new permissions can be combined safely."
-                      : "The account host did not grant every permission required for this action. You can try again or choose another account."}
-                  </p>
-                )}
+              {!createMode && permissionStatusCopy(permissionState) && (
+                <p class="profile-form-status profile-form-status--error">
+                  {permissionStatusCopy(permissionState)}
+                </p>
+              )}
               {createMode
                 ? (
                   <SignInForm
@@ -241,6 +344,7 @@ function SignInPageContent(
                     capabilities={capabilities}
                     action={action}
                     targetName={targetName ?? undefined}
+                    continuation={continuation}
                     createAccountHosts={createAccountHosts}
                     createAccountHostsEndpoint={createAccountHostsEndpoint}
                     createAccountError={createAccountError ??
@@ -264,9 +368,11 @@ function SignInPageContent(
                   <PermissionUpgradeForm
                     user={signedInUser}
                     returnTo={next}
+                    intent={intent}
                     capabilities={capabilities}
                     action={action}
                     targetName={targetName}
+                    continuation={continuation}
                   />
                 )
                 : (
@@ -278,9 +384,17 @@ function SignInPageContent(
                     targetName={targetName ?? undefined}
                     rememberedAccounts={account.rememberedAccounts}
                     initialHandle={initialHandle}
+                    continuation={continuation}
+                    chooseAnotherAccount={choosingAnotherAccount}
+                    allowAccountCreation={allowAccountCreation}
                     rich
                   />
                 )}
+              <AuthorizationExitLink
+                permissionState={permissionState}
+                returnTo={next}
+                action={action}
+              />
             </div>
           </div>
         </main>
@@ -290,21 +404,28 @@ function SignInPageContent(
   );
 }
 
-function PermissionUpgradeForm(
+export function PermissionUpgradeForm(
   {
     user,
     returnTo,
+    intent,
     capabilities,
     action,
     targetName,
+    continuation,
   }: {
     user: { did: string; handle: string };
     returnTo: string;
+    intent?: "user" | "project";
     capabilities: readonly OAuthCapability[];
     action: OAuthAction;
     targetName: string | null;
+    continuation?: "login_selection";
   },
 ) {
+  const addsRepositoryPermission = capabilities.some((capability) =>
+    capability !== "identity"
+  );
   return (
     <div class="signin-upgrade-panel">
       <p class="signin-account-list-label">Currently signed in</p>
@@ -312,20 +433,38 @@ function PermissionUpgradeForm(
         <AtmosphereHandle handle={user.handle} />
       </p>
       <form method="POST" action="/oauth/login" class="signin-form">
-        <input type="hidden" name="handle" value={user.handle} />
+        <input type="hidden" name="handle" value={user.did} />
         <input type="hidden" name="next" value={returnTo} />
+        {intent && <input type="hidden" name="intent" value={intent} />}
         <input type="hidden" name="action" value={action} />
+        {continuation && (
+          <input
+            type="hidden"
+            name="continuation"
+            value={continuation}
+          />
+        )}
         {targetName && <input type="hidden" name="name" value={targetName} />}
         {capabilities.map((capability) => (
           <input type="hidden" name="capability" value={capability} />
         ))}
         <button type="submit" class="signin-form-submit">
-          Add permission and continue
+          {addsRepositoryPermission
+            ? "Approve and continue"
+            : "Confirm and continue"}
         </button>
       </form>
       <form method="POST" action="/oauth/add-account" class="signin-form">
         <input type="hidden" name="next" value={returnTo} />
+        {intent && <input type="hidden" name="intent" value={intent} />}
         <input type="hidden" name="action" value={action} />
+        {continuation && (
+          <input
+            type="hidden"
+            name="continuation"
+            value={continuation}
+          />
+        )}
         {targetName && <input type="hidden" name="name" value={targetName} />}
         {capabilities.map((capability) => (
           <input type="hidden" name="capability" value={capability} />
@@ -338,113 +477,70 @@ function PermissionUpgradeForm(
   );
 }
 
-export function authActionCopy(
-  action: OAuthAction,
-  targetName: string | null,
-): {
-  eyebrow: string;
-  signInBody: string;
-  upgradeBody: (handle: string) => string;
-} {
-  const name = targetName || "this listing";
-  switch (action) {
-    case "review":
-      return {
-        eyebrow: "Publish a review",
-        signInBody:
-          "Choose the Atmosphere account that will own your review. We’ll only request permission to create the AT Store records required to publish it.",
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add review-publishing permission to continue. Your existing permissions will remain in place.`,
-      };
-    case "review_manage":
-      return {
-        eyebrow: "Manage your review",
-        signInBody:
-          "Choose the Atmosphere account that owns this review. We’ll only request permission to update or delete its review record.",
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add review-management permission to continue. Your existing permissions will remain in place.`,
-      };
-    case "legacy_review":
-      return {
-        eyebrow: "Publish a review",
-        signInBody:
-          "Choose the Atmosphere account that will own your review on this legacy listing. We’ll only request permission for its legacy review record.",
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add legacy review-publishing permission to continue. Your existing permissions will remain in place.`,
-      };
-    case "legacy_review_manage":
-      return {
-        eyebrow: "Manage your review",
-        signInBody:
-          "Choose the Atmosphere account that owns your review on this legacy listing. We’ll only request permission to update or delete its legacy review record.",
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add legacy review-management permission to continue. Your existing permissions will remain in place.`,
-      };
-    case "favorite":
-      return {
-        eyebrow: "Save an app",
-        signInBody:
-          "Choose the Atmosphere account that will save this app. We’ll only request permission to create or remove its AT Store favorite record.",
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add app-saving permission to continue. Your existing permissions will remain in place.`,
-      };
-    case "app":
-      return {
-        eyebrow: "Manage an app",
-        signInBody:
-          `Sign in with the Atmosphere account that represents ${name}. You’ll be asked for permission to publish and manage its app records and images.`,
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add complete app-management permission, including images, to continue. Your existing permissions will remain in place.`,
-      };
-    case "host_claim":
-      return {
-        eyebrow: "Claim an account host",
-        signInBody:
-          `Choose the Atmosphere account that will claim and manage ${name}, including its public profile and images. Granting access does not claim the host: DNS verification separately proves control of its domain.`,
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add complete host-management permission, including images, to continue. DNS verification will separately prove control of the host.`,
-      };
-    case "host_manage":
-      return {
-        eyebrow: "Manage an account host",
-        signInBody:
-          `Sign in with the Atmosphere account that manages ${name}. You’ll be asked for permission to publish and manage its host records and images.`,
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add complete host-management permission, including images, to continue. Your existing permissions will remain in place.`,
-      };
-    case "host_transfer":
-      return {
-        eyebrow: "Choose a new managing account",
-        signInBody:
-          `Choose the Atmosphere account that will take over management of ${name}, including its public profile and images. DNS verification separately proves that the new manager still controls the host domain.`,
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add complete host-management permission, including images, to continue. DNS verification will complete the transfer.`,
-      };
-    case "app_host":
-      return {
-        eyebrow: "Manage app and host profiles",
-        signInBody:
-          `${name} is both an app and an account host. Sign in with the Atmosphere account that represents it to manage both profiles, records, and images.`,
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Add the missing app and host permissions to continue. Your existing permissions will remain in place.`,
-      };
-    case "developer":
-      return {
-        eyebrow: "Manage app developer settings",
-        signInBody:
-          "Sign in with the Atmosphere account that represents the app whose developer settings you want to manage. No repository access is required.",
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Confirm this identity to continue.`,
-      };
-    case "account":
-      return {
-        eyebrow: "Atmosphere Account",
-        signInBody:
-          "Choose an Atmosphere account to manage this site’s account-specific settings. Identity authentication does not grant repository access.",
-        upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Confirm this identity to continue.`,
-      };
+export function shouldUseExistingAccount(
+  mode: "signin" | "create",
+  choosingAnotherAccount = false,
+): boolean {
+  return mode !== "create" && !choosingAnotherAccount;
+}
+
+export function AuthorizationExitLink(
+  {
+    permissionState,
+    returnTo,
+    action,
+  }: {
+    permissionState: string | null;
+    returnTo: string;
+    action: OAuthAction;
+  },
+) {
+  if (
+    permissionState !== "denied" && permissionState !== "partial" &&
+    permissionState !== "concurrent" && permissionState !== "required" &&
+    permissionState !== "failed"
+  ) return null;
+  return (
+    <p class="text-body mt-2">
+      <a
+        href={oauthAuthorizationExitHref(returnTo, action)}
+        class="profile-form-button-link"
+      >
+        Not now
+      </a>
+    </p>
+  );
+}
+
+export function signedInAuthHeading(
+  capabilities: readonly OAuthCapability[],
+): string {
+  return capabilities.some((capability) => capability !== "identity")
+    ? "Approve access to continue"
+    : "Confirm your account";
+}
+
+/** Retained for focused authorization-copy tests and image-editor prompts. */
+export function authMediaContext(
+  capabilities: readonly OAuthCapability[],
+): string | null {
+  return capabilities.includes("media")
+    ? "This includes image uploads for the app or host profile."
+    : null;
+}
+
+export function permissionStatusCopy(state: string | null): string | null {
+  if (state === "denied") return "You canceled sign-in. Nothing changed.";
+  if (state === "failed") {
+    return "Sign-in could not be completed. Nothing changed. Try again.";
   }
+  if (state === "concurrent") {
+    return "Your account changed while this was open. Continue once more to finish safely.";
+  }
+  if (state === "partial") {
+    return "Your account host did not approve everything needed. Try again or choose another account.";
+  }
+  return null;
 }
 
 async function loadCreateAccountHosts(

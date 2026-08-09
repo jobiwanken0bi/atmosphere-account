@@ -14,6 +14,7 @@ import {
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
 import { rejectLargeRequest } from "../../lib/security.ts";
+import { relationshipConfirmationAuthorizationHref } from "../../lib/oauth-entry-context.ts";
 
 const MAX_APPROVAL_FORM_BYTES = 8_192;
 
@@ -23,9 +24,9 @@ export const handler = define.handlers({
       (err) => appviewUnavailable(err),
     );
     if (proxied) return proxied;
-    if (!ctx.state.user) return redirectToSignin(ctx.url);
     const data = await loadRelationship(ctx.url);
     if (data instanceof Response) return data;
+    if (!ctx.state.user) return redirectToSignin(ctx.url, data);
     return ctx.render(
       <RelationshipConfirmationPage
         {...data}
@@ -41,7 +42,9 @@ export const handler = define.handlers({
       (err) => appviewUnavailable(err),
     );
     if (proxied) return proxied;
-    if (!ctx.state.user) return redirectToSignin(ctx.url);
+    const data = await loadRelationship(ctx.url);
+    if (data instanceof Response) return data;
+    if (!ctx.state.user) return redirectToSignin(ctx.url, data);
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "directory-entity-link-approve",
       capacity: 20,
@@ -50,8 +53,6 @@ export const handler = define.handlers({
     if (limited) return limited;
     const large = rejectLargeRequest(ctx.req, MAX_APPROVAL_FORM_BYTES);
     if (large) return large;
-    const data = await loadRelationship(ctx.url);
-    if (data instanceof Response) return data;
     const result = await approveDirectoryEntityLink(
       data.link.host,
       data.app,
@@ -98,6 +99,7 @@ function RelationshipConfirmationPage(props: {
 }) {
   const { link, app, hostName, account, currentDid, error } = props;
   const next = confirmationHref(link.host, app.id);
+  const authorizationTargetName = `${app.name} and ${hostName}`;
   const appDids = appIdentityDids(app);
   const hostMissing = !link.hostApprovedAt;
   const appMissing = link.relationship !== "host_only" && !link.appApprovedAt;
@@ -184,24 +186,13 @@ function RelationshipConfirmationPage(props: {
                       </form>
                     )}
                     {switchable.map((remembered) => (
-                      <form
-                        method="POST"
-                        action="/oauth/switch"
-                        class="relationship-switch-form"
-                      >
-                        <input
-                          type="hidden"
-                          name="did"
-                          value={remembered.did}
-                        />
-                        <input type="hidden" name="next" value={next} />
-                        <button
-                          class="profile-form-button-secondary"
-                          type="submit"
-                        >
-                          Continue as @{remembered.handle}
-                        </button>
-                      </form>
+                      <RelationshipSwitchForm
+                        key={remembered.did}
+                        did={remembered.did}
+                        handle={remembered.handle}
+                        next={next}
+                        targetName={authorizationTargetName}
+                      />
                     ))}
                     {!canApprove && switchable.length === 0 && (
                       <p class="text-body">
@@ -210,14 +201,10 @@ function RelationshipConfirmationPage(props: {
                         from the request.
                       </p>
                     )}
-                    <a
-                      class="text-link-button relationship-add-account"
-                      href={`/oauth/add-account?next=${
-                        encodeURIComponent(next)
-                      }`}
-                    >
-                      + Add the other account
-                    </a>
+                    <RelationshipAddAccountForm
+                      next={next}
+                      targetName={authorizationTargetName}
+                    />
                   </div>
                 )}
             </div>
@@ -226,6 +213,54 @@ function RelationshipConfirmationPage(props: {
         <Footer variant="compact" />
       </div>
     </div>
+  );
+}
+
+export function RelationshipSwitchForm(
+  props: { did: string; handle: string; next: string; targetName: string },
+) {
+  return (
+    <form
+      method="POST"
+      action="/oauth/switch"
+      class="relationship-switch-form"
+    >
+      <input type="hidden" name="did" value={props.did} />
+      <input type="hidden" name="next" value={props.next} />
+      <RelationshipAuthorizationFields targetName={props.targetName} />
+      <button class="profile-form-button-secondary" type="submit">
+        Continue as @{props.handle}
+      </button>
+    </form>
+  );
+}
+
+export function RelationshipAddAccountForm(
+  props: { next: string; targetName: string },
+) {
+  return (
+    <form method="POST" action="/oauth/add-account">
+      <input type="hidden" name="next" value={props.next} />
+      <RelationshipAuthorizationFields targetName={props.targetName} />
+      <button
+        type="submit"
+        class="text-link-button relationship-add-account"
+      >
+        + Add the other account
+      </button>
+    </form>
+  );
+}
+
+export function RelationshipAuthorizationFields(
+  { targetName }: { targetName: string },
+) {
+  return (
+    <>
+      <input type="hidden" name="action" value="relationship_confirm" />
+      <input type="hidden" name="name" value={targetName} />
+      <input type="hidden" name="capability" value="identity" />
+    </>
   );
 }
 
@@ -265,9 +300,14 @@ function confirmationHref(host: string, app: string): string {
   return `/relationships/confirm?${new URLSearchParams({ host, app })}`;
 }
 
-function redirectToSignin(url: URL): Response {
-  const next = `${url.pathname}${url.search}`;
-  return redirect(`/signin?next=${encodeURIComponent(next)}`);
+function redirectToSignin(
+  url: URL,
+  data: { app: Pick<AppListing, "name">; hostName: string },
+): Response {
+  return redirect(relationshipConfirmationAuthorizationHref(url, {
+    appName: data.app.name,
+    hostName: data.hostName,
+  }));
 }
 
 function redirect(location: string): Response {

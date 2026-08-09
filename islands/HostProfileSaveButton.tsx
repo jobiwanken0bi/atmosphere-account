@@ -3,6 +3,9 @@ import { useEffect, useRef } from "preact/hooks";
 import {
   hasHostProfileResumeMarker,
   hostProfilePendingKey,
+  hostProfileResumeLocation,
+  hostProfileResumePath,
+  hostProfileResumeProofKey,
   type PendingHostProfileAction,
   pendingHostProfileAction,
   pendingHostProfileEntriesForContext,
@@ -16,14 +19,28 @@ import {
   type PendingFormEntry,
   savePendingBrowserAction,
 } from "../lib/pending-browser-action.ts";
-import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
+import {
+  type ContextualReauthorization,
+  contextualReauthorization,
+  contextualReauthorizationFromApiPayload,
+} from "../lib/reauth-required.ts";
+import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
+import {
+  browserResumeMarkerValue,
+  isFreshBrowserResumeMarker,
+} from "../lib/browser-resume-marker.ts";
+import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
 
 interface Props {
   did: string;
   host: string;
+  targetName: string;
+  currentHandle: string;
+  rememberedAccounts?: Array<{ did: string; handle: string }>;
 }
 
 interface HostProfileResponseBody {
+  ok?: unknown;
   detail?: string;
   error?: string;
   reauthUrl?: string;
@@ -33,33 +50,48 @@ interface HostProfileResponseBody {
 /**
  * Enhances only the public host-profile submit button. The surrounding form
  * remains a normal multipart POST without JavaScript, while hydration adds the
- * IndexedDB handoff needed to carry an avatar File through any forced OAuth
- * reauthorization (for example, an older session that predates the complete
- * host-and-image grant).
+ * IndexedDB handoff needed to carry an avatar File through management
+ * reauthorization when an older session lacks the complete host grant.
  */
-export default function HostProfileSaveButton({ did, host }: Props) {
+export default function HostProfileSaveButton(
+  { did, host, targetName, currentHandle, rememberedAccounts = [] }: Props,
+) {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const submitting = useSignal(false);
   const message = useSignal("");
+  const reauthorization = useSignal<ContextualReauthorization | null>(null);
   const pendingKey = hostProfilePendingKey(did, host);
+  const resumeProofKey = hostProfileResumeProofKey(pendingKey);
 
   const followReauthorization = async (
+    response: Response,
     responseBody: HostProfileResponseBody | null,
     formData: FormData,
   ): Promise<boolean> => {
-    const reauthUrl = reauthUrlFromApiPayload(responseBody);
-    if (!reauthUrl) return false;
+    const contextual = contextualReauthorizationFromApiPayload(responseBody) ??
+      (hostProfileResponseNeedsAuthorization(response)
+        ? contextualReauthorization({
+          returnTo: hostProfileResumePath(
+            new URL(currentRequestPath(), globalThis.location.origin),
+          ),
+          action: "host_manage",
+          capabilities: ["host", "media"],
+          targetName,
+        })
+        : null);
+    if (!contextual) return false;
     try {
       await savePendingBrowserAction(
         pendingKey,
         pendingHostProfileAction(did, host, formDataEntries(formData)),
+        { ownerDid: did },
       );
     } catch {
       message.value =
         "Could not preserve this host profile and avatar for authorization. Try again without leaving this page.";
       return true;
     }
-    globalThis.location.assign(reauthUrl);
+    reauthorization.value = contextual;
     return true;
   };
 
@@ -72,11 +104,22 @@ export default function HostProfileSaveButton({ did, host }: Props) {
         method: "POST",
         headers: { accept: "application/json" },
         body: formData,
+        // The enhanced endpoint normally responds with JSON. Keeping redirects
+        // manual prevents an expired site session from silently fetching the
+        // full sign-in page and being mistaken for a successful save.
+        redirect: "manual",
       });
       const responseBody = await jsonBody(response);
       if (!response.ok) {
-        if (await followReauthorization(responseBody, formData)) return;
+        if (await followReauthorization(response, responseBody, formData)) {
+          return;
+        }
         message.value = responseError(response, responseBody);
+        return;
+      }
+      if (responseBody?.ok !== true) {
+        message.value =
+          "The host profile returned an invalid response. Try again.";
         return;
       }
 
@@ -110,18 +153,42 @@ export default function HostProfileSaveButton({ did, host }: Props) {
     };
     form.addEventListener("submit", onSubmit);
 
-    const url = new URL(globalThis.location.href);
-    if (!hasHostProfileResumeMarker(url)) {
+    const cancellation = oauthCancellationLocation(
+      globalThis.location.href,
+      "host-profile",
+    );
+    if (cancellation.wasCancelled) {
+      globalThis.history.replaceState(null, "", cancellation.cleanLocation);
+      try {
+        sessionStorage.removeItem(resumeProofKey);
+      } catch {
+        // Storage restrictions already prevent automatic replay.
+      }
+      void clearPendingBrowserAction(pendingKey).catch(() => {});
       return () => form.removeEventListener("submit", onSubmit);
     }
 
-    // Consume the one-shot OAuth return marker before touching IndexedDB. A
-    // refresh or later account switch cannot replay the action accidentally.
-    globalThis.history.replaceState(
-      null,
-      "",
-      withoutHostProfileResumeMarker(url),
-    );
+    const url = new URL(globalThis.location.href);
+    const resume = hostProfileResumeLocation(url);
+    if (resume.hadMarker) {
+      globalThis.history.replaceState(null, "", resume.cleanLocation);
+    }
+    let proof: string | null = null;
+    try {
+      proof = sessionStorage.getItem(resumeProofKey);
+      sessionStorage.removeItem(resumeProofKey);
+    } catch {
+      // Fail closed: a return marker without same-tab proof never writes.
+    }
+    if (
+      !resume.shouldResume ||
+      !isFreshBrowserResumeMarker(proof)
+    ) {
+      // Clear an abandoned draft on a later ordinary visit as well as forged
+      // or malformed return markers.
+      void clearPendingBrowserAction(pendingKey).catch(() => {});
+      return () => form.removeEventListener("submit", onSubmit);
+    }
     let cancelled = false;
     (async () => {
       const pending = await loadPendingBrowserAction<PendingHostProfileAction>(
@@ -169,12 +236,84 @@ export default function HostProfileSaveButton({ did, host }: Props) {
           {message.value}
         </p>
       )}
+      {reauthorization.value && (
+        <ContextualReauthorizationDialog
+          authorization={reauthorization.value}
+          currentDid={did}
+          currentHandle={currentHandle}
+          rememberedAccounts={rememberedAccounts}
+          restrictToCurrentAccount
+          onAuthorizationStart={() => {
+            armHostProfileResume(resumeProofKey);
+          }}
+          onClose={() => {
+            reauthorization.value = null;
+            void cancelHostProfileReauthorization(pendingKey);
+          }}
+        />
+      )}
     </>
   );
 }
 
+export async function cancelHostProfileReauthorization(
+  pendingKey: string,
+  options: {
+    href?: string;
+    replaceLocation?: (location: string) => void;
+    clearPending?: (key: string) => Promise<void>;
+    storage?: Pick<Storage, "removeItem">;
+  } = {},
+): Promise<void> {
+  const href = options.href ?? globalThis.location.href;
+  const url = new URL(href, "https://atmosphere.invalid");
+  if (hasHostProfileResumeMarker(url)) {
+    (options.replaceLocation ??
+      ((location) => globalThis.history.replaceState(null, "", location)))(
+        withoutHostProfileResumeMarker(url),
+      );
+  }
+  try {
+    (options.storage ?? globalThis.sessionStorage).removeItem(
+      hostProfileResumeProofKey(pendingKey),
+    );
+  } catch {
+    // IndexedDB cleanup below remains necessary when storage is blocked.
+  }
+  await (options.clearPending ?? clearPendingBrowserAction)(pendingKey).catch(
+    () => {},
+  );
+}
+
+export function armHostProfileResume(
+  proofKey: string,
+  storage: Pick<Storage, "setItem"> = globalThis.sessionStorage,
+): boolean {
+  try {
+    storage.setItem(proofKey, browserResumeMarkerValue());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function currentRequestPath(): string {
   return `${globalThis.location.pathname}${globalThis.location.search}`;
+}
+
+export function hostProfileResponseNeedsAuthorization(
+  response: Pick<Response, "status" | "type" | "redirected" | "url">,
+): boolean {
+  if (response.status === 401 || response.type === "opaqueredirect") {
+    return true;
+  }
+  if (!response.redirected || !response.url) return false;
+  try {
+    return new URL(response.url, "https://atmosphere.invalid").pathname ===
+      "/signin";
+  } catch {
+    return false;
+  }
 }
 
 async function jsonBody(

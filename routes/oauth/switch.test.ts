@@ -4,6 +4,7 @@ import {
   readSwitchAuthorizationInputForTest,
   readSwitchInputForTest,
 } from "./switch.ts";
+import { RequestBodyTooLargeError } from "../../lib/security.ts";
 
 Deno.test("saved-account switch fallback starts OAuth for the target handle", () => {
   assertEquals(
@@ -62,4 +63,29 @@ Deno.test("saved-account switch preserves action capabilities and project intent
     action: "app",
     targetName: "Example App",
   });
+});
+
+Deno.test("saved-account switch rejects an oversized streamed body", async () => {
+  const request = new Request(
+    "https://atmosphereaccount.com/oauth/switch",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"did":"did:plc:'));
+          controller.enqueue(new Uint8Array(8_192));
+          controller.enqueue(new TextEncoder().encode('"}'));
+          controller.close();
+        },
+      }),
+    },
+  );
+  let tooLarge = false;
+  try {
+    await readSwitchAuthorizationInputForTest(request);
+  } catch (error) {
+    tooLarge = error instanceof RequestBodyTooLargeError;
+  }
+  assertEquals(tooLarge, true);
 });

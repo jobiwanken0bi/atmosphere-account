@@ -11,6 +11,7 @@ import {
 } from "./security.ts";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
+const MAX_TIMEOUT_MS = 30_000;
 const MAX_MANIFEST_BYTES = 64_000;
 const CONFORMANCE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -47,8 +48,10 @@ export async function runHostConformance(input: {
   now?: number;
 }): Promise<HostConformanceReport> {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const checkedAt = input.now ?? Date.now();
+  const timeoutMs = boundedTimeout(input.timeoutMs);
+  const checkedAt = Number.isFinite(input.now) && (input.now ?? -1) >= 0
+    ? Math.floor(input.now!)
+    : Date.now();
   const manifestUrl = safeConformanceUrl(input.manifestUrl, input.allowLocal);
   const serviceEndpoint = safeConformanceUrl(
     input.serviceEndpoint,
@@ -194,11 +197,20 @@ async function fetchManifest(input: {
     };
   }
   if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
     return {
       ok: false,
       manifest: null,
       detail:
         `Manifest returned HTTP ${response.status}; redirects are not accepted.`,
+    };
+  }
+  if (!isJsonMediaType(response.headers.get("content-type"))) {
+    await response.body?.cancel().catch(() => {});
+    return {
+      ok: false,
+      manifest: null,
+      detail: "Manifest did not return a JSON media type.",
     };
   }
   const body = await readResponseTextWithLimit(response, MAX_MANIFEST_BYTES);
@@ -242,7 +254,18 @@ async function checkReachableHtml(
   allowLocal = false,
 ): Promise<HostConformanceCheck> {
   let current = initialUrl;
+  const seen = new Set<string>();
   for (let redirects = 0; redirects <= 3; redirects++) {
+    if (seen.has(current)) {
+      return check(
+        "account_route",
+        "Account management route",
+        false,
+        current,
+        "Account route entered a redirect loop.",
+      );
+    }
+    seen.add(current);
     let response: Response;
     try {
       response = await fetchImpl(current, {
@@ -260,6 +283,7 @@ async function checkReachableHtml(
       );
     }
     if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => {});
       const location = response.headers.get("location");
       const next = safeRedirectUrl(location, current, allowLocal);
       if (!next) {
@@ -327,14 +351,18 @@ async function checkPdsHealth(
       signal: AbortSignal.timeout(timeoutMs),
     });
     await response.body?.cancel().catch(() => {});
+    const contentType = response.headers.get("content-type");
+    const ok = response.ok && isJsonMediaType(contentType);
     return check(
       "pds_health",
       "PDS health endpoint",
-      response.ok,
+      ok,
       url,
-      response.ok
-        ? `PDS health returned HTTP ${response.status}.`
-        : `PDS health returned HTTP ${response.status}.`,
+      ok
+        ? `PDS health returned JSON with HTTP ${response.status}.`
+        : `Expected PDS health JSON, got HTTP ${response.status} ${
+          contentType || "without content-type"
+        }.`,
     );
   } catch (err) {
     return check(
@@ -353,6 +381,7 @@ function safeConformanceUrl(
   originOnly = false,
 ): string | null {
   if (!value) return null;
+  if (value.length > 2_048) return null;
   let url: URL;
   try {
     url = new URL(value);
@@ -388,5 +417,17 @@ function check(
 }
 
 function errorDetail(prefix: string, error: unknown): string {
-  return `${prefix}: ${error instanceof Error ? error.message : String(error)}`;
+  const timedOut = error instanceof DOMException &&
+    error.name === "TimeoutError";
+  return timedOut ? `${prefix}: timed out.` : `${prefix}.`;
+}
+
+function boundedTimeout(value: number | undefined): number {
+  if (!Number.isFinite(value)) return DEFAULT_TIMEOUT_MS;
+  return Math.min(MAX_TIMEOUT_MS, Math.max(500, Math.floor(value!)));
+}
+
+function isJsonMediaType(value: string | null): boolean {
+  const mediaType = (value ?? "").split(";", 1)[0].trim().toLowerCase();
+  return mediaType === "application/json" || mediaType.endsWith("+json");
 }

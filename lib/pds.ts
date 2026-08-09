@@ -3,9 +3,12 @@
  * One thin function per XRPC method we actually call from the registry.
  */
 import { authedFetch } from "./oauth.ts";
-import { normalizeServiceEndpoint } from "./identity.ts";
-import { ATPROTO_FETCH_TIMEOUT_MS } from "./env.ts";
-import { readResponseTextWithLimit } from "./security.ts";
+import {
+  assertPublicDnsHostname,
+  normalizeServiceEndpoint,
+} from "./identity.ts";
+import { ATPROTO_FETCH_TIMEOUT_MS, IS_DEV } from "./env.ts";
+import { isJsonMediaType, readResponseTextWithLimit } from "./security.ts";
 import {
   type BlobRef,
   PROFILE_NSID,
@@ -24,6 +27,9 @@ export interface PutRecordResult {
 }
 
 const PDS_ERROR_BODY_MAX_BYTES = 8 * 1024;
+const PDS_WRITE_RESPONSE_MAX_BYTES = 256 * 1024;
+const PDS_RECORD_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+const PDS_LIST_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 
 async function readPdsErrorBody(response: Response): Promise<string> {
   const bounded = await readResponseTextWithLimit(
@@ -39,12 +45,39 @@ export async function readPdsErrorBodyForTest(
   return await readPdsErrorBody(response);
 }
 
-function fetchWithTimeout(
+async function readPdsJson<T>(
+  response: Response,
+  maxBytes: number,
+): Promise<T> {
+  if (!isJsonMediaType(response.headers.get("content-type"))) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("PDS returned a non-JSON response");
+  }
+  const bounded = await readResponseTextWithLimit(response, maxBytes);
+  if (!bounded.ok) throw new Error(`PDS JSON ${bounded.error}`);
+  try {
+    return JSON.parse(bounded.text) as T;
+  } catch {
+    throw new Error("PDS returned invalid JSON");
+  }
+}
+
+export async function readPdsJsonForTest(
+  response: Response,
+  maxBytes: number,
+): Promise<unknown> {
+  return await readPdsJson(response, maxBytes);
+}
+
+async function fetchWithTimeout(
   input: string | URL,
   init: RequestInit = {},
 ): Promise<Response> {
-  return fetch(input, {
+  const url = new URL(input);
+  if (!IS_DEV) await assertPublicDnsHostname(url.hostname);
+  return await fetch(url, {
     ...init,
+    redirect: init.redirect ?? "manual",
     signal: init.signal ?? AbortSignal.timeout(ATPROTO_FETCH_TIMEOUT_MS),
   });
 }
@@ -157,7 +190,7 @@ export async function createRecord(
       res.headers.get("retry-after"),
     );
   }
-  return await res.json() as PutRecordResult;
+  return await readPdsJson<PutRecordResult>(res, PDS_WRITE_RESPONSE_MAX_BYTES);
 }
 
 export async function putProfileRecord(
@@ -187,7 +220,7 @@ export async function putProfileRecord(
       res.headers.get("retry-after"),
     );
   }
-  return await res.json() as PutRecordResult;
+  return await readPdsJson<PutRecordResult>(res, PDS_WRITE_RESPONSE_MAX_BYTES);
 }
 
 export async function getProfileRecord(
@@ -210,7 +243,10 @@ export async function getProfileRecord(
       res.headers.get("retry-after"),
     );
   }
-  const json = await res.json() as { value?: unknown };
+  const json = await readPdsJson<{ value?: unknown }>(
+    res,
+    PDS_RECORD_RESPONSE_MAX_BYTES,
+  );
   return json.value && typeof json.value === "object"
     ? json.value as ProfileRecord
     : null;
@@ -279,7 +315,7 @@ export async function putRecord(
       res.headers.get("retry-after"),
     );
   }
-  return await res.json() as PutRecordResult;
+  return await readPdsJson<PutRecordResult>(res, PDS_WRITE_RESPONSE_MAX_BYTES);
 }
 
 export async function deleteProfileRecord(
@@ -361,7 +397,10 @@ export async function uploadBlob(
       res.headers.get("retry-after"),
     );
   }
-  const json = await res.json() as { blob: BlobRef };
+  const json = await readPdsJson<{ blob: BlobRef }>(
+    res,
+    PDS_WRITE_RESPONSE_MAX_BYTES,
+  );
   return json.blob;
 }
 
@@ -383,7 +422,10 @@ export async function describeRepoCollectionsPublic(
   if (!res.ok) {
     throw new Error(`describeRepo failed: HTTP ${res.status}`);
   }
-  const body = await res.json() as { collections?: unknown };
+  const body = await readPdsJson<{ collections?: unknown }>(
+    res,
+    PDS_RECORD_RESPONSE_MAX_BYTES,
+  );
   return Array.isArray(body.collections)
     ? body.collections.filter((item): item is string =>
       typeof item === "string" && item.trim().length > 0
@@ -412,7 +454,10 @@ export async function getRecordPublic(
       await readPdsErrorBody(res),
     );
   }
-  return await res.json() as { uri: string; cid: string; value: unknown };
+  return await readPdsJson<{ uri: string; cid: string; value: unknown }>(
+    res,
+    PDS_RECORD_RESPONSE_MAX_BYTES,
+  );
 }
 
 export async function listRecordsPublic(
@@ -440,10 +485,10 @@ export async function listRecordsPublic(
   const res = await fetchWithTimeout(url.toString());
   if (res.status === 404) return { records: [] };
   if (!res.ok) throw new Error(`listRecords failed: HTTP ${res.status}`);
-  return await res.json() as {
+  return await readPdsJson<{
     cursor?: string;
     records: Array<{ uri: string; cid: string; value: unknown }>;
-  };
+  }>(res, PDS_LIST_RESPONSE_MAX_BYTES);
 }
 
 /** Public: fetch app.bsky.actor.profile to pre-fill the create form. */
@@ -474,9 +519,11 @@ export async function fetchBlobPublic(
   cid: string,
 ): Promise<Response> {
   const url = new URL(
-    `${pdsUrl.replace(/\/$/, "")}/xrpc/com.atproto.sync.getBlob`,
+    `${normalizeServiceEndpoint(pdsUrl)}/xrpc/com.atproto.sync.getBlob`,
   );
   url.searchParams.set("did", did);
   url.searchParams.set("cid", cid);
-  return await fetch(url.toString());
+  return await fetchWithTimeout(url.toString(), {
+    headers: { accept: "*/*" },
+  });
 }

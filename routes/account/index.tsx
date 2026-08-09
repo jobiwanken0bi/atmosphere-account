@@ -228,6 +228,9 @@ async function AccountPage(
                   <UserMicroblogViewerButton
                     selectedClientId={appUser?.bskyClientId ?? null}
                     visible={appUser?.bskyButtonVisible ?? true}
+                    currentDid={user.did}
+                    currentHandle={user.handle}
+                    rememberedAccounts={rememberedAccounts}
                   />
                 </div>
               </div>

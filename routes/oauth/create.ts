@@ -1,8 +1,8 @@
 /**
  * Start a host-owned OAuth account-creation flow.
  *
- * The selected host receives `prompt=create`; Atmosphere keeps only the normal
- * OAuth state and returns the finished account to this site or to the original
+ * The selected host receives `prompt=create`; this site keeps only the normal
+ * OAuth state and returns the finished account here or to the original
  * universal account-picker request. Passwords, invite codes, and recovery
  * details stay on the host's origin.
  */
@@ -18,7 +18,6 @@ import {
   startHostAccountCreation,
 } from "../../lib/oauth.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
-import { isSafeRelativePath } from "../../lib/security.ts";
 import {
   IDENTITY_OAUTH_SCOPE,
   normalizeOAuthCapabilities,
@@ -33,21 +32,29 @@ import {
   oauthCreateAccountUrl,
   safeOAuthTargetName,
 } from "../../lib/oauth-action.ts";
+import {
+  InvalidOAuthRequestInputError,
+  optionalEnum,
+  optionalSafeRelativePath,
+  repeatedSearchValues,
+  singleSearchValue,
+} from "../../lib/oauth-request-input.ts";
+import { hasValidLoginSelectionContinuationBinding } from "../../lib/oauth-continuation.ts";
+import { buildOAuthFlowBindingCookie } from "../../lib/oauth-flow-binding.ts";
+import { readLoginRequest } from "../../lib/atmosphere-login.ts";
 
 const MAX_HOST_LENGTH = 253;
-
-function safeNext(raw: string | null): string | null {
-  return isSafeRelativePath(raw) ? raw : null;
-}
-
-function safeIntent(raw: string | null): SignInIntent | null {
-  return raw === "user" || raw === "project" ? raw : null;
-}
+const MAX_CREATE_QUERY_BYTES = 16_384;
 
 function isLoginSelectionReturn(path: string | null): boolean {
   if (!path) return false;
   try {
-    return new URL(path, "https://local.invalid").pathname === "/login/select";
+    const url = new URL(path, "https://local.invalid");
+    if (
+      url.origin !== "https://local.invalid" || url.pathname !== "/login/select"
+    ) return false;
+    readLoginRequest(url);
+    return true;
   } catch {
     return false;
   }
@@ -65,20 +72,44 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     refillMs: 60_000,
   });
   if (limited) return limited;
-
-  const hostName = (ctx.url.searchParams.get("host") ?? "").trim()
-    .toLowerCase();
-  const returnTo = safeNext(ctx.url.searchParams.get("next")) ?? "/account";
-  const intent = safeIntent(ctx.url.searchParams.get("intent"));
-  const capabilities = normalizeOAuthCapabilities(
-    ctx.url.searchParams.getAll("capability"),
-  );
-  const rawAction = ctx.url.searchParams.get("action");
-  if (rawAction !== null && !isOAuthAction(rawAction)) {
-    return new Response("invalid action", { status: 400 });
+  if (ctx.url.search.length > MAX_CREATE_QUERY_BYTES) {
+    return new Response("account-creation link is too large", { status: 414 });
   }
-  const action: OAuthAction = isOAuthAction(rawAction) ? rawAction : "account";
-  const targetName = safeOAuthTargetName(ctx.url.searchParams.get("name"));
+  let hostName: string;
+  let returnTo: string;
+  let intent: SignInIntent | null;
+  let capabilities;
+  let action: OAuthAction;
+  let targetName;
+  let continuation: "login_selection" | null;
+  try {
+    hostName = (singleSearchValue(ctx.url.searchParams, "host") ?? "")
+      .trim().toLowerCase();
+    returnTo = optionalSafeRelativePath(
+      singleSearchValue(ctx.url.searchParams, "next"),
+    ) ?? "/account";
+    intent = optionalEnum(
+      singleSearchValue(ctx.url.searchParams, "intent"),
+      ["user", "project"] as const,
+    );
+    capabilities = normalizeOAuthCapabilities(
+      repeatedSearchValues(ctx.url.searchParams, "capability"),
+    );
+    const rawAction = singleSearchValue(ctx.url.searchParams, "action");
+    if (rawAction !== null && !isOAuthAction(rawAction)) {
+      throw new InvalidOAuthRequestInputError();
+    }
+    action = rawAction ?? "account";
+    targetName = safeOAuthTargetName(
+      singleSearchValue(ctx.url.searchParams, "name"),
+    );
+    continuation = optionalEnum(
+      singleSearchValue(ctx.url.searchParams, "continuation"),
+      ["login_selection"] as const,
+    );
+  } catch {
+    return new Response("invalid account-creation link", { status: 400 });
+  }
   if (!hostName || hostName.length > MAX_HOST_LENGTH) {
     return new Response("missing or invalid account host", { status: 400 });
   }
@@ -121,6 +152,19 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
 
   const oauth = oauthClientConfigForRequest(ctx.url, ctx.req.headers);
   const loginSelectionReturn = isLoginSelectionReturn(returnTo);
+  if (
+    !hasValidLoginSelectionContinuationBinding(
+      returnTo,
+      loginSelectionReturn ? continuation ?? "login_selection" : continuation,
+      intent,
+      action,
+      capabilities,
+    )
+  ) {
+    return new Response("invalid account-creation continuation", {
+      status: 400,
+    });
+  }
   const oauthOptions = {
     clientId: oauth.clientId,
     redirectUri: oauth.redirectUri,
@@ -141,20 +185,23 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   }
 
   try {
-    const { redirectUrl } = await startHostAccountCreation(
-      host.serviceEndpoint,
-      returnTo,
-      intent,
-      oauthOptions,
-      loginSelectionReturn ? "login_selection" : null,
-    );
-    return new Response(null, {
-      status: 303,
-      headers: {
-        location: redirectUrl,
-        "cache-control": "no-store",
-      },
+    const { redirectUrl, state, browserBinding } =
+      await startHostAccountCreation(
+        host.serviceEndpoint,
+        returnTo,
+        intent,
+        oauthOptions,
+        loginSelectionReturn ? continuation ?? "login_selection" : null,
+      );
+    const headers = new Headers({
+      location: redirectUrl,
+      "cache-control": "no-store",
     });
+    headers.append(
+      "set-cookie",
+      buildOAuthFlowBindingCookie(state, browserBinding),
+    );
+    return new Response(null, { status: 303, headers });
   } catch (err) {
     if (err instanceof OAuthAccountCreationUnsupportedError) {
       return new Response(null, {
@@ -197,28 +244,39 @@ function createAccountRetryUrl(input: {
 }
 
 export function accountCreationProxyFailureRedirect(url: URL): string | null {
-  const returnTo = safeNext(url.searchParams.get("next")) ?? "/account";
-  const intent = safeIntent(url.searchParams.get("intent"));
-  const capabilities = normalizeOAuthCapabilities(
-    url.searchParams.getAll("capability"),
-  );
-  const rawAction = url.searchParams.get("action");
-  const action: OAuthAction = isOAuthAction(rawAction) ? rawAction : "account";
-  if (
-    !capabilities || (rawAction !== null && !isOAuthAction(rawAction)) ||
-    !isAccountCreationAction(action) ||
-    !isOAuthActionCapabilityRequest(action, capabilities)
-  ) {
+  try {
+    const returnTo = optionalSafeRelativePath(
+      singleSearchValue(url.searchParams, "next"),
+    ) ?? "/account";
+    const intent = optionalEnum(
+      singleSearchValue(url.searchParams, "intent"),
+      ["user", "project"] as const,
+    );
+    const capabilities = normalizeOAuthCapabilities(
+      repeatedSearchValues(url.searchParams, "capability"),
+    );
+    const rawAction = singleSearchValue(url.searchParams, "action");
+    const action: OAuthAction = isOAuthAction(rawAction)
+      ? rawAction
+      : "account";
+    if (
+      !capabilities || (rawAction !== null && !isOAuthAction(rawAction)) ||
+      !isAccountCreationAction(action) ||
+      !isOAuthActionCapabilityRequest(action, capabilities)
+    ) return null;
+    return createAccountRetryUrl({
+      returnTo,
+      intent,
+      capabilities,
+      action,
+      targetName: safeOAuthTargetName(
+        singleSearchValue(url.searchParams, "name"),
+      ),
+      error: "creation_unavailable",
+    });
+  } catch {
     return null;
   }
-  return createAccountRetryUrl({
-    returnTo,
-    intent,
-    capabilities,
-    action,
-    targetName: safeOAuthTargetName(url.searchParams.get("name")),
-    error: "creation_unavailable",
-  });
 }
 
 function accountCreationUnavailable(url: URL, _err: unknown): Response {

@@ -63,7 +63,7 @@ import {
 } from "../../../lib/community-app-profile.ts";
 import { resolveAppListingWriteTarget } from "../../../lib/app-listing-lifecycle.ts";
 import { appProfileWriteCapabilities } from "../../../lib/profile-write-capabilities.ts";
-import { isSafeRelativePath } from "../../../lib/security.ts";
+import { isJsonMediaType, isSafeRelativePath } from "../../../lib/security.ts";
 import {
   appOwnershipUnavailableResponse,
   appProfileConflictResponse,
@@ -73,6 +73,8 @@ import {
   reserveAppProfileTarget,
   rotateStaleAppProfileTarget,
 } from "../../../lib/app-profile-cardinality.ts";
+import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
+import { matchesRasterImageSignature } from "../../../lib/raster-image-security.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
@@ -104,6 +106,7 @@ const SCREENSHOT_MIME_TYPES = new Set([
 ]);
 const BANNER_MIME_TYPES = SCREENSHOT_MIME_TYPES;
 const JSON_BODY_TOO_LARGE = Symbol("jsonBodyTooLarge");
+const MAX_PROFILE_COLLECTION_INPUTS = 128;
 
 async function tryPublishCommunityProfile(input: {
   did: string;
@@ -121,8 +124,8 @@ async function tryPublishCommunityProfile(input: {
       ...input,
       existingRecord: existing,
     });
-  } catch (err) {
-    console.warn("[registry] community app profile publish skipped:", err);
+  } catch {
+    console.warn("[registry] community app profile publish skipped");
     return null;
   }
 }
@@ -311,10 +314,62 @@ function normalizeLinksPayload(input: unknown): LinkEntry[] {
   return out;
 }
 
+/** The endpoint's large byte budget exists for images, not unbounded arrays. */
+export function profileCollectionBoundsErrorForTest(
+  body: ProfileFormPayload,
+): string | null {
+  const collections: Array<[string, unknown, number]> = [
+    ["categories", body.categories, MAX_PROFILE_COLLECTION_INPUTS],
+    ["subcategories", body.subcategories, MAX_PROFILE_COLLECTION_INPUTS],
+    ["links", body.links, MAX_PROFILE_COLLECTION_INPUTS],
+    [
+      "lexicons.produces",
+      body.lexicons?.produces,
+      MAX_PROFILE_COLLECTION_INPUTS,
+    ],
+    [
+      "lexicons.consumes",
+      body.lexicons?.consumes,
+      MAX_PROFILE_COLLECTION_INPUTS,
+    ],
+    [
+      "accountIndicators",
+      body.accountIndicators,
+      MAX_PROFILE_COLLECTION_INPUTS,
+    ],
+    ["screenshots", body.screenshots, MAX_PROFILE_COLLECTION_INPUTS],
+    ["screenshotUploads", body.screenshotUploads, SCREENSHOT_MAX_COUNT],
+  ];
+  for (const [field, value, limit] of collections) {
+    if (Array.isArray(value) && value.length > limit) {
+      return `${field}: too many items`;
+    }
+  }
+  return null;
+}
+
+export function profileCreateListingKeyErrorForTest(
+  createNewListing: unknown,
+  createListingRkey: unknown,
+): string | null {
+  const validation = appProfileCreateListingKeyError(
+    createNewListing,
+    createListingRkey,
+  );
+  if (validation) return validation;
+  const rkey = typeof createListingRkey === "string"
+    ? createListingRkey.trim()
+    : "";
+  return createNewListing === true || !rkey
+    ? null
+    : "unexpected app listing creation key";
+}
+
 async function readJsonBodyLimited<T>(
   req: Request,
   maxBytes: number,
 ): Promise<T | null | typeof JSON_BODY_TOO_LARGE> {
+  if (!isJsonMediaType(req.headers.get("content-type"))) return null;
   const contentLength = Number(req.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     return JSON_BODY_TOO_LARGE;
@@ -324,15 +379,19 @@ async function readJsonBodyLimited<T>(
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => {});
-      return JSON_BODY_TOO_LARGE;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return JSON_BODY_TOO_LARGE;
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } finally {
+    reader.releaseLock();
   }
 
   const bytes = new Uint8Array(total);
@@ -411,6 +470,12 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "registry-profile-write",
+      capacity: 12,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
     const body = await readJsonBodyLimited<ProfileFormPayload>(
       ctx.req,
       PROFILE_JSON_MAX_BYTES,
@@ -418,7 +483,13 @@ export const handler = define.handlers({
     if (body === JSON_BODY_TOO_LARGE) {
       return new Response("request body too large", { status: 413 });
     }
-    if (!body) return new Response("invalid JSON body", { status: 400 });
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response("invalid JSON body", { status: 400 });
+    }
+    const collectionBoundsError = profileCollectionBoundsErrorForTest(body);
+    if (collectionBoundsError) {
+      return new Response(collectionBoundsError, { status: 400 });
+    }
 
     if (
       body.atstoreListingUri != null &&
@@ -435,7 +506,7 @@ export const handler = define.handlers({
     if (body.createNewListing === true && requestedAtstoreTarget) {
       return new Response("invalid app listing target", { status: 400 });
     }
-    const creationKeyError = appProfileCreateListingKeyError(
+    const creationKeyError = profileCreateListingKeyErrorForTest(
       body.createNewListing,
       body.createListingRkey,
     );
@@ -565,6 +636,11 @@ export const handler = define.handlers({
 
     let avatar = body.avatar ?? undefined;
     if (body.avatarUpload?.dataBase64) {
+      if (!SCREENSHOT_MIME_TYPES.has(body.avatarUpload.mimeType)) {
+        return new Response("avatar must be png, jpeg, or webp", {
+          status: 400,
+        });
+      }
       let bytes: Uint8Array;
       try {
         bytes = decodeBase64Limited(
@@ -572,9 +648,16 @@ export const handler = define.handlers({
           AVATAR_MAX_BYTES,
           "avatar",
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response("avatar data is invalid or too large", {
+          status: 400,
+        });
+      }
+      if (!matchesRasterImageSignature(bytes, body.avatarUpload.mimeType)) {
+        return new Response(
+          "avatar contents do not match the selected image type",
+          { status: 400 },
+        );
       }
       try {
         avatar = await uploadBlob(
@@ -583,9 +666,9 @@ export const handler = define.handlers({
           bytes,
           body.avatarUpload.mimeType,
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`avatar upload failed: ${m}`, { status: 502 });
+      } catch {
+        console.warn("[registry] avatar blob upload failed");
+        return new Response("avatar upload failed", { status: 502 });
       }
     }
 
@@ -610,9 +693,16 @@ export const handler = define.handlers({
           BANNER_MAX_BYTES,
           "banner",
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response("banner data is invalid or too large", {
+          status: 400,
+        });
+      }
+      if (!matchesRasterImageSignature(bytes, body.bannerUpload.mimeType)) {
+        return new Response(
+          "banner contents do not match the selected image type",
+          { status: 400 },
+        );
       }
       try {
         banner = await uploadBlob(
@@ -621,9 +711,9 @@ export const handler = define.handlers({
           bytes,
           body.bannerUpload.mimeType,
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`banner upload failed: ${m}`, { status: 502 });
+      } catch {
+        console.warn("[registry] banner blob upload failed");
+        return new Response("banner upload failed", { status: 502 });
       }
       // Pre-generate the 1200×630 JPEG for the og:image cache. This runs
       // after the PDS upload succeeds so a resize failure never blocks saving.
@@ -691,22 +781,22 @@ export const handler = define.handlers({
       let raw: Uint8Array;
       try {
         raw = decodeBase64Limited(upload.dataBase64, ICON_MAX_BYTES, label);
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response(`${label} data is invalid or too large`, {
+          status: 400,
+        });
       }
       let cleaned: Uint8Array;
       try {
         cleaned = sanitizeSvgBytes(raw);
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`invalid svg (${label}): ${m}`, { status: 400 });
+      } catch {
+        return new Response(`invalid svg (${label})`, { status: 400 });
       }
       try {
         return await uploadBlob(userDid, pdsUrl, cleaned, "image/svg+xml");
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`${label} upload failed: ${m}`, { status: 502 });
+      } catch {
+        console.warn("[registry] SVG icon blob upload failed");
+        return new Response(`${label} upload failed`, { status: 502 });
       }
     }
 
@@ -744,6 +834,13 @@ export const handler = define.handlers({
       });
     }
     for (const upload of uploads) {
+      if (
+        !upload || typeof upload !== "object" ||
+        typeof upload.dataBase64 !== "string" ||
+        typeof upload.mimeType !== "string"
+      ) {
+        return new Response("invalid screenshot upload", { status: 400 });
+      }
       if (!SCREENSHOT_MIME_TYPES.has(upload.mimeType)) {
         return new Response("screenshots must be png, jpeg, or webp", {
           status: 400,
@@ -756,9 +853,16 @@ export const handler = define.handlers({
           SCREENSHOT_MAX_BYTES,
           "screenshot",
         );
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(m, { status: 400 });
+      } catch {
+        return new Response("screenshot data is invalid or too large", {
+          status: 400,
+        });
+      }
+      if (!matchesRasterImageSignature(bytes, upload.mimeType)) {
+        return new Response(
+          "screenshot contents do not match the selected image type",
+          { status: 400 },
+        );
       }
       try {
         const image = await uploadBlob(
@@ -768,9 +872,9 @@ export const handler = define.handlers({
           upload.mimeType,
         );
         screenshots.push({ image });
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        return new Response(`screenshot upload failed: ${m}`, { status: 502 });
+      } catch {
+        console.warn("[registry] screenshot blob upload failed");
+        return new Response("screenshot upload failed", { status: 502 });
       }
     }
 
@@ -946,14 +1050,14 @@ export const handler = define.handlers({
           { status: 200, headers: { "content-type": "application/json" } },
         );
       } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        if (m === "missing_icon") {
+        if (err instanceof Error && err.message === "missing_icon") {
           return new Response(
             "ATStore app listings require an app icon/avatar",
             { status: 400 },
           );
         }
-        return new Response(`ATStore listing publish failed: ${m}`, {
+        console.warn("[registry] ATStore listing publish failed");
+        return new Response("ATStore listing publish failed", {
           status: 502,
         });
       }
@@ -966,9 +1070,9 @@ export const handler = define.handlers({
         session.pdsUrl,
         validation.value,
       );
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return new Response(`putRecord failed: ${m}`, { status: 502 });
+    } catch {
+      console.warn("[registry] profile record publish failed");
+      return new Response("profile record publish failed", { status: 502 });
     }
 
     /**
@@ -1014,10 +1118,10 @@ export const handler = define.handlers({
         await upsertLegacyProfileAsApp(latest);
       }
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
       console.error("[registry] inline index after putRecord failed:", err);
       return new Response(
-        `App listing saved to your PDS, but indexing it for Apps failed: ${m}. ` +
+        "App listing saved to your account host, but the directory could not " +
+          "confirm the update. " +
           `Press Publish again to retry.`,
         { status: 502 },
       );
@@ -1053,7 +1157,23 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
-    const requestedListing = ctx.url.searchParams.get("listing");
+    const limited = await enforceDurableRateLimit(ctx.req, {
+      scope: "registry-profile-delete",
+      capacity: 12,
+      refillMs: 60_000,
+    });
+    if (limited) return limited;
+    const requestedListings = ctx.url.searchParams.getAll("listing");
+    if (requestedListings.length > 1) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
+    const requestedListing = requestedListings[0] ?? null;
+    const requestedTarget = requestedListing
+      ? ownedAtstoreTarget(requestedListing, user.did)
+      : null;
+    if (requestedListing && !requestedTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
@@ -1074,23 +1194,19 @@ export const handler = define.handlers({
       });
     }
 
-    if (requestedListing) {
-      const target = ownedAtstoreTarget(requestedListing, user.did);
-      if (!target) {
-        return new Response("invalid app listing target", { status: 400 });
-      }
+    if (requestedTarget) {
       try {
         await deleteRecord(
           user.did,
           session.pdsUrl,
           ATSTORE_LISTING_NSID,
-          target.rkey,
+          requestedTarget.rkey,
         );
-        await deleteAppRecord(target.uri);
-        await releaseAppProfileTarget(user.did, target.rkey);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return new Response(`ATStore listing delete failed: ${message}`, {
+        await deleteAppRecord(requestedTarget.uri);
+        await releaseAppProfileTarget(user.did, requestedTarget.rkey);
+      } catch {
+        console.warn("[registry] ATStore listing delete failed");
+        return new Response("ATStore listing delete failed", {
           status: 502,
         });
       }
@@ -1102,9 +1218,9 @@ export const handler = define.handlers({
 
     try {
       await deleteProfileRecord(user.did, session.pdsUrl);
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return new Response(`deleteRecord failed: ${m}`, { status: 502 });
+    } catch {
+      console.warn("[registry] profile record delete failed");
+      return new Response("profile record delete failed", { status: 502 });
     }
 
     try {
@@ -1122,9 +1238,9 @@ export const handler = define.handlers({
         await deleteAppRecord(existingAtstore.uri);
         await releaseAppProfileTarget(user.did, existingAtstore.rkey);
       }
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      return new Response(`ATStore listing delete failed: ${m}`, {
+    } catch {
+      console.warn("[registry] legacy ATStore listing delete failed");
+      return new Response("ATStore listing delete failed", {
         status: 502,
       });
     }
@@ -1137,8 +1253,12 @@ export const handler = define.handlers({
         "self",
       );
       await deleteAppRecord(communityAppProfileAtUri(user.did));
-    } catch (err) {
-      console.warn("[registry] community app profile delete skipped:", err);
+    } catch {
+      console.error("[registry] community app profile delete failed");
+      return new Response(
+        "The app could not be fully removed from its account host. Try again.",
+        { status: 502 },
+      );
     }
 
     /** Mirror the delete in our local index so /explore stops listing it
@@ -1149,6 +1269,10 @@ export const handler = define.handlers({
       await deleteAppRecord(atmosphereProfileAtUri(user.did));
     } catch (err) {
       console.error("[registry] inline delete-from-index failed:", err);
+      return new Response(
+        "The app was removed from its account host, but the directory could not confirm the removal. Try again.",
+        { status: 503 },
+      );
     }
 
     return new Response(JSON.stringify({ ok: true }), {

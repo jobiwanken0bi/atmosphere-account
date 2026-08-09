@@ -1,4 +1,8 @@
-import { appReviewApiUrl, reviewSortPageUrl } from "./AppReviewList.tsx";
+import {
+  appReviewApiUrl,
+  reviewSortPageUrl,
+  showAppReviewHeaderSummary,
+} from "./AppReviewList.tsx";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -28,4 +32,10 @@ Deno.test("review sorting preserves unrelated page state in history", () => {
     ),
     "/apps/grain?from=featured#reviews",
   );
+});
+
+Deno.test("an empty shared review list owns the single empty-state message", () => {
+  assertEquals(showAppReviewHeaderSummary(0, null, true), false);
+  assertEquals(showAppReviewHeaderSummary(3, 4.7, true), true);
+  assertEquals(showAppReviewHeaderSummary(0, null, false), true);
 });

@@ -91,13 +91,10 @@ export function parseJwkEnv(varName: string, raw: string): JsonWebKey {
     s = s.slice(1, -1).trim();
   }
   if (!s.startsWith("{") || !s.endsWith("}")) {
-    const head = s.slice(0, 30);
-    const tail = s.slice(-30);
     throw new Error(
       `${varName} is not a valid JSON object. ` +
         `Expected it to start with '{' and end with '}'. ` +
-        `Got length=${s.length}, starts with: ${JSON.stringify(head)}, ` +
-        `ends with: ${JSON.stringify(tail)}. ` +
+        `Got length=${s.length}. ` +
         `If you copied this from \`deno task gen:oauth-key\`, paste the ` +
         `raw JSON object including the surrounding braces, with no extra ` +
         `quotes around it.`,
@@ -191,7 +188,12 @@ export async function verifyEs256(
   }
   if (header.alg !== "ES256") return null;
   const publicKey = await importEs256PublicKey(publicJwk);
-  const signature = b64uDecode(encodedSignature);
+  let signature: Uint8Array;
+  try {
+    signature = b64uDecode(encodedSignature);
+  } catch {
+    return null;
+  }
   const signatureBuf = new ArrayBuffer(signature.byteLength);
   new Uint8Array(signatureBuf).set(signature);
   const ok = await crypto.subtle.verify(
@@ -204,11 +206,22 @@ export async function verifyEs256(
 }
 
 /** Public JWK (no private key components) usable in DPoP `jwk` header. */
-export function publicJwkOnly(jwk: JsonWebKey): JsonWebKey {
-  const { kty, crv, x, y, e, n } = jwk;
-  const out: JsonWebKey = { kty, crv, x, y };
+export type PublicJsonWebKey = JsonWebKey & { kid?: string };
+
+export function publicJwkOnly(jwk: JsonWebKey): PublicJsonWebKey {
+  const source = jwk as PublicJsonWebKey;
+  const { kty, crv, x, y, e, n, alg, ext, kid, use } = source;
+  const out: PublicJsonWebKey = { kty, crv, x, y };
   if (e) out.e = e;
   if (n) out.n = n;
+  // These fields describe the public key and are safe/necessary in a JWKS.
+  // Private key material (`d`, and RSA CRT fields) is deliberately omitted
+  // even if an operator accidentally supplies a private JWK to a public-key
+  // endpoint.
+  if (alg) out.alg = alg;
+  if (typeof ext === "boolean") out.ext = ext;
+  if (kid) out.kid = kid;
+  if (use) out.use = use;
   return out;
 }
 
@@ -247,7 +260,12 @@ export async function hmacVerify(
   signature: string,
 ): Promise<boolean> {
   const key = await hmacKey(secret);
-  const sig = b64uDecode(signature);
+  let sig: Uint8Array;
+  try {
+    sig = b64uDecode(signature);
+  } catch {
+    return false;
+  }
   const sigBuf = new ArrayBuffer(sig.byteLength);
   new Uint8Array(sigBuf).set(sig);
   return await crypto.subtle.verify(

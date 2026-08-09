@@ -152,6 +152,7 @@ function errorValue(value: unknown): Error {
 export function postgresPoolOptions(
   connectionString: string,
   rawPoolMax = Deno.env.get("POSTGRES_POOL_MAX"),
+  rawSslMode = Deno.env.get("POSTGRES_SSL_MODE"),
 ) {
   const parsedMax = Number(rawPoolMax ?? DEFAULT_POSTGRES_POOL_MAX);
   const max = Number.isSafeInteger(parsedMax) && parsedMax > 0
@@ -161,7 +162,7 @@ export function postgresPoolOptions(
     connectionString,
     max,
     idleTimeoutMillis: 0,
-    ssl: sslConfigForConnectionString(connectionString),
+    ssl: sslConfigForConnectionString(connectionString, rawSslMode),
   };
 }
 
@@ -172,22 +173,29 @@ export async function closePostgresExecuteClient(
   await maybe.end?.();
 }
 
-function sslConfigForConnectionString(connectionString: string) {
-  const envMode = Deno.env.get("POSTGRES_SSL_MODE")?.trim().toLowerCase();
+function sslConfigForConnectionString(
+  connectionString: string,
+  rawSslMode: string | undefined,
+): false | { rejectUnauthorized: boolean } {
+  const envMode = rawSslMode?.trim().toLowerCase();
   if (envMode === "disable" || envMode === "false" || envMode === "0") {
     return false;
   }
-  if (envMode === "require" || envMode === "true" || envMode === "1") {
+  if (envMode === "no-verify" || envMode === "insecure") {
     return { rejectUnauthorized: false };
+  }
+  if (envMode === "require" || envMode === "true" || envMode === "1") {
+    return { rejectUnauthorized: true };
   }
   const url = new URL(connectionString);
   const sslMode = url.searchParams.get("sslmode")?.toLowerCase();
   if (sslMode === "disable") return false;
+  if (sslMode === "no-verify") return { rejectUnauthorized: false };
   if (
     sslMode === "require" || sslMode === "verify-ca" ||
     sslMode === "verify-full"
   ) {
-    return { rejectUnauthorized: false };
+    return { rejectUnauthorized: true };
   }
   if (
     url.hostname === "localhost" || url.hostname === "127.0.0.1" ||
@@ -195,7 +203,7 @@ function sslConfigForConnectionString(connectionString: string) {
   ) {
     return false;
   }
-  return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true };
 }
 
 function valueForPostgres(value: unknown): DbValue | Buffer {

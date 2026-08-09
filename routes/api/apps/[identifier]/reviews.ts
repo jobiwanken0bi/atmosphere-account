@@ -17,7 +17,11 @@ import {
 } from "../../../../lib/oauth.ts";
 import { isPdsScopeMissingError, putRecord } from "../../../../lib/pds.ts";
 import { createAtprotoTid } from "../../../../lib/tid.ts";
-import { rejectLargeRequest } from "../../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../../lib/security.ts";
 import { hasOAuthCapabilities } from "../../../../lib/oauth-scopes.ts";
 import { oauthReauthorizationUrl } from "../../../../lib/oauth-action.ts";
 
@@ -78,9 +82,18 @@ export const handler = define.handlers({
       return jsonError(400, "cannot_review_self");
     }
 
-    const body = await ctx.req.json().catch(() => null) as
-      | ReviewPayload
-      | null;
+    let body: ReviewPayload | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_REVIEW_REQUEST_BYTES,
+      ) as ReviewPayload | null;
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      body = null;
+    }
     if (!body) return jsonError(400, "invalid_body");
 
     const rating = parseRating(body.rating);

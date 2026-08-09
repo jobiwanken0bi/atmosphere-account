@@ -2,7 +2,9 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   hasHostProfileResumeMarker,
   hostProfilePendingKey,
+  hostProfileResumeLocation,
   hostProfileResumePath,
+  hostProfileResumeProofKey,
   pendingHostProfileAction,
   pendingHostProfileEntriesForContext,
   withoutHostProfileResumeMarker,
@@ -22,6 +24,15 @@ Deno.test("host profile pending drafts are isolated by DID and host", () => {
   assertEquals(
     hostProfilePendingKey("did:plc:alice", "PDS.Example"),
     hostProfilePendingKey("did:plc:alice", "pds.example"),
+  );
+  assertEquals(
+    hostProfileResumeProofKey(
+      hostProfilePendingKey("did:plc:alice", "pds.example"),
+    ) ===
+      hostProfileResumeProofKey(
+        hostProfilePendingKey("did:plc:alice", "other.example"),
+      ),
+    false,
   );
 });
 
@@ -74,4 +85,20 @@ Deno.test("host profile resume marker is explicit, one-shot, and query-safe", ()
     withoutHostProfileResumeMarker(resumed),
     "/hosts/pds.example/manage?tab=profile#avatar",
   );
+  assertEquals(hostProfileResumeLocation(resumed), {
+    hadMarker: true,
+    shouldResume: true,
+    cleanLocation: "/hosts/pds.example/manage?tab=profile#avatar",
+  });
+});
+
+Deno.test("duplicate host profile return markers never authorize resume", () => {
+  const url = new URL(
+    "https://atmosphereaccount.com/hosts/pds.example/manage?resume_host_profile=1&resume_host_profile=1",
+  );
+  assertEquals(hostProfileResumeLocation(url), {
+    hadMarker: true,
+    shouldResume: false,
+    cleanLocation: "/hosts/pds.example/manage",
+  });
 });

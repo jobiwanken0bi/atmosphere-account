@@ -1,5 +1,8 @@
 import { normalizeServiceEndpoint } from "./identity.ts";
-import { readResponseTextWithLimit } from "./security.ts";
+import {
+  isPrivateNetworkHostname,
+  readResponseTextWithLimit,
+} from "./security.ts";
 
 export interface PdsServerDescription {
   did: string | null;
@@ -36,6 +39,9 @@ const DESCRIBE_SERVER_PATH = "/xrpc/com.atproto.server.describeServer";
 const DESCRIBE_SERVER_TIMEOUT_MS = 2500;
 const DESCRIBE_SERVER_MAX_BYTES = 32_000;
 const DESCRIBE_SERVER_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_DESCRIBE_SERVER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_DESCRIBE_SERVER_CACHE_ENTRIES = 500;
+const MAX_AVAILABLE_USER_DOMAINS = 100;
 
 const cache = new Map<
   string,
@@ -50,8 +56,20 @@ function boolOrNull(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
-function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+function stringOrNull(value: unknown, maxLength = 2_048): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text && text.length <= maxLength && !hasControlCharacters(text)
+    ? text
+    : null;
+}
+
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
 }
 
 function didOrNull(value: unknown): string | null {
@@ -60,11 +78,14 @@ function didOrNull(value: unknown): string | null {
 }
 
 function publicUrlOrNull(value: unknown): string | null {
-  const raw = stringOrNull(value);
+  const raw = stringOrNull(value, 2_048);
   if (!raw) return null;
   try {
     const url = new URL(raw);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (
+      url.protocol !== "https:" || url.username || url.password ||
+      isPrivateNetworkHostname(url.hostname)
+    ) return null;
     url.hash = "";
     return url.toString();
   } catch {
@@ -73,7 +94,7 @@ function publicUrlOrNull(value: unknown): string | null {
 }
 
 function availableDomainOrNull(value: unknown): string | null {
-  const raw = stringOrNull(value)?.replace(/^@/, "").replace(/^\./, "")
+  const raw = stringOrNull(value, 255)?.replace(/^@/, "").replace(/^\./, "")
     .toLowerCase();
   if (!raw || raw.length > 253) return null;
   const labels = raw.split(".");
@@ -100,7 +121,7 @@ export function parsePdsServerDescription(
   if (!record) return null;
 
   const rawDomains = Array.isArray(record.availableUserDomains)
-    ? record.availableUserDomains
+    ? record.availableUserDomains.slice(0, MAX_AVAILABLE_USER_DOMAINS)
     : [];
   const availableUserDomains = [
     ...new Set(
@@ -117,7 +138,7 @@ export function parsePdsServerDescription(
     phoneVerificationRequired: boolOrNull(record.phoneVerificationRequired),
     privacyPolicyUrl: publicUrlOrNull(links?.privacyPolicy),
     termsOfServiceUrl: publicUrlOrNull(links?.termsOfService),
-    contactEmail: stringOrNull(contact?.email),
+    contactEmail: stringOrNull(contact?.email, 254),
     checkedAt,
   };
 }
@@ -134,16 +155,27 @@ export async function fetchPdsServerDescription(
   if (!serviceEndpoint?.trim()) return null;
   let normalized: string;
   try {
-    normalized = normalizeServiceEndpoint(serviceEndpoint);
+    normalized = new URL(normalizeServiceEndpoint(serviceEndpoint)).origin;
   } catch {
     return null;
   }
 
-  const ts = Math.max(0, Math.floor(options.checkedAt ?? now()));
-  const cacheTtlMs = Math.max(
-    0,
-    options.cacheTtlMs ?? DESCRIBE_SERVER_CACHE_TTL_MS,
-  );
+  const requestedCheckedAt = options.checkedAt ?? now();
+  const ts = Number.isFinite(requestedCheckedAt) && requestedCheckedAt >= 0
+    ? Math.floor(requestedCheckedAt)
+    : now();
+  const requestedCacheTtl = options.cacheTtlMs ??
+    DESCRIBE_SERVER_CACHE_TTL_MS;
+  const cacheTtlMs = Number.isFinite(requestedCacheTtl)
+    ? Math.min(
+      MAX_DESCRIBE_SERVER_CACHE_TTL_MS,
+      Math.max(0, Math.floor(requestedCacheTtl)),
+    )
+    : DESCRIBE_SERVER_CACHE_TTL_MS;
+  const requestedTimeout = options.timeoutMs ?? DESCRIBE_SERVER_TIMEOUT_MS;
+  const timeoutMs = Number.isFinite(requestedTimeout)
+    ? Math.min(30_000, Math.max(500, Math.floor(requestedTimeout)))
+    : DESCRIBE_SERVER_TIMEOUT_MS;
   const cached = cache.get(normalized);
   if (cacheTtlMs > 0 && cached && cached.expiresAt > ts) return cached.value;
 
@@ -153,21 +185,44 @@ export async function fetchPdsServerDescription(
   try {
     const response = await fetchImpl(url, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(
-        Math.max(500, options.timeoutMs ?? DESCRIBE_SERVER_TIMEOUT_MS),
-      ),
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    if (response.ok) {
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+    } else if (!isJsonMediaType(response.headers.get("content-type"))) {
+      await response.body?.cancel().catch(() => {});
+    } else {
       const text = await readResponseTextWithLimit(
         response,
         DESCRIBE_SERVER_MAX_BYTES,
       );
-      if (text.ok) value = parsePdsServerDescription(JSON.parse(text.text), ts);
+      if (text.ok) {
+        value = parsePdsServerDescription(JSON.parse(text.text), ts);
+      }
     }
   } catch {
     value = null;
   }
 
+  trimDescriptionCache(ts);
+  cache.delete(normalized);
   cache.set(normalized, { value, expiresAt: ts + cacheTtlMs });
   return value;
+}
+
+function isJsonMediaType(value: string | null): boolean {
+  const mediaType = (value ?? "").split(";", 1)[0].trim().toLowerCase();
+  return mediaType === "application/json" || mediaType.endsWith("+json");
+}
+
+function trimDescriptionCache(ts: number): void {
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= ts) cache.delete(key);
+  }
+  while (cache.size >= MAX_DESCRIBE_SERVER_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    cache.delete(oldest);
+  }
 }

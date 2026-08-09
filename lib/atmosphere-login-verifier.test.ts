@@ -19,6 +19,7 @@ const VERIFY_BASE = {
   expectedIssuer: "https://login.atmosphereaccount.com",
   expectedClientId: "https://app.example/client.json",
   expectedReturnUri: "https://app.example/callback",
+  expectedState: "expected-state",
 };
 
 Deno.test("verifyAtmosphereLoginCallback rejects malformed callback URLs without throwing", async () => {
@@ -31,7 +32,7 @@ Deno.test("verifyAtmosphereLoginCallback rejects malformed callback URLs without
   assertEquals(result.ok ? null : result.error, "invalid callback URL");
 });
 
-Deno.test("verifyAtmosphereLoginCallback requires a state binding", async () => {
+Deno.test("verifyAtmosphereLoginCallback requires caller-retained state", async () => {
   const url = new URL(VERIFY_BASE.expectedReturnUri);
   url.searchParams.set("selection_token", "not-a-real-token");
   url.searchParams.set("client_id", VERIFY_BASE.expectedClientId);
@@ -39,10 +40,38 @@ Deno.test("verifyAtmosphereLoginCallback requires a state binding", async () => 
   const result = await verifyAtmosphereLoginCallback({
     ...VERIFY_BASE,
     url,
+    expectedState: "",
   });
 
   assertEquals(result.ok, false);
-  assertEquals(result.ok ? null : result.error, "missing state");
+  assertEquals(result.ok ? null : result.error, "missing expected state");
+});
+
+Deno.test("verifyAtmosphereLoginCallback rejects duplicate and oversized callback tokens", async () => {
+  const duplicate = await verifyAtmosphereLoginCallback({
+    ...VERIFY_BASE,
+    url:
+      `${VERIFY_BASE.expectedReturnUri}?selection_token=one&selection_token=two&client_id=${
+        encodeURIComponent(VERIFY_BASE.expectedClientId)
+      }&state=expected-state`,
+  });
+  assertEquals(
+    duplicate.ok ? null : duplicate.error,
+    "duplicate callback parameter",
+  );
+
+  const url = new URL(VERIFY_BASE.expectedReturnUri);
+  url.searchParams.set("selection_token", "x".repeat(8_193));
+  url.searchParams.set("client_id", VERIFY_BASE.expectedClientId);
+  url.searchParams.set("state", VERIFY_BASE.expectedState);
+  const oversized = await verifyAtmosphereLoginCallback({
+    ...VERIFY_BASE,
+    url,
+  });
+  assertEquals(
+    oversized.ok ? null : oversized.error,
+    "selection_token is too large",
+  );
 });
 
 Deno.test("selectAtmosphereLoginPublicJwk selects the requested kid", () => {
@@ -86,12 +115,12 @@ Deno.test("fetchAtmosphereLoginPublicJwk selects the requested kid from JWKS", a
       kid: "current",
       fetchImpl: () =>
         Promise.resolve(
-          new Response(JSON.stringify({
+          jsonResponse({
             keys: [
               { kid: "old", kty: "EC" },
               { kid: "current", kty: "EC" },
             ],
-          })),
+          }),
         ),
     },
   );
@@ -109,12 +138,12 @@ Deno.test("fetchAtmosphereLoginPublicJwkForToken selects the token kid from JWKS
     {
       fetchImpl: () =>
         Promise.resolve(
-          new Response(JSON.stringify({
+          jsonResponse({
             keys: [
               { kid: "old", kty: "EC" },
               { kid: "current", kty: "EC" },
             ],
-          })),
+          }),
         ),
     },
   );
@@ -133,9 +162,9 @@ Deno.test("fetchAtmosphereLoginPublicJwkForToken requires a token kid", async ()
       {
         fetchImpl: () =>
           Promise.resolve(
-            new Response(JSON.stringify({
+            jsonResponse({
               keys: [{ kid: "current", kty: "EC" }],
-            })),
+            }),
           ),
       },
     );
@@ -155,9 +184,9 @@ Deno.test("fetchAtmosphereLoginPublicJwk caches JWKS within the cache TTL", asyn
   const fetchImpl = (): Promise<Response> => {
     fetchCount++;
     return Promise.resolve(
-      new Response(JSON.stringify({
+      jsonResponse({
         keys: [{ kid: "current", kty: "EC" }],
-      })),
+      }),
     );
   };
 
@@ -181,7 +210,7 @@ Deno.test("fetchAtmosphereLoginPublicJwk refreshes cached JWKS on kid miss", asy
     const keys = fetchCount === 1
       ? [{ kid: "old", kty: "EC" }]
       : [{ kid: "current", kty: "EC" }];
-    return Promise.resolve(new Response(JSON.stringify({ keys })));
+    return Promise.resolve(jsonResponse({ keys }));
   };
 
   await fetchAtmosphereLoginPublicJwk("https://login.example", {
@@ -200,10 +229,88 @@ Deno.test("fetchAtmosphereLoginPublicJwk refreshes cached JWKS on kid miss", asy
   assertEquals(fetchCount, 2);
 });
 
+Deno.test("fetchAtmosphereLoginPublicJwk requires a JSON media type", async () => {
+  clearAtmosphereLoginJwksCache();
+  try {
+    await fetchAtmosphereLoginPublicJwk("https://login.example", {
+      cache: false,
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response('{"keys":[]}', {
+            headers: { "content-type": "text/html" },
+          }),
+        ),
+    });
+  } catch (error) {
+    assertEquals(
+      error instanceof Error ? error.message : String(error),
+      "Atmosphere Login JWKS response was not JSON",
+    );
+    return;
+  }
+  throw new Error("Expected a non-JSON JWKS response to be rejected");
+});
+
+Deno.test("fetchAtmosphereLoginPublicJwk bounds streamed JWKS bodies", async () => {
+  clearAtmosphereLoginJwksCache();
+  try {
+    await fetchAtmosphereLoginPublicJwk("https://login.example", {
+      cache: false,
+      maxResponseBytes: 16,
+      fetchImpl: () =>
+        Promise.resolve(jsonResponse({
+          keys: [{ kid: "current", kty: "EC" }],
+        })),
+    });
+  } catch (error) {
+    assertEquals(
+      error instanceof Error ? error.message : String(error),
+      "Atmosphere Login JWKS response was too large",
+    );
+    return;
+  }
+  throw new Error("Expected an oversized JWKS response to be rejected");
+});
+
+Deno.test("fetchAtmosphereLoginPublicJwk times out a stalled JWKS body", async () => {
+  clearAtmosphereLoginJwksCache();
+  try {
+    await fetchAtmosphereLoginPublicJwk("https://login.example", {
+      cache: false,
+      timeoutMs: 5,
+      fetchImpl: () => Promise.resolve(stalledJsonResponse()),
+    });
+  } catch (error) {
+    assertEquals(
+      error instanceof Error ? error.message : String(error),
+      "Atmosphere Login JWKS request timed out",
+    );
+    return;
+  }
+  throw new Error("Expected a stalled JWKS response to time out");
+});
+
 function fakeToken(header: Record<string, unknown>): string {
   return `${b64uEncode(JSON.stringify(header))}.${
     b64uEncode(JSON.stringify({ sub: "did:example:test" }))
   }.signature`;
+}
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function stalledJsonResponse(): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"keys":['));
+      },
+    }),
+    { headers: { "content-type": "application/json" } },
+  );
 }
 
 function jwkKid(jwk: JsonWebKey): string | undefined {

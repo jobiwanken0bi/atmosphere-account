@@ -1,4 +1,5 @@
 import type { OAuthCapability } from "./oauth-scopes.ts";
+import { isSafeRelativePath } from "./security.ts";
 
 export const OAUTH_ACTIONS = [
   "account",
@@ -6,6 +7,8 @@ export const OAUTH_ACTIONS = [
   "review_manage",
   "legacy_review",
   "legacy_review_manage",
+  "review_response",
+  "report_review",
   "favorite",
   "app",
   "host_claim",
@@ -13,6 +16,8 @@ export const OAUTH_ACTIONS = [
   "host_transfer",
   "app_host",
   "developer",
+  "relationship_confirm",
+  "admin",
 ] as const;
 
 export type OAuthAction = typeof OAUTH_ACTIONS[number];
@@ -21,6 +26,7 @@ export const ACCOUNT_CREATION_ACTIONS = [
   "account",
   "review",
   "legacy_review",
+  "report_review",
   "favorite",
   "app",
   "host_claim",
@@ -65,6 +71,8 @@ const OAUTH_ACTION_CAPABILITY_BUNDLES = {
   review_manage: [["review_manage"]],
   legacy_review: [["legacy_review"]],
   legacy_review_manage: [["legacy_review"]],
+  review_response: [["identity"]],
+  report_review: [["identity"]],
   favorite: [["favorite"]],
   app: [APP_MANAGEMENT_CAPABILITIES],
   host_claim: [HOST_MANAGEMENT_CAPABILITIES],
@@ -72,6 +80,8 @@ const OAUTH_ACTION_CAPABILITY_BUNDLES = {
   host_transfer: [HOST_MANAGEMENT_CAPABILITIES],
   app_host: [APP_HOST_MANAGEMENT_CAPABILITIES],
   developer: [["identity"]],
+  relationship_confirm: [["identity"]],
+  admin: [["identity"]],
 } as const satisfies Record<
   OAuthAction,
   readonly (readonly OAuthCapability[])[]
@@ -145,8 +155,9 @@ export function safeOAuthTargetName(value: unknown): string | undefined {
 function isUnsafeLabelCharacter(character: string): boolean {
   const code = character.codePointAt(0) ?? 0;
   return code <= 0x1f || (code >= 0x7f && code <= 0x9f) ||
+    code === 0x061c || (code >= 0x200b && code <= 0x200f) ||
     (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2066 && code <= 0x2069);
+    (code >= 0x2060 && code <= 0x206f) || code === 0xfeff;
 }
 
 interface ActionUrlInput {
@@ -195,6 +206,9 @@ export function oauthLoginUrl(
 }
 
 function actionParams(input: ActionUrlInput): URLSearchParams {
+  if (!isSafeRelativePath(input.next)) {
+    throw new TypeError("OAuth return target must be a local path");
+  }
   if (!isOAuthActionCapabilityRequest(input.action, input.capabilities)) {
     throw new TypeError(
       `Invalid capability bundle for OAuth action "${input.action}"`,

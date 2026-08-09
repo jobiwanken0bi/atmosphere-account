@@ -4,7 +4,7 @@ import { upsertAppRecordFromDraft } from "./app-directory.ts";
 import type { BlobRef, LinkEntry, ProfileRecord } from "./lexicons.ts";
 import { listRecordsPublic, putRecord } from "./pds.ts";
 import type { ProfileRow } from "./registry.ts";
-import { createAtprotoTid } from "./tid.ts";
+import { createAtprotoTid, isAtprotoTid } from "./tid.ts";
 import { reserveAppProfileTarget } from "./app-profile-cardinality.ts";
 
 export interface AtstoreListingLink {
@@ -315,8 +315,10 @@ export async function publishAtstoreListingFromProfileRecord(
   },
 ): Promise<AtstoreMigrationPublishResult> {
   const existing = asRecord(input.existingRecord?.value);
-  const rkey = input.existingRecord?.rkey || input.rkeyOverride ||
-    createAtstoreListingRkey();
+  const rkey = atstoreListingPublishRkey(
+    input.existingRecord?.rkey,
+    input.rkeyOverride,
+  );
   const record = buildAtstoreListingFromProfileRecord({
     did: input.did,
     handle: input.handle,
@@ -346,6 +348,20 @@ export async function publishAtstoreListingFromProfileRecord(
     );
   }
   return indexed;
+}
+
+export function atstoreListingPublishRkey(
+  existingRkey?: string | null,
+  requestedRkey?: string | null,
+): string {
+  if (existingRkey) return existingRkey;
+  if (requestedRkey) {
+    if (!isAtprotoTid(requestedRkey)) {
+      throw new Error("Invalid ATStore listing creation key.");
+    }
+    return requestedRkey;
+  }
+  return createAtstoreListingRkey();
 }
 
 function distinctAppSlug(name: string, rkey: string): string {

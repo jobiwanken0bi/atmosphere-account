@@ -20,8 +20,16 @@ import {
   prepareHostDnsChallenge,
 } from "./host-claim-dns.ts";
 import type { ResolvedHostOwnerTransferContext } from "./host-owner-transfer-intent.ts";
-import { resolveIdentity as resolveAtprotoIdentity } from "./identity.ts";
-import { isPrivateNetworkUrl } from "./security.ts";
+import {
+  isDid,
+  isHandle,
+  resolveIdentity as resolveAtprotoIdentity,
+} from "./identity.ts";
+import {
+  isJsonMediaType,
+  isPrivateNetworkUrl,
+  readResponseTextWithLimit,
+} from "./security.ts";
 
 export type HostSignupStatus =
   | "open"
@@ -886,13 +894,22 @@ async function fetchHostProfile(handle: string): Promise<HostProfile | null> {
   url.searchParams.set("actor", handle);
   const res = await fetch(url.toString(), {
     headers: { accept: "application/json" },
+    redirect: "manual",
     signal: AbortSignal.timeout(3500),
   });
   if (res.status === 400 || res.status === 404) return null;
   if (!res.ok) throw new Error(`host profile HTTP ${res.status}`);
-  const json = await res.json() as Record<string, unknown>;
+  if (!isJsonMediaType(res.headers.get("content-type"))) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error("host profile returned a non-JSON response");
+  }
+  const body = await readResponseTextWithLimit(res, 256 * 1024);
+  if (!body.ok) throw new Error(`host profile ${body.error}`);
+  const json = JSON.parse(body.text) as Record<string, unknown>;
   const did = typeof json.did === "string" ? json.did : "";
-  const resolvedHandle = typeof json.handle === "string" ? json.handle : "";
+  const resolvedHandle = typeof json.handle === "string"
+    ? json.handle.toLowerCase()
+    : "";
   const displayName = typeof json.displayName === "string" &&
       json.displayName.trim()
     ? json.displayName.trim().slice(0, 80)
@@ -901,9 +918,17 @@ async function fetchHostProfile(handle: string): Promise<HostProfile | null> {
       json.description.trim()
     ? json.description.trim().slice(0, 600)
     : null;
-  const avatarUrl = typeof json.avatar === "string" ? json.avatar : null;
-  if (!did || !resolvedHandle) return null;
+  const avatarUrl = typeof json.avatar === "string"
+    ? normalizeAccountHostPublicHttpsUrl(json.avatar)
+    : null;
+  if (!isDid(did) || !isHandle(resolvedHandle)) return null;
   return { did, handle: resolvedHandle, displayName, description, avatarUrl };
+}
+
+export async function fetchHostProfileForTest(
+  handle: string,
+): Promise<HostProfile | null> {
+  return await fetchHostProfile(handle);
 }
 
 function hostNeedsProfileRefresh(host: AccountHost, ts: number): boolean {

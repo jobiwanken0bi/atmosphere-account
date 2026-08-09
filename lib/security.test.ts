@@ -5,6 +5,7 @@ import {
   isPrivateNetworkUrl,
   isSafeRelativePath,
   isSameOriginUnsafeRequest,
+  readFormDataRequestWithLimit,
   readJsonRequestWithLimit,
   readResponseTextWithLimit,
   requestBodyTooLarge,
@@ -151,6 +152,61 @@ Deno.test("bounded JSON reader rejects oversized streamed requests", async () =>
   }
   assertEquals(tooLarge, true);
 });
+
+Deno.test("bounded form reader rejects oversized streamed requests", async () => {
+  const request = new Request(
+    "https://atmosphereaccount.com/hosts/example.com/manage",
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("action=save&value="));
+          controller.enqueue(new TextEncoder().encode("too-large"));
+          controller.close();
+        },
+      }),
+    },
+  );
+  let tooLarge = false;
+  try {
+    await readFormDataRequestWithLimit(request, 8);
+  } catch (error) {
+    tooLarge = error instanceof RequestBodyTooLargeError;
+  }
+  assertEquals(tooLarge, true);
+});
+
+Deno.test("route handlers do not use unbounded request body parsers", async () => {
+  for (const sourceUrl of await productionRouteSources()) {
+    const source = await Deno.readTextFile(sourceUrl);
+    const unbounded = /\b(?:ctx\.)?req\.(?:formData|json)\s*\(/.exec(source);
+    if (unbounded) {
+      throw new Error(
+        `${sourceUrl.pathname} uses unbounded ${unbounded[0]}`,
+      );
+    }
+  }
+});
+
+async function productionRouteSources(
+  directory = new URL("../routes/", import.meta.url),
+): Promise<URL[]> {
+  const sources: URL[] = [];
+  for await (const entry of Deno.readDir(directory)) {
+    const entryUrl = new URL(entry.name, directory);
+    if (entry.isDirectory) {
+      entryUrl.pathname += "/";
+      sources.push(...await productionRouteSources(entryUrl));
+    } else if (
+      entry.isFile && /\.tsx?$/.test(entry.name) &&
+      !/\.test\.tsx?$/.test(entry.name)
+    ) {
+      sources.push(entryUrl);
+    }
+  }
+  return sources;
+}
 
 Deno.test("token-bearing Atmosphere Login pages force private browser headers", () => {
   for (

@@ -6,7 +6,9 @@ import {
 } from "../../../../lib/host-dashboard.ts";
 import {
   isPrivateNetworkUrl,
+  readJsonRequestWithLimit,
   rejectLargeRequest,
+  RequestBodyTooLargeError,
 } from "../../../../lib/security.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 
@@ -57,7 +59,20 @@ export const handler = define.handlers({
     );
     if (large) return large;
 
-    const body = await ctx.req.json().catch(() => null);
+    let body: unknown;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_HOST_DASHBOARD_MANIFEST_BODY_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid request",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     if (!body || typeof body !== "object") {
       return json({
         ok: false,

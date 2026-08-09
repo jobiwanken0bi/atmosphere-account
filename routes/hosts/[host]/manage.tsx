@@ -49,7 +49,9 @@ import {
 } from "../../../lib/pds.ts";
 import {
   isPrivateNetworkUrl,
+  readFormDataRequestWithLimit,
   rejectLargeRequest,
+  RequestBodyTooLargeError,
 } from "../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 import {
@@ -252,7 +254,18 @@ export const handler = define.handlers({
       );
     }
 
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_HOST_MANAGE_FORM_BYTES,
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      form = null;
+    }
     const values = valuesFromForm(form, host);
     const action = textValue(form?.get("action"));
     const hostProfileJson = action === "save_profile" &&
@@ -793,6 +806,8 @@ function HostManagePage(props: HostManagePageProps) {
                       notice={notice ?? null}
                       dashboard={dashboard}
                       activeDid={account.user?.did ?? ""}
+                      activeHandle={account.user?.handle ?? ""}
+                      rememberedAccounts={account.rememberedAccounts}
                     />
                   </>
                 )
@@ -825,6 +840,8 @@ function ManageBody(
     notice,
     dashboard,
     activeDid,
+    activeHandle,
+    rememberedAccounts,
   }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
@@ -835,6 +852,8 @@ function ManageBody(
     notice: string | null;
     dashboard: ReturnType<typeof buildHostDashboardState>;
     activeDid: string;
+    activeHandle: string;
+    rememberedAccounts: Array<{ did: string; handle: string }>;
   },
 ) {
   if (state === "not-claimed") {
@@ -1239,7 +1258,13 @@ function ManageBody(
             </div>
           </div>
           <div class="host-manage-actions">
-            <HostProfileSaveButton did={activeDid} host={host.host} />
+            <HostProfileSaveButton
+              did={activeDid}
+              host={host.host}
+              targetName={host.displayName}
+              currentHandle={activeHandle}
+              rememberedAccounts={rememberedAccounts}
+            />
           </div>
         </form>
       </section>

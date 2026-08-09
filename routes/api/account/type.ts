@@ -14,7 +14,9 @@ import { getProfileByDid } from "../../../lib/registry.ts";
 import { microblogAccountIdentity } from "../../../lib/microblog-account-identity.ts";
 import {
   isSafeRelativePath,
+  readFormDataRequestWithLimit,
   rejectLargeRequest,
+  RequestBodyTooLargeError,
 } from "../../../lib/security.ts";
 
 const MAX_ACCOUNT_TYPE_FORM_BYTES = 8_192;
@@ -33,7 +35,20 @@ export const handler = define.handlers({
     if (!user) {
       return new Response("not authenticated", { status: 401 });
     }
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_ACCOUNT_TYPE_FORM_BYTES,
+      );
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid request",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const raw = form?.get("accountType");
     const rawNext = form?.get("next");
     const next = typeof rawNext === "string" && isSafeRelativePath(rawNext)

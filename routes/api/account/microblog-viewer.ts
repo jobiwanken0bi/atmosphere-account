@@ -6,7 +6,11 @@ import {
   updateAppUserBskyClient,
 } from "../../../lib/account-types.ts";
 import { isProfileMicroblogViewerId } from "../../../lib/bsky-clients.ts";
-import { rejectLargeRequest } from "../../../lib/security.ts";
+import {
+  readJsonRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
 
 const MAX_MICROBLOG_VIEWER_BODY_BYTES = 8_192;
 
@@ -30,9 +34,20 @@ export const handler = define.handlers({
       return new Response("user account required", { status: 403 });
     }
 
-    const body = await ctx.req.json().catch(() => null) as
-      | { bskyClientId?: unknown; visible?: unknown }
-      | null;
+    let body: { bskyClientId?: unknown; visible?: unknown } | null;
+    try {
+      body = await readJsonRequestWithLimit(
+        ctx.req,
+        MAX_MICROBLOG_VIEWER_BODY_BYTES,
+      ) as typeof body;
+    } catch (error) {
+      return new Response(
+        error instanceof RequestBodyTooLargeError
+          ? "request body too large"
+          : "invalid request",
+        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
+      );
+    }
     const clientId = typeof body?.bskyClientId === "string"
       ? body.bskyClientId
       : null;

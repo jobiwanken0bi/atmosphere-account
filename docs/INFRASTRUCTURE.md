@@ -151,6 +151,15 @@ deno task db:copy:postgres -- --write --reset
 ATMOSPHERE_DB_BACKEND=postgres deno task db:smoke -- --backend=postgres
 ```
 
+Routine source-linked Railway releases do not depend on an operator running the
+first command manually. The root `railway.json` runs it as a blocking pre-deploy
+command for both the web/appview and indexer images. The generic Postgres runner
+acquires a transaction-scoped advisory lock before any DDL, so concurrent
+service deploys serialize safely and either service can migrate first. A failed
+migration prevents the new service deployment from starting. The advisory lock
+is injected only by the Postgres runner; the shared SQL file and Neon migration
+behavior remain unchanged.
+
 Cutover acceptance checks:
 
 - Railway Postgres contains the copied appview rows.

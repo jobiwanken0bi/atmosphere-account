@@ -54,6 +54,10 @@ Deno.test("database maintenance preserves refresh sessions while removing expire
     0,
   );
   assertEquals(
+    calls.filter((call) => /DELETE FROM oauth_session/i.test(call.sql)).length,
+    0,
+  );
+  assertEquals(
     calls.filter((call) => /PRAGMA optimize/i.test(call.sql)).length,
     0,
   );

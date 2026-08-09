@@ -165,6 +165,7 @@
     };
     function onMessage(event) {
       if (!event || event.origin !== expectedOrigin) return;
+      if (popup && event.source !== popup) return;
       const data = event.data;
       if (!data || data.type !== POPUP_MESSAGE_TYPE || data.version !== 1) {
         return;

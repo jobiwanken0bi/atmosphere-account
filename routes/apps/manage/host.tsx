@@ -20,7 +20,11 @@ import {
 } from "../../../lib/directory-entity-links.ts";
 import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
-import { rejectLargeRequest } from "../../../lib/security.ts";
+import {
+  readFormDataRequestWithLimit,
+  rejectLargeRequest,
+  RequestBodyTooLargeError,
+} from "../../../lib/security.ts";
 import {
   loadManagedAppPortfolio,
   selectManagedApp,
@@ -73,7 +77,18 @@ export const handler = define.handlers({
     const large = rejectLargeRequest(ctx.req, MAX_RELATIONSHIP_FORM_BYTES);
     if (large) return large;
 
-    const form = await ctx.req.formData().catch(() => null);
+    let form: FormData | null;
+    try {
+      form = await readFormDataRequestWithLimit(
+        ctx.req,
+        MAX_RELATIONSHIP_FORM_BYTES,
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      form = null;
+    }
     if (!form) {
       return await renderForOwner(ctx, {
         error: "Invalid form.",
