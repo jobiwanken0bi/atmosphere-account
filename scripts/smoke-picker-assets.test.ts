@@ -61,3 +61,23 @@ Deno.test("picker smoke enforces the canonical login label", async () => {
     true,
   );
 });
+
+Deno.test("picker smoke rejects the retired reference-client logo override", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./smoke-picker-assets.ts", import.meta.url),
+  );
+  assertEquals(
+    source.includes(
+      'assertNotContains(\n    pickerHtml,\n    "/app-icon.svg",\n    "picker canonical app-profile identity",',
+    ),
+    true,
+  );
+  assertEquals(
+    source.includes(
+      'assertContains(pickerHtml, "/app-icon.svg", "picker reference app logo")',
+    ),
+    false,
+  );
+  assertEquals(source.includes(">Atmosphere Account</h2>"), true);
+  assertEquals(source.includes("login-picker-app-mark"), true);
+});
