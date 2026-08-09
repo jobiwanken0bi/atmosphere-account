@@ -5,7 +5,7 @@
     "check": "deno fmt --check . && deno lint . && deno check && deno task oss:check",
     "test": "deno test -A",
     "audit": "deno audit --level=low",
-    "i18n:check": "deno test i18n",
+    "i18n:check": "deno test --allow-read=i18n/messages/en.tsx i18n",
     "oss:check": "deno run --allow-read scripts/check-open-source.ts",
     "dev": "vite",
     "dev:local": "ATMOSPHERE_DB_BACKEND=turso TURSO_DATABASE_URL=file:./local.db FRESH_PUBLIC_SITE_URL=http://127.0.0.1:5173 FRESH_PUBLIC_LOGIN_URL=http://127.0.0.1:5173 deno task dev --host 127.0.0.1",
