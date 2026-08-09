@@ -9,6 +9,7 @@
     "oss:check": "deno run --allow-read scripts/check-open-source.ts",
     "dev": "vite",
     "dev:local": "ATMOSPHERE_DB_BACKEND=turso TURSO_DATABASE_URL=file:./local.db FRESH_PUBLIC_SITE_URL=http://127.0.0.1:5173 FRESH_PUBLIC_LOGIN_URL=http://127.0.0.1:5173 deno task dev --host 127.0.0.1",
+    "dev:host-claim": "deno task dev:seed && ATMOSPHERE_ENABLE_DEV_LOGIN=1 deno task dev:local",
     "dev:seed": "deno run -A scripts/seed-local-dev.ts",
     "build": "deno install --frozen && deno run -A npm:vite@^7.3.6 build",
     "gen:images": "deno run -A --node-modules-dir=auto scripts/generate-static-images.ts",

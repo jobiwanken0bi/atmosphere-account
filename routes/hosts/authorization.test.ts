@@ -2,6 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   hostClaimAuthorizationHref,
   hostClaimExpiredLinkContinuationPathForTest,
+  hostClaimIntroCopy,
   hostClaimManageLocation,
 } from "./[host]/claim.tsx";
 import { hostAuthorizationHref } from "./[host]/manage/apps.tsx";
@@ -15,6 +16,28 @@ import { hostRegistrationAuthorizationHref } from "./register.tsx";
 import { hostProfileResumePath } from "../../lib/host-profile-resume.ts";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
+
+Deno.test("host claim intro copy follows the current ownership state", () => {
+  assertEquals(
+    hostClaimIntroCopy({ state: "ready" }),
+    "This local .test fixture uses the development claim path. Once claimed, this Atmosphere account can manage its public profile and images.",
+  );
+  assertEquals(
+    hostClaimIntroCopy({ state: "claimed-by-other" }),
+    "This host already has a verified managing account.",
+  );
+  assertEquals(
+    hostClaimIntroCopy({
+      state: "claimed-by-you",
+      linkAppName: "Field Notes",
+    }),
+    "This account already manages this host. You can connect it to Field Notes below.",
+  );
+  assertEquals(
+    hostClaimIntroCopy({ state: "verification", transferring: true }),
+    "The new managing account must prove control of this host with DNS before anything changes.",
+  );
+});
 
 Deno.test("host claim authorization includes complete host and image management", () => {
   const source = new URL(

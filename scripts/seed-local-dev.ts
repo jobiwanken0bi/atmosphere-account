@@ -12,13 +12,13 @@ const {
   rescoreAppDirectoryTrending,
   upsertAppRecordFromDraft,
 } = await import("../lib/app-directory.ts");
-const { listAccountHosts, registerAccountHost } = await import(
-  "../lib/account-hosts.ts"
-);
+const { listAccountHosts } = await import("../lib/account-hosts.ts");
 const { setAppUserType } = await import("../lib/account-types.ts");
 const { withDb } = await import("../lib/db.ts");
-const { HOST_SERVICE_NSID } = await import("../lib/lexicons.ts");
 const { upsertProfile } = await import("../lib/registry.ts");
+const { resetDevHostClaimFixtures } = await import(
+  "../lib/dev-host-claim-fixtures.ts"
+);
 
 const now = Date.now();
 
@@ -261,30 +261,6 @@ await Promise.all([
   }),
 ]);
 
-const comparisonHost = await registerAccountHost({
-  host: comparisonAccounts.host.handle,
-  displayName: comparisonAccounts.host.displayName,
-  description:
-    "An independent account host that keeps identities and data online for people using Atmosphere apps.",
-  dataLocation: "United States",
-  homepageUrl: "https://harbor-host.test",
-  serviceEndpoint: "https://harbor-host.test",
-  signupUrl: "https://harbor-host.test/join",
-  accountManagementUrl: "https://harbor-host.test/account",
-  supportUrl: "https://harbor-host.test/support",
-  signupStatus: "open",
-  profileHandle: comparisonAccounts.host.handle,
-  bskyProfileVisible: false,
-  serviceRecordUri:
-    `at://${comparisonAccounts.host.did}/${HOST_SERVICE_NSID}/${comparisonAccounts.host.handle}`,
-  serviceRecordCid: "local-harbor-host-service",
-}, comparisonAccounts.host);
-if (!comparisonHost.ok) {
-  throw new Error(
-    `[dev:seed] could not seed comparison host: ${comparisonHost.message}`,
-  );
-}
-
 for (const app of apps) {
   const repoDid = `did:plc:localdev${app.slug.replace(/[^a-z0-9]/g, "")}`;
   const sourceUri = `at://${repoDid}/${ATSTORE_LISTING_NSID}/${app.slug}`;
@@ -463,7 +439,8 @@ await withDb(async (c) => {
 });
 
 await rescoreAppDirectoryTrending();
+await resetDevHostClaimFixtures();
 
 console.log(
-  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), one app/host profile comparison pair, one detected unclaimed host, and refreshed seeded hosts in local.db`,
+  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), one app/host profile comparison pair, the host-claim scenario lab, one detected unclaimed host, and refreshed seeded hosts in local.db`,
 );

@@ -47,6 +47,21 @@ Deno.test("host management uses site-specific copy and labelled controls", async
   assertEquals(manageSource.includes("Atmosphere sends your users"), false);
 });
 
+Deno.test("host claim puts the current state before relay details", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./[host]/claim.tsx", import.meta.url),
+  );
+  const currentState = source.indexOf("<ClaimBody");
+  const relayDetails = source.indexOf("<DetectedHostSummary");
+  assert(currentState >= 0);
+  assert(relayDetails > currentState);
+  assertStringIncludes(
+    source,
+    "This host already has a verified managing account.",
+  );
+  assertStringIncludes(source, "Manage host");
+});
+
 Deno.test("host and owner controls retain phone-sized targets and padding", async () => {
   const styles = await Deno.readTextFile(
     new URL("../../static/styles.css", import.meta.url),
@@ -63,6 +78,7 @@ Deno.test("host and owner controls retain phone-sized targets and padding", asyn
       "@media (max-width: 420px)",
       ".host-manage-card {",
       "padding: 1.25rem;",
+      ".host-claim-form > .host-claim-panel {",
     ]
   ) {
     assertStringIncludes(styles, fragment);

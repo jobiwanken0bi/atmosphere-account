@@ -707,13 +707,12 @@ function HostClaimPage(props: ClaimPageProps) {
                       </div>
                     </div>
                     <p class="text-body host-claim-copy">
-                      {linkContext
-                        ? `DNS verification proves control of this host and then connects it to ${linkContext.app.name}.`
-                        : transferContext
-                        ? "The new managing account must prove control of this host with DNS before anything changes."
-                        : "A temporary DNS record proves that you operate this host. Once claimed, this Atmosphere account can manage its public profile and images."}
+                      {hostClaimIntroCopy({
+                        state,
+                        linkAppName: linkContext?.app.name ?? null,
+                        transferring: !!transferContext,
+                      })}
                     </p>
-                    <DetectedHostSummary host={host} />
                     <ClaimBody
                       host={host}
                       claim={claim}
@@ -731,6 +730,7 @@ function HostClaimPage(props: ClaimPageProps) {
                       repairingClaim={repairingClaim}
                       linkError={linkError}
                     />
+                    <DetectedHostSummary host={host} />
                   </>
                 )
                 : (
@@ -808,7 +808,7 @@ function ClaimBody(
           class="text-link-button"
           href={`/hosts/${encodeURIComponent(host.host)}/manage`}
         >
-          Manage public listing
+          Manage host
         </a>
         {linkContext && (
           <form method="POST">
@@ -851,7 +851,11 @@ function ClaimBody(
   }
   if (state === "ready") {
     return (
-      <form method="POST" class="host-claim-form">
+      <form
+        method="POST"
+        class="host-claim-form"
+        data-submit-once="true"
+      >
         <input type="hidden" name="action" value="claim" />
         {error && (
           <p class="profile-form-status profile-form-status--error">{error}</p>
@@ -866,11 +870,17 @@ function ClaimBody(
           </p>
         </div>
         <DirectoryListingChoice checked={directoryListing} />
-        <button type="submit" class="directory-register-button">
+        <button
+          type="submit"
+          class="directory-register-button"
+          data-pending-label={linkContext
+            ? "Claiming and connecting…"
+            : "Claiming host…"}
+        >
           <span class="directory-register-button-icon" aria-hidden="true">
             +
           </span>
-          <span>
+          <span data-submit-once-label>
             {linkContext ? "Claim and connect host" : "Claim this host"}
           </span>
         </button>
@@ -1089,6 +1099,38 @@ function ClaimBody(
       )}
     </div>
   );
+}
+
+export function hostClaimIntroCopy(
+  input: {
+    state: ClaimState;
+    linkAppName?: string | null;
+    transferring?: boolean;
+  },
+): string {
+  if (input.state === "claimed-by-you") {
+    return input.linkAppName
+      ? `This account already manages this host. You can connect it to ${input.linkAppName} below.`
+      : "This account already manages this host. Open management to update its public profile and settings.";
+  }
+  if (input.state === "claimed-by-other") {
+    return "This host already has a verified managing account.";
+  }
+  if (input.state === "not-authorized") {
+    return "This host has an existing claim that this account cannot use.";
+  }
+  if (input.transferring) {
+    return "The new managing account must prove control of this host with DNS before anything changes.";
+  }
+  if (input.state === "ready") {
+    return input.linkAppName
+      ? `This local .test fixture uses the development claim path and then connects it to ${input.linkAppName}.`
+      : "This local .test fixture uses the development claim path. Once claimed, this Atmosphere account can manage its public profile and images.";
+  }
+  if (input.linkAppName) {
+    return `DNS verification proves control of this host and then connects it to ${input.linkAppName}.`;
+  }
+  return "A temporary DNS record proves that you operate this host. Once claimed, this Atmosphere account can manage its public profile and images.";
 }
 
 function textValue(value: FormDataEntryValue | null | undefined): string {

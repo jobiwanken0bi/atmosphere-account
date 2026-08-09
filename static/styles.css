@@ -15573,6 +15573,72 @@ form[data-submit-once-pending="true"] button:disabled {
   margin-top: 1rem;
 }
 
+.host-claim-lab-container {
+  max-width: 1120px;
+}
+
+.host-claim-lab-card {
+  width: 100%;
+}
+
+.host-claim-lab-grid {
+  margin-top: 1.4rem;
+}
+
+.host-claim-lab-scenario {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.host-claim-lab-scenario h2 {
+  margin: 0;
+  color: #10182b;
+  font-size: 1.08rem;
+  line-height: 1.3;
+}
+
+.host-claim-lab-scenario .text-body {
+  margin: 0;
+}
+
+.host-claim-lab-scenario form,
+.host-claim-lab-scenario button {
+  width: 100%;
+}
+
+.host-claim-lab-outcome {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 0.22rem 0.58rem;
+  background: rgba(49, 95, 169, 0.09);
+  color: rgba(30, 68, 128, 0.82);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.host-claim-lab-reset {
+  margin-top: 1.25rem;
+}
+
+.host-claim-lab-reset form {
+  flex: 0 0 auto;
+}
+
+.dark-phase .host-claim-lab-scenario h2 {
+  color: #f3f5fb;
+}
+
+.dark-phase .host-claim-lab-outcome {
+  background: rgba(160, 195, 255, 0.14);
+  color: rgba(211, 226, 255, 0.9);
+}
+
+@media (max-width: 640px) {
+  .host-claim-lab-reset form,
+  .host-claim-lab-reset button {
+    width: 100%;
+  }
+}
+
 .host-claim-heading {
   display: flex;
   align-items: center;
@@ -15597,6 +15663,10 @@ form[data-submit-once-pending="true"] button:disabled {
   align-items: flex-start;
   gap: 1rem;
   margin-top: 1rem;
+}
+
+.host-claim-form > .host-claim-panel {
+  margin-top: 0;
 }
 
 .host-claim-domain-field {
