@@ -364,6 +364,69 @@ Deno.test("profile synchronization fails closed after a concurrent ownership cha
   }
 });
 
+Deno.test("profile synchronization accepts Postgres bigint timestamps returned as strings", async () => {
+  const db = createClient({ url: "file::memory:" });
+  try {
+    await createLoginAppTable(db);
+    const client = db as unknown as DbClient;
+    await upsertLoginAppWithClient(client, ownerInput, 1);
+    const stale = (await db.execute({
+      sql: `SELECT * FROM login_app WHERE client_id = ?`,
+      args: [ownerInput.clientId],
+    })).rows[0] as Record<string, unknown>;
+    stale.profile_identity_updated_at = String(
+      stale.profile_identity_updated_at,
+    );
+
+    const postgresLikeClient: DbClient = {
+      async execute(query, args) {
+        const result = await client.execute(query, args);
+        const sql = typeof query === "string" ? query : query.sql;
+        if (!sql.includes("SELECT * FROM login_app")) return result;
+        return {
+          ...result,
+          rows: result.rows.map((row) => ({
+            ...row,
+            profile_identity_updated_at:
+              row.profile_identity_updated_at === null
+                ? null
+                : String(row.profile_identity_updated_at),
+          })),
+        };
+      },
+    };
+
+    const synced = await syncLoginAppProfileIdentityWithClient(
+      postgresLikeClient,
+      stale,
+      {
+        did: "did:plc:owner",
+        listingId: "app-example",
+        profileUri: ownerInput.appProfileUri,
+        slug: "example",
+        name: "Renamed App",
+        homepage: ownerInput.appUri,
+        logoUri: ownerInput.logoUri,
+        updatedAt: 2,
+        loginAvailability: "available",
+        identityFingerprint: "profile-v2",
+      },
+      2,
+    );
+    assertEquals({
+      appName: synced.app_name,
+      profileIdentityUpdatedAt: synced.profile_identity_updated_at,
+      profileIdentityFingerprint: synced.profile_identity_fingerprint,
+    }, {
+      appName: "Renamed App",
+      profileIdentityUpdatedAt: "2",
+      profileIdentityFingerprint: "profile-v2",
+    });
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("profile identity synchronization cannot overwrite a concurrent block", async () => {
   const db = createClient({ url: "file::memory:" });
   try {
