@@ -37,7 +37,9 @@ export default define.page(function App(ctx) {
   const isStandaloneLoginPicker = url.pathname === "/login/select";
   const signedIn = Boolean(state.user);
   const needsSigninPreview = needsEagerSigninEnhancer(url.pathname, signedIn);
-  const needsLoginHandoff = needsSigninPreview || signedIn;
+  const hasRememberedAccounts = (state.rememberedAccounts?.length ?? 0) > 0;
+  const needsLoginHandoff = needsSigninPreview || signedIn ||
+    hasRememberedAccounts;
   const needsDocsScript = url.pathname === "/docs" ||
     url.pathname.startsWith("/docs/");
   const needsAppMediaFallback = url.pathname === "/apps" ||

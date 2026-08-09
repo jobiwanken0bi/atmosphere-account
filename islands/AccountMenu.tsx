@@ -54,7 +54,6 @@ export default function AccountMenu(
     rememberedAccounts,
   }: Props,
 ) {
-  const t = useT().nav.account;
   const accounts = rememberedAccounts ?? [];
 
   if (!user) {
@@ -68,16 +67,9 @@ export default function AccountMenu(
     if (accounts.length > 0) {
       return <SignedOutMenu rememberedAccounts={accounts} />;
     }
-    /** Fully signed out, no remembered accounts — plain link. */
-    return (
-      <a
-        href="/signin"
-        class="nav-btn nav-btn-primary account-menu-signin"
-        aria-label={t.signIn}
-      >
-        <LoginActionLabel label={t.signIn} />
-      </a>
-    );
+    /** Authentication is contextual. First-time signed-out visitors do not
+     *  get a generic login action in the global navigation. */
+    return null;
   }
 
   return (
@@ -99,6 +91,7 @@ function SignedOutMenu(
   { rememberedAccounts }: { rememberedAccounts: RememberedAccount[] },
 ) {
   const t = useT().nav.account;
+  const primaryAccount = rememberedAccounts[0];
   const open = useSignal(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -133,7 +126,7 @@ function SignedOutMenu(
       <button
         ref={triggerRef}
         type="button"
-        class="account-menu-trigger account-menu-trigger--signed-out"
+        class="account-menu-trigger"
         aria-haspopup="dialog"
         aria-expanded={open.value ? "true" : "false"}
         aria-controls={popupId}
@@ -142,8 +135,12 @@ function SignedOutMenu(
           open.value = !open.value;
         }}
       >
+        <Avatar
+          url={`/api/registry/avatar/${encodeURIComponent(primaryAccount.did)}`}
+          handle={primaryAccount.handle}
+        />
         <span class="account-menu-trigger-label">
-          <LoginActionLabel label={t.signIn} />
+          <AtmosphereHandle handle={primaryAccount.handle} />
         </span>
         <span class="account-menu-chevron" aria-hidden="true">▾</span>
       </button>
@@ -171,17 +168,6 @@ function SignedOutMenu(
               forgetConfirm={t.forgetConfirm(account.handle)}
             />
           ))}
-          <div class="account-menu-divider" aria-hidden="true" />
-          <a
-            href="/signin"
-            class="account-menu-item account-menu-item-add"
-            onClick={() => {
-              open.value = false;
-            }}
-          >
-            <span class="account-menu-add-glyph" aria-hidden="true">+</span>
-            {t.signIn}
-          </a>
         </div>
       )}
     </div>
@@ -381,17 +367,6 @@ function SignedInMenu(
         </div>
       )}
     </div>
-  );
-}
-
-function LoginActionLabel({ label }: { label: string }) {
-  return (
-    <>
-      <span class="account-menu-login-label-full">{label}</span>
-      <span class="account-menu-login-label-compact" aria-hidden="true">
-        Login
-      </span>
-    </>
   );
 }
 
