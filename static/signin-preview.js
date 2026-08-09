@@ -1,79 +1,6 @@
 const ENHANCED_ATTR = "data-signin-preview-enhanced";
 const FLOW_ENHANCED_ATTR = "data-signin-flow-enhanced";
 
-function isLoopbackNavigationHost(hostname) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(
-    /\.$/,
-    "",
-  );
-  if (host === "localhost" || host.endsWith(".localhost") || host === "::1") {
-    return true;
-  }
-  const parts = host.split(".").map(Number);
-  return parts.length === 4 &&
-    parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
-    parts[0] === 127;
-}
-
-function isPrivateNavigationHost(hostname) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(
-    /\.$/,
-    "",
-  );
-  if (
-    isLoopbackNavigationHost(host) || host.endsWith(".local") ||
-    host.endsWith(".internal") || host.endsWith(".home.arpa") ||
-    host.endsWith(".test") || host.endsWith(".invalid") ||
-    host.endsWith(".example") || host.endsWith(".onion") ||
-    host === "0.0.0.0" || host === "::" || host.startsWith("::")
-  ) return true;
-  const parts = host.split(".").map(Number);
-  if (
-    parts.length === 4 &&
-    parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
-  ) {
-    const [a, b, c] = parts;
-    return a === 0 || a === 10 || a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 192 && b === 0 && (c === 0 || c === 2)) ||
-      (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
-      (a === 203 && b === 0 && c === 113) || a >= 224;
-  }
-  if (!host.includes(":") && !host.includes(".")) return true;
-  return host.startsWith("fc") || host.startsWith("fd") ||
-    /^fe[89ab]/.test(host) || host.startsWith("ff");
-}
-
-function safeNavigationDestination(value) {
-  if (typeof value !== "string" || !value.trim()) return null;
-  try {
-    const current = new URL(globalThis.location.href);
-    const target = new URL(value, current);
-    if (target.username || target.password) return null;
-    if (target.origin === current.origin) {
-      return target.protocol === "http:" || target.protocol === "https:"
-        ? target.toString()
-        : null;
-    }
-    if (
-      target.protocol === "https:" && !isPrivateNavigationHost(target.hostname)
-    ) {
-      return target.toString();
-    }
-    if (
-      target.protocol === "http:" &&
-      isLoopbackNavigationHost(current.hostname) &&
-      isLoopbackNavigationHost(target.hostname)
-    ) return target.toString();
-  } catch {
-    // Invalid and active-scheme destinations are rejected below.
-  }
-  return null;
-}
-
 function cleanHandle(value) {
   return value.trim().replace(/^@/, "").toLowerCase();
 }
@@ -92,9 +19,6 @@ function safeAvatarUrl(value) {
 function statusNode(message, loading) {
   const row = document.createElement("div");
   row.className = "signin-form-preview-status";
-  row.setAttribute("role", "status");
-  row.setAttribute("aria-live", "polite");
-  row.setAttribute("aria-atomic", "true");
   if (loading) {
     const spinner = document.createElement("span");
     spinner.className = "signin-form-preview-spinner";
@@ -111,7 +35,6 @@ function matchButton(match, onSelect) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "signin-form-preview-row";
-  button.setAttribute("role", "option");
 
   const avatarUrl = safeAvatarUrl(match.avatarUrl);
   if (avatarUrl) {
@@ -143,7 +66,12 @@ function matchButton(match, onSelect) {
   }
   button.append(meta);
 
-  button.addEventListener("click", () => onSelect(match));
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+  });
+  button.addEventListener("click", () => {
+    onSelect(match);
+  });
   return button;
 }
 
@@ -194,19 +122,48 @@ function hideSelected(target) {
 }
 
 function renderFormError(form, message) {
+  const input = form.querySelector("[data-signin-preview-input]");
   let error = form.querySelector("[data-signin-form-error]");
   if (!error) {
     error = document.createElement("p");
     error.className = "signin-form-error";
     error.setAttribute("data-signin-form-error", "true");
     error.setAttribute("role", "alert");
+    error.setAttribute("aria-live", "assertive");
     form.append(error);
+  }
+  if (input instanceof HTMLInputElement) {
+    const errorId = `${input.id || "signin-handle"}-error`;
+    error.id = errorId;
+    input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-errormessage", errorId);
+    const describedBy = new Set(
+      (input.getAttribute("aria-describedby") || "").split(/\s+/).filter(
+        Boolean,
+      ),
+    );
+    describedBy.add(errorId);
+    input.setAttribute("aria-describedby", [...describedBy].join(" "));
   }
   error.textContent = message;
 }
 
 function clearFormError(form) {
-  form.querySelector("[data-signin-form-error]")?.remove();
+  const error = form.querySelector("[data-signin-form-error]");
+  const input = form.querySelector("[data-signin-preview-input]");
+  if (input instanceof HTMLInputElement && error && error.id) {
+    const describedBy = (input.getAttribute("aria-describedby") || "")
+      .split(/\s+/)
+      .filter((id) => id && id !== error.id);
+    if (describedBy.length > 0) {
+      input.setAttribute("aria-describedby", describedBy.join(" "));
+    } else {
+      input.removeAttribute("aria-describedby");
+    }
+    input.removeAttribute("aria-invalid");
+    input.removeAttribute("aria-errormessage");
+  }
+  error?.remove();
 }
 
 function enhanceForm(form, index) {
@@ -220,24 +177,16 @@ function enhanceForm(form, index) {
   const loadingLabel = form.dataset.previewLoading || "Searching…";
   const notFoundLabel = form.dataset.previewNotFound ||
     "No matching account found.";
-  const submitLabel = form.dataset.submitLabel || "Continue";
-  const submittingLabel = form.dataset.submittingLabel || "Opening sign-in…";
+  const submitLabel = form.dataset.submitLabel || "Login with Atmosphere";
+  const submittingLabel = form.dataset.submittingLabel || "Redirecting…";
   const errorLabel = form.dataset.errorLabel ||
-    "Couldn’t start sign-in. Check the handle and try again.";
+    "Login with Atmosphere could not be started. Check the handle or try again shortly.";
   const submitButton = form.querySelector(".signin-form-submit");
   const selectedBox = form.querySelector("[data-signin-selected]");
-  const previewId = input.dataset.signinPreviewId ||
-    `signin-handle-preview-${index}`;
-  input.setAttribute("role", "combobox");
-  input.setAttribute("aria-autocomplete", "list");
-  input.setAttribute("aria-controls", previewId);
-  input.setAttribute("aria-expanded", "false");
-
   const preview = document.createElement("div");
-  preview.id = previewId;
+  preview.id = `signin-handle-preview-${index}`;
   preview.className = "signin-form-preview glass";
-  preview.setAttribute("role", "listbox");
-  preview.setAttribute("aria-label", "Matching Atmosphere accounts");
+  preview.setAttribute("aria-live", "polite");
   preview.hidden = true;
   field.append(preview);
 
@@ -254,12 +203,10 @@ function enhanceForm(form, index) {
 
   function show() {
     preview.hidden = false;
-    input.setAttribute("aria-expanded", "true");
   }
 
   function hide() {
     preview.hidden = true;
-    input.setAttribute("aria-expanded", "false");
   }
 
   function clearSelected() {
@@ -290,19 +237,12 @@ function enhanceForm(form, index) {
         selectedMatch = selected;
         input.value = selected.handle;
         hide();
+        input.focus();
         renderSelected(selectedBox, selected, () => {
           input.value = "";
           clearSelected();
           input.focus();
         });
-        const clearSelection = selectedBox?.querySelector(
-          ".signin-selected-clear",
-        );
-        if (clearSelection instanceof HTMLButtonElement) {
-          clearSelection.focus();
-        } else {
-          input.focus();
-        }
       }));
     }
     if (list.children.length === 0) {
@@ -362,47 +302,41 @@ function enhanceForm(form, index) {
     if (input.value.trim()) schedule(input.value);
   });
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !preview.hidden) {
-      event.preventDefault();
-      event.stopPropagation();
+    if (event.key === "Escape") {
       hide();
       return;
     }
     if (event.key !== "ArrowDown" || preview.hidden) return;
-    const firstMatch = preview.querySelector(".signin-form-preview-row");
-    if (firstMatch instanceof HTMLButtonElement) {
+    const first = preview.querySelector(".signin-form-preview-row");
+    if (first instanceof HTMLButtonElement) {
       event.preventDefault();
-      firstMatch.focus();
+      first.focus();
     }
   });
   preview.addEventListener("keydown", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLButtonElement)) return;
-    const matches = Array.from(
+    const options = Array.from(
       preview.querySelectorAll(".signin-form-preview-row"),
     );
-    const index = matches.indexOf(target);
-    if (event.key === "Escape") {
+    const current = options.indexOf(document.activeElement);
+    let next = current;
+    if (event.key === "ArrowDown") {
+      next = Math.min(options.length - 1, current + 1);
+    } else if (event.key === "ArrowUp") next = Math.max(0, current - 1);
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = options.length - 1;
+    else if (event.key === "Escape") {
       event.preventDefault();
-      event.stopPropagation();
       hide();
       input.focus();
       return;
-    }
-    if (event.key === "Enter" || event.key === " ") {
+    } else return;
+    if (next >= 0 && options[next] instanceof HTMLButtonElement) {
       event.preventDefault();
-      target.click();
-      return;
+      options[next].focus();
     }
-    let next = null;
-    if (event.key === "ArrowDown") next = matches[index + 1] ?? matches[0];
-    if (event.key === "ArrowUp") next = matches[index - 1] ?? matches.at(-1);
-    if (event.key === "Home") next = matches[0];
-    if (event.key === "End") next = matches.at(-1);
-    if (next instanceof HTMLButtonElement) {
-      event.preventDefault();
-      next.focus();
-    }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!form.contains(event.target)) hide();
   });
   form.addEventListener("submit", async (event) => {
     if (!input.value.trim()) {
@@ -427,16 +361,12 @@ function enhanceForm(form, index) {
         },
       });
       const body = await res.json().catch(() => null);
-      const destination = body
-        ? safeNavigationDestination(body.redirectUrl)
-        : null;
-      if (!res.ok || !destination) {
+      if (!res.ok || !body || typeof body.redirectUrl !== "string") {
         throw new Error(errorLabel);
       }
-      globalThis.location.assign(destination);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      renderFormError(form, message);
+      globalThis.location.assign(body.redirectUrl);
+    } catch {
+      renderFormError(form, errorLabel);
       if (submitButton instanceof HTMLButtonElement) {
         submitButton.disabled = false;
         submitButton.textContent = submitLabel;
@@ -452,8 +382,6 @@ function enhanceForm(form, index) {
 function enhanceFlow(flow) {
   if (flow.getAttribute(FLOW_ENHANCED_ATTR) === "true") return;
   flow.setAttribute(FLOW_ENHANCED_ATTR, "true");
-  const tabs = Array.from(flow.querySelectorAll("[data-signin-tab]"));
-  const panels = Array.from(flow.querySelectorAll("[data-signin-panel]"));
   const showManualButtons = Array.from(
     flow.querySelectorAll("[data-signin-show-manual]"),
   );
@@ -462,83 +390,29 @@ function enhanceFlow(flow) {
   );
   const savedView = flow.querySelector("[data-signin-saved-view]");
   const manualView = flow.querySelector("[data-signin-manual-view]");
-  const pageCopyScope = flow.closest("[data-signin-page-copy]");
   const manualForm = flow.querySelector(
     'form.signin-form[data-signin-preview="true"]',
   );
-
-  function setPageCopy(mode) {
-    if (!(pageCopyScope instanceof HTMLElement)) return;
-    for (
-      const node of pageCopyScope.querySelectorAll(
-        "[data-signin-mode-copy]",
-      )
-    ) {
-      const value = node.getAttribute(`data-signin-copy-${mode}`);
-      if (value !== null) node.textContent = value;
-    }
-  }
-
-  function setMode(mode) {
-    for (const tab of tabs) {
-      const active = tab.getAttribute("data-signin-tab") === mode;
-      tab.classList.toggle("is-active", active);
-      tab.setAttribute("aria-selected", active ? "true" : "false");
-      tab.setAttribute("tabindex", active ? "0" : "-1");
-    }
-    for (const panel of panels) {
-      panel.hidden = panel.getAttribute("data-signin-panel") !== mode;
-    }
-    setPageCopy(mode);
-  }
 
   function setSigninView(view) {
     if (savedView) savedView.hidden = view !== "saved";
     if (manualView) manualView.hidden = view !== "manual";
   }
 
-  for (const tab of tabs) {
-    tab.addEventListener("click", (event) => {
-      event.preventDefault();
-      setMode(tab.getAttribute("data-signin-tab") || "signin");
-    });
-    tab.addEventListener("keydown", (event) => {
-      const current = tabs.indexOf(tab);
-      let next = null;
-      if (event.key === "ArrowRight") next = tabs[current + 1] ?? tabs[0];
-      if (event.key === "ArrowLeft") next = tabs[current - 1] ?? tabs.at(-1);
-      if (event.key === "Home") next = tabs[0];
-      if (event.key === "End") next = tabs.at(-1);
-      if (!(next instanceof HTMLElement)) return;
-      event.preventDefault();
-      next.click();
-      next.focus();
-    });
-  }
-
   if (manualForm) {
     for (const showManual of showManualButtons) {
-      showManual.addEventListener("click", (event) => {
-        event.preventDefault();
+      showManual.addEventListener("click", () => {
         setSigninView("manual");
         const input = manualForm.querySelector("[data-signin-preview-input]");
         if (input instanceof HTMLInputElement) input.focus();
       });
     }
     for (const showSaved of showSavedButtons) {
-      showSaved.addEventListener("click", (event) => {
-        event.preventDefault();
-        setSigninView("saved");
-        const firstSaved = savedView?.querySelector(
-          ".signin-account-row",
-        );
-        if (firstSaved instanceof HTMLElement) firstSaved.focus();
-      });
+      showSaved.addEventListener("click", () => setSigninView("saved"));
     }
   }
 
   setSigninView(flow.getAttribute("data-initial-signin-view") || "manual");
-  setMode(flow.getAttribute("data-initial-mode") || "signin");
 }
 
 function hasSigninPreviewTargets() {
@@ -560,21 +434,6 @@ function bootSigninPreviews() {
 if (hasSigninPreviewTargets()) bootSigninPreviews();
 setTimeout(bootSigninPreviews, 0);
 document.addEventListener("DOMContentLoaded", bootSigninPreviews);
-
-// One delegated outside-click listener serves both page forms and portal
-// modals. Per-form listeners retained detached modal trees after every reopen.
-document.addEventListener("pointerdown", (event) => {
-  document
-    .querySelectorAll(`form.signin-form[${ENHANCED_ATTR}="true"]`)
-    .forEach((form) => {
-      if (form.contains(event.target)) return;
-      const input = form.querySelector("[data-signin-preview-input]");
-      const previewId = input?.getAttribute("aria-controls");
-      const preview = previewId ? document.getElementById(previewId) : null;
-      if (preview) preview.hidden = true;
-      input?.setAttribute("aria-expanded", "false");
-    });
-});
 
 // Portal-based contextual modals are mounted after this module evaluates, so
 // observe unconditionally rather than only when a form exists at page load.

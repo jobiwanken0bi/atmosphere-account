@@ -12,10 +12,15 @@ import {
   appHostLinkIntentErrorMessage,
   type AppHostLinkSelectorIntent,
   bindAppHostLinkIntent,
+  readAppHostLinkIntent,
   resolveAppHostLinkSelectorIntent,
   type ResolvedAppHostLinkIntent,
 } from "../../lib/app-host-link-intent.ts";
-import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  HOST_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../../lib/oauth-action.ts";
 import { getSessionForCapabilities } from "../../lib/oauth.ts";
 
 export const handler = define.handlers({
@@ -26,28 +31,27 @@ export const handler = define.handlers({
     if (proxied) return proxied;
 
     const rawLinkIntent = ctx.url.searchParams.get("link_intent");
+    const linkContext = await loadOptionalLinkIntent(rawLinkIntent);
+    if (linkContext instanceof Response) return linkContext;
+    const requiredCapabilities = linkContext
+      ? APP_MANAGEMENT_CAPABILITIES
+      : HOST_MANAGEMENT_CAPABILITIES;
     if (!ctx.state.user) {
-      if (rawLinkIntent?.trim()) {
-        return new Response(
-          "Return to the app owner account and start the host connection again.",
-          { status: 400, headers: { "cache-control": "no-store" } },
-        );
-      }
-      return redirectToSignin(ctx.url);
+      return redirectToSignin(ctx.url, linkContext);
     }
     if (
-      !await getSessionForCapabilities(ctx.state.user.did, ["identity"], {
-        quiet: true,
-      })
+      (linkContext &&
+        ctx.state.user.did !== linkContext.intent.appOwnerDid) ||
+      !await getSessionForCapabilities(
+        ctx.state.user.did,
+        requiredCapabilities,
+        {
+          quiet: true,
+        },
+      )
     ) {
-      return redirectToSignin(ctx.url);
+      return redirectToSignin(ctx.url, linkContext);
     }
-
-    const linkContext = await loadOptionalLinkIntent(
-      rawLinkIntent,
-      ctx.state.user.did,
-    );
-    if (linkContext instanceof Response) return linkContext;
 
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "detected-host-claim-search",
@@ -93,7 +97,7 @@ export const handler = define.handlers({
           });
         }
         error =
-          "We haven’t detected that PDS in relay inventory yet. Check the exact PDS domain, make sure it has an active account visible to the relay, and configure contact.email in com.atproto.server.describeServer before trying again.";
+          "We haven’t detected that PDS in relay inventory yet. Check the exact PDS domain and make sure it has an active account visible to the relay before trying again.";
       }
     }
 
@@ -134,7 +138,10 @@ function DetectedHostClaimPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="signin-page-section host-claim-section">
+        <main
+          id="main-content"
+          class="signin-page-section host-claim-section"
+        >
           <div class="container signin-page-container">
             <a
               href={linkContext
@@ -159,8 +166,8 @@ function DetectedHostClaimPage(
               </h1>
               <p class="text-body host-claim-copy">
                 {linkContext
-                  ? "Enter the exact PDS domain. If it is unclaimed, Atmosphere will verify the contact email announced by that PDS. If it is already claimed, its verified operator can approve the connection."
-                  : "Atmosphere keeps likely personal PDSes out of the public directory by default. If you operate one and want it listed, enter its exact PDS domain. We’ll use the relay data already on hand to prefill the claim."}
+                  ? "Enter the exact PDS domain. If it is unclaimed, you can verify control with a temporary DNS record. If it is already claimed, its verified operator can approve the connection."
+                  : "This site keeps likely personal PDSes out of the public directory by default. If you operate one and want it listed, enter its exact PDS domain. We’ll use the relay data already on hand to prefill the claim."}
               </p>
               <form method="GET" action="/hosts/claim" class="host-claim-form">
                 {linkContext && (
@@ -203,7 +210,7 @@ function DetectedHostClaimPage(
               </p>
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -212,12 +219,29 @@ function DetectedHostClaimPage(
 
 async function loadOptionalLinkIntent(
   token: string | null,
-  currentDid: string,
 ): Promise<
   ResolvedAppHostLinkIntent<AppHostLinkSelectorIntent> | null | Response
 > {
   if (!token?.trim()) return null;
-  const resolved = await resolveAppHostLinkSelectorIntent(token, currentDid);
+  const checked = await readAppHostLinkIntent(token);
+  if (!checked.ok) {
+    return new Response(appHostLinkIntentErrorMessage(checked.reason), {
+      status: 400,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+  if (checked.value.intent.kind !== "selector") {
+    return new Response(appHostLinkIntentErrorMessage("wrong_stage"), {
+      status: 400,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+  // The signed intent identifies the app owner. Resolve it before requesting
+  // OAuth so a forged or stale token cannot select an authorization job.
+  const resolved = await resolveAppHostLinkSelectorIntent(
+    token,
+    checked.value.intent.appOwnerDid,
+  );
   if (resolved.ok) return resolved.value;
   return new Response(appHostLinkIntentErrorMessage(resolved.reason), {
     status: 400,
@@ -225,25 +249,34 @@ async function loadOptionalLinkIntent(
   });
 }
 
-function redirectToSignin(url: URL): Response {
+function redirectToSignin(
+  url: URL,
+  linkContext: ResolvedAppHostLinkIntent<AppHostLinkSelectorIntent> | null,
+): Response {
   return new Response(null, {
     status: 303,
-    headers: { location: detectedHostClaimAuthorizationHref(url) },
+    headers: { location: detectedHostClaimAuthorizationHref(url, linkContext) },
   });
 }
 
-export function detectedHostClaimAuthorizationHref(url: URL): string {
+export function detectedHostClaimAuthorizationHref(
+  url: URL,
+  linkContext: { app: Pick<ResolvedAppHostLinkIntent["app"], "name"> } | null =
+    null,
+): string {
   const domain = url.searchParams.get("domain")?.trim();
   return oauthSigninUrl({
     next: `/hosts/claim${url.search}`,
-    action: "host_claim",
-    capabilities: ["identity"],
-    name: domain || "an account host",
+    action: linkContext ? "app" : "host_claim",
+    capabilities: linkContext
+      ? APP_MANAGEMENT_CAPABILITIES
+      : HOST_MANAGEMENT_CAPABILITIES,
+    name: linkContext?.app.name ?? domain ?? "an account host",
   });
 }
 
-function appviewUnavailable(err: unknown): Response {
-  console.error("[appview] detected host claim proxy failed:", err);
+function appviewUnavailable(_err: unknown): Response {
+  console.error("[appview] detected host claim proxy failed");
   return new Response("Host claiming is temporarily unavailable.", {
     status: 503,
     headers: {

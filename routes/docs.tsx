@@ -33,7 +33,7 @@ function DocsPage(
   return (
     <div id="page-top">
       <div class="content-layer">
-        <Nav account={account} disableScrollEffects />
+        <Nav account={account} active="docs" disableScrollEffects />
         <DocsLayout page={page} origin={origin} />
         <Footer variant="compact" />
       </div>

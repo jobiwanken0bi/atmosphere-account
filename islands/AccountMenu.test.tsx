@@ -24,4 +24,8 @@ Deno.test("account dropdown does not claim unsupported menu semantics", async ()
   assertEquals(source.includes('role="menu"'), false);
   assertEquals(source.includes('role="menuitem"'), false);
   assertEquals(source.includes('role="dialog"'), true);
+  assertStringIncludes(
+    source,
+    "clearPendingBrowserActionsForOtherOwners(user.did)",
+  );
 });

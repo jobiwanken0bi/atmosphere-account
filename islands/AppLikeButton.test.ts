@@ -6,11 +6,8 @@ import {
 import {
   favoriteRequestMethod,
   favoriteResumeIntent,
-  favoriteResumeProofKey,
-  favoriteResumeProofValue,
   favoriteResumeReturnPath,
   favoriteTargetLiked,
-  isValidFavoriteResumeProof,
 } from "../lib/favorite-resume.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -28,12 +25,8 @@ Deno.test("app like endpoint preserves identifiers as one path segment", () => {
 
 Deno.test("app like reauthorization returns to the current app", () => {
   assertEquals(
-    appLikeReauthHref(
-      "did:plc:alice",
-      "/apps/grain?from=featured",
-      "Grain",
-    ),
-    "/oauth/login?next=%2Fapps%2Fgrain%3Ffrom%3Dfeatured&action=favorite&name=Grain&capability=favorite&handle=did%3Aplc%3Aalice",
+    appLikeReauthHref("alice.example", "/apps/grain?from=featured"),
+    "/oauth/login?next=%2Fapps%2Fgrain%3Ffrom%3Dfeatured&action=favorite&capability=favorite&handle=alice.example",
   );
 });
 
@@ -70,36 +63,4 @@ Deno.test("favorite resume mutations are absolute and idempotent", () => {
   assertEquals(favoriteTargetLiked(true, "remove"), false);
   assertEquals(favoriteRequestMethod(false, "toggle"), "POST");
   assertEquals(favoriteRequestMethod(true, "toggle"), "DELETE");
-});
-
-Deno.test("favorite query markers require fresh same-tab account proof", () => {
-  const now = 10_000;
-  const anonymousChoice = favoriteResumeProofValue("save", null, now);
-  assertEquals(
-    isValidFavoriteResumeProof(anonymousChoice, "save", "did:plc:alice", now),
-    true,
-  );
-  const alice = favoriteResumeProofValue("remove", "did:plc:alice", now);
-  assertEquals(
-    isValidFavoriteResumeProof(alice, "remove", "did:plc:alice", now),
-    true,
-  );
-  assertEquals(
-    isValidFavoriteResumeProof(alice, "remove", "did:plc:bob", now),
-    false,
-  );
-  assertEquals(isValidFavoriteResumeProof(null, "save", null, now), false);
-  assertEquals(
-    isValidFavoriteResumeProof(
-      favoriteResumeProofValue("save", null, now - 1_800_001),
-      "save",
-      "did:plc:alice",
-      now,
-    ),
-    false,
-  );
-  assertEquals(
-    favoriteResumeProofKey("feed/reader"),
-    "atmosphere:favorite-resume:feed%2Freader",
-  );
 });

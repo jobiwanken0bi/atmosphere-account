@@ -12,7 +12,10 @@
 import { define } from "../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import { getSessionForCapabilities } from "../../../lib/oauth.ts";
-import { oauthReauthorizationUrl } from "../../../lib/oauth-action.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  oauthReauthorizationUrl,
+} from "../../../lib/oauth-action.ts";
 import type { OAuthCapability } from "../../../lib/oauth-scopes.ts";
 import {
   deleteProfileRecord,
@@ -40,11 +43,13 @@ import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
 import {
   deleteAppRecord,
+  getManagedAppListingByAccountDid,
   upsertLegacyProfileAsApp,
 } from "../../../lib/app-directory.ts";
 import {
   atmosphereProfileAtUri,
   findExistingAtstoreListingForProfile,
+  findExistingAtstoreListingsForProfile,
   publishAtstoreListingFromProfileRecord,
 } from "../../../lib/atstore-migration.ts";
 import {
@@ -59,7 +64,15 @@ import {
 import { resolveAppListingWriteTarget } from "../../../lib/app-listing-lifecycle.ts";
 import { appProfileWriteCapabilities } from "../../../lib/profile-write-capabilities.ts";
 import { isJsonMediaType, isSafeRelativePath } from "../../../lib/security.ts";
-import { isAtprotoTid } from "../../../lib/tid.ts";
+import {
+  appOwnershipUnavailableResponse,
+  appProfileConflictResponse,
+  appProfileCreateListingKeyError,
+  appProfileRegistrationInProgressResponse,
+  releaseAppProfileTarget,
+  reserveAppProfileTarget,
+  rotateStaleAppProfileTarget,
+} from "../../../lib/app-profile-cardinality.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 import { matchesRasterImageSignature } from "../../../lib/raster-image-security.ts";
 
@@ -193,11 +206,11 @@ interface ProfileFormPayload {
   /** Existing screenshots to keep plus new uploads to append. */
   screenshots?: ScreenshotEntry[];
   screenshotUploads?: { dataBase64: string; mimeType: string }[];
-  /** Create a distinct ATStore listing instead of updating the first one. */
+  /** Create this DID's first ATStore app listing. */
   createNewListing?: boolean;
-  /** Client-stable TID used to make a distinct listing retry idempotent. */
+  /** Client-stable TID that makes first publication retry idempotent. */
   createListingRkey?: string;
-  /** Existing ATStore record to update when this DID owns several apps. */
+  /** Exact existing ATStore record to update. */
   atstoreListingUri?: string | null;
 }
 
@@ -301,9 +314,7 @@ function normalizeLinksPayload(input: unknown): LinkEntry[] {
   return out;
 }
 
-/** The profile endpoint has a deliberately large byte budget for image
- * uploads. Bound JSON collection cardinality separately so that budget cannot
- * be turned into million-item normalization loops. */
+/** The endpoint's large byte budget exists for images, not unbounded arrays. */
 export function profileCollectionBoundsErrorForTest(
   body: ProfileFormPayload,
 ): string | null {
@@ -341,21 +352,17 @@ export function profileCreateListingKeyErrorForTest(
   createNewListing: unknown,
   createListingRkey: unknown,
 ): string | null {
-  if (
-    createNewListing != null && typeof createNewListing !== "boolean"
-  ) return "invalid app listing creation request";
-  if (
-    createListingRkey != null && typeof createListingRkey !== "string"
-  ) return "invalid app listing creation key";
+  const validation = appProfileCreateListingKeyError(
+    createNewListing,
+    createListingRkey,
+  );
+  if (validation) return validation;
   const rkey = typeof createListingRkey === "string"
     ? createListingRkey.trim()
     : "";
-  if (createNewListing === true) {
-    return rkey && isAtprotoTid(rkey)
-      ? null
-      : "invalid app listing creation key";
-  }
-  return rkey ? "unexpected app listing creation key" : null;
+  return createNewListing === true || !rkey
+    ? null
+    : "unexpected app listing creation key";
 }
 
 async function readJsonBodyLimited<T>(
@@ -496,6 +503,9 @@ export const handler = define.handlers({
     if (body.atstoreListingUri && !requestedAtstoreTarget) {
       return new Response("invalid app listing target", { status: 400 });
     }
+    if (body.createNewListing === true && requestedAtstoreTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
     const creationKeyError = profileCreateListingKeyErrorForTest(
       body.createNewListing,
       body.createListingRkey,
@@ -506,11 +516,30 @@ export const handler = define.handlers({
     const requestedCreateRkey = typeof body.createListingRkey === "string"
       ? body.createListingRkey.trim()
       : null;
+    const requestedCreateUri = requestedCreateRkey
+      ? `at://${user.did}/${ATSTORE_LISTING_NSID}/${requestedCreateRkey}`
+      : null;
 
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
     );
-    const targetedAtstoreWrite = !!requestedAtstoreTarget;
+    const targetedAtstoreWrite = Boolean(requestedAtstoreTarget);
+    let managedApp: Awaited<
+      ReturnType<typeof getManagedAppListingByAccountDid>
+    >;
+    try {
+      managedApp = await getManagedAppListingByAccountDid(user.did);
+    } catch {
+      return appOwnershipUnavailableResponse();
+    }
+    const locallyIndexedCreateRetry = body.createNewListing === true &&
+      requestedCreateUri &&
+      managedApp?.atstoreListingUri === requestedCreateUri;
+    if (
+      body.createNewListing === true && managedApp && !locallyIndexedCreateRetry
+    ) {
+      return appProfileConflictResponse(managedApp ?? undefined);
+    }
     if (
       accountType !== "project" && body.createNewListing !== true &&
       !targetedAtstoreWrite
@@ -541,16 +570,68 @@ export const handler = define.handlers({
      * later republish would face the report queue afresh, which is
      * fine).
      */
-    const existing = await getProfileByDid(user.did, {
-      includeTakenDown: true,
-      profileType: "project",
-    }).catch(() => null);
+    let existing: Awaited<ReturnType<typeof getProfileByDid>>;
+    try {
+      existing = await getProfileByDid(user.did, {
+        includeTakenDown: true,
+        profileType: "project",
+      });
+    } catch {
+      return appOwnershipUnavailableResponse();
+    }
     if (existing?.takedownStatus === "taken_down") {
       return new Response(
         "This app listing has been taken down by an Atmosphere admin. " +
           "You can delete it from your PDS, but you can't update it.",
         { status: 403 },
       );
+    }
+
+    let preflightCreateRecord: Awaited<
+      ReturnType<typeof findExistingAtstoreListingForProfile>
+    > = null;
+    if (body.createNewListing === true && requestedCreateRkey) {
+      let remoteApps: Awaited<
+        ReturnType<typeof findExistingAtstoreListingsForProfile>
+      >;
+      try {
+        remoteApps = await findExistingAtstoreListingsForProfile(
+          user.did,
+          session.pdsUrl,
+        );
+      } catch {
+        return appOwnershipUnavailableResponse();
+      }
+      preflightCreateRecord = remoteApps.find((record) =>
+        record.rkey === requestedCreateRkey
+      ) ?? null;
+      if (remoteApps.some((record) => record.rkey !== requestedCreateRkey)) {
+        return appProfileConflictResponse(managedApp ?? undefined);
+      }
+      let reservation;
+      try {
+        reservation = await reserveAppProfileTarget(
+          user.did,
+          requestedCreateRkey,
+        );
+        const candidateIsOnlyKnownApp =
+          (!managedApp || locallyIndexedCreateRetry) && !existing &&
+          (remoteApps.length === 0 || Boolean(preflightCreateRecord));
+        if (
+          reservation.rkey !== requestedCreateRkey && candidateIsOnlyKnownApp
+        ) {
+          reservation = await rotateStaleAppProfileTarget(
+            user.did,
+            reservation.rkey,
+            requestedCreateRkey,
+          );
+        }
+      } catch {
+        return appOwnershipUnavailableResponse();
+      }
+      if (reservation.rkey !== requestedCreateRkey) {
+        return appProfileRegistrationInProgressResponse();
+      }
     }
 
     let avatar = body.avatar ?? undefined;
@@ -879,28 +960,25 @@ export const handler = define.handlers({
     if (requestedAtstoreTarget && !targetedAtstore) {
       return new Response("app listing target not found", { status: 404 });
     }
-    const createRetryRecord = body.createNewListing === true &&
-        requestedCreateRkey
-      ? await getRecordPublic(
-        session.pdsUrl,
-        user.did,
-        ATSTORE_LISTING_NSID,
-        requestedCreateRkey,
-      ).then((record) =>
-        record
-          ? {
-            ...record,
-            rkey: requestedCreateRkey,
-          }
-          : null
-      ).catch(() => null)
-      : null;
-    const existingAtstore = body.createNewListing === true
-      ? createRetryRecord
-      : targetedAtstore ?? await findExistingAtstoreListingForProfile(
-        user.did,
-        session.pdsUrl,
-      ).catch(() => null);
+    let existingAtstore = body.createNewListing === true
+      ? preflightCreateRecord
+      : targetedAtstore;
+    if (body.createNewListing !== true && !existingAtstore) {
+      try {
+        existingAtstore = await findExistingAtstoreListingForProfile(
+          user.did,
+          session.pdsUrl,
+        );
+      } catch {
+        return appOwnershipUnavailableResponse();
+      }
+    }
+    if (
+      body.createNewListing !== true && managedApp?.atstoreListingUri &&
+      !existingAtstore
+    ) {
+      return appOwnershipUnavailableResponse();
+    }
     const writeTarget = body.createNewListing === true
       ? "atstore_listing" as const
       : resolveAppListingWriteTarget({
@@ -909,6 +987,33 @@ export const handler = define.handlers({
         categories: validation.value.categories,
       });
     if (writeTarget === "atstore_listing") {
+      let publishRkey = requestedCreateRkey;
+      if (!existingAtstore) {
+        if (!publishRkey) {
+          return new Response("app listing creation key required", {
+            status: 400,
+          });
+        }
+        let reservation;
+        try {
+          reservation = await reserveAppProfileTarget(user.did, publishRkey);
+          if (
+            reservation.rkey !== publishRkey && !managedApp && !existing
+          ) {
+            reservation = await rotateStaleAppProfileTarget(
+              user.did,
+              reservation.rkey,
+              publishRkey,
+            );
+          }
+        } catch {
+          return appOwnershipUnavailableResponse();
+        }
+        if (reservation.rkey !== publishRkey) {
+          return appProfileRegistrationInProgressResponse();
+        }
+        publishRkey = reservation.rkey;
+      }
       try {
         const atstoreResult = await publishAtstoreListingFromProfileRecord({
           did: user.did,
@@ -917,9 +1022,7 @@ export const handler = define.handlers({
           record: validation.value,
           existingRecord: existingAtstore,
           createDistinctListing: body.createNewListing === true,
-          rkeyOverride: body.createNewListing === true
-            ? requestedCreateRkey
-            : null,
+          rkeyOverride: publishRkey,
         });
         const communityResult = body.createNewListing === true
           ? null
@@ -953,9 +1056,6 @@ export const handler = define.handlers({
             { status: 400 },
           );
         }
-        // The OAuth/PDS error can retain private-key or token context. The
-        // public response and server log identify the operation without
-        // serializing that sensitive object.
         console.warn("[registry] ATStore listing publish failed");
         return new Response("ATStore listing publish failed", {
           status: 502,
@@ -1068,9 +1168,6 @@ export const handler = define.handlers({
       return new Response("invalid app listing target", { status: 400 });
     }
     const requestedListing = requestedListings[0] ?? null;
-    // Reject an explicit foreign or malformed repository target before asking
-    // the account to grant app-writing access. The capability prompt must not
-    // precede the ownership decision for a target named by the request.
     const requestedTarget = requestedListing
       ? ownedAtstoreTarget(requestedListing, user.did)
       : null;
@@ -1084,7 +1181,7 @@ export const handler = define.handlers({
       return new Response("owned app listing required", { status: 403 });
     }
 
-    const requiredCapabilities = ["app"] as const;
+    const requiredCapabilities = APP_MANAGEMENT_CAPABILITIES;
     const session = await getSessionForCapabilities(
       user.did,
       requiredCapabilities,
@@ -1106,6 +1203,7 @@ export const handler = define.handlers({
           requestedTarget.rkey,
         );
         await deleteAppRecord(requestedTarget.uri);
+        await releaseAppProfileTarget(user.did, requestedTarget.rkey);
       } catch {
         console.warn("[registry] ATStore listing delete failed");
         return new Response("ATStore listing delete failed", {
@@ -1138,6 +1236,7 @@ export const handler = define.handlers({
           existingAtstore.rkey,
         );
         await deleteAppRecord(existingAtstore.uri);
+        await releaseAppProfileTarget(user.did, existingAtstore.rkey);
       }
     } catch {
       console.warn("[registry] legacy ATStore listing delete failed");

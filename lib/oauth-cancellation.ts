@@ -6,7 +6,10 @@ import {
   ACCOUNT_REVIEW_DELETE_PARAM,
   REVIEW_RESPONSE_RESUME_PARAM,
 } from "./app-interaction-reauth.ts";
-import { USER_PROFILE_RESUME_PARAM } from "./user-profile-resume.ts";
+import {
+  PROFILE_UPDATE_DELETE_RESUME_PARAM,
+  PROFILE_UPDATE_RESUME_PARAM,
+} from "./profile-update-resume.ts";
 
 const PARSE_ORIGIN = "https://atmosphere.invalid";
 
@@ -20,7 +23,8 @@ export type OAuthCancellationKind =
   | "microblog-viewer"
   | "app-profile"
   | "host-profile"
-  | "user-profile";
+  | "profile-update"
+  | "profile-update-delete";
 
 function cancellationValue(
   kind: OAuthCancellationKind,
@@ -45,7 +49,7 @@ function relativeLocation(url: URL): string {
  */
 export function oauthAuthorizationExitHref(
   returnTo: string,
-  action: OAuthAction,
+  _action: OAuthAction,
 ): string {
   const safeReturnTo = isSafeRelativePath(returnTo) ? returnTo : "/account";
   const url = new URL(safeReturnTo, PARSE_ORIGIN);
@@ -89,14 +93,14 @@ export function oauthAuthorizationExitHref(
     url.searchParams.delete(HOST_PROFILE_RESUME_PARAM);
     cancellations.add("host-profile");
   }
-  if (url.searchParams.has(USER_PROFILE_RESUME_PARAM)) {
-    url.searchParams.delete(USER_PROFILE_RESUME_PARAM);
-    cancellations.add("user-profile");
-  } else if (action === "profile") {
-    // Keep handling in-flight authorization links from older deployments.
-    cancellations.add("user-profile");
+  if (url.searchParams.has(PROFILE_UPDATE_RESUME_PARAM)) {
+    url.searchParams.delete(PROFILE_UPDATE_RESUME_PARAM);
+    cancellations.add("profile-update");
   }
-
+  if (url.searchParams.has(PROFILE_UPDATE_DELETE_RESUME_PARAM)) {
+    url.searchParams.delete(PROFILE_UPDATE_DELETE_RESUME_PARAM);
+    cancellations.add("profile-update-delete");
+  }
   // Never allow a return path to inject or retain a stale cancellation. Only
   // the exact markers derived above are emitted by this exit link.
   url.searchParams.delete(OAUTH_CANCELLATION_PARAM);

@@ -6,6 +6,11 @@ import SignInForm, {
 } from "../islands/SignInForm.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 import { listCreateAccountHostOptions } from "../lib/create-account-hosts.ts";
+import {
+  type LoginApp,
+  readLoginRequest,
+  resolveLoginAppForRequest,
+} from "../lib/atmosphere-login.ts";
 import { getSessionForCapabilities, isOAuthConfigured } from "../lib/oauth.ts";
 import { refreshRememberedAccountCookies } from "../lib/remembered-accounts.ts";
 import {
@@ -14,6 +19,8 @@ import {
 } from "../lib/oauth-scopes.ts";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import {
+  accountCreationErrorMessage,
+  isAccountCreationError,
   isOAuthAction,
   isOAuthActionCapabilityRequest,
   type OAuthAction,
@@ -37,6 +44,113 @@ export { authActionCopy } from "../lib/oauth-action-copy.ts";
 
 const MAX_SIGNIN_QUERY_BYTES = 16_384;
 
+export const handler = define.handlers({
+  async GET(ctx) {
+    let request;
+    try {
+      request = readSignInAuthorizationRequest(ctx.url);
+    } catch {
+      return new Response(
+        "This sign-in link is invalid. Return to the previous page and try again.",
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    const {
+      next,
+      initialHandle,
+      intent,
+      requestedMode: mode,
+      choosingAnotherAccount,
+      continuation,
+      capabilities,
+      action,
+      targetName,
+      permissionState,
+      createError,
+    } = request;
+    const allowAccountCreation = oauthActionAllowsAccountCreation(action);
+    if (mode === "create" && !allowAccountCreation) {
+      return new Response(
+        "This account-creation link is invalid. Return to the previous page and try again.",
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    if (
+      ctx.state.user && shouldUseExistingAccount(
+        mode,
+        choosingAnotherAccount,
+      )
+    ) {
+      // Validate and refresh the token before auto-continuing. Trusting only
+      // the stored scope can bounce a revoked/expired session endlessly
+      // between this route and the protected destination.
+      const oauthSession = await getSessionForCapabilities(
+        ctx.state.user.did,
+        capabilities,
+        { quiet: true },
+      );
+      if (
+        oauthSession &&
+        permissionState !== "partial" && permissionState !== "concurrent" &&
+        permissionState !== "denied" && permissionState !== "required" &&
+        permissionState !== "failed"
+      ) {
+        return new Response(null, {
+          status: 303,
+          headers: { location: next ?? "/account" },
+        });
+      }
+    }
+    const account = buildAccountMenuProps(ctx.state);
+    const createAccountApp = mode === "create"
+      ? await createAccountAppForNext(next)
+      : null;
+    const createAccountHosts = mode === "create"
+      ? await loadCreateAccountHosts(createAccountApp)
+      : { hosts: [], unavailable: false };
+    const createAccountHostsEndpoint = createAccountHostsEndpointForNext(
+      next,
+      createAccountApp,
+    );
+    const createAccountError = createError
+      ? accountCreationErrorMessage(createError)
+      : null;
+    const response = await ctx.render(
+      (
+        <SignInPageContent
+          account={account}
+          mode={mode}
+          next={next ?? "/account"}
+          intent={intent}
+          capabilities={capabilities}
+          action={action}
+          targetName={targetName}
+          permissionState={permissionState}
+          choosingAnotherAccount={choosingAnotherAccount}
+          continuation={continuation ?? undefined}
+          allowAccountCreation={allowAccountCreation}
+          initialHandle={initialHandle}
+          createAccountHosts={createAccountHosts.hosts}
+          createAccountHostsUnavailable={createAccountHosts.unavailable}
+          createAccountHostsEndpoint={createAccountHostsEndpoint}
+          createAccountError={createAccountError}
+          oauthConfigured={isOAuthConfigured()}
+        />
+      ),
+      { headers: { "cache-control": "no-store" } },
+    );
+    if (account.rememberedAccounts.length > 0) {
+      const cookies = await refreshRememberedAccountCookies(
+        account.rememberedAccounts,
+      );
+      for (const cookie of cookies) {
+        response.headers.append("set-cookie", cookie);
+      }
+    }
+    return response;
+  },
+});
+
 export function readSignInAuthorizationRequest(url: URL) {
   if (url.search.length > MAX_SIGNIN_QUERY_BYTES) {
     throw new InvalidOAuthRequestInputError();
@@ -51,22 +165,15 @@ export function readSignInAuthorizationRequest(url: URL) {
   }
   const intent = optionalEnum(
     singleSearchValue(url.searchParams, "intent"),
-    [
-      "project",
-      "user",
-    ] as const,
+    ["project", "user"] as const,
   ) ?? undefined;
   const mode = optionalEnum(
     singleSearchValue(url.searchParams, "mode"),
-    [
-      "create",
-    ] as const,
+    ["signin", "create"] as const,
   );
   const choose = optionalEnum(
     singleSearchValue(url.searchParams, "choose"),
-    [
-      "another",
-    ] as const,
+    ["another"] as const,
   );
   const continuation = optionalEnum(
     singleSearchValue(url.searchParams, "continuation"),
@@ -92,16 +199,20 @@ export function readSignInAuthorizationRequest(url: URL) {
       action,
       capabilities,
     )
-  ) {
+  ) throw new InvalidOAuthRequestInputError();
+  const rawName = singleSearchValue(url.searchParams, "name");
+  const targetName = safeTargetName(rawName);
+  if (rawName !== null && !targetName) {
     throw new InvalidOAuthRequestInputError();
   }
-  const targetName = safeTargetName(
-    singleSearchValue(url.searchParams, "name"),
-  );
   const permissionState = optionalEnum(
     singleSearchValue(url.searchParams, "permission"),
     ["denied", "failed", "partial", "concurrent", "required"] as const,
   );
+  const createErrorRaw = singleSearchValue(url.searchParams, "create_error");
+  if (createErrorRaw !== null && !isAccountCreationError(createErrorRaw)) {
+    throw new InvalidOAuthRequestInputError();
+  }
   return {
     next,
     initialHandle,
@@ -113,100 +224,9 @@ export function readSignInAuthorizationRequest(url: URL) {
     action,
     targetName,
     permissionState,
+    createError: isAccountCreationError(createErrorRaw) ? createErrorRaw : null,
   };
 }
-
-export const handler = define.handlers({
-  async GET(ctx) {
-    let request;
-    try {
-      request = readSignInAuthorizationRequest(ctx.url);
-    } catch {
-      return new Response(
-        "This sign-in link is invalid. Return to the previous page and try again.",
-        { status: 400, headers: { "cache-control": "no-store" } },
-      );
-    }
-    const {
-      next,
-      initialHandle,
-      intent,
-      requestedMode,
-      choosingAnotherAccount,
-      continuation,
-      capabilities,
-      action,
-      targetName,
-      permissionState,
-    } = request;
-    const allowAccountCreation = oauthActionAllowsAccountCreation(action);
-    if (requestedMode === "create" && !allowAccountCreation) {
-      return new Response(
-        "This sign-in link is invalid. Return to the previous page and try again.",
-        { status: 400, headers: { "cache-control": "no-store" } },
-      );
-    }
-    const initialMode = requestedMode === "create" && allowAccountCreation
-      ? "create"
-      : "signin";
-    if (
-      ctx.state.user &&
-      shouldUseExistingAccount(initialMode, choosingAnotherAccount)
-    ) {
-      // Validate and refresh the token before auto-continuing. Trusting only
-      // the stored scope can bounce a revoked/expired session endlessly
-      // between this route and the protected destination.
-      const oauthSession = await getSessionForCapabilities(
-        ctx.state.user.did,
-        capabilities,
-        { quiet: true },
-      );
-      if (
-        oauthSession &&
-        permissionState !== "partial" && permissionState !== "concurrent" &&
-        permissionState !== "denied" && permissionState !== "failed" &&
-        permissionState !== "required"
-      ) {
-        return new Response(null, {
-          status: 303,
-          headers: { location: next ?? "/account" },
-        });
-      }
-    }
-    const account = buildAccountMenuProps(ctx.state);
-    const createAccountHosts = await loadCreateAccountHosts();
-    const response = await ctx.render(
-      (
-        <SignInPageContent
-          account={account}
-          next={next ?? "/account"}
-          intent={intent}
-          capabilities={capabilities}
-          action={action}
-          targetName={targetName}
-          permissionState={permissionState}
-          initialMode={initialMode}
-          choosingAnotherAccount={choosingAnotherAccount}
-          continuation={continuation ?? undefined}
-          allowAccountCreation={allowAccountCreation}
-          initialHandle={initialHandle}
-          createAccountHosts={createAccountHosts}
-          oauthConfigured={isOAuthConfigured()}
-        />
-      ),
-      { headers: { "cache-control": "no-store" } },
-    );
-    if (account.rememberedAccounts.length > 0) {
-      const cookies = await refreshRememberedAccountCookies(
-        account.rememberedAccounts,
-      );
-      for (const cookie of cookies) {
-        response.headers.append("set-cookie", cookie);
-      }
-    }
-    return response;
-  },
-});
 
 function safeHandle(raw: string | null): string | undefined {
   const handle = raw?.trim().replace(/^@/, "").toLowerCase();
@@ -231,98 +251,116 @@ function safeTargetName(raw: string | null): string | null {
 export function SignInPageContent(
   {
     account,
+    mode,
     next,
     intent,
     capabilities,
     action,
     targetName,
     permissionState,
-    initialMode,
     choosingAnotherAccount,
     continuation,
     allowAccountCreation,
     initialHandle,
     createAccountHosts,
+    createAccountHostsUnavailable,
+    createAccountHostsEndpoint,
+    createAccountError,
     oauthConfigured,
   }: {
     account: ReturnType<typeof buildAccountMenuProps>;
+    mode: "signin" | "create";
     next: string;
     intent?: "user" | "project";
     capabilities: OAuthCapability[];
     action: OAuthAction;
     targetName: string | null;
     permissionState: string | null;
-    initialMode: "signin" | "create";
     choosingAnotherAccount: boolean;
     continuation?: "login_selection";
     allowAccountCreation: boolean;
     initialHandle?: string;
     createAccountHosts: CreateAccountHostOption[];
+    createAccountHostsUnavailable: boolean;
+    createAccountHostsEndpoint: string;
+    createAccountError: string | null;
     oauthConfigured: boolean;
   },
 ) {
   const copy = authActionCopy(action, targetName);
-  const creatingAccount = initialMode === "create";
   const signedInUser = shouldUseExistingAccount(
-      initialMode,
+      mode,
       choosingAnotherAccount,
     )
     ? account.user
     : null;
-  const mediaContext = authMediaContext(capabilities);
-  const signInHeading = choosingAnotherAccount && action === "account"
-    ? "Choose another account"
-    : signedInUser
-    ? signedInAuthHeading(capabilities)
-    : copy.title;
-  const signInBody = `${
-    signedInUser ? copy.upgradeBody(signedInUser.handle) : copy.signInBody
-  }${mediaContext ? ` ${mediaContext}` : ""}`;
+  const createMode = mode === "create";
   return (
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} disableScrollEffects />
-        <section class="signin-page-section">
+        <main id="main-content" class="signin-page-section">
           <div
             class="container signin-page-container"
             data-signin-page-copy="true"
           >
-            <p
-              class="text-eyebrow"
-              data-signin-mode-copy="true"
-              data-signin-copy-signin={copy.eyebrow}
-              data-signin-copy-create="New account"
-            >
-              {creatingAccount ? "New account" : copy.eyebrow}
+            <p class="text-eyebrow">
+              {createMode ? "One account, every app" : copy.eyebrow}
             </p>
             <h1
-              class="text-section"
-              data-signin-mode-copy="true"
-              data-signin-copy-signin={signInHeading}
-              data-signin-copy-create="Create an Atmosphere account"
+              class="text-section signin-page-brand-title"
+              data-initial-mode={mode}
             >
-              {creatingAccount ? "Create an Atmosphere account" : signInHeading}
+              {!signedInUser || createMode
+                ? <img src="/union.svg" alt="" width="40" height="40" />
+                : null}
+              <span>
+                {createMode
+                  ? "Create an Atmosphere account"
+                  : signedInUser
+                  ? "Additional permission required"
+                  : "Login with Atmosphere"}
+              </span>
             </h1>
-            <p
-              class="text-body mt-2"
-              data-signin-mode-copy="true"
-              data-signin-copy-signin={signInBody}
-              data-signin-copy-create="Choose where your account will live."
-            >
-              {creatingAccount
-                ? "Choose where your account will live."
-                : signInBody}
-            </p>
+            {!createMode && (
+              <p class="text-body mt-2">
+                {signedInUser
+                  ? copy.upgradeBody(signedInUser.handle)
+                  : copy.signInBody}
+              </p>
+            )}
             <div class="glass signin-page-card">
-              {permissionStatusCopy(permissionState) && (
+              {!createMode && permissionStatusCopy(permissionState) && (
                 <p class="profile-form-status profile-form-status--error">
                   {permissionStatusCopy(permissionState)}
                 </p>
               )}
-              {!oauthConfigured
+              {createMode
+                ? (
+                  <SignInForm
+                    mode="create"
+                    returnTo={next}
+                    intent={intent}
+                    capabilities={capabilities}
+                    action={action}
+                    targetName={targetName ?? undefined}
+                    continuation={continuation}
+                    createAccountHosts={createAccountHosts}
+                    createAccountHostsEndpoint={createAccountHostsEndpoint}
+                    createAccountError={createAccountError ??
+                      (!oauthConfigured
+                        ? "Account creation is temporarily unavailable on this deployment. You can still review the available hosts and try again shortly."
+                        : null)}
+                    createAccountHostsUnavailable={createAccountHostsUnavailable}
+                    createAccountStartUnavailable={!oauthConfigured}
+                    rich
+                  />
+                )
+                : !oauthConfigured
                 ? (
                   <p class="text-body">
-                    Sign-in isn’t available here yet. Try again shortly.
+                    OAuth is not configured on this deployment yet. Try again
+                    shortly.
                   </p>
                 )
                 : signedInUser
@@ -334,7 +372,7 @@ export function SignInPageContent(
                     capabilities={capabilities}
                     action={action}
                     targetName={targetName}
-                    continuation={continuation ?? undefined}
+                    continuation={continuation}
                   />
                 )
                 : (
@@ -346,12 +384,9 @@ export function SignInPageContent(
                     targetName={targetName ?? undefined}
                     rememberedAccounts={account.rememberedAccounts}
                     initialHandle={initialHandle}
-                    createAccountHosts={createAccountHosts}
-                    createAccountHostsEndpoint="/api/login/account-hosts"
-                    initialMode={initialMode}
-                    allowAccountCreation={allowAccountCreation}
-                    chooseAnotherAccount={choosingAnotherAccount}
                     continuation={continuation}
+                    chooseAnotherAccount={choosingAnotherAccount}
+                    allowAccountCreation={allowAccountCreation}
                     rich
                   />
                 )}
@@ -362,43 +397,10 @@ export function SignInPageContent(
               />
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
-  );
-}
-
-export function shouldUseExistingAccount(
-  initialMode: "signin" | "create",
-  choosingAnotherAccount = false,
-): boolean {
-  return initialMode !== "create" && !choosingAnotherAccount;
-}
-
-export function AuthorizationExitLink(
-  {
-    permissionState,
-    returnTo,
-    action,
-  }: {
-    permissionState: string | null;
-    returnTo: string;
-    action: OAuthAction;
-  },
-) {
-  if (
-    permissionState !== "denied" && permissionState !== "partial" &&
-    permissionState !== "concurrent" && permissionState !== "required" &&
-    permissionState !== "failed"
-  ) {
-    return null;
-  }
-  const href = oauthAuthorizationExitHref(returnTo, action);
-  return (
-    <p class="text-body mt-2">
-      <a href={href} class="profile-form-button-link">Not now</a>
-    </p>
   );
 }
 
@@ -468,10 +470,45 @@ export function PermissionUpgradeForm(
           <input type="hidden" name="capability" value={capability} />
         ))}
         <button type="submit" class="profile-form-button-link">
-          Use another account
+          Use another Atmosphere account
         </button>
       </form>
     </div>
+  );
+}
+
+export function shouldUseExistingAccount(
+  mode: "signin" | "create",
+  choosingAnotherAccount = false,
+): boolean {
+  return mode !== "create" && !choosingAnotherAccount;
+}
+
+export function AuthorizationExitLink(
+  {
+    permissionState,
+    returnTo,
+    action,
+  }: {
+    permissionState: string | null;
+    returnTo: string;
+    action: OAuthAction;
+  },
+) {
+  if (
+    permissionState !== "denied" && permissionState !== "partial" &&
+    permissionState !== "concurrent" && permissionState !== "required" &&
+    permissionState !== "failed"
+  ) return null;
+  return (
+    <p class="text-body mt-2">
+      <a
+        href={oauthAuthorizationExitHref(returnTo, action)}
+        class="profile-form-button-link"
+      >
+        Not now
+      </a>
+    </p>
   );
 }
 
@@ -483,11 +520,12 @@ export function signedInAuthHeading(
     : "Confirm your account";
 }
 
+/** Retained for focused authorization-copy tests and image-editor prompts. */
 export function authMediaContext(
   capabilities: readonly OAuthCapability[],
 ): string | null {
   return capabilities.includes("media")
-    ? "This also allows the new image you selected to be uploaded."
+    ? "This includes image uploads for the app or host profile."
     : null;
 }
 
@@ -505,9 +543,53 @@ export function permissionStatusCopy(state: string | null): string | null {
   return null;
 }
 
-async function loadCreateAccountHosts(): Promise<CreateAccountHostOption[]> {
-  return await listCreateAccountHostOptions().catch((err) => {
-    console.warn("[signin] account host discovery failed:", err);
-    return [];
+async function loadCreateAccountHosts(
+  app: LoginApp | null,
+): Promise<{ hosts: CreateAccountHostOption[]; unavailable: boolean }> {
+  return await listCreateAccountHostOptions({ app }).then((hosts) => ({
+    hosts,
+    unavailable: false,
+  })).catch(() => {
+    console.warn("[signin] account host discovery failed");
+    return { hosts: [], unavailable: true };
   });
+}
+
+function pickerClientIdFromNext(next: string | null): string | null {
+  if (!next) return null;
+  try {
+    const url = new URL(next, "https://local.invalid");
+    if (url.pathname !== "/login/select") return null;
+    const clientId = url.searchParams.get("client_id")?.trim() ?? "";
+    return clientId && clientId.length <= 2048 ? clientId : null;
+  } catch {
+    return null;
+  }
+}
+
+async function createAccountAppForNext(
+  next: string | null,
+): Promise<LoginApp | null> {
+  const clientId = pickerClientIdFromNext(next);
+  if (!clientId || !next) return null;
+  try {
+    const request = readLoginRequest(new URL(next, "https://local.invalid"));
+    return (await resolveLoginAppForRequest(request)).app;
+  } catch {
+    return null;
+  }
+}
+
+function createAccountHostsEndpointForNext(
+  next: string | null,
+  app: LoginApp | null,
+): string {
+  const clientId = pickerClientIdFromNext(next);
+  return clientId && app?.clientId === clientId
+    ? `/api/login/account-hosts?client_id=${encodeURIComponent(clientId)}`
+    : "/api/login/account-hosts";
+}
+
+export function pickerClientIdFromNextForTest(next: string | null) {
+  return pickerClientIdFromNext(next);
 }

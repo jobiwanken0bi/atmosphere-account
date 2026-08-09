@@ -64,17 +64,37 @@ Deno.test("authorization exit cancels app and host profile replay markers", () =
   );
 });
 
-Deno.test("profile exit explicitly cancels its browser-stored resume", () => {
+Deno.test("authorization exit cancels both profile update replay markers", () => {
+  const exit = oauthAuthorizationExitHref(
+    "/apps/manage?project=did%3Aplc%3Aapp&profile-update-resume=did%3Aplc%3Aapp&profile-update-delete-resume=did%3Aplc%3Aapp#updates",
+    "app",
+  );
+  const url = new URL(exit, "https://atmosphereaccount.com");
+  assertEquals(url.searchParams.get("project"), "did:plc:app");
+  assertEquals(url.searchParams.has("profile-update-resume"), false);
+  assertEquals(url.searchParams.has("profile-update-delete-resume"), false);
+  assertEquals(url.searchParams.getAll(OAUTH_CANCELLATION_PARAM), [
+    "profile-update",
+    "profile-update-delete",
+  ]);
+
+  const saveConsumed = oauthCancellationLocation(url.href, "profile-update");
+  assertEquals(saveConsumed.wasCancelled, true);
   assertEquals(
-    oauthAuthorizationExitHref(
-      "/account?tab=profile&oauth_cancelled=favorite#edit",
-      "profile",
+    new URL(saveConsumed.cleanLocation, url.origin).searchParams.getAll(
+      OAUTH_CANCELLATION_PARAM,
     ),
-    "/account?tab=profile&oauth_cancelled=user-profile#edit",
+    ["profile-update-delete"],
   );
   assertEquals(
-    oauthAuthorizationExitHref("https://evil.example/leave", "profile"),
-    "/account?oauth_cancelled=user-profile",
+    oauthCancellationLocation(
+      saveConsumed.cleanLocation,
+      "profile-update-delete",
+    ),
+    {
+      wasCancelled: true,
+      cleanLocation: "/apps/manage?project=did%3Aplc%3Aapp#updates",
+    },
   );
 });
 

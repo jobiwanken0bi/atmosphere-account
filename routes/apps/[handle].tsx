@@ -14,9 +14,7 @@ import { FreshAppCard } from "../../components/explore/AppDirectoryShowcase.tsx"
 import AppLikeButton, {
   appLikeReauthHref,
 } from "../../islands/AppLikeButton.tsx";
-import AppReviewList, {
-  showAppReviewHeaderSummary,
-} from "../../islands/AppReviewList.tsx";
+import AppReviewList from "../../islands/AppReviewList.tsx";
 import ProfileReviewComposer from "../../islands/ProfileReviewComposer.tsx";
 import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import ShareButton from "../../islands/ShareButton.tsx";
@@ -24,7 +22,6 @@ import WebsiteIcon from "../../components/icons/WebsiteIcon.tsx";
 import BskyIcon from "../../components/icons/BskyIcon.tsx";
 import TangledIcon from "../../components/icons/TangledIcon.tsx";
 import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
-import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 import {
   AndroidIcon,
   AppleIcon,
@@ -34,7 +31,6 @@ import type { Locale } from "../../i18n/mod.ts";
 import {
   getProfileByDid,
   getProfileByHandle,
-  listProfilesByDids,
   type ProfileRow,
 } from "../../lib/registry.ts";
 import {
@@ -46,8 +42,7 @@ import {
 } from "../../lib/reviews.ts";
 import { accountHostName } from "../../lib/account-hosts.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
-import { getAppUser, listAppUsersByDids } from "../../lib/account-types.ts";
-import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
+import { getAppUser } from "../../lib/account-types.ts";
 import {
   listProfileUpdates,
   type ProfileUpdateRow,
@@ -73,6 +68,7 @@ import type { ResolvedDirectoryHostLink } from "../../lib/app-directory.ts";
 import {
   type DisplayAppReview,
   enrichAppMirroredReviews,
+  loadReviewAuthorIdentities,
 } from "../../lib/app-review-display.ts";
 import {
   type AppActionLink,
@@ -85,7 +81,6 @@ import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { oauthSigninUrl } from "../../lib/oauth-action.ts";
 import { favoriteResumeReturnPath } from "../../lib/favorite-resume.ts";
-import { getSessionForCapabilities } from "../../lib/oauth.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -180,42 +175,38 @@ export const handler = define.handlers({
     const legacyProfile = profile && !appListing?.atstoreListingUri
       ? profile
       : null;
-    const [reviewSummary, reviews, ownReview, updates, ownerAppSession] =
-      legacyProfile
-        ? await Promise.all([
-          getReviewSummary(legacyProfile.did).catch(() => emptyReviewSummary()),
-          listVisibleReviews(legacyProfile.did, { limit: 20 }).catch(() => []),
-          user
-            ? getOwnReview(legacyProfile.did, user.did).catch(() => null)
-            : null,
-          listProfileUpdates(legacyProfile.did, { limit: 6 }).catch(() => []),
-          user?.did === legacyProfile.did
-            ? getSessionForCapabilities(user.did, ["app"], { quiet: true })
-              .catch(
-                () => null,
-              )
-            : Promise.resolve(null),
-        ])
-        : [
-          emptyReviewSummary(),
-          [] as ReviewRow[],
-          null,
-          [] as ProfileUpdateRow[],
-          null,
-        ];
-    const [displayReviews, displayAppReviews] = await Promise.all([
-      legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
-      enrichAppMirroredReviews(appReviews),
-    ]);
-    const resolvedHostLink = appListing
-      ? await getResolvedHostLinkForApp(appListing).catch((err) => {
-        console.warn(
-          `[apps] host relationship lookup failed for ${appListing?.id}:`,
-          err,
-        );
-        return null;
-      })
-      : null;
+    const [reviewSummary, reviews, ownReview, updates] = legacyProfile
+      ? await Promise.all([
+        getReviewSummary(legacyProfile.did).catch(() => emptyReviewSummary()),
+        listVisibleReviews(legacyProfile.did, { limit: 20 }).catch(() => []),
+        user
+          ? getOwnReview(legacyProfile.did, user.did).catch(() => null)
+          : null,
+        listProfileUpdates(legacyProfile.did, { limit: 6 }).catch(() => []),
+      ])
+      : [
+        emptyReviewSummary(),
+        [] as ReviewRow[],
+        null,
+        [] as ProfileUpdateRow[],
+      ];
+    // Host relationship resolution is independent of reviewer identity
+    // enrichment. Start it in the same batch so slow DID/handle fallbacks do
+    // not add another serial wait before the page can render.
+    const [displayReviews, displayAppReviews, resolvedHostLink] = await Promise
+      .all([
+        legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
+        enrichAppMirroredReviews(appReviews),
+        appListing
+          ? getResolvedHostLinkForApp(appListing).catch((err) => {
+            console.warn(
+              `[apps] host relationship lookup failed for ${appListing?.id}:`,
+              err,
+            );
+            return null;
+          })
+          : Promise.resolve(null),
+      ]);
     /**
      * Share URL intentionally ends in `/`. Bluesky's composer runs a
      * client-side `getLikelyType` over the pasted URL: it splits the path
@@ -313,7 +304,6 @@ export const handler = define.handlers({
         appReviewSort={appReviewSort}
         appSourceAliases={appSourceAliases}
         canInspectAppSources={canInspectAppSources}
-        appAuthorized={Boolean(ownerAppSession)}
         reviewSummary={reviewSummary}
         reviews={displayReviews}
         updates={updates}
@@ -343,7 +333,6 @@ interface DetailProps {
   appReviewSort: AppReviewSort;
   appSourceAliases: AppAliasRow[];
   canInspectAppSources: boolean;
-  appAuthorized: boolean;
   reviewSummary: ReviewSummary;
   reviews: DisplayReview[];
   updates: ProfileUpdateRow[];
@@ -370,7 +359,6 @@ function ProfileDetailPage(
     appReviewSort,
     appSourceAliases,
     canInspectAppSources,
-    appAuthorized,
     reviewSummary,
     reviews,
     updates,
@@ -444,12 +432,11 @@ function ProfileDetailPage(
     ? `/api/registry/banner/${encodeURIComponent(profile.did)}`
     : null;
   const shareCopy = t.detail.share;
-  const profilePath = `/apps/${encodeURIComponent(profile.handle)}`;
   return (
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-profile-detail">
+        <main class="explore-profile-detail" id="main-content">
           <div class="container" style={{ maxWidth: "880px" }}>
             <div class="project-page-toolbar">
               <a href="/apps" class="text-link-button">
@@ -504,13 +491,6 @@ function ProfileDetailPage(
                 reviews={reviews}
                 signedIn={!!signedInUser}
                 isOwner={isOwner}
-                reportAuth={{
-                  returnTo: profilePath,
-                  targetName: profile.name,
-                  rememberedAccounts: account.rememberedAccounts,
-                  currentDid: signedInUser?.did,
-                  currentHandle: signedInUser?.handle,
-                }}
                 action={
                   <ProfileReviewComposer
                     targetId={profile.handle}
@@ -559,6 +539,13 @@ function ProfileDetailPage(
                     }}
                   />
                 }
+                reportAuth={{
+                  returnTo: `/apps/${encodeURIComponent(profile.handle)}`,
+                  targetName: profile.name,
+                  rememberedAccounts: account.rememberedAccounts,
+                  currentDid: signedInUser?.did,
+                  currentHandle: signedInUser?.handle,
+                }}
                 copy={{
                   heading: messages.reviews.list.heading,
                   empty: messages.reviews.list.empty,
@@ -590,16 +577,9 @@ function ProfileDetailPage(
 
             {isOwner && (
               <p style={{ marginTop: "1.5rem" }}>
-                <OwnerManagementLink
-                  authorized={appAuthorized}
-                  kind="app"
-                  destinationHref="/apps/manage"
-                  targetName={profile.name}
-                  label={t.detail.editProfile}
-                  className="explore-cta-primary"
-                  rememberedAccounts={account.rememberedAccounts}
-                  initialHandle={signedInUser?.handle}
-                />
+                <a href="/apps/manage" class="explore-cta-primary">
+                  {t.detail.editProfile}
+                </a>
               </p>
             )}
 
@@ -635,7 +615,7 @@ function ProfileDetailPage(
               </span>
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -696,7 +676,10 @@ function AppListingDetailPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-profile-detail app-detail-section">
+        <main
+          class="explore-profile-detail app-detail-section"
+          id="main-content"
+        >
           <div class="container" style={{ maxWidth: "980px" }}>
             <div class="project-page-toolbar">
               <a href="/apps" class="text-link-button">
@@ -775,7 +758,7 @@ function AppListingDetailPage(
               <AppTechnicalDetails app={app} aliases={sourceAliases} />
             )}
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -1028,14 +1011,10 @@ function AppReviewsSection(
     capabilities: ["favorite"],
   });
   const reauthSaveHref = signedInUser
-    ? appLikeReauthHref(signedInUser.did, favoriteReturnPath, app.name)
+    ? appLikeReauthHref(signedInUser.handle, favoriteReturnPath)
     : favoriteLoginHref;
   const reauthRemoveHref = signedInUser
-    ? appLikeReauthHref(
-      signedInUser.did,
-      favoriteRemoveReturnPath,
-      app.name,
-    )
+    ? appLikeReauthHref(signedInUser.handle, favoriteRemoveReturnPath)
     : favoriteLoginHref;
   const reviewSummary = app.reviewCount > 0 && app.averageRating != null
     ? messages.reviews.summary.average(
@@ -1052,11 +1031,7 @@ function AppReviewsSection(
           <h2 class="profile-card-section-title">
             {messages.reviews.list.heading}
           </h2>
-          {showAppReviewHeaderSummary(
-            app.reviewCount,
-            app.averageRating,
-            !!app.atstoreListingUri,
-          ) && <p class="app-detail-review-summary">{reviewSummary}</p>}
+          <p class="app-detail-review-summary">{reviewSummary}</p>
           {isOwner && app.favoriteCount > 0 && (
             <p class="app-detail-review-meta">
               {messages.reviews.app.likeCount(app.favoriteCount)}
@@ -1073,10 +1048,7 @@ function AppReviewsSection(
               reauthSaveHref={reauthSaveHref}
               reauthRemoveHref={reauthRemoveHref}
               returnTo={favoriteReturnPath}
-              removeReturnTo={favoriteRemoveReturnPath}
               rememberedAccounts={rememberedAccounts}
-              currentDid={signedInUser?.did}
-              currentHandle={signedInUser?.handle}
               targetName={app.name}
               initiallyLiked={!!ownFavorite}
               count={app.favoriteCount}
@@ -1267,41 +1239,26 @@ function emptyReviewSummary(): ReviewSummary {
 
 async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
   const reviewerDids = uniqueDids(reviews.map((review) => review.reviewerDid));
-  const [appUsers, profiles] = await Promise.all([
-    listAppUsersByDids(reviewerDids).catch(() => new Map()),
-    listProfilesByDids(reviewerDids, { profileType: "user" }).catch(() =>
-      new Map()
-    ),
-  ]);
+  const identities = await loadReviewAuthorIdentities(reviewerDids);
   return reviews.map((review) => {
-    const appUser = appUsers.get(review.reviewerDid) ?? null;
-    const profile = profiles.get(review.reviewerDid) ?? null;
-    const reviewerName = profile?.name ?? appUser?.displayName ?? null;
-    const reviewerHandle = appUser?.handle ?? profile?.handle ?? null;
-    const reviewerAvatarUrl = profile?.avatarCid
-      ? bskyCdnAvatarUrl(review.reviewerDid, profile.avatarCid)
-      : appUser?.avatarCid && appUser.avatarMime
-      ? bskyCdnAvatarUrl(review.reviewerDid, appUser.avatarCid)
-      : null;
+    const identity = identities.get(review.reviewerDid) ?? {
+      handle: null,
+      name: null,
+      avatarUrl: null,
+      href: null,
+    };
     return {
       ...review,
-      reviewerName,
-      reviewerHandle,
-      reviewerAvatarUrl,
-      reviewerProfileHref: profile
-        ? `/users/${encodeURIComponent(profile.handle)}`
-        : microblogProfileHref(reviewerHandle),
+      reviewerName: identity.name,
+      reviewerHandle: identity.handle,
+      reviewerAvatarUrl: identity.avatarUrl,
+      reviewerProfileHref: identity.href,
     };
   });
 }
 
 function uniqueDids(dids: string[]): string[] {
   return [...new Set(dids.map((did) => did.trim()).filter(Boolean))];
-}
-
-function microblogProfileHref(handle: string | null): string | null {
-  const clean = handle?.replace(/^@/, "").trim();
-  return clean ? `https://bsky.app/profile/${encodeURIComponent(clean)}` : null;
 }
 
 function NotFound(
@@ -1316,7 +1273,7 @@ function NotFound(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-profile-detail">
+        <main class="explore-profile-detail" id="main-content">
           <div
             class="container"
             style={{ maxWidth: "640px", textAlign: "center" }}
@@ -1329,7 +1286,7 @@ function NotFound(
               </a>
             </p>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

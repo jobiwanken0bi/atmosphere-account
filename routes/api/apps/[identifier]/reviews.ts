@@ -9,34 +9,25 @@ import {
   upsertAppReview,
 } from "../../../../lib/app-directory.ts";
 import { enrichAppMirroredReviews } from "../../../../lib/app-review-display.ts";
-import {
-  type AppReviewDraft,
-  ATSTORE_REVIEW_NSID,
-  parseAtstoreReview,
-} from "../../../../lib/app-lexicons.ts";
+import { ATSTORE_REVIEW_NSID } from "../../../../lib/app-lexicons.ts";
 import { ensureAtstoreReviewerProfile } from "../../../../lib/atstore-profile.ts";
-import { appReviewRkeyForWrite } from "../../../../lib/app-review-write.ts";
 import {
   getValidSession,
   grantedScopeForSession,
 } from "../../../../lib/oauth.ts";
-import {
-  getRecordPublic,
-  isPdsScopeMissingError,
-  putRecord,
-} from "../../../../lib/pds.ts";
+import { isPdsScopeMissingError, putRecord } from "../../../../lib/pds.ts";
+import { createAtprotoTid } from "../../../../lib/tid.ts";
 import {
   readJsonRequestWithLimit,
   rejectLargeRequest,
   RequestBodyTooLargeError,
 } from "../../../../lib/security.ts";
 import { hasOAuthCapabilities } from "../../../../lib/oauth-scopes.ts";
-import { appReviewReauthorizationUrl } from "../../../../lib/app-interaction-reauth.ts";
+import { oauthReauthorizationUrl } from "../../../../lib/oauth-action.ts";
 
 interface ReviewPayload {
   rating?: unknown;
   body?: unknown;
-  rkey?: unknown;
 }
 
 const MAX_REVIEW_REQUEST_BYTES = 16_384;
@@ -98,12 +89,10 @@ export const handler = define.handlers({
         MAX_REVIEW_REQUEST_BYTES,
       ) as ReviewPayload | null;
     } catch (error) {
-      return jsonError(
-        error instanceof RequestBodyTooLargeError ? 413 : 400,
-        error instanceof RequestBodyTooLargeError
-          ? "request_body_too_large"
-          : "invalid_body",
-      );
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      body = null;
     }
     if (!body) return jsonError(400, "invalid_body");
 
@@ -112,59 +101,14 @@ export const handler = define.handlers({
     const text = normalizeReviewText(body.body);
     if (text == null) return jsonError(400, "body_too_long");
 
-    let existing = await getOwnAppReview(app.id, user.did).catch(() => null);
-    const rkey = appReviewRkeyForWrite(existing?.rkey, body.rkey);
-    if (!rkey) return jsonError(400, "invalid_review_rkey");
-
+    const existing = await getOwnAppReview(app.id, user.did).catch(() => null);
+    const capability = existing ? "review_manage" as const : "review" as const;
     const session = await getValidSession(user.did);
     if (!session) {
-      return reauthorizationRequired(
-        user.handle,
-        app,
-        existing ? "review_manage" : "review",
-      );
+      return reauthorizationRequired(user.handle, app.slug, capability);
     }
-
-    if (!existing) {
-      const remote = await readRemoteAppReview(
-        session.pdsUrl,
-        user.did,
-        rkey,
-        app.atstoreListingUri,
-      ).catch(() => "unavailable" as const);
-      if (remote === "unavailable") {
-        return jsonError(502, "review_lookup_failed");
-      }
-      if (remote === "conflict") {
-        return jsonError(409, "review_record_conflict");
-      }
-      if (remote) {
-        await upsertAppReview(remote);
-        if (remote.rating === rating && remote.body === text) {
-          return jsonResponse(200, {
-            ok: true,
-            uri: remote.uri,
-            cid: remote.cid,
-          });
-        }
-        existing = {
-          uri: remote.uri,
-          rkey: remote.rkey,
-          rating: remote.rating,
-          body: remote.body,
-          createdAt: remote.createdAt,
-          updatedAt: remote.updatedAt,
-        };
-      }
-    }
-
-    const capability = existing ? "review_manage" as const : "review" as const;
     if (!hasOAuthCapabilities(grantedScopeForSession(session), [capability])) {
-      return reauthorizationRequired(
-        user.handle,
-        app,
-        capability,
-      );
+      return reauthorizationRequired(user.handle, app.slug, capability);
     }
 
     if (!existing) {
@@ -172,12 +116,13 @@ export const handler = define.handlers({
         did: user.did,
         handle: user.handle,
         pdsUrl: session.pdsUrl,
-      }).catch(() => {
-        console.warn("[apps/reviews] could not ensure ATStore profile");
+      }).catch((err) => {
+        console.warn("[apps/reviews] could not ensure ATStore profile:", err);
       });
     }
 
     const now = Date.now();
+    const rkey = existing?.rkey ?? createAtprotoTid();
     const createdAt = existing?.createdAt
       ? new Date(existing.createdAt).toISOString()
       : new Date(now).toISOString();
@@ -199,7 +144,7 @@ export const handler = define.handlers({
       if (isPdsScopeMissingError(result)) {
         return reauthorizationRequired(
           user.handle,
-          app,
+          app.slug,
           capability,
         );
       }
@@ -261,39 +206,20 @@ function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
 }
 
-async function readRemoteAppReview(
-  pdsUrl: string,
-  did: string,
-  rkey: string,
-  subject: string,
-): Promise<AppReviewDraft | "conflict" | null> {
-  const record = await getRecordPublic(
-    pdsUrl,
-    did,
-    ATSTORE_REVIEW_NSID,
-    rkey,
-  );
-  if (!record) return null;
-  const review = parseAtstoreReview({
-    ...record,
-    repoDid: did,
-    rkey,
-  });
-  return review?.subject === subject ? review : "conflict";
-}
-
 function reauthorizationRequired(
   handle: string,
-  app: { slug: string; name: string },
+  identifier: string,
   capability: "review" | "review_manage",
 ): Response {
+  const next = `/apps/${encodeURIComponent(identifier)}?review=compose`;
   return jsonResponse(403, {
     error: "reauth_required",
-    reauthUrl: appReviewReauthorizationUrl(
-      app.slug,
-      app.name,
-      capability,
-    ),
+    reauthUrl: oauthReauthorizationUrl({
+      next,
+      action: capability,
+      capabilities: [capability],
+      name: identifier,
+    }),
     handle,
   });
 }

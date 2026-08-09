@@ -1,59 +1,37 @@
-import { assertEquals } from "jsr:@std/assert@1";
-import { OAUTH_ACTIONS, type OAuthAction } from "../../lib/oauth-action.ts";
-import {
-  enforceDirectAccountCreationAction,
-  oauthAccountCreationFailureResponse,
-} from "./create.ts";
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { accountCreationProxyFailureRedirect } from "./create.ts";
 
-const ACCOUNT_CREATION_POLICY = {
-  account: true,
-  review: true,
-  review_manage: false,
-  legacy_review: true,
-  legacy_review_manage: false,
-  review_response: false,
-  report_review: true,
-  favorite: true,
-  app: true,
-  host_claim: false,
-  host_manage: false,
-  app_host: false,
-  profile: true,
-  developer: true,
-  passkey_manage: false,
-  relationship_confirm: false,
-  admin: false,
-} as const satisfies Record<OAuthAction, boolean>;
-
-Deno.test("direct account creation enforces every action policy", async () => {
-  for (const action of OAUTH_ACTIONS) {
-    const result = enforceDirectAccountCreationAction(action);
-    if (ACCOUNT_CREATION_POLICY[action]) {
-      assertEquals(result, action, action);
-      continue;
-    }
-    assertEquals(result instanceof Response, true, action);
-    const response = result as Response;
-    assertEquals(response.status, 400, action);
-    assertEquals(
-      await response.text(),
-      "This action requires an existing account. Sign in instead.",
-      action,
-    );
-  }
-});
-
-Deno.test("direct account creation normalizes a missing action to account", () => {
-  assertEquals(enforceDirectAccountCreationAction(undefined), "account");
-});
-
-Deno.test("account-creation failures do not expose provider details", async () => {
-  const response = oauthAccountCreationFailureResponse();
-  const body = await response.text();
-  assertEquals(response.status, 400);
-  assertEquals(
-    body,
-    "Couldn’t create the account with this host. Choose another host or try again.",
+Deno.test("account creation proxy outages return to the contextual chooser", () => {
+  const redirect = accountCreationProxyFailureRedirect(
+    new URL(
+      "https://atmosphereaccount.com/oauth/create?host=host.example&next=%2Fapps%2Ftangled%3Freview%3Dcompose&action=review&capability=review&name=Tangled",
+    ),
   );
-  assertEquals(body.includes("account creation failed"), false);
+  const url = new URL(redirect ?? "", "https://atmosphereaccount.com");
+  assertEquals(url.pathname, "/signin");
+  assertEquals(url.searchParams.get("mode"), "create");
+  assertEquals(url.searchParams.get("create_error"), "creation_unavailable");
+  assertEquals(url.searchParams.get("next"), "/apps/tangled?review=compose");
+  assertEquals(url.searchParams.get("action"), "review");
+  assertEquals(url.searchParams.getAll("capability"), ["review"]);
+  assertEquals(url.searchParams.get("name"), "Tangled");
+});
+
+Deno.test("account creation proxy recovery rejects management-only contexts", () => {
+  assertEquals(
+    accountCreationProxyFailureRedirect(
+      new URL(
+        "https://atmosphereaccount.com/oauth/create?host=host.example&next=%2Fhosts%2Fhost.example%2Fmanage&action=host_manage&capability=host&capability=media",
+      ),
+    ),
+    null,
+  );
+});
+
+Deno.test("account creation failures never log raw exception details", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./create.ts", import.meta.url),
+  );
+  assertEquals(source.includes('start failed:", err'), false);
+  assertEquals(source.includes('proxy failed:", err'), false);
 });

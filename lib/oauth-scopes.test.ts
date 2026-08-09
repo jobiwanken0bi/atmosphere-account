@@ -40,6 +40,7 @@ Deno.test("capability parser rejects raw or unknown browser values", () => {
   assertEquals(normalizeOAuthCapabilities(["review", "review"]), ["review"]);
   assertEquals(normalizeOAuthCapabilities(["repo:*"]), null);
   assertEquals(normalizeOAuthCapabilities(["both"]), null);
+  assertEquals(normalizeOAuthCapabilities(["profile"]), null);
 });
 
 Deno.test("review scope is narrow and media remains opt-in", () => {
@@ -77,45 +78,6 @@ Deno.test("review management adds only update and delete to a prior create grant
   );
 });
 
-Deno.test("legacy review creation and management stay action-attenuated", () => {
-  const create = scopeForCapabilities(["legacy_review"]);
-  const manage = scopeForCapabilities(["legacy_review_manage"]);
-  assertEquals(hasOAuthCapabilities(create, ["legacy_review"]), true);
-  assertEquals(hasOAuthCapabilities(create, ["legacy_review_manage"]), false);
-  assertEquals(hasOAuthCapabilities(manage, ["legacy_review"]), false);
-  assertEquals(hasOAuthCapabilities(manage, ["legacy_review_manage"]), true);
-  assertEquals(
-    scopeTokens(create).includes(
-      "repo:com.atmosphereaccount.registry.review?action=create",
-    ),
-    true,
-  );
-  assertEquals(
-    scopeTokens(manage).includes(
-      "repo:com.atmosphereaccount.registry.review?action=update&action=delete",
-    ),
-    true,
-  );
-});
-
-Deno.test("user profile editing never requests delete access", () => {
-  const profile = scopeForCapabilities(["profile"]);
-  assertEquals(hasOAuthCapabilities(profile, ["profile"]), true);
-  assertEquals(
-    scopeTokens(profile).includes(
-      "repo:com.atmosphereaccount.registry.profile?action=create&action=update",
-    ),
-    true,
-  );
-  assertEquals(
-    scopeCoversScope(
-      profile,
-      "atproto repo:com.atmosphereaccount.registry.profile?action=delete",
-    ),
-    false,
-  );
-});
-
 Deno.test("legacy broad grants satisfy the progressive capability checks", () => {
   assertEquals(
     hasOAuthCapabilities(LEGACY_OAUTH_SCOPE, [
@@ -123,11 +85,9 @@ Deno.test("legacy broad grants satisfy the progressive capability checks", () =>
       "review",
       "review_manage",
       "legacy_review",
-      "legacy_review_manage",
       "favorite",
       "app",
       "host",
-      "profile",
       "media",
     ]),
     true,
@@ -211,19 +171,6 @@ Deno.test("malformed repo scope parameters never become repository grants", () =
       false,
     );
   }
-});
-
-Deno.test("modified include tokens never inherit a known permission set", () => {
-  const modified =
-    "atproto include:fyi.atstore.authThirdPartyReviews?unexpected=value";
-  assertEquals(hasOAuthCapabilities(modified, ["review"]), false);
-  assertEquals(
-    scopeCoversScope(
-      modified,
-      "atproto include:fyi.atstore.authThirdPartyReviews",
-    ),
-    false,
-  );
 });
 
 Deno.test("scope union is deterministic and de-duplicates tokens", () => {

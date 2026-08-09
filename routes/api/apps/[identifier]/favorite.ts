@@ -23,8 +23,11 @@ import {
   isPdsScopeMissingError,
 } from "../../../../lib/pds.ts";
 import { hasOAuthCapabilities } from "../../../../lib/oauth-scopes.ts";
-import type { FavoriteResumeIntent } from "../../../../lib/favorite-resume.ts";
-import { appFavoriteReauthorizationUrl } from "../../../../lib/app-interaction-reauth.ts";
+import { oauthReauthorizationUrl } from "../../../../lib/oauth-action.ts";
+import {
+  type FavoriteResumeIntent,
+  favoriteResumeReturnPath,
+} from "../../../../lib/favorite-resume.ts";
 
 export const handler = define.handlers({
   POST: withRateLimit(async (ctx) => {
@@ -54,11 +57,7 @@ export const handler = define.handlers({
 
     const session = await getValidSession(user.did);
     if (!session) {
-      return reauthorizationRequired(
-        user.handle,
-        app,
-        "save",
-      );
+      return reauthorizationRequired(user.handle, app.slug, "save");
     }
 
     const now = Date.now();
@@ -71,10 +70,7 @@ export const handler = define.handlers({
       user.did,
       rkey,
       app.atstoreListingUri,
-    ).catch(() => "unavailable" as const);
-    if (remote === "unavailable") {
-      return jsonError(502, "favorite_lookup_failed");
-    }
+    );
     if (remote === "conflict") {
       return jsonError(409, "favorite_record_conflict");
     }
@@ -83,11 +79,7 @@ export const handler = define.handlers({
     if (
       !hasOAuthCapabilities(grantedScopeForSession(session), ["favorite"])
     ) {
-      return reauthorizationRequired(
-        user.handle,
-        app,
-        "save",
-      );
+      return reauthorizationRequired(user.handle, app.slug, "save");
     }
 
     const record = {
@@ -103,18 +95,14 @@ export const handler = define.handlers({
     ).catch((err) => err instanceof Error ? err : new Error(String(err)));
     if (result instanceof Error) {
       if (isPdsScopeMissingError(result)) {
-        return reauthorizationRequired(
-          user.handle,
-          app,
-          "save",
-        );
+        return reauthorizationRequired(user.handle, app.slug, "save");
       }
       const recovered = await readRemoteFavorite(
         session.pdsUrl,
         user.did,
         rkey,
         app.atstoreListingUri,
-      ).catch(() => null);
+      );
       if (recovered === "conflict") {
         return jsonError(409, "favorite_record_conflict");
       }
@@ -152,41 +140,15 @@ export const handler = define.handlers({
     if (!app || !app.atstoreListingUri) {
       return jsonError(404, "shared_app_record_not_found");
     }
-    let existing = await getOwnAppFavorite(app.id, user.did);
+    const existing = await getOwnAppFavorite(app.id, user.did);
+    if (!existing) return jsonResponse(200, { ok: true, removed: false });
+
     const session = await getValidSession(user.did);
     if (
       !session ||
       !hasOAuthCapabilities(grantedScopeForSession(session), ["favorite"])
     ) {
-      return reauthorizationRequired(
-        user.handle,
-        app,
-        "remove",
-      );
-    }
-
-    if (!existing) {
-      const remote = await readRemoteFavorite(
-        session.pdsUrl,
-        user.did,
-        app.id,
-        app.atstoreListingUri,
-      ).catch(() => "unavailable" as const);
-      if (remote === "unavailable") {
-        return jsonError(502, "favorite_lookup_failed");
-      }
-      if (remote === "conflict") {
-        return jsonError(409, "favorite_record_conflict");
-      }
-      if (!remote) {
-        return jsonResponse(200, { ok: true, removed: false });
-      }
-      await upsertAppFavorite(remote);
-      existing = {
-        uri: remote.uri,
-        rkey: remote.rkey,
-        createdAt: remote.createdAt,
-      };
+      return reauthorizationRequired(user.handle, app.slug, "remove");
     }
 
     const deleted = await deleteRecord(
@@ -199,11 +161,7 @@ export const handler = define.handlers({
     );
     if (deleted) {
       if (isPdsScopeMissingError(deleted)) {
-        return reauthorizationRequired(
-          user.handle,
-          app,
-          "remove",
-        );
+        return reauthorizationRequired(user.handle, app.slug, "remove");
       }
       return jsonResponse(502, {
         error: "delete_record_failed",
@@ -236,7 +194,7 @@ async function readRemoteFavorite(
     did,
     ATSTORE_FAVORITE_NSID,
     rkey,
-  );
+  ).catch(() => null);
   if (!record) return null;
   const favorite = parseAtstoreFavorite({
     ...record,
@@ -257,16 +215,18 @@ async function indexFavorite(favorite: AppFavoriteDraft): Promise<Response> {
 
 function reauthorizationRequired(
   handle: string,
-  app: { slug: string; name: string },
+  identifier: string,
   intent: FavoriteResumeIntent,
 ): Response {
+  const next = favoriteResumeReturnPath(identifier, intent);
   return jsonResponse(403, {
     error: "reauth_required",
-    reauthUrl: appFavoriteReauthorizationUrl(
-      app.slug,
-      app.name,
-      intent,
-    ),
+    reauthUrl: oauthReauthorizationUrl({
+      next,
+      action: "favorite",
+      capabilities: ["favorite"],
+      name: identifier,
+    }),
     handle,
   });
 }

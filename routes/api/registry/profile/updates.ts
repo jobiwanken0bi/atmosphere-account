@@ -8,7 +8,10 @@ import { define } from "../../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../../lib/appview-client.ts";
 import { getEffectiveAccountType } from "../../../../lib/account-types.ts";
 import { getSessionForCapabilities } from "../../../../lib/oauth.ts";
-import { oauthReauthorizationUrl } from "../../../../lib/oauth-action.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  oauthReauthorizationUrl,
+} from "../../../../lib/oauth-action.ts";
 import { deleteUpdateRecord, putUpdateRecord } from "../../../../lib/pds.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
 import {
@@ -54,7 +57,7 @@ export const handler = define.handlers({
     if (accountType !== "project") return jsonError(403, "project_required");
 
     const [session, profile] = await Promise.all([
-      getSessionForCapabilities(user.did, ["app"]),
+      getSessionForCapabilities(user.did, APP_MANAGEMENT_CAPABILITIES),
       getProfileByDid(user.did, { includeTakenDown: true }).catch(() => null),
     ]);
     if (!session) return appReauthRequired(profile?.name);
@@ -72,12 +75,10 @@ export const handler = define.handlers({
         MAX_PROFILE_UPDATE_BODY_BYTES,
       ) as UpdatePayload | null;
     } catch (error) {
-      return jsonError(
-        error instanceof RequestBodyTooLargeError ? 413 : 400,
-        error instanceof RequestBodyTooLargeError
-          ? "request_body_too_large"
-          : "invalid_body",
-      );
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      payload = null;
     }
     if (!payload) return jsonError(400, "invalid_body");
 
@@ -159,7 +160,10 @@ export const handler = define.handlers({
     );
     if (accountType !== "project") return jsonError(403, "project_required");
 
-    const session = await getSessionForCapabilities(user.did, ["app"]);
+    const session = await getSessionForCapabilities(
+      user.did,
+      APP_MANAGEMENT_CAPABILITIES,
+    );
     if (!session) return appReauthRequired();
 
     const url = new URL(ctx.req.url);
@@ -202,7 +206,7 @@ function appReauthRequired(name = "your app"): Response {
     reauthUrl: oauthReauthorizationUrl({
       next: "/apps/manage",
       action: "app",
-      capabilities: ["app"],
+      capabilities: APP_MANAGEMENT_CAPABILITIES,
       name,
     }),
   });

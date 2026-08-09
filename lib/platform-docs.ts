@@ -63,15 +63,15 @@ export const docsPages: DocsPage[] = [
     navTitle: "Overview",
     title: "Atmosphere Account docs",
     description:
-      "Build with a shared Atmosphere sign-in picker, host registry, and thin routing to PDS-owned account pages.",
+      "Build apps with the Login with Atmosphere picker, a host registry, and thin routing to PDS-owned account pages.",
     summary: [
-      "Use Atmosphere Login when an app wants a consistent account picker before starting its own AT Protocol OAuth flow.",
-      "Use host service records when a PDS host wants Atmosphere to route users to its account page without giving custody or account-control authority to Atmosphere.",
-      "Passwords, devices, OAuth grants, keys, backups, recovery, deletion, and migration are managed by the user's PDS host, not by Atmosphere.",
+      "Use Login with Atmosphere when an app wants a consistent account picker before starting its own AT Protocol OAuth flow.",
+      "Use host service records when a PDS host wants this site to route users to its account page without giving the site custody or account-control authority.",
+      "Passwords, devices, OAuth grants, keys, backups, recovery, deletion, and migration are managed by the user's PDS host, not by this site.",
       "Use conformance tools before claiming compatibility in the host directory.",
     ],
     primaryCta: {
-      label: "Add Atmosphere Login",
+      label: "Add Login with Atmosphere",
       href: "/docs/atmosphere-login",
     },
     secondaryCta: { label: "Validate a host", href: "/docs/conformance" },
@@ -93,7 +93,7 @@ export const docsPages: DocsPage[] = [
       {
         title: "Route to host account pages",
         body:
-          "Publish a host service record with a PDS endpoint and working account page URL so Atmosphere can send users to host-owned controls.",
+          "Publish a host service record with a PDS endpoint and working account page URL so this site can send users to host-owned controls.",
         href: "/docs/host-dashboard",
         label: "Host guide",
       },
@@ -104,7 +104,7 @@ export const docsPages: DocsPage[] = [
         eyebrow: "Architecture",
         title: "Thin coordination, host-owned account controls",
         intro:
-          "Atmosphere Account coordinates UX, discovery, and contracts. The user’s account host remains the authority for account security, account controls, and data custody.",
+          "This site coordinates UX, discovery, and contracts. The user’s account host remains the authority for account security, account controls, and data custody.",
         blocks: [
           {
             type: "diagram",
@@ -117,7 +117,8 @@ export const docsPages: DocsPage[] = [
               },
               {
                 title: "Account picker",
-                body: "Atmosphere lets the user choose a remembered account.",
+                body:
+                  "Login with Atmosphere lets the user choose a remembered account.",
               },
               {
                 title: "Selection token",
@@ -136,7 +137,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "Universal sign-in",
                 body:
-                  "Apps send users to the hosted picker. Atmosphere returns a signed selection token, then the app starts normal AT Protocol OAuth with the chosen account.",
+                  "Apps send users to the hosted picker. Login with Atmosphere returns a signed selection token, then the app starts normal AT Protocol OAuth with the chosen account.",
               },
               {
                 title: "Shared app records",
@@ -146,7 +147,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "Host account routing",
                 body:
-                  "PDS hosts publish a service record. Atmosphere shows where the account lives and links users to the account page the host explicitly publishes.",
+                  "PDS hosts publish a service record. This site shows where the account lives and links users to the account page the host explicitly publishes.",
               },
               {
                 title: "Developer ecosystem",
@@ -159,11 +160,11 @@ export const docsPages: DocsPage[] = [
             type: "callout",
             title: "Security boundary",
             body:
-              "Atmosphere does not broker app OAuth tokens, revoke PDS grants, manage devices, change passwords, rotate keys, perform account recovery, store backups, delete accounts, or move accounts. Those actions belong to the user’s account host.",
+              "Login with Atmosphere does not broker app OAuth tokens, revoke PDS grants, manage devices, change passwords, rotate keys, perform account recovery, store backups, delete accounts, or move accounts. Those actions belong to the user’s account host.",
           },
           {
             type: "table",
-            columns: ["Surface", "Atmosphere does", "PDS host does"],
+            columns: ["Surface", "This site does", "PDS host does"],
             rows: [
               [
                 "Sign in",
@@ -172,7 +173,7 @@ export const docsPages: DocsPage[] = [
               ],
               [
                 "Account home",
-                "Shows the current account, remembered browser accounts, Atmosphere Login connections, developer apps, reviews, and a link to the host.",
+                "Shows the current account, remembered browser accounts, Login with Atmosphere connections, developer apps, reviews, and a link to the host.",
                 "Manages passwords, devices, OAuth grants, account deletion, recovery, backups, exports, and migration.",
               ],
               [
@@ -193,14 +194,14 @@ export const docsPages: DocsPage[] = [
               {
                 title: "App developers",
                 body:
-                  "Use Atmosphere Login for the shared account picker, then own your app OAuth session.",
+                  "Use Login with Atmosphere for the shared account picker, then own your app OAuth session.",
                 href: "/docs/atmosphere-login",
                 label: "Read the guide",
               },
               {
                 title: "PDS hosts",
                 body:
-                  "Publish host service records and a working account page URL so Atmosphere can route users without duplicating account controls.",
+                  "Publish host service records and a working account page URL so this site can route users without duplicating account controls.",
                 href: "/docs/host-dashboard",
                 label: "Read the host guide",
               },
@@ -232,13 +233,13 @@ export const docsPages: DocsPage[] = [
             rows: [
               [
                 "An Atmosphere app",
-                "Atmosphere Login and shared app records",
+                "Login with Atmosphere and shared app records",
                 "One consistent account picker, followed by your own AT Protocol OAuth session and interoperable app discovery.",
               ],
               [
                 "A PDS host",
                 "Host service record",
-                "Atmosphere can route people to the explicitly published account page without duplicating account controls.",
+                "This site can route people to the explicitly published account page without duplicating account controls.",
               ],
               [
                 "A directory or compatibility badge",
@@ -256,7 +257,7 @@ export const docsPages: DocsPage[] = [
     group: "Start",
     status: "Stable",
     navTitle: "Get started",
-    title: "Build your first Atmosphere Login flow",
+    title: "Build your first Login with Atmosphere flow",
     description:
       "Add a shared account picker, verify the signed account selection, then start your own AT Protocol OAuth flow.",
     summary: [
@@ -270,7 +271,7 @@ export const docsPages: DocsPage[] = [
     },
     secondaryCta: {
       label: "Register your app",
-      href: "/account/developer/apps",
+      href: "/apps",
     },
     nextSteps: [
       {
@@ -297,7 +298,7 @@ export const docsPages: DocsPage[] = [
       {
         id: "flow",
         eyebrow: "Flow",
-        title: "Atmosphere selects, your app authorizes",
+        title: "Login with Atmosphere selects, your app authorizes",
         intro:
           "The picker only answers one question: which Atmosphere account does the user want to use? Your app still owns scopes, grants, sessions, refresh behavior, and logout.",
         blocks: [
@@ -312,7 +313,7 @@ export const docsPages: DocsPage[] = [
               {
                 title: "Receive callback",
                 body:
-                  "Atmosphere returns `selection_token`, `client_id`, `state`, and account hints.",
+                  "Login with Atmosphere returns `selection_token`, `client_id`, `state`, and account hints.",
               },
               {
                 title: "Verify selection",
@@ -342,14 +343,14 @@ export const docsPages: DocsPage[] = [
             type: "steps",
             items: [
               {
-                title: "Register app identity",
+                title: "Create the app profile and environment",
                 body:
-                  "Create a development or production app registration with a name, client ID, homepage, logo, and allowed return URI.",
+                  "Create the public app profile once, then add a development or production environment with its client ID and exact return URI. The picker derives the name, homepage, and logo from the profile.",
               },
               {
                 title: "Add the SDK button",
                 body:
-                  "Pass the registered client ID, return URI, and app metadata to the browser SDK.",
+                  "Pass the registered client ID and return URI to the browser SDK.",
               },
               {
                 title: "Verify the callback",
@@ -424,8 +425,8 @@ return startAtprotoOAuth({
     slug: "atmosphere-login",
     group: "Guides",
     status: "Stable",
-    navTitle: "Atmosphere Login",
-    title: "Add Continue with Atmosphere",
+    navTitle: "Login with Atmosphere",
+    title: "Add Login with Atmosphere",
     description:
       "Use the hosted picker to let people choose an Atmosphere account, then complete your own AT Protocol OAuth flow with that account.",
     summary: [
@@ -433,7 +434,7 @@ return startAtprotoOAuth({
       "The app receives a signed `selection_token` with DID, handle, state, audience, and optional PDS URL.",
       "OAuth tokens stay between the app and the user’s account host.",
     ],
-    primaryCta: { label: "Register your app", href: "/account/developer/apps" },
+    primaryCta: { label: "Register your app", href: "/apps" },
     secondaryCta: {
       label: "Open example app",
       href: "/examples/atmosphere-login/app",
@@ -518,7 +519,7 @@ return startAtprotoOAuth({
             type: "steps",
             items: [
               {
-                title: "Click Continue with Atmosphere",
+                title: "Click Login with Atmosphere",
                 body:
                   "The SDK stores a one-time state value, builds the picker URL, and sends the user to `/login/select`. Redirect mode navigates the page; popup mode keeps the app page open.",
               },
@@ -535,7 +536,7 @@ return startAtprotoOAuth({
               {
                 title: "Finish as the app",
                 body:
-                  "The example app completes AT Protocol OAuth on its own callback and creates its own app session. Atmosphere never receives the app OAuth token.",
+                  "The example app completes AT Protocol OAuth on its own callback and creates its own app session. Login with Atmosphere never receives the app OAuth token.",
               },
             ],
           },
@@ -545,7 +546,7 @@ return startAtprotoOAuth({
         id: "complete-oauth-handoff",
         title: "Complete the ATProto OAuth handoff",
         intro:
-          "Atmosphere Login only selects an account. After the selection token passes, your app should begin normal AT Protocol OAuth with the selected handle or DID as the login hint.",
+          "Login with Atmosphere only selects an account. After the selection token passes, your app should begin normal AT Protocol OAuth with the selected handle or DID as the login hint.",
         blocks: [
           {
             type: "endpoint",
@@ -592,7 +593,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             type: "callout",
             title: "Keep the token boundary clear",
             body:
-              "Do not send AT Protocol OAuth access tokens to Atmosphere. The relying app owns its OAuth session, refresh behavior, scopes, and logout semantics.",
+              "Do not send AT Protocol OAuth access tokens to Login with Atmosphere. The relying app owns its OAuth session, refresh behavior, scopes, and logout semantics.",
           },
         ],
       },
@@ -600,13 +601,13 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "account-management-boundary",
         title: "Account management stays with the host",
         intro:
-          "Atmosphere Login gives apps a consistent account picker. It is intentionally not a replacement for the user's PDS account page.",
+          "Login with Atmosphere gives apps a consistent account picker. It is intentionally not a replacement for the user's PDS account page.",
         blocks: [
           {
             type: "callout",
             title: "Thin architecture",
             body:
-              "Atmosphere can show picker history and apps that used the Atmosphere picker. The user's PDS host manages OAuth grants, connected apps, devices, sessions, passwords, keys, recovery, backups, deletion, and migration.",
+              "This site can show picker history and apps that used Login with Atmosphere. The user's PDS host manages OAuth grants, connected apps, devices, sessions, passwords, keys, recovery, backups, deletion, and migration.",
           },
           {
             type: "table",
@@ -614,7 +615,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             rows: [
               [
                 "Choose which account to use",
-                "Atmosphere hosted picker and signed selection token.",
+                "Login with Atmosphere picker and signed selection token.",
               ],
               [
                 "Grant an app repository access",
@@ -626,7 +627,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               ],
               [
                 "Manage devices, passwords, recovery, backups, or migration",
-                "The user's account host. Atmosphere only routes to that destination when known.",
+                "The user's account host. This site only routes to that destination when known.",
               ],
             ],
           },
@@ -713,9 +714,9 @@ return redirect("/oauth/start?" + new URLSearchParams({
           {
             type: "endpoint",
             method: "GET",
-            path: "/account/developer/apps",
+            path: "/apps",
             body:
-              "Signed-in developer page for registering an app name, client ID, logo URL, homepage, allowed return URIs, and an optional verified preferred account host.",
+              "Start in the Apps directory and register the public app profile with the account that represents it. Once the profile exists, open Apps and hosts, then Developer settings, to add client IDs and exact return URLs. The app name, homepage, and logo come from its app profile.",
           },
           {
             type: "steps",
@@ -723,7 +724,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Sign in with the owner account",
                 body:
-                  "The current Atmosphere account becomes the owner of the app registration. That owner can update the name, logo, homepage, and return URI allow-list.",
+                  "Use the Atmosphere account that represents this app. That account owns the public app profile and its developer environments.",
               },
               {
                 title: "Use a stable client ID",
@@ -733,12 +734,12 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Add exact return URIs",
                 body:
-                  "Every production callback that receives `selection_token` must be listed exactly. Atmosphere strips URL fragments before matching.",
+                  "Every production callback that receives `selection_token` must be listed exactly. Login with Atmosphere strips URL fragments before matching.",
               },
               {
                 title: "Recommend a host you operate (optional)",
                 body:
-                  "If the same owner account has claimed a joinable account host, select it as the preferred host. The picker pins it first and labels it as recommended by the app, while keeping every other eligible host available.",
+                  "Select a joinable host managed by the same DID or connected to the app by a verified app-host relationship. The picker pins it first and labels it as recommended by the app, while keeping every other eligible host available.",
               },
             ],
           },
@@ -746,7 +747,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             type: "callout",
             title: "Preferred hosts are registration data, not request input",
             body:
-              "Atmosphere verifies the host claim when the registration is saved and again when the picker opens. Apps cannot nominate an arbitrary host in the picker URL, and revoked, transferred, closed, or unconfigured hosts stop being recommended.",
+              "This site verifies the host owner or app-host relationship when the environment is saved and again when Login with Atmosphere opens. Apps cannot nominate an arbitrary host in the picker URL, and revoked, transferred, unlinked, closed, or unconfigured hosts stop being recommended.",
           },
           {
             type: "table",
@@ -765,7 +766,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               [
                 "trusted",
                 "Trusted",
-                "Atmosphere-reviewed app identity with a verified domain manifest and production return URI allow-list.",
+                "Site-reviewed app identity with a verified domain manifest and production return URI allow-list.",
               ],
               [
                 "blocked",
@@ -787,7 +788,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "domain-manifest",
         title: "Verify your app domain",
         intro:
-          "Before an app can request Trusted status, its homepage origin must publish a small Atmosphere Login manifest. This proves the registered app identity is controlled by the same domain users see in the picker.",
+          "Before an app can request Trusted status, its homepage origin must publish a small Login with Atmosphere manifest. This proves the registered app identity is controlled by the same domain users see in the picker.",
         blocks: [
           {
             type: "code",
@@ -813,7 +814,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             items: [
               "Host this file at the HTTPS origin of your registered homepage.",
               "Use an `apps` array when one domain hosts more than one relying app.",
-              "`client_id`, `app_name`, `homepage`, `logo_uri`, and every registered `allowed_return_uris` entry must match the Atmosphere registration.",
+              "`client_id` and every `allowed_return_uris` entry must match the environment. `app_name`, `homepage`, and `logo_uri` must match the live public app profile from which the picker derives its identity.",
               "The developer app detail page fetches this file during Run checks and blocks Trusted review until it passes.",
             ],
           },
@@ -823,7 +824,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "return-uri-rules",
         title: "Allowed return URI rules",
         intro:
-          "The return URI is where Atmosphere sends the short-lived account-selection token. Treat it like an OAuth redirect URI: exactness matters.",
+          "The return URI is where Login with Atmosphere sends the short-lived account-selection token. Treat it like an OAuth redirect URI: exactness matters.",
         blocks: [
           {
             type: "table",
@@ -851,7 +852,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             type: "callout",
             title: "Avoid broad origins in production",
             body:
-              "Registered production apps use exact allowed return URIs. Atmosphere does not accept a whole origin such as `https://app.example.com` as a wildcard for every callback path.",
+              "Registered production apps use exact allowed return URIs. Login with Atmosphere does not accept a whole origin such as `https://app.example.com` as a wildcard for every callback path.",
             tone: "amber",
           },
         ],
@@ -871,7 +872,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
           },
           {
             type: "table",
-            columns: ["Check", "What Atmosphere looks for"],
+            columns: ["Check", "What this site looks for"],
             rows: [
               [
                 "Client ID",
@@ -931,7 +932,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Finalize app identity",
                 body:
-                  "Use the production app name, homepage, logo, and client ID that users will recognize.",
+                  "Finalize the production name, homepage, and logo in the public app profile, and use a client ID that users will recognize for this environment.",
               },
               {
                 title: "Remove local URLs",
@@ -979,7 +980,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Publish your app identity",
                 body:
-                  "Move to an HTTPS client ID, homepage, and logo URL on a domain your app controls.",
+                  "Publish the app's HTTPS homepage and logo in its public profile, then use an HTTPS client ID on a domain your app controls.",
               },
               {
                 title: "Register production callbacks",
@@ -989,7 +990,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Publish the domain manifest",
                 body:
-                  "Serve `/.well-known/atmosphere-login.json` from the homepage origin so Atmosphere can verify the app identity and callback allow-list.",
+                  "Serve `/.well-known/atmosphere-login.json` from the homepage origin so Login with Atmosphere can verify the app identity and callback allow-list.",
               },
               {
                 title: "Verify before OAuth",
@@ -1053,7 +1054,7 @@ const { sub: did, handle, pds_url } = result.claims;`,
             rows: [
               [
                 "iss",
-                "Atmosphere Account origin",
+                "Login with Atmosphere origin",
                 "Must match the expected deployment.",
               ],
               [
@@ -1110,7 +1111,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Selection is not authorization",
             body:
-              "Atmosphere tells your app which account the user picked. Repository reads, writes, blobs, and app sessions still require your normal AT Protocol OAuth grant.",
+              "Login with Atmosphere tells your app which account the user picked. Repository reads, writes, blobs, and app sessions still require your normal AT Protocol OAuth grant.",
             tone: "amber",
           },
         ],
@@ -1146,9 +1147,9 @@ return Response.redirect(oauthUrl);`,
           {
             type: "list",
             items: [
-              "Register the app at `/account/developer/apps` with a stable HTTPS client ID.",
+              "Register the app profile from `/apps`, then add a stable HTTPS client ID in its Developer settings.",
               "Use exact allowed return URIs for production and staging callbacks.",
-              "Show a recognizable app name, homepage, and HTTPS logo.",
+              "Publish a recognizable app name, homepage, and HTTPS logo in the app profile.",
               "Verify `iss`, `aud`, `state`, `return_uri`, expiry, signature, and replay key server-side.",
               "Start your own AT Protocol OAuth flow after selection; do not treat the selection token as an app session.",
               "Request trusted review when the app identity and production callbacks are ready.",
@@ -1167,14 +1168,15 @@ return Response.redirect(oauthUrl);`,
     description:
       "Give the picker a clear app identity, an owner account, and an exact return URI allow-list.",
     summary: [
-      "App registration is tied to the signed-in Atmosphere owner account.",
+      "One public app profile is tied to the Atmosphere account that represents the app.",
+      "One or more technical environments beneath that profile hold client IDs and exact return URIs.",
       "Production apps use HTTPS identity and exact allowed return URIs.",
-      "Apps may recommend a currently claimed, joinable account host without preventing other choices.",
+      "Apps may recommend a joinable host managed by the same DID or connected by a verified app-host relationship.",
       "Review states control picker copy and trust warnings.",
     ],
     primaryCta: {
-      label: "Open registrations",
-      href: "/account/developer/apps",
+      label: "Register an app",
+      href: "/apps",
     },
     secondaryCta: {
       label: "Production checklist",
@@ -1205,8 +1207,8 @@ return Response.redirect(oauthUrl);`,
     sections: [
       {
         id: "fields",
-        eyebrow: "Metadata",
-        title: "Required registration fields",
+        eyebrow: "Profile and environments",
+        title: "Where each setting lives",
         blocks: [
           {
             type: "table",
@@ -1215,7 +1217,7 @@ return Response.redirect(oauthUrl);`,
               [
                 "App name",
                 "Primary picker identity users see.",
-                "Use the public product name.",
+                "Derived from the public app profile; edit it there.",
               ],
               [
                 "Client ID",
@@ -1225,12 +1227,12 @@ return Response.redirect(oauthUrl);`,
               [
                 "Logo URL",
                 "Visual identity in the picker.",
-                "Use HTTPS and a reachable image.",
+                "Derived from the public app profile; use a reachable HTTPS image.",
               ],
               [
                 "Homepage",
                 "Human-readable app identity.",
-                "Use HTTPS and align with the client ID domain.",
+                "Derived from the public app profile; use HTTPS and align it with the client ID domain.",
               ],
               [
                 "Allowed return URIs",
@@ -1240,7 +1242,7 @@ return Response.redirect(oauthUrl);`,
               [
                 "Preferred account host (optional)",
                 "Pins a host first in the Create Account chooser and labels it as recommended by the app.",
-                "Must be a joinable grouped host currently claimed by the app owner. Atmosphere re-verifies the claim at picker time.",
+                "Must be joinable and either managed by the app DID or connected by a verified app-host relationship. This site re-verifies it when the picker opens.",
               ],
             ],
           },
@@ -1310,7 +1312,7 @@ return Response.redirect(oauthUrl);`,
       "Community app profiles describe app identity and product metadata.",
       "ATStore listing records power discovery, reviews, and favorites today.",
       "Legacy Atmosphere app profile records should not be the active target for new app listings.",
-      "Atmosphere merges duplicate records into one public app page.",
+      "This site merges duplicate records into one public app page.",
     ],
     primaryCta: { label: "Manage app listings", href: "/apps/manage" },
     secondaryCta: { label: "Browse apps", href: "/apps" },
@@ -1335,11 +1337,11 @@ return Response.redirect(oauthUrl);`,
         eyebrow: "Read model",
         title: "One app page can come from multiple records",
         intro:
-          "Atmosphere’s app directory is an appview projection. It reads AT Protocol records, normalizes them into one internal listing shape, and deduplicates records that describe the same app.",
+          "This app directory is an appview projection. It reads AT Protocol records, normalizes them into one internal listing shape, and deduplicates records that describe the same app.",
         blocks: [
           {
             type: "table",
-            columns: ["Record", "Role", "How Atmosphere uses it"],
+            columns: ["Record", "Role", "How this site uses it"],
             rows: [
               [
                 "`community.lexicon.app.profile`",
@@ -1367,7 +1369,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "No duplicate cards",
             body:
-              "When an app has records in more than one source, Atmosphere shows one app card and one detail page. Source details belong in owner/admin disclosure, not in the public card design.",
+              "When an app has records in more than one source, this site shows one app card and one detail page. Source details belong in owner/admin disclosure, not in the public card design.",
           },
         ],
       },
@@ -1375,7 +1377,7 @@ return Response.redirect(oauthUrl);`,
         id: "publishing",
         title: "Publishing direction",
         intro:
-          "The practical path is to publish from the app account itself, then let appviews such as Atmosphere and ATStore index the same records.",
+          "The practical path is to publish from the app account itself, then let this directory, ATStore, and other appviews index the same records.",
         blocks: [
           {
             type: "steps",
@@ -1393,7 +1395,7 @@ return Response.redirect(oauthUrl);`,
               {
                 title: "Publish shared records",
                 body:
-                  "Atmosphere writes an ATStore listing record for discovery and a community app profile for canonical app identity when the app is ready.",
+                  "This site writes an ATStore listing record for discovery and a community app profile for canonical app identity when the app is ready.",
               },
               {
                 title: "Migrate legacy listings",
@@ -1459,7 +1461,7 @@ return Response.redirect(oauthUrl);`,
           {
             type: "paragraph",
             body:
-              "If an app has an ATStore listing URI, Atmosphere routes reviews and favorites to ATStore-compatible records. If it does not, older Atmosphere review behavior is treated as legacy fallback until the app migrates.",
+              "If an app has an ATStore listing URI, this site routes reviews and favorites to ATStore-compatible records. If it does not, the site's older review behavior is treated as legacy fallback until the app migrates.",
           },
           {
             type: "callout",
@@ -1477,7 +1479,7 @@ return Response.redirect(oauthUrl);`,
     group: "Guides",
     status: "Stable",
     navTitle: "Add button",
-    title: "Add the Continue with Atmosphere button",
+    title: "Add the Login with Atmosphere button",
     description:
       "Use the browser SDK to render a consistent button, generate state, and open the hosted picker.",
     summary: [
@@ -1642,7 +1644,7 @@ if (!selection) {
     description:
       "Validate the signed account selection before using the chosen DID, handle, or PDS hint.",
     summary: [
-      "Fetch Atmosphere’s public JWKS.",
+      "Fetch the Login with Atmosphere public JWKS.",
       "Verify signature, type, issuer, audience, state, return URI, expiry, and replay.",
       "Treat the token as account selection, not an OAuth credential.",
     ],
@@ -1713,7 +1715,7 @@ const loginHint = result.claims.handle || result.claims.sub;`,
             type: "table",
             columns: ["Claim", "Required check"],
             rows: [
-              ["iss", "Expected Atmosphere deployment."],
+              ["iss", "Expected Login with Atmosphere deployment."],
               ["aud", "Your registered `client_id`."],
               ["sub", "Selected DID; use as durable account identity."],
               ["handle", "Display/login hint only; handles can change."],
@@ -1727,7 +1729,7 @@ const loginHint = result.claims.handle || result.claims.sub;`,
             type: "callout",
             title: "Selection is not authorization",
             body:
-              "The selection token proves the user chose an account in Atmosphere. It does not give your app repository access, blob upload access, or a PDS session.",
+              "The selection token proves the user chose an account through Login with Atmosphere. It does not give your app repository access, blob upload access, or a PDS session.",
             tone: "amber",
           },
         ],
@@ -1741,7 +1743,7 @@ const loginHint = result.claims.handle || result.claims.sub;`,
     navTitle: "OAuth handoff",
     title: "Complete the ATProto OAuth handoff",
     description:
-      "After Atmosphere selection passes, start your app-owned AT Protocol OAuth flow with the selected account.",
+      "After the Login with Atmosphere selection passes, start your app-owned AT Protocol OAuth flow with the selected account.",
     summary: [
       "Use the selected handle or DID as `login_hint`.",
       "Your app owns authorization scopes, token storage, refresh, and logout.",
@@ -1774,7 +1776,7 @@ const loginHint = result.claims.handle || result.claims.sub;`,
       {
         id: "handoff",
         eyebrow: "Boundary",
-        title: "Atmosphere stops before app OAuth starts",
+        title: "Login with Atmosphere stops before app OAuth starts",
         blocks: [
           {
             type: "diagram",
@@ -1825,7 +1827,7 @@ return Response.redirect(oauthUrl);`,
               "Verify the authorization server is authoritative for the account.",
               "Check the token response `sub` matches the expected DID.",
               "Reject token responses that omit the `atproto` scope.",
-              "Do not send your app OAuth access or refresh tokens to Atmosphere.",
+              "Do not send your app OAuth access or refresh tokens to Login with Atmosphere.",
             ],
           },
         ],
@@ -1837,7 +1839,7 @@ return Response.redirect(oauthUrl);`,
     group: "Guides",
     status: "Stable",
     navTitle: "Production checklist",
-    title: "Prepare Atmosphere Login for production",
+    title: "Prepare Login with Atmosphere for production",
     description:
       "Run the checks needed before users see a trusted, production-ready picker handoff.",
     summary: [
@@ -1845,7 +1847,7 @@ return Response.redirect(oauthUrl);`,
       "Verified app identity with homepage, logo, and domain manifest.",
       "Clear readiness states: local development, needs fixes, ready for review, trusted, or blocked.",
     ],
-    primaryCta: { label: "Developer apps", href: "/account/developer/apps" },
+    primaryCta: { label: "Open Apps directory", href: "/apps" },
     secondaryCta: { label: "Troubleshooting", href: "/docs/troubleshooting" },
     nextSteps: [
       {
@@ -1889,7 +1891,7 @@ return Response.redirect(oauthUrl);`,
               ],
               [
                 "Trusted",
-                "Atmosphere reviewed the app identity.",
+                "This site reviewed the app identity.",
                 "Keep metadata and return URIs stable.",
               ],
               [
@@ -1908,13 +1910,13 @@ return Response.redirect(oauthUrl);`,
           {
             type: "checklist",
             items: [
-              "Registered app name matches the public product.",
+              "The public app profile name matches the product.",
               "Client ID is HTTPS and controlled by the app.",
-              "Homepage is HTTPS and reachable.",
-              "Logo is HTTPS, reachable, and recognizable.",
+              "The app profile homepage is HTTPS and reachable.",
+              "The app profile logo is HTTPS, reachable, and recognizable.",
               "Every production return URI is listed exactly.",
               "No local development URLs remain in production registration.",
-              "Domain manifest matches the registered app metadata and return URIs.",
+              "Domain manifest matches the live app profile identity and environment return URIs.",
               "Picker test URL completes successfully.",
               "Selection token verification happens server-side.",
               "AT Protocol OAuth starts after selection and is owned by the app.",
@@ -1954,7 +1956,7 @@ return Response.redirect(oauthUrl);`,
     group: "Guides",
     status: "Stable",
     navTitle: "Troubleshooting",
-    title: "Troubleshoot Atmosphere Login",
+    title: "Troubleshoot Login with Atmosphere",
     description:
       "Common picker, callback, local development, and AT Protocol OAuth handoff issues.",
     summary: [
@@ -2007,7 +2009,7 @@ return Response.redirect(oauthUrl);`,
               ],
               [
                 "No saved accounts shown",
-                "The user has not used Atmosphere Login in this browser.",
+                "The user has not used Login with Atmosphere in this browser.",
                 "Show add-account/sign-in in the picker and let the user continue normally.",
               ],
               [
@@ -2063,12 +2065,12 @@ return Response.redirect(oauthUrl);`,
     navTitle: "Host Account Routing",
     title: "Route users to host-owned account pages",
     description:
-      "Publish a host service record so Atmosphere can send users to the account page where their PDS host manages account controls.",
+      "Publish a host service record so this site can send users to the account page where their PDS host manages account controls.",
     summary: [
       "Hosts declare their PDS service endpoint in `account.atmosphere.host.service`.",
-      "Atmosphere derives `/account` from the PDS service endpoint; hosts can declare `accountManagementUrl` as a custom-route override.",
+      "This site derives `/account` from the PDS service endpoint; hosts can declare `accountManagementUrl` as a custom-route override.",
       "The PDS account page owns devices, OAuth grants, passwords, recovery, backups, and migration.",
-      "Atmosphere does not implement those account-management tools; it links to the host that does.",
+      "This site does not implement those account-management tools; it links to the host that does.",
       "Optional manifests are compatibility metadata, not the primary account surface and not a delegation of account authority.",
     ],
     primaryCta: {
@@ -2101,14 +2103,14 @@ return Response.redirect(oauthUrl);`,
         eyebrow: "Boundary",
         title: "Hosts remain the account authority",
         intro:
-          "Atmosphere standardizes discovery and routing. The PDS account page owns grants, devices, passwords, keys, backups, restore, migration, account deletion, and account security.",
+          "This site standardizes discovery and routing. The PDS account page owns grants, devices, passwords, keys, backups, restore, migration, account deletion, and account security.",
         blocks: [
           {
             type: "diagram",
             variant: "host",
             items: [
               {
-                title: "Atmosphere account router",
+                title: "Account-page router",
                 body:
                   "Shows where the account is hosted, explains the host in plain language, and links to the PDS account page.",
               },
@@ -2142,7 +2144,7 @@ return Response.redirect(oauthUrl);`,
               {
                 title: "Check the public route",
                 body:
-                  "Review how Atmosphere presents hosts and sends people to their host-owned account page.",
+                  "Review how this site presents hosts and sends people to their host-owned account page.",
                 href: "/hosts",
                 label: "Open host directory",
               },
@@ -2158,7 +2160,7 @@ return Response.redirect(oauthUrl);`,
           {
             type: "paragraph",
             body:
-              "Hosts publish `account.atmosphere.host.service` from the Atmosphere account that represents the host. The `serviceEndpoint` is the canonical PDS origin, and Atmosphere derives its `/account` page. Set `accountManagementUrl` only as an override for a custom account-management route. Never point it at a marketing homepage.",
+              "Hosts publish `account.atmosphere.host.service` from the Atmosphere account that represents the host. The `serviceEndpoint` is the canonical PDS origin, and this site derives its `/account` page. Set `accountManagementUrl` only as an override for a custom account-management route. Never point it at a marketing homepage.",
           },
           {
             type: "code",
@@ -2179,7 +2181,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Optional manifest",
             body:
-              "Hosts may still publish `/.well-known/atmosphere-host-dashboard.json` to describe detailed compatibility. The name is legacy; Atmosphere treats it as optional metadata and does not duplicate or operate account controls from it.",
+              "Hosts may still publish `/.well-known/atmosphere-host-dashboard.json` to describe detailed compatibility. The name is legacy; this site treats it as optional metadata and does not duplicate or operate account controls from it.",
           },
         ],
       },
@@ -2219,13 +2221,13 @@ return Response.redirect(oauthUrl);`,
           {
             type: "paragraph",
             body:
-              "After a host is claimed in the Atmosphere host directory, the claiming Atmosphere account can open the host’s manage page, save the PDS service endpoint, and optionally validate compatibility metadata.",
+              "After a host is claimed in this host directory, the claiming Atmosphere account can open the host’s manage page, save the PDS service endpoint, and optionally validate compatibility metadata.",
           },
           {
             type: "callout",
             title: "Directory policy",
             body:
-              "Claiming proves the host account can manage the listing. Atmosphere links to `/account` on the declared PDS endpoint unless the host publishes a custom override; richer compatibility badges still require validated metadata.",
+              "Claiming proves the host account can manage the listing. This site links to `/account` on the declared PDS endpoint unless the host publishes a custom override; richer compatibility badges still require validated metadata.",
           },
           {
             type: "endpoint",
@@ -2244,7 +2246,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Do not mirror PDS controls",
             body:
-              "These keys are compatibility metadata for hosts and directories. Atmosphere should not render a parallel device, grant, password, backup, recovery, deletion, or migration control panel from them.",
+              "These keys are compatibility metadata for hosts and directories. This site should not render a parallel device, grant, password, backup, recovery, deletion, or migration control panel from them.",
           },
           {
             type: "table",
@@ -2260,7 +2262,7 @@ return Response.redirect(oauthUrl);`,
               ],
               [
                 "planned",
-                "Expected later; Atmosphere should not show it as available.",
+                "Expected later; this site should not show it as available.",
               ],
               ["unknown", "Status is unknown or intentionally undisclosed."],
             ],
@@ -2297,12 +2299,12 @@ return Response.redirect(oauthUrl);`,
     navTitle: "Conformance",
     title: "Validate host compatibility",
     description:
-      "Use the validator before a host claims optional compatibility metadata or asks Atmosphere to show support badges.",
+      "Use the validator before a host claims optional compatibility metadata or asks this site to show support badges.",
     summary: [
       "Validate a published manifest by host or URL.",
       "Validate a local JSON file during development.",
       "Treat warnings as compatibility cleanup and errors as badge blockers.",
-      "Passing conformance can unlock directory signals; it does not delegate account-management authority to Atmosphere.",
+      "Passing conformance can unlock directory signals; it does not delegate account-management authority to this site.",
     ],
     primaryCta: {
       label: "Validator API",
@@ -2326,7 +2328,7 @@ deno task host:conformance host.example --write`,
             type: "callout",
             title: "Badge policy",
             body:
-              "Atmosphere only shows a compatibility badge after the manifest, account route, and PDS health checks pass. Stored results expire after seven days. Public listing is separate: a host must be reachable and intentionally public, with a short grace period for temporarily inactive claimed hosts.",
+              "This site only shows a compatibility badge after the manifest, account route, and PDS health checks pass. Stored results expire after seven days. Public listing is separate: a host must be reachable and intentionally public, with a short grace period for temporarily inactive claimed hosts.",
           },
         ],
       },
@@ -2390,7 +2392,7 @@ deno task host:conformance host.example --write`,
     description:
       "Download the shared assets, examples, schemas, and project icons used by Atmosphere apps and docs.",
     summary: [
-      "Use the sign-in badge and logo to make Atmosphere Login recognizable.",
+      "Use the sign-in badge and logo to make Login with Atmosphere recognizable.",
       "Download the Lottie animation and icon assets for product and docs surfaces.",
       "Use community app profiles, ATStore records, host lexicons, optional compatibility schemas, and SVG icon exports when building interoperable experiences.",
     ],
@@ -2429,7 +2431,7 @@ deno task host:conformance host.example --write`,
             type: "endpoint",
             method: "GET",
             path: "/atmosphere-login.js",
-            body: "Browser SDK for the Continue with Atmosphere button.",
+            body: "Browser SDK for the Login with Atmosphere button.",
           },
         ],
       },
@@ -2494,7 +2496,7 @@ deno task host:conformance host.example --write`,
             method: "GET",
             path: "/atmosphere-host-dashboard.schema.json",
             body:
-              "JSON Schema for the optional host compatibility manifest. The file name is legacy; the manifest does not make Atmosphere the account-control surface.",
+              "JSON Schema for the optional host compatibility manifest. The file name is legacy; the manifest does not make this site the account-control surface.",
           },
           {
             type: "endpoint",
@@ -2556,7 +2558,7 @@ deno task host:conformance host.example --write`,
     group: "Reference",
     status: "Stable",
     navTitle: "SDK reference",
-    title: "Atmosphere Login SDK reference",
+    title: "Login with Atmosphere SDK reference",
     description:
       "Browser attributes, helper methods, server verifier exports, callback parameters, token claims, and common verifier errors.",
     summary: [
@@ -2600,7 +2602,7 @@ deno task host:conformance host.example --write`,
               [
                 "data-atmosphere-login",
                 "boolean",
-                "Enhance this element as a Continue with Atmosphere button.",
+                "Enhance this element as a Login with Atmosphere button.",
               ],
               [
                 "data-client-id",
@@ -2640,7 +2642,7 @@ deno task host:conformance host.example --write`,
               [
                 "data-atmosphere-origin",
                 "URL",
-                "Use a non-production Atmosphere deployment during local development.",
+                "Use a non-production Login with Atmosphere deployment during local development.",
               ],
             ],
           },
@@ -2664,7 +2666,7 @@ const selection = AtmosphereLogin.consumeSelection({
   expectedState: stateFromSession,
 });
 
-// By default, consumeSelection removes Atmosphere Login callback parameters
+// By default, consumeSelection removes Login with Atmosphere callback parameters
 // from the address bar after reading them. Pass { clearUrl: false } only if
 // your router needs to control URL cleanup itself.
 //
@@ -2752,7 +2754,10 @@ iss=https://login.atmosphereaccount.com`,
             type: "table",
             columns: ["Token claim", "Meaning"],
             rows: [
-              ["iss", "Atmosphere deployment that signed the token."],
+              [
+                "iss",
+                "Login with Atmosphere deployment that signed the token.",
+              ],
               ["aud", "Registered app client ID."],
               ["sub", "Selected ATProto account DID."],
               ["handle", "Selected account handle at selection time."],
@@ -2792,7 +2797,7 @@ iss=https://login.atmosphereaccount.com`,
               ],
               [
                 "issuer mismatch",
-                "The expected Atmosphere deployment is wrong.",
+                "The expected Login with Atmosphere deployment is wrong.",
               ],
               [
                 "audience mismatch",
@@ -2825,7 +2830,7 @@ iss=https://login.atmosphereaccount.com`,
     sections: [
       {
         id: "login",
-        eyebrow: "Atmosphere Login",
+        eyebrow: "Login with Atmosphere",
         title: "Login endpoints",
         blocks: [
           {
@@ -2840,7 +2845,7 @@ iss=https://login.atmosphereaccount.com`,
             method: "GET",
             path: "/oauth/jwks.json",
             body:
-              "Public JWKS used by relying apps to verify Atmosphere selection tokens.",
+              "Public JWKS used by relying apps to verify Login with Atmosphere selection tokens.",
           },
           {
             type: "endpoint",

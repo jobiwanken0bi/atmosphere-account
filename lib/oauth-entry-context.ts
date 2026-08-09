@@ -14,8 +14,8 @@ export function developerAuthorizationHref(url: URL): string {
 }
 
 /** Identity-only picker used before either owner approves an app/host link.
- * Display names come from the resolved directory records; the `app` query
- * parameter is an opaque listing ID and must never be presented as a name. */
+ * Display names come from resolved directory records; opaque listing IDs are
+ * never presented as authorization context. */
 export function relationshipConfirmationAuthorizationHref(
   url: URL,
   target: { appName: string; hostName: string },
@@ -33,8 +33,8 @@ export function relationshipConfirmationAuthorizationHref(
   });
 }
 
-/** Identity-only picker for a hidden admin route. The allowlist check remains
- * server-side and still returns 404 after an unauthorized identity signs in. */
+/** Identity-only picker for hidden admin routes. The server-side allowlist
+ * remains authoritative after sign-in. */
 export function adminAuthorizationHref(url: URL): string {
   return oauthSigninUrl({
     next: requestPath(url),

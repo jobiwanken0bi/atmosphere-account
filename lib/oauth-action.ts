@@ -13,39 +13,73 @@ export const OAUTH_ACTIONS = [
   "app",
   "host_claim",
   "host_manage",
+  "host_transfer",
   "app_host",
-  "profile",
   "developer",
-  "passkey_manage",
   "relationship_confirm",
   "admin",
 ] as const;
 
 export type OAuthAction = typeof OAUTH_ACTIONS[number];
 
+export const ACCOUNT_CREATION_ACTIONS = [
+  "account",
+  "review",
+  "legacy_review",
+  "report_review",
+  "favorite",
+  "app",
+  "host_claim",
+  "host_transfer",
+] as const satisfies readonly OAuthAction[];
+
+export type AccountCreationError =
+  | "authorization_cancelled"
+  | "host_unavailable"
+  | "creation_unavailable";
+
+const ACCOUNT_CREATION_ERRORS = new Set<AccountCreationError>([
+  "authorization_cancelled",
+  "host_unavailable",
+  "creation_unavailable",
+]);
+
+/**
+ * App and host management are complete, understandable authorization jobs.
+ * Image blobs are part of each public profile rather than a later progressive
+ * upgrade, so every contextual entry point must request the matching bundle.
+ */
+export const APP_MANAGEMENT_CAPABILITIES = ["app", "media"] as const;
+export const HOST_MANAGEMENT_CAPABILITIES = ["host", "media"] as const;
+export const APP_HOST_MANAGEMENT_CAPABILITIES = [
+  "app",
+  "host",
+  "media",
+] as const;
+
 /**
  * Browser-supplied action labels are presentation context, not permission
  * selectors. Keep the capability bundle for each label here so a caller cannot
  * combine reassuring copy for one action with the repository access of
- * another. Optional media access is only valid alongside the write capability
- * that can actually consume it.
+ * another. App and host profile images are included in their complete
+ * management jobs; media cannot be requested separately or deferred to a
+ * predictable second prompt.
  */
 const OAUTH_ACTION_CAPABILITY_BUNDLES = {
   account: [["identity"]],
   review: [["review"]],
   review_manage: [["review_manage"]],
   legacy_review: [["legacy_review"]],
-  legacy_review_manage: [["legacy_review_manage"]],
+  legacy_review_manage: [["legacy_review"]],
   review_response: [["identity"]],
   report_review: [["identity"]],
   favorite: [["favorite"]],
-  app: [["app"], ["app", "media"]],
-  host_claim: [["identity"]],
-  host_manage: [["host"], ["host", "media"]],
-  app_host: [["app", "host"], ["app", "host", "media"]],
-  profile: [["profile"], ["profile", "media"]],
+  app: [APP_MANAGEMENT_CAPABILITIES],
+  host_claim: [HOST_MANAGEMENT_CAPABILITIES],
+  host_manage: [HOST_MANAGEMENT_CAPABILITIES],
+  host_transfer: [HOST_MANAGEMENT_CAPABILITIES],
+  app_host: [APP_HOST_MANAGEMENT_CAPABILITIES],
   developer: [["identity"]],
-  passkey_manage: [["identity"]],
   relationship_confirm: [["identity"]],
   admin: [["identity"]],
 } as const satisfies Record<
@@ -56,6 +90,40 @@ const OAUTH_ACTION_CAPABILITY_BUNDLES = {
 export function isOAuthAction(value: unknown): value is OAuthAction {
   return typeof value === "string" &&
     (OAUTH_ACTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * Creating a new DID can begin a new account, publish a review or favorite,
+ * register an app, or claim/transfer host management. It cannot recover
+ * ownership of an existing review/app/host or open developer settings, so
+ * those management-only actions deliberately omit the create-account path.
+ */
+export function isAccountCreationAction(
+  action: OAuthAction,
+): boolean {
+  return (ACCOUNT_CREATION_ACTIONS as readonly OAuthAction[]).includes(action);
+}
+
+export function isAccountCreationError(
+  value: unknown,
+): value is AccountCreationError {
+  return typeof value === "string" &&
+    ACCOUNT_CREATION_ERRORS.has(value as AccountCreationError);
+}
+
+export function accountCreationErrorMessage(
+  error: AccountCreationError | null | undefined,
+): string | null {
+  switch (error) {
+    case "authorization_cancelled":
+      return "Account creation was cancelled. Nothing was changed; choose a host to try again.";
+    case "host_unavailable":
+      return "That host can no longer start account creation here. Choose another host to continue.";
+    case "creation_unavailable":
+      return "Account creation could not be started. Choose a host to try again, or come back shortly.";
+    default:
+      return null;
+  }
 }
 
 export function isOAuthActionCapabilityRequest(
@@ -102,6 +170,20 @@ interface ActionUrlInput {
 
 export function oauthSigninUrl(input: ActionUrlInput): string {
   const params = actionParams(input);
+  return `/signin?${params.toString()}`;
+}
+
+export function oauthCreateAccountUrl(
+  input: ActionUrlInput & { error?: AccountCreationError | null },
+): string {
+  if (!isAccountCreationAction(input.action)) {
+    throw new TypeError(
+      `Account creation is not available for OAuth action "${input.action}"`,
+    );
+  }
+  const params = actionParams(input);
+  params.set("mode", "create");
+  if (input.error) params.set("create_error", input.error);
   return `/signin?${params.toString()}`;
 }
 

@@ -7,7 +7,6 @@ import BskyIcon from "../../components/icons/BskyIcon.tsx";
 import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
 import HostVisitLink from "../../islands/HostVisitLink.tsx";
 import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
-import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHost,
@@ -30,8 +29,10 @@ import { normalizeHostDirectoryReturnTo } from "../../lib/host-directory-navigat
 import { getResolvedAppLinksForHost } from "../../lib/app-directory.ts";
 import type { ResolvedDirectoryAppLink } from "../../lib/app-directory.ts";
 import { getMessages, type Messages } from "../../i18n/mod.ts";
-import { oauthSigninUrl } from "../../lib/oauth-action.ts";
-import { getSessionForCapabilities } from "../../lib/oauth.ts";
+import {
+  HOST_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -73,14 +74,6 @@ export const handler = define.handlers({
     const verifiedOwnerDid = host && claim
       ? await verifiedAccountHostOwnerDid(host, claim).catch(() => null)
       : null;
-    const account = buildAccountMenuProps(ctx.state);
-    const hostAuthorized = Boolean(
-      account.user && verifiedOwnerDid === account.user.did &&
-        await getSessionForCapabilities(account.user.did, ["host"], {
-          quiet: true,
-        }).catch(() => null),
-    );
-    const outcomeNotice = hostDetailOutcomeNotice(ctx.url);
     return ctx.render(
       <HostDetailPage
         host={host}
@@ -92,13 +85,11 @@ export const handler = define.handlers({
         directoryCopy={getMessages(ctx.state.locale).hostsDirectory}
         claimed={ctx.url.searchParams.get("claimed") === "1"}
         managed={ctx.url.searchParams.get("managed") === "1"}
-        outcomeNotice={outcomeNotice}
         backHref={normalizeHostDirectoryReturnTo(
           ctx.url.searchParams.get("from"),
         )}
-        account={account}
+        account={buildAccountMenuProps(ctx.state)}
         verifiedOwnerDid={verifiedOwnerDid}
-        hostAuthorized={hostAuthorized}
       />,
       { status: host ? 200 : 404 },
     );
@@ -114,11 +105,9 @@ function HostDetailPage(
     directoryCopy,
     claimed,
     managed,
-    outcomeNotice,
     backHref,
     account,
     verifiedOwnerDid,
-    hostAuthorized,
   }: {
     host: AccountHost | null;
     claim: AccountHostClaim | null;
@@ -127,11 +116,9 @@ function HostDetailPage(
     directoryCopy: Messages["hostsDirectory"];
     claimed: boolean;
     managed: boolean;
-    outcomeNotice: HostDetailOutcomeNotice | null;
     backHref: string;
     account: ReturnType<typeof buildAccountMenuProps>;
     verifiedOwnerDid: string | null;
-    hostAuthorized: boolean;
   },
 ) {
   if (!host) {
@@ -139,7 +126,7 @@ function HostDetailPage(
       <div id="page-top">
         <div class="content-layer">
           <Nav account={account} active="hosts" />
-          <section class="explore-profile-detail">
+          <main class="explore-profile-detail" id="main-content">
             <div class="container" style={{ maxWidth: "880px" }}>
               <a href={backHref} class="text-link-button">
                 ← Back to hosts
@@ -151,7 +138,7 @@ function HostDetailPage(
                 </p>
               </div>
             </div>
-          </section>
+          </main>
           <Footer variant="compact" />
         </div>
       </div>
@@ -177,7 +164,10 @@ function HostDetailPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="explore-profile-detail host-detail-section">
+        <main
+          class="explore-profile-detail host-detail-section"
+          id="main-content"
+        >
           <div class="container" style={{ maxWidth: "880px" }}>
             <div class="project-page-toolbar">
               <a href={backHref} class="text-link-button">
@@ -345,6 +335,79 @@ function HostDetailPage(
               </article>
             </section>
 
+            <div class="glass host-detail-claim-row">
+              {managed && (
+                <p class="profile-form-status profile-form-status--ok">
+                  Host changes saved.
+                </p>
+              )}
+              {isManagedByCurrentAccount
+                ? (
+                  <>
+                    <div class="host-detail-claim-copy">
+                      <p class="text-eyebrow">Host operator</p>
+                      <p>
+                        Update this host’s profile, account links, and apps.
+                      </p>
+                    </div>
+                    <a
+                      class="directory-register-button host-detail-claim-button"
+                      href={manageHostHref(host)}
+                    >
+                      <span>Manage host</span>
+                    </a>
+                  </>
+                )
+                : claim && verifiedOwnerDid
+                ? (
+                  <p class="host-detail-claim-note">
+                    {claimed ? "Claim verified. " : ""}
+                    Managed by{" "}
+                    <AtmosphereHandle handle={claim.claimantHandle} />
+                  </p>
+                )
+                : claim
+                ? (
+                  <p class="host-detail-claim-note">
+                    Operator verification is temporarily unavailable. The stored
+                    claimant is not being shown as verified.
+                  </p>
+                )
+                : (
+                  <>
+                    <div class="host-detail-claim-copy">
+                      <p class="text-eyebrow">Host operators</p>
+                      <p>Verify this domain to manage its profile and links.</p>
+                    </div>
+                    {account.user
+                      ? (
+                        <a
+                          class="directory-register-button host-detail-claim-button"
+                          href={claimHostHref(host)}
+                        >
+                          <span class="directory-register-button-icon">+</span>
+                          <span>Claim this host</span>
+                        </a>
+                      )
+                      : (
+                        <ContextualSignInLink
+                          href={hostClaimSigninHref(host)}
+                          returnTo={claimHostHref(host)}
+                          action="host_claim"
+                          capabilities={HOST_MANAGEMENT_CAPABILITIES}
+                          targetName={host.displayName}
+                          title="Login with Atmosphere"
+                          body={`Choose the account that will claim and manage ${host.displayName}, including its public profile and images. DNS verification separately proves control of the host domain.`}
+                          label="Claim this host"
+                          className="directory-register-button host-detail-claim-button"
+                          leadingPlus
+                          rememberedAccounts={account.rememberedAccounts}
+                        />
+                      )}
+                  </>
+                )}
+            </div>
+
             <details class="glass account-home-details host-detail-details">
               <summary>Advanced</summary>
               <dl>
@@ -474,80 +537,8 @@ function HostDetailPage(
                 )}
               </dl>
             </details>
-
-            <div class="host-detail-claim-row">
-              {outcomeNotice && (
-                <p
-                  class={`profile-form-status ${
-                    outcomeNotice.kind === "error"
-                      ? "profile-form-status--error"
-                      : "profile-form-status--ok"
-                  }`}
-                >
-                  {outcomeNotice.text}
-                </p>
-              )}
-              {managed && (
-                <p class="profile-form-status profile-form-status--ok">
-                  Host changes saved.
-                </p>
-              )}
-              {isManagedByCurrentAccount
-                ? (
-                  <OwnerManagementLink
-                    authorized={hostAuthorized}
-                    kind="host"
-                    destinationHref={manageHostHref(host)}
-                    targetName={host.displayName}
-                    label="Manage host"
-                    className="directory-register-button host-detail-claim-button"
-                    rememberedAccounts={account.rememberedAccounts}
-                    initialHandle={account.user?.handle}
-                  />
-                )
-                : claim && verifiedOwnerDid
-                ? (
-                  <p class="host-detail-claim-note">
-                    {claimed ? "Claim verified. " : ""}
-                    Managed by{" "}
-                    <AtmosphereHandle handle={claim.claimantHandle} />
-                  </p>
-                )
-                : claim
-                ? (
-                  <p class="host-detail-claim-note">
-                    Operator verification is temporarily unavailable. The stored
-                    claimant is not being shown as verified.
-                  </p>
-                )
-                : (
-                  account.user
-                    ? (
-                      <a
-                        class="directory-register-button host-detail-claim-button"
-                        href={claimHostHref(host)}
-                      >
-                        <span class="directory-register-button-icon">+</span>
-                        <span>Claim this host</span>
-                      </a>
-                    )
-                    : (
-                      <ContextualSignInLink
-                        href={hostClaimSigninHref(host)}
-                        returnTo={claimHostHref(host)}
-                        action="host_claim"
-                        capabilities={["identity"]}
-                        targetName={host.displayName}
-                        label="Claim this host"
-                        className="directory-register-button host-detail-claim-button"
-                        leadingPlus
-                        rememberedAccounts={account.rememberedAccounts}
-                      />
-                    )
-                )}
-            </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -609,41 +600,13 @@ function hostClaimSigninHref(host: AccountHost): string {
   return oauthSigninUrl({
     next: claimHostHref(host),
     action: "host_claim",
-    capabilities: ["identity"],
+    capabilities: HOST_MANAGEMENT_CAPABILITIES,
     name: host.displayName,
   });
 }
 
 function manageHostHref(host: AccountHost): string {
   return `/hosts/${encodeURIComponent(host.host)}/manage`;
-}
-
-export interface HostDetailOutcomeNotice {
-  kind: "ok" | "error";
-  text: string;
-}
-
-export function hostDetailOutcomeNotice(
-  url: URL,
-): HostDetailOutcomeNotice | null {
-  const claimed = url.searchParams.get("claimed") === "1";
-  if (url.searchParams.get("linkError") === "1") {
-    return {
-      kind: "error",
-      text: claimed
-        ? "Host claimed, but the app connection could not be completed. Ask the app owner to start a new connection from app hosting."
-        : "The app connection could not be completed. Ask the app owner to start a new connection from app hosting.",
-    };
-  }
-  if (url.searchParams.get("linked") === "1") {
-    return {
-      kind: "ok",
-      text: claimed
-        ? "Host claimed and connected to the app successfully."
-        : "Host connected to the app successfully.",
-    };
-  }
-  return claimed ? { kind: "ok", text: "Host claimed successfully." } : null;
 }
 
 function bskyProfileHref(handle: string): string {
@@ -761,7 +724,7 @@ function registryStatusLabel(host: AccountHost): string {
   }
   switch (host.source) {
     case "seeded":
-      return "Seeded by Atmosphere";
+      return "Seeded by this site";
     case "manual":
       return "Needs host record";
     default:

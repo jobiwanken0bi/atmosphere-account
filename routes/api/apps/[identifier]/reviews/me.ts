@@ -16,7 +16,7 @@ import {
   isPdsScopeMissingError,
 } from "../../../../../lib/pds.ts";
 import { hasOAuthCapabilities } from "../../../../../lib/oauth-scopes.ts";
-import { appReviewReauthorizationUrl } from "../../../../../lib/app-interaction-reauth.ts";
+import { oauthReauthorizationUrl } from "../../../../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   DELETE: withRateLimit(async (ctx) => {
@@ -44,7 +44,7 @@ export const handler = define.handlers({
         "review_manage",
       ])
     ) {
-      return reauthorizationRequired(user.handle, app);
+      return reauthorizationRequired(user.handle, app.slug);
     }
 
     const deleted = await deleteRecord(
@@ -57,7 +57,7 @@ export const handler = define.handlers({
     );
     if (deleted) {
       if (isPdsScopeMissingError(deleted)) {
-        return reauthorizationRequired(user.handle, app);
+        return reauthorizationRequired(user.handle, app.slug);
       }
       return jsonResponse(502, {
         error: "delete_record_failed",
@@ -80,17 +80,16 @@ function jsonError(status: number, code: string): Response {
   return jsonResponse(status, { error: code });
 }
 
-function reauthorizationRequired(
-  handle: string,
-  app: { slug: string; name: string },
-): Response {
+function reauthorizationRequired(handle: string, identifier: string): Response {
+  const next = `/apps/${encodeURIComponent(identifier)}?review=compose`;
   return jsonResponse(403, {
     error: "reauth_required",
-    reauthUrl: appReviewReauthorizationUrl(
-      app.slug,
-      app.name,
-      "review_manage",
-    ),
+    reauthUrl: oauthReauthorizationUrl({
+      next,
+      action: "review_manage",
+      capabilities: ["review_manage"],
+      name: identifier,
+    }),
     handle,
   });
 }

@@ -68,6 +68,7 @@ Deno.test("public app shell defers contextual sign-in modules", () => {
 
   assertOmits(html, "signin-preview-runtime");
   assertOmits(html, "login-handoff-runtime");
+  assertIncludes(html, 'id="submit-once-runtime"');
   assertOmits(html, "fonts.googleapis.com");
   assertOmits(html, "fonts.gstatic.com");
   assertIncludes(html, 'src="/app-media-fallback.js?__frsh_c=');
@@ -95,6 +96,7 @@ Deno.test("global static assets carry Fresh immutable-cache locks", () => {
       "/favicon.ico",
       "/union.svg",
       "/page-skeleton.js",
+      "/submit-once.js",
       "/nav-scroll.js",
       "/docs.js",
       "/og-developer.png",

@@ -77,41 +77,32 @@ Deno.test("EdgeStaleCache keeps stale value when refresh fails", async () => {
   );
 });
 
-Deno.test("EdgeStaleCache never serves a value beyond the stale ceiling", async () => {
+Deno.test("EdgeStaleCache rejects failed loads beyond stale window and recovers", async () => {
   let now = 1_000;
+  let loads = 0;
   const cache = new EdgeStaleCache<number>({
     freshMs: 100,
     staleMs: 1_000,
     now: () => now,
   });
 
-  assertEquals(await cache.get("key", () => Promise.resolve(1)), 1);
+  assertEquals(await cache.get("key", () => Promise.resolve(++loads)), 1);
   now += 1_001;
-  let rejected = false;
-  try {
-    await cache.get("key", () => Promise.reject(new Error("load failed")));
-  } catch {
-    rejected = true;
-  }
-  assertEquals(rejected, true);
-  assertEquals(await cache.get("key", () => Promise.resolve(2)), 2);
-});
 
-Deno.test("EdgeStaleCache cleans up a synchronously throwing cold load", async () => {
-  const cache = new EdgeStaleCache<number>({
-    freshMs: 100,
-    staleMs: 1_000,
-  });
-  let rejected = false;
+  let message = "";
   try {
     await cache.get("key", () => {
-      throw new Error("load failed");
+      loads++;
+      return Promise.reject(new Error("refresh failed"));
     });
-  } catch {
-    rejected = true;
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
   }
-  assertEquals(rejected, true);
-  assertEquals(await cache.get("key", () => Promise.resolve(2)), 2);
+  assertEquals(message, "refresh failed");
+  assertEquals(loads, 2);
+
+  assertEquals(await cache.get("key", () => Promise.resolve(++loads)), 3);
+  assertEquals(loads, 3);
 });
 
 Deno.test("EdgeStaleCache evicts the least recently used bounded entry", async () => {
@@ -128,4 +119,36 @@ Deno.test("EdgeStaleCache evicts the least recently used bounded entry", async (
   assertEquals(await cache.get("a", load), 1);
   assertEquals(await cache.get("c", load), 3);
   assertEquals(await cache.get("b", load), 4);
+});
+
+Deno.test("an evicted failed load cannot delete a newer recovery load", async () => {
+  let rejectOld!: (error: Error) => void;
+  let resolveNew!: (value: number) => void;
+  const cache = new EdgeStaleCache<number>({
+    freshMs: 100,
+    staleMs: 1_000,
+    maxEntries: 1,
+  });
+
+  const old = cache.get("a", () =>
+    new Promise<number>((_resolve, reject) => {
+      rejectOld = reject;
+    }));
+  await Promise.resolve();
+  assertEquals(await cache.get("b", () => Promise.resolve(2)), 2);
+  const recovered = cache.get("a", () =>
+    new Promise<number>((resolve) => {
+      resolveNew = resolve;
+    }));
+  await Promise.resolve();
+
+  rejectOld(new Error("old failure"));
+  try {
+    await old;
+  } catch {
+    // Expected: only the superseded request fails.
+  }
+  resolveNew(3);
+  assertEquals(await recovered, 3);
+  assertEquals(await cache.get("a", () => Promise.resolve(4)), 3);
 });

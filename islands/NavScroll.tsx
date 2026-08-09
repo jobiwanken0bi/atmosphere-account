@@ -13,6 +13,8 @@ export default function NavScroll() {
           ? path === "/apps" || path.startsWith("/apps/")
           : href === "/hosts"
           ? path === "/hosts" || path.startsWith("/hosts/")
+          : href === "/docs"
+          ? path === "/docs" || path.startsWith("/docs/")
           : href === path;
         if (active) {
           link.setAttribute("aria-current", "page");

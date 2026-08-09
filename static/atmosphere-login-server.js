@@ -29,7 +29,9 @@ export async function fetchAtmosphereLoginPublicJwkForToken(
 ) {
   const kid = readAtmosphereLoginTokenKid(token);
   if (!kid) {
-    throw new Error("Atmosphere Login selection token did not include a kid");
+    throw new Error(
+      "Login with Atmosphere selection token did not include a kid",
+    );
   }
   return await fetchAtmosphereLoginPublicJwk(atmosphereOrigin, {
     ...options,
@@ -67,10 +69,10 @@ export async function fetchAtmosphereLoginJwks(
     });
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("Atmosphere Login JWKS request timed out");
+      throw new Error("Login with Atmosphere JWKS request timed out");
     }
     throw new Error(
-      `Atmosphere Login JWKS request failed: ${
+      `Login with Atmosphere JWKS request failed: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -79,7 +81,7 @@ export async function fetchAtmosphereLoginJwks(
   }
   if (!response.ok) {
     throw new Error(
-      `Atmosphere Login JWKS request failed with ${response.status}`,
+      `Login with Atmosphere JWKS request failed with ${response.status}`,
     );
   }
   const contentType = (response.headers.get("content-type") || "")
@@ -114,7 +116,7 @@ export async function fetchAtmosphereLoginJwks(
   try {
     jwks = JSON.parse(text);
   } catch {
-    throw new Error("Atmosphere Login JWKS was not valid JSON");
+    throw new Error("Login with Atmosphere JWKS was not valid JSON");
   }
   if (cacheEnabled) {
     jwksCache.set(cacheKey, {
@@ -139,8 +141,8 @@ export function selectAtmosphereLoginPublicJwk(jwks, kid = null) {
   if (!key) {
     throw new Error(
       kid
-        ? `Atmosphere Login JWKS did not include key ${kid}`
-        : "Atmosphere Login JWKS did not include a key",
+        ? `Login with Atmosphere JWKS did not include key ${kid}`
+        : "Login with Atmosphere JWKS did not include a key",
     );
   }
   return key;
@@ -162,7 +164,7 @@ export function readAtmosphereLoginTokenHeader(token) {
   }
   const parts = token.split(".");
   if (parts.length !== 3 || !parts[0]) {
-    throw new Error("Atmosphere Login selection token is malformed");
+    throw new Error("Login with Atmosphere selection token is malformed");
   }
   try {
     const header = JSON.parse(textDecode(b64uDecode(parts[0])));
@@ -171,7 +173,7 @@ export function readAtmosphereLoginTokenHeader(token) {
     }
     return header;
   } catch {
-    throw new Error("Atmosphere Login selection token header is invalid");
+    throw new Error("Login with Atmosphere selection token header is invalid");
   }
 }
 

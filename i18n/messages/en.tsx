@@ -30,18 +30,19 @@ const en = {
     explore: "Apps",
     hosts: "Hosts",
     apps: "Apps",
+    docs: "Docs",
     exploreComingSoon: "Coming soon",
     protocol: "Protocol",
     account: {
       menuLabel: "Account menu",
       signedInAs: "Signed in as",
       signedOut: "Signed out",
-      signIn: "Sign in",
+      signIn: "Login with Atmosphere",
       signInHint:
         "Sign in with your Atmosphere account to publish an app listing.",
       hostedBy: (host: string): string => `Hosted by ${host}`,
       manageAccount: "Manage account",
-      managedProducts: "Managed products",
+      managedProducts: "Apps and hosts",
       manageProfile: "Manage app listing",
       manageReviews: "Your reviews",
       viewProfile: "View app listing",
@@ -80,17 +81,17 @@ const en = {
       ),
       (): VNode => (
         <>
-          Already use Bluesky, Blacksky, Spark, Tangled, or another AT Protocol
-          service? <strong>You already have an Atmosphere account.</strong>{" "}
-          You don’t need to create anything here; use that same account across
-          compatible Atmosphere apps.
+          Your <strong>Atmosphere Account</strong>{" "}
+          is your passport to this entire ecosystem. One account unlocks every
+          app — no more creating new logins, no more losing your stuff when you
+          switch. Sign in once, and you’re home everywhere.
         </>
       ),
       (): VNode => (
         <>
           The Atmosphere isn’t owned or controlled by any single big-tech
-          company. This isn’t just another “Sign in with Google”, it’s an{" "}
-          <strong>open social web</strong>.
+          company. This isn’t just another “Sign in with Google”,{" "}
+          <strong>it’s an open social internet</strong>.
         </>
       ),
     ],
@@ -99,13 +100,6 @@ const en = {
         You might have heard of Bluesky {icon}{" "}
         — that’s the first Atmosphere app, but there are many more. Anyone can
         build one, and new ones appear every day.
-      </>
-    ),
-    footnote: (): VNode => (
-      <>
-        Of course, you can have <strong>multiple accounts</strong>{" "}
-        if you want — great for keeping different personas separate. Whatever
-        you choose, every account you own works across the entire Atmosphere.
       </>
     ),
   },
@@ -197,7 +191,7 @@ const en = {
       eyebrow: "Your handle travels with you",
       body:
         "By default, your handle ends with your account host, like @you.bsky.social or @you.sprk.so. If you have your own domain, you can use that instead, like @you.com.",
-      demoButton: "Continue with Atmosphere",
+      demoButton: "Login with Atmosphere",
       demoAriaLabel:
         "Animated examples of handles on different account hosts and a custom domain",
       examples: [
@@ -381,12 +375,12 @@ const en = {
   developerResources: {
     heading: "For developers.",
     intro:
-      "Building an Atmosphere app? Let your users know they can sign in with their Atmosphere account.",
-    badgeAlt: "Sign in with your Atmosphere Account",
+      "Building an Atmosphere app? Let your users know they can use Login with Atmosphere.",
+    badgeAlt: "Login with Atmosphere",
     downloadBadge: "Download badge (SVG)",
     downloadLogo: "Download logo (SVG)",
     badgeFootnote:
-      "Add this badge to your sign-in page to help users understand the Atmosphere.",
+      "Add this badge to your login page to make the shared account experience clear.",
     lottieHeading: "Atmosphere Lottie animation",
     lottieIntro:
       "The original Lottie animation and the image assets embedded inside it (logos and artwork used in the sequence).",
@@ -648,7 +642,9 @@ const en = {
     create: {
       eyebrow: "Add to Apps",
       headline: "Register an app",
-      signInLabel: "Atmosphere handle",
+      body:
+        "Sign in with the app’s Atmosphere account. New app listings publish as shared ATStore records so reviews, favorites, and discovery can work across compatible directories.",
+      signInLabel: "Sign in with your Atmosphere handle",
       handlePlaceholder: "yourhandle.com",
       signIn: "Sign in",
       configError:
@@ -993,7 +989,7 @@ const en = {
     buttonShort: "Report",
     modalTitle: "Report this profile",
     modalBody:
-      "Send a report to the Atmosphere admins. Reports are anonymous unless you’re signed in.",
+      "Tell this directory about a problem with this profile. Reports are anonymous unless you’re signed in.",
     reasonLabel: "What’s wrong?",
     detailsLabel: "Add details (optional)",
     detailsPlaceholder: "Anything we should know?",
@@ -1020,7 +1016,7 @@ const en = {
     body: (handle: string): string =>
       `You’re signed in as @${handle}. Choose whether this account represents you as a person or a project you want listed in Explore.`,
     userTitle: "I’m a user",
-    userBody: "Create a user profile to write and manage your reviews.",
+    userBody: "Use this account to review and like apps.",
     projectTitle: "I’m a project",
     projectBody:
       "Create and manage a public project profile in Explore with app links, screenshots, and developer details.",
@@ -1033,33 +1029,12 @@ const en = {
     reviewsHeading: "Review history",
     empty: "You haven’t reviewed any apps yet.",
     explore: "Browse apps",
-    viewProfile: "View public profile",
-    nameLabel: "Display name",
-    namePlaceholder: "Your name",
-    bioLabel: "Bio",
-    bioPlaceholder: "A short note about you",
-    clientLabel: "Microblog profile",
-    displayBskyButton: "Display microblog profile",
-    configureBskyClient: "Choose microblog viewer",
-    saveClient: "Save profile",
-    saving: "Saving…",
-    saved: "Profile saved.",
-    saveError: "Could not save your profile.",
-    cancel: "Cancel",
-    done: "Done",
     viewProject: "View app",
     delete: "Delete review",
     confirmDelete: "Delete this review? This can’t be undone.",
     deleting: "Deleting…",
     deleted: "Review deleted.",
     error: "Couldn’t update the review",
-  },
-
-  userProfile: {
-    backToExplore: "Back to Apps",
-    notFoundTitle: "User not found",
-    notFoundBody: "That user profile is not available.",
-    openIn: (clientName: string): string => `Open in ${clientName}`,
   },
 
   reviews: {
@@ -1091,6 +1066,9 @@ const en = {
       submitting: "Saving…",
       delete: "Delete review",
       signIn: "Sign in",
+      signInTitle: "Login with Atmosphere",
+      signInBody:
+        "Choose the Atmosphere account that will own your review. We’ll only request the records needed to publish it.",
       cancel: "Cancel",
       saved: "Review saved.",
       deleted: "Review deleted.",
@@ -1105,13 +1083,16 @@ const en = {
     },
     app: {
       sharedRecordPending:
-        "Reviews will appear after this app moves to the new listing format.",
+        "Reviews will be available after this app moves to the shared app record.",
       likeCount: (count: number): string =>
         `${count.toLocaleString()} like${count === 1 ? "" : "s"}`,
       like: {
         like: "Like",
         unlike: "Unlike this app",
         signIn: "Sign in to like this app",
+        signInTitle: "Login with Atmosphere",
+        signInBody:
+          "Choose the Atmosphere account that will save this app. We’ll only request permission to create or remove its AT Store favorite record.",
         cancel: "Cancel",
         error: "Couldn’t update your like. Please try again.",
         countOne: "{count} like",
@@ -1130,7 +1111,7 @@ const en = {
     report: {
       button: "Report review",
       modalTitle: "Report this review",
-      modalBody: "Tell Atmosphere about a problem with this review.",
+      modalBody: "Tell this directory about a problem with this review.",
       reasonLabel: "What’s wrong?",
       detailsLabel: "Add details (optional)",
       detailsPlaceholder: "Anything we should know?",
@@ -1140,6 +1121,7 @@ const en = {
       done: "Close",
       sentTitle: "Report sent",
       sentBody: "Thanks. We’ll review it shortly.",
+      signInRequired: "Sign in to report reviews.",
       error: "Couldn’t send the report. Please try again.",
       reasons: {
         harmful: "Harmful or hateful content",

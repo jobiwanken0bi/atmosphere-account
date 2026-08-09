@@ -23,6 +23,7 @@ import {
   type SessionData,
 } from "../../lib/oauth.ts";
 import {
+  HOST_MANAGEMENT_CAPABILITIES,
   oauthReauthorizationUrl,
   oauthSigninUrl,
 } from "../../lib/oauth-action.ts";
@@ -30,7 +31,6 @@ import {
   getBskyProfile,
   isPdsScopeMissingError,
   PdsBlobUploadError,
-  PdsRecordWriteError,
   uploadBlob,
 } from "../../lib/pds.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
@@ -56,7 +56,6 @@ import {
   resolveBoundAppHostLinkIntent,
   type ResolvedAppHostLinkIntent,
 } from "../../lib/app-host-link-intent.ts";
-import { oauthAddAccountHref } from "./oauth-entry.ts";
 
 interface RegisterValues {
   host: string;
@@ -114,7 +113,7 @@ const HOST_AVATAR_MIME_TYPES = new Set([
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      () => appviewUnavailable(),
+      (err) => appviewUnavailable("host registration page", err),
     );
     if (proxied) return proxied;
 
@@ -137,13 +136,15 @@ export const handler = define.handlers({
     if (linkContext instanceof Response) return linkContext;
     if (
       !isLocalDevHostClaim(hostHint) &&
-      !await getSessionForCapabilities(ctx.state.user.did, ["host"], {
-        quiet: true,
-      })
+      !await getSessionForCapabilities(
+        ctx.state.user.did,
+        HOST_MANAGEMENT_CAPABILITIES,
+        { quiet: true },
+      )
     ) {
       return redirectToAuthorization(
         ctx.url,
-        ["host"],
+        HOST_MANAGEMENT_CAPABILITIES,
         hostHint || linkContext?.app.name || "an account host",
       );
     }
@@ -165,7 +166,7 @@ export const handler = define.handlers({
 
   async POST(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      () => appviewUnavailable(),
+      (err) => appviewUnavailable("host registration update", err),
     );
     if (proxied) return proxied;
 
@@ -190,12 +191,10 @@ export const handler = define.handlers({
         MAX_HOST_REGISTER_FORM_BYTES,
       );
     } catch (error) {
-      return new Response(
-        error instanceof RequestBodyTooLargeError
-          ? "request body too large"
-          : "invalid host form",
-        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
-      );
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      form = null;
     }
     const values = valuesFromForm(form);
     const requestedLinkIntent = textValue(form?.get("linkIntent"));
@@ -213,29 +212,7 @@ export const handler = define.handlers({
     );
     if (linkContext instanceof Response) return linkContext;
     const action = textValue(form?.get("action"));
-    if (action === "infer_location") {
-      const inferred = await inferHostNetworkLocation({
-        host: values.host,
-        serviceEndpoint: values.serviceEndpoint,
-      });
-      if (inferred.ok) {
-        applyInferenceResult(values, inferred);
-      } else {
-        clearInferenceValues(values);
-        values.inferenceState = "error";
-        values.inferenceMessage = inferred.message;
-      }
-      return await renderRegisterError(
-        ctx,
-        values,
-        "",
-        { status: 200 },
-        linkContext,
-      );
-    }
-    const requiredCapabilities = fileFromForm(form?.get("avatarUpload"))
-      ? ["host", "media"] as const
-      : ["host"] as const;
+    const requiredCapabilities = HOST_MANAGEMENT_CAPABILITIES;
     const session = await getSessionForCapabilities(
       ctx.state.user.did,
       requiredCapabilities,
@@ -255,6 +232,26 @@ export const handler = define.handlers({
         values,
         "Local .test fixtures need a real OAuth-backed account before they can upload an avatar.",
         {},
+        linkContext,
+      );
+    }
+    if (action === "infer_location") {
+      const inferred = await inferHostNetworkLocation({
+        host: values.host,
+        serviceEndpoint: values.serviceEndpoint,
+      });
+      if (inferred.ok) {
+        applyInferenceResult(values, inferred);
+      } else {
+        clearInferenceValues(values);
+        values.inferenceState = "error";
+        values.inferenceMessage = inferred.message;
+      }
+      return await renderRegisterError(
+        ctx,
+        values,
+        "",
+        { status: 200 },
         linkContext,
       );
     }
@@ -348,8 +345,8 @@ export const handler = define.handlers({
   },
 });
 
-function appviewUnavailable(): Response {
-  console.error("[appview] host registration proxy failed");
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
   return new Response("Host registration is temporarily unavailable.", {
     status: 503,
     headers: {
@@ -360,7 +357,7 @@ function appviewUnavailable(): Response {
 }
 
 function redirectToSignin(url: URL, name: string): Response {
-  return redirectToAuthorization(url, ["host"], name);
+  return redirectToAuthorization(url, HOST_MANAGEMENT_CAPABILITIES, name);
 }
 
 function redirectToAuthorization(
@@ -395,19 +392,6 @@ export function hostRegistrationAuthorizationHref(
     capabilities,
     name,
   });
-}
-
-export function hostRegistrationAddAccountHref(
-  next: string,
-  name: string,
-): string {
-  return oauthAddAccountHref(
-    hostRegistrationAuthorizationHref(
-      new URL(next, "https://atmosphereaccount.invalid"),
-      ["host"],
-      name,
-    ),
-  );
 }
 
 async function redirectLegacyRegistrationToDetectedClaim(
@@ -590,9 +574,11 @@ async function buildRegisterPrefill(
   linkedApp: AppListing | null = null,
 ): Promise<{ values: RegisterValues; hasOAuthSession: boolean }> {
   const values = valuesFromUrl(url);
-  const session = await getSessionForCapabilities(user.did, ["host"], {
-    quiet: true,
-  }).catch(() => null);
+  const session = await getSessionForCapabilities(
+    user.did,
+    HOST_MANAGEMENT_CAPABILITIES,
+    { quiet: true },
+  ).catch(() => null);
   const bsky = session
     ? await getBskyProfile(session.pdsUrl, user.did).catch(() => null)
     : null;
@@ -680,9 +666,11 @@ async function renderRegisterError(
   linkContext: HostRegistrationLinkContext | null = null,
 ): Promise<Response> {
   const session = ctx.state.user
-    ? await getSessionForCapabilities(ctx.state.user.did, ["host"], {
-      quiet: true,
-    }).catch(() => null)
+    ? await getSessionForCapabilities(
+      ctx.state.user.did,
+      HOST_MANAGEMENT_CAPABILITIES,
+      { quiet: true },
+    ).catch(() => null)
     : null;
   return ctx.render(
     <RegisterHostPage
@@ -744,7 +732,12 @@ async function publishHostProfileFromForm(
         encodeURIComponent(avatar.ref.$link)
       }`;
     } catch (err) {
-      return hostRegistrationPublishFailure("avatar", err);
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        message: `Host avatar upload failed: ${message}`,
+        reauthorization: isHostAuthorizationError(err),
+      };
     }
   }
 
@@ -777,27 +770,21 @@ async function publishHostProfileFromForm(
       serviceRecordCid: records.service.cid,
     };
   } catch (err) {
-    return hostRegistrationPublishFailure("record", err);
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      message:
+        `Host record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
+      reauthorization: isHostAuthorizationError(err),
+    };
   }
-}
-
-export function hostRegistrationPublishFailure(
-  operation: "avatar" | "record",
-  error: unknown,
-): { ok: false; message: string; reauthorization: boolean } {
-  return {
-    ok: false,
-    message: operation === "avatar"
-      ? "We couldn't upload the host avatar. Try again."
-      : "We couldn't publish this host. Try again.",
-    reauthorization: isHostAuthorizationError(error),
-  };
 }
 
 function isHostAuthorizationError(value: unknown): boolean {
   if (isPdsScopeMissingError(value)) return true;
   if (value instanceof PdsBlobUploadError && value.status === 403) return true;
-  return value instanceof PdsRecordWriteError && value.status === 403;
+  return value instanceof Error &&
+    /(?:ScopeMissingError|failed: HTTP 403)/i.test(value.message);
 }
 
 function fileFromForm(
@@ -814,7 +801,10 @@ function RegisterHostPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="signin-page-section host-register-section">
+        <main
+          id="main-content"
+          class="signin-page-section host-register-section"
+        >
           <div class="container signin-page-container">
             <a
               href={linkContext
@@ -835,16 +825,15 @@ function RegisterHostPage(
               </h1>
               <p class="text-body host-claim-copy">
                 This form is only available for local <code>.test</code>{" "}
-                fixtures while Atmosphere is running in development mode.
-                Production hosts must be detected from relay activity and
-                verified through the PDS contact email.
+                fixtures while development mode is enabled. Production hosts
+                must be detected from relay activity and verified with a
+                temporary DNS record.
               </p>
               <div class="host-claim-panel">
                 <p class="host-claim-panel-title">Running a production PDS?</p>
                 <p class="text-body">
-                  Configure <code>contact.email</code> in{" "}
-                  <code>com.atproto.server.describeServer</code>, then find the
-                  exact PDS domain in the detected-host flow.
+                  Find the exact PDS domain in the detected-host flow, then add
+                  the temporary TXT record shown there with your DNS provider.
                 </p>
                 <a class="text-link-button" href="/hosts/claim">
                   Find and claim a detected PDS
@@ -865,12 +854,13 @@ function RegisterHostPage(
               {linkContext && (
                 <a
                   class="text-link-button"
-                  href={hostRegistrationAddAccountHref(
-                    `/hosts/register?link_intent=${
-                      encodeURIComponent(linkContext.intentToken)
-                    }&host=${encodeURIComponent(values.host)}`,
-                    values.displayName || values.host || "an account host",
-                  )}
+                  href={`/oauth/add-account?next=${
+                    encodeURIComponent(
+                      `/hosts/register?link_intent=${
+                        encodeURIComponent(linkContext.intentToken)
+                      }&host=${encodeURIComponent(values.host)}`,
+                    )
+                  }`}
                 >
                   Use another account to register this host
                 </a>
@@ -894,7 +884,7 @@ function RegisterHostPage(
               />
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

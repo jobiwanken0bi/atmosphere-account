@@ -17,7 +17,6 @@ import { deleteOwnReviewById, getReviewById } from "../../../../lib/reviews.ts";
 import { hasOAuthCapabilities } from "../../../../lib/oauth-scopes.ts";
 import { oauthReauthorizationUrl } from "../../../../lib/oauth-action.ts";
 import { getProfileByDid } from "../../../../lib/registry.ts";
-import { accountReviewDeleteReturnPath } from "../../../../lib/app-interaction-reauth.ts";
 
 export const handler = define.handlers({
   DELETE: withRateLimit(async (ctx) => {
@@ -38,14 +37,10 @@ export const handler = define.handlers({
       if (
         !session ||
         !hasOAuthCapabilities(grantedScopeForSession(session), [
-          "legacy_review_manage",
+          "legacy_review",
         ])
       ) {
-        return await reauthorizationRequired(
-          user.handle,
-          existing.targetDid,
-          reviewId,
-        );
+        return await reauthorizationRequired(user.handle, existing.targetDid);
       }
       const deleted = await deleteReviewRecord(
         user.did,
@@ -59,7 +54,6 @@ export const handler = define.handlers({
           return await reauthorizationRequired(
             user.handle,
             existing.targetDid,
-            reviewId,
           );
         }
         return jsonResponse(502, {
@@ -87,7 +81,6 @@ function jsonError(status: number, code: string): Response {
 async function reauthorizationRequired(
   handle: string,
   targetDid: string,
-  reviewId: number,
 ): Promise<Response> {
   const target = await getProfileByDid(targetDid, {
     includeTakenDown: true,
@@ -95,9 +88,9 @@ async function reauthorizationRequired(
   return jsonResponse(403, {
     error: "reauth_required",
     reauthUrl: oauthReauthorizationUrl({
-      next: accountReviewDeleteReturnPath(reviewId),
+      next: "/account/reviews",
       action: "legacy_review_manage",
-      capabilities: ["legacy_review_manage"],
+      capabilities: ["legacy_review"],
       name: target?.name ?? target?.handle,
     }),
     handle,

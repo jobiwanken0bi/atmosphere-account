@@ -181,7 +181,7 @@ const apps = [
     name: "mu",
     tagline: "A social app from the team behind Eurosky.",
     description:
-      "A social Atmosphere app operated by the same organization as the Eurosky account host.",
+      "A social Atmosphere app run by the same operator as the Eurosky account host.",
     url: "https://mu.social",
     profile: "https://bsky.app/profile/mu.social",
     productDid: "did:plc:fivmz34azxgjafrk6ogns7k5",
@@ -205,10 +205,10 @@ const apps = [
     name: "Field Notes Capture",
     tagline: "A focused capture companion for Field Notes.",
     description:
-      "A second ATStore app owned by the Field Notes account, included locally to exercise multi-app management and shared host relationships.",
+      "A focused ATStore capture app with its own app account, included locally to exercise verified host relationships.",
     url: "https://capture.field-notes.test",
-    profile: "https://bsky.app/profile/field-notes.test",
-    productDid: comparisonAccounts.app.did,
+    profile: "https://bsky.app/profile/field-notes-capture.test",
+    productDid: "did:plc:localdevfieldnotescapture",
     collections: ["work"],
     tags: ["notes", "capture"],
   },
@@ -333,9 +333,8 @@ for (const app of apps) {
     createdAt: now - apps.indexOf(app) * 86_400_000,
     updatedAt: now - apps.indexOf(app) * 43_200_000,
   };
-  // This fixture intentionally shares an owner with Field Notes. Clear its
-  // prior local index row so older dev databases that used DID identity can
-  // be split cleanly into two app listings.
+  // Clear the older shared-owner fixture before indexing this app under its
+  // own DID, so existing local databases converge on one DID per app.
   if (app.slug === "field-notes-capture.test") {
     await deleteAppRecord(sourceUri);
   }

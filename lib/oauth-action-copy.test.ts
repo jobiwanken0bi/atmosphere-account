@@ -15,7 +15,11 @@ Deno.test("every OAuth action has concise shared chooser copy", () => {
     assertEquals(copy.title.length > 0, true, action);
     assertEquals(copy.signInBody.length > 0, true, action);
     assertEquals(copy.upgradeBody("alice.example").length > 0, true, action);
-    assertEquals(copy.signInBody.includes("repository"), false, action);
+    assertEquals(
+      copy.signInBody.includes("repository"),
+      action === "developer",
+      action,
+    );
     assertEquals(copy.signInBody.includes("AT Store"), false, action);
     assertEquals(copy.signInBody.includes("identity only"), false, action);
   }
@@ -52,11 +56,11 @@ Deno.test("ordinary actions name the task without permission jargon", () => {
 Deno.test("app and host management state what access is approved", () => {
   assertStringIncludes(
     authActionCopy("app", "Grain").signInBody,
-    "publish and manage its app profile and listing",
+    "manage its app records and images",
   );
   assertStringIncludes(
     authActionCopy("host_manage", "Example Host").signInBody,
-    "publish and manage its host profile",
+    "manage its public host profile and images",
   );
 });
 
@@ -71,12 +75,11 @@ Deno.test("account creation policy explicitly covers every OAuth action", () => 
     report_review: true,
     favorite: true,
     app: true,
-    host_claim: false,
+    host_claim: true,
     host_manage: false,
+    host_transfer: true,
     app_host: false,
-    profile: true,
-    developer: true,
-    passkey_manage: false,
+    developer: false,
     relationship_confirm: false,
     admin: false,
   } as const satisfies Record<typeof OAUTH_ACTIONS[number], boolean>;
@@ -90,16 +93,16 @@ Deno.test("account creation policy explicitly covers every OAuth action", () => 
   }
 });
 
-Deno.test("host claim and passkey copy match their actual account choice", () => {
+Deno.test("host claim and transfer copy match their actual account choice", () => {
   const hostClaim = authActionCopy("host_claim", "Example Host");
   assertEquals(
     hostClaim.signInBody,
-    "Choose the account that should manage this account host.",
+    "Choose the account that will claim and manage Example Host, including its public profile and images. Granting this access does not claim the host; DNS verification separately proves control of its domain.",
   );
   assertEquals(hostClaim.signInBody.includes("hosted there"), false);
 
-  const passkey = authActionCopy("passkey_manage", "alice.example");
-  assertEquals(passkey.title, "Verify your account");
-  assertStringIncludes(passkey.signInBody, "alice.example");
-  assertStringIncludes(passkey.upgradeBody("alice.example"), "passkeys");
+  const transfer = authActionCopy("host_transfer", "Example Host");
+  assertEquals(transfer.title, "Choose the new managing account");
+  assertStringIncludes(transfer.signInBody, "current manager");
+  assertStringIncludes(transfer.upgradeBody("alice.example"), "DNS");
 });

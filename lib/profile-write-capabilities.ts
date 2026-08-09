@@ -1,4 +1,5 @@
 import type { OAuthCapability } from "./oauth-scopes.ts";
+import { APP_MANAGEMENT_CAPABILITIES } from "./oauth-action.ts";
 
 interface MediaUpload {
   dataBase64?: string;
@@ -13,28 +14,13 @@ export interface AppProfileWritePayload {
 }
 
 /**
- * App record writes always need the app capability. Blob permission is
- * additive and is requested only for a save that actually includes new image
- * bytes; retaining or removing an existing blob does not require an upload.
+ * App profile management is one complete authorization job. It always
+ * includes image blobs, even when a particular save contains only text, so a
+ * later avatar, banner, icon, or screenshot edit does not trigger a second
+ * predictable authorization prompt.
  */
 export function appProfileWriteCapabilities(
-  body: AppProfileWritePayload,
+  _body: AppProfileWritePayload,
 ): OAuthCapability[] {
-  const screenshotUploads = Array.isArray(body.screenshotUploads)
-    ? body.screenshotUploads
-    : [];
-  const hasMediaUpload = !!(
-    body.avatarUpload?.dataBase64 ||
-    body.bannerUpload?.dataBase64 ||
-    body.iconUpload?.dataBase64 ||
-    body.iconBwUpload?.dataBase64 ||
-    screenshotUploads.some((upload) => !!upload?.dataBase64)
-  );
-  return hasMediaUpload ? ["app", "media"] : ["app"];
-}
-
-export function userProfileWriteCapabilities(
-  hasAvatarUpload: boolean,
-): OAuthCapability[] {
-  return hasAvatarUpload ? ["profile", "media"] : ["profile"];
+  return [...APP_MANAGEMENT_CAPABILITIES];
 }

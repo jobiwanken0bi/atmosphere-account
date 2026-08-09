@@ -35,7 +35,7 @@ export default function DocsLayout(
           </nav>
         </aside>
 
-        <main class="docs-main">
+        <main id="main-content" class="docs-main">
           <header class="docs-hero">
             <div class="docs-kicker-row">
               <p class="text-eyebrow">Docs / {page.group}</p>

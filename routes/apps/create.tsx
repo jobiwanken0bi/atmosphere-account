@@ -8,7 +8,7 @@ import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isOAuthConfigured } from "../../lib/oauth.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { isSafeRelativePath } from "../../lib/security.ts";
-import { authActionCopy } from "../../lib/oauth-action-copy.ts";
+import { APP_MANAGEMENT_CAPABILITIES } from "../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -30,7 +30,6 @@ function renderExploreCreate(
   ctx: PageProps<unknown, State>,
 ) {
   const t = getMessages(ctx.state.locale).explore;
-  const actionCopy = authActionCopy("app", "your app");
   const user = ctx.state.user;
   const rawNext = ctx.url.searchParams.get("next");
   const next = isSafeRelativePath(rawNext) ? rawNext : null;
@@ -51,11 +50,15 @@ function renderExploreCreate(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="explore-create" style={{ paddingTop: "8rem" }}>
+        <main
+          id="main-content"
+          class="explore-create"
+          style={{ paddingTop: "8rem" }}
+        >
           <div class="container" style={{ maxWidth: "640px" }}>
             <p class="text-eyebrow">{t.create.eyebrow}</p>
             <h1 class="text-section">{t.create.headline}</h1>
-            <p class="text-body mt-2">{actionCopy.signInBody}</p>
+            <p class="text-body mt-2">{t.create.body}</p>
             <div
               class="glass"
               style={{
@@ -71,8 +74,7 @@ function renderExploreCreate(
                 ? (
                   <SignInForm
                     returnTo={next ?? "/apps/manage?new=1"}
-                    intent="project"
-                    capabilities={["app"]}
+                    capabilities={APP_MANAGEMENT_CAPABILITIES}
                     action="app"
                     targetName="your app"
                     rememberedAccounts={account.rememberedAccounts}
@@ -81,7 +83,7 @@ function renderExploreCreate(
                 : <p class="text-body">{t.create.configError}</p>}
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

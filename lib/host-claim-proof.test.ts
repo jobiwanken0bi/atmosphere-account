@@ -29,7 +29,7 @@ Deno.test("production claims reject handle-domain and curated-handle shortcuts",
   );
 });
 
-Deno.test("only explicit local .test fixtures bypass contact-email claims", () => {
+Deno.test("only explicit local .test fixtures bypass DNS claims", () => {
   assertEquals(
     hostSelfServiceClaimPolicy("fixture.test", { isDev: true }),
     "local-dev",
@@ -44,10 +44,10 @@ Deno.test("only explicit local .test fixtures bypass contact-email claims", () =
   );
   assertEquals(
     hostSelfServiceClaimPolicy("fixture.test", { isDev: false }),
-    "contact-email",
+    "dns",
   );
   assertEquals(
     hostSelfServiceClaimPolicy("pds.example.com", { isDev: true }),
-    "contact-email",
+    "dns",
   );
 });

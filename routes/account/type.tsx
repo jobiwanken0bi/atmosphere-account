@@ -12,7 +12,10 @@
  */
 import { define } from "../../utils.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
-import { getEffectiveAccountType } from "../../lib/account-types.ts";
+import {
+  getEffectiveAccountType,
+  setAppUserType,
+} from "../../lib/account-types.ts";
 import { isSafeRelativePath } from "../../lib/security.ts";
 
 export const handler = define.handlers({
@@ -33,11 +36,21 @@ export const handler = define.handlers({
     const rawNext = ctx.url.searchParams.get("next");
     const next = rawNext && isSafeRelativePath(rawNext) ? rawNext : null;
 
-    const accountType = await getEffectiveAccountType(user.did).catch(() =>
-      null
-    );
-    // Legacy untyped DIDs use the user landing without mutating account state
-    // from this compatibility GET. Explicit type changes remain POST-only.
+    let accountType = await getEffectiveAccountType(user.did).catch(() => null);
+    /**
+     * Legacy DIDs that signed in before the auto-classification rollout
+     * may still be untyped. Default them to user, matching the new
+     * sign-in flow's default, and route them to their dashboard.
+     */
+    if (accountType == null) {
+      await setAppUserType({
+        did: user.did,
+        handle: user.handle,
+        accountType: "user",
+      }).catch(() => {});
+      accountType = "user";
+    }
+
     return new Response(null, {
       status: 303,
       headers: {

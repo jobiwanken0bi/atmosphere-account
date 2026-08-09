@@ -56,7 +56,7 @@ function AdminFeaturedPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
-        <section class="admin-section">
+        <main id="main-content" class="admin-section">
           <div class="container" style={{ maxWidth: "1080px" }}>
             <p>
               <a href="/admin" class="text-link-button">
@@ -90,7 +90,7 @@ function AdminFeaturedPage(
               }}
             />
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

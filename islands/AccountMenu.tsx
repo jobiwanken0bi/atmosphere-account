@@ -13,6 +13,8 @@ interface Props {
   /** null when signed out — drives whether the menu shows sign-in or
    *  sign-out + manage actions. */
   user: { did: string; handle: string } | null;
+  /** Exact server-resolved ownership state for app/host management. */
+  hasManagedProfiles?: boolean;
   accountType?: "user" | "project" | null;
   /**
    * Server-resolved avatar URL (typically /api/me/avatar). Falls back
@@ -46,6 +48,7 @@ interface Props {
 export default function AccountMenu(
   {
     user,
+    hasManagedProfiles = false,
     avatarUrl,
     accountHost,
     rememberedAccounts,
@@ -70,8 +73,9 @@ export default function AccountMenu(
       <a
         href="/signin"
         class="nav-btn nav-btn-primary account-menu-signin"
+        aria-label={t.signIn}
       >
-        {t.signIn}
+        <LoginActionLabel label={t.signIn} />
       </a>
     );
   }
@@ -79,6 +83,7 @@ export default function AccountMenu(
   return (
     <SignedInMenu
       user={user}
+      hasManagedProfiles={hasManagedProfiles}
       avatarUrl={avatarUrl ?? null}
       accountHost={accountHost ?? null}
       rememberedAccounts={accounts}
@@ -137,7 +142,9 @@ function SignedOutMenu(
           open.value = !open.value;
         }}
       >
-        <span class="account-menu-trigger-label">{t.signIn}</span>
+        <span class="account-menu-trigger-label">
+          <LoginActionLabel label={t.signIn} />
+        </span>
         <span class="account-menu-chevron" aria-hidden="true">▾</span>
       </button>
 
@@ -183,13 +190,26 @@ function SignedOutMenu(
 
 interface SignedInMenuProps {
   user: { did: string; handle: string };
+  hasManagedProfiles: boolean;
   avatarUrl: string | null;
   accountHost: { displayName: string; endpoint: string } | null;
   rememberedAccounts: RememberedAccount[];
 }
 
+export function appsHostsMenuHref(
+  hasManagedProfiles: boolean,
+): string | null {
+  return hasManagedProfiles ? "/account/apps-hosts" : null;
+}
+
 function SignedInMenu(
-  { user, avatarUrl, accountHost, rememberedAccounts }: SignedInMenuProps,
+  {
+    user,
+    hasManagedProfiles,
+    avatarUrl,
+    accountHost,
+    rememberedAccounts,
+  }: SignedInMenuProps,
 ) {
   const t = useT().nav.account;
   const open = useSignal(false);
@@ -227,6 +247,7 @@ function SignedInMenu(
   }, []);
 
   const others = rememberedAccounts.filter((a) => a.did !== user.did);
+  const appsHostsHref = appsHostsMenuHref(hasManagedProfiles);
 
   return (
     <div class="account-menu" ref={wrapRef}>
@@ -297,15 +318,17 @@ function SignedInMenu(
           >
             {t.manageReviews}
           </a>
-          <a
-            href="/account/products"
-            class="account-menu-item"
-            onClick={() => {
-              open.value = false;
-            }}
-          >
-            {t.managedProducts}
-          </a>
+          {appsHostsHref && (
+            <a
+              href={appsHostsHref}
+              class="account-menu-item"
+              onClick={() => {
+                open.value = false;
+              }}
+            >
+              {t.managedProducts}
+            </a>
+          )}
           <form
             method="POST"
             action="/oauth/logout"
@@ -338,8 +361,9 @@ function SignedInMenu(
             />
           ))}
           {
-            /* POST is the explicit no-JS account-choice action. The server
-             * keeps this session active while the chooser is open. */
+            /* POST so the server can clear the live session and route
+           *  the browser to /signin even when the user is currently
+           *  signed in (a normal /signin GET would redirect to /account). */
           }
           <form
             method="POST"
@@ -357,6 +381,17 @@ function SignedInMenu(
         </div>
       )}
     </div>
+  );
+}
+
+function LoginActionLabel({ label }: { label: string }) {
+  return (
+    <>
+      <span class="account-menu-login-label-full">{label}</span>
+      <span class="account-menu-login-label-compact" aria-hidden="true">
+        Login
+      </span>
+    </>
   );
 }
 

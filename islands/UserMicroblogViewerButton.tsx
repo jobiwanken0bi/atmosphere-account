@@ -135,6 +135,7 @@ export default function UserMicroblogViewerButton(
     nextClientId: string,
     nextVisible = visible.value,
   ) => {
+    if (saving.value) return;
     saving.value = true;
     message.value = null;
     try {

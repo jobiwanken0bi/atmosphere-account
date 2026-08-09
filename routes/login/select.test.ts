@@ -1,12 +1,10 @@
 import type { State } from "../../utils.ts";
 import {
   pickerAccountsForStateForTest,
+  pickerCancelHrefForTest,
   pickerSelectionPathForTest,
-  publicLoginPickerFailureForTest,
   readLoginRequestFromInputForTest,
 } from "./select.tsx";
-import { LoginRequestError } from "../../lib/atmosphere-login.ts";
-import { RequestBodyTooLargeError } from "../../lib/security.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -152,27 +150,33 @@ Deno.test("login picker uses a browser-safe compact selection link", async () =>
   assertEquals(path.length < 80, true);
 });
 
-Deno.test("login picker never exposes caught OAuth or signing errors", () => {
-  const privateDetail =
-    "OAUTH_PRIVATE_JWK=private-key at /srv/oauth/signing.ts:42";
+Deno.test("login picker cancel returns only to the verified app callback", () => {
+  const href = pickerCancelHrefForTest({
+    clientId: "https://app.example/client.json",
+    returnUri: "https://app.example/callback?existing=1#done",
+    state: "state-value",
+    scope: null,
+  }, {
+    clientId: "https://app.example/client.json",
+    returnUri: "https://app.example/callback?existing=1#done",
+  });
+  const url = new URL(href);
+  assertEquals(url.origin, "https://app.example");
+  assertEquals(url.pathname, "/callback");
+  assertEquals(url.searchParams.get("existing"), "1");
+  assertEquals(url.searchParams.get("error"), "access_denied");
   assertEquals(
-    publicLoginPickerFailureForTest(new Error(privateDetail)),
-    {
-      message: "Unable to continue. Return to the app and try again.",
-      status: 400,
-    },
+    url.searchParams.get("client_id"),
+    "https://app.example/client.json",
   );
-  assertEquals(
-    publicLoginPickerFailureForTest(
-      new LoginRequestError(privateDetail, 404),
-    ),
-    {
-      message: "Unable to continue. Return to the app and try again.",
-      status: 404,
-    },
+  assertEquals(url.searchParams.get("state"), "state-value");
+  assertEquals(url.hash, "#done");
+});
+
+Deno.test("login picker failures do not disclose raw exception details", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./select.tsx", import.meta.url),
   );
-  assertEquals(
-    publicLoginPickerFailureForTest(new RequestBodyTooLargeError()),
-    { message: "request body too large", status: 413 },
-  );
+  assertEquals(source.includes("String(err)"), false);
+  assertEquals(source.includes('proxy failed:", err'), false);
 });

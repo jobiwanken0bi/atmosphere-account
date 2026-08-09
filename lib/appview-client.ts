@@ -25,6 +25,7 @@ import {
   createProxyClientKey,
   PROXY_CLIENT_KEY_HEADER,
 } from "./proxy-client-key.ts";
+import { legacyHostClaimEdgeResponse } from "./host-claim-legacy.ts";
 import { isJsonMediaType, readResponseTextWithLimit } from "./security.ts";
 import { safeBrowserNavigationUrl } from "./browser-navigation.ts";
 
@@ -37,7 +38,6 @@ const MIN_APPVIEW_FETCH_TIMEOUT_MS = 1000;
 const MAX_APPVIEW_HANDOFF_BODY_BYTES = 64 * 1024;
 const DEFAULT_APPVIEW_REQUEST_BODY_BYTES = 256 * 1024;
 const PROFILE_APPVIEW_REQUEST_BODY_BYTES = 36_000_000;
-const ACCOUNT_PROFILE_APPVIEW_REQUEST_BODY_BYTES = 1_064_000;
 const MAX_APPVIEW_HTML_BYTES = 4 * 1024 * 1024;
 const MAX_APPVIEW_JSON_BYTES = 4 * 1024 * 1024;
 const APPVIEW_ASSET_PROXY_PREFIX = "/_appview/assets/";
@@ -86,6 +86,9 @@ export const appviewAssetProxyMiddleware = define.middleware(
 );
 
 export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
+  const retiredHostClaim = await legacyHostClaimEdgeResponse(ctx.url, ctx.req);
+  if (retiredHostClaim) return retiredHostClaim;
+
   if (!shouldProxyAppviewBeforeSession(ctx.url.pathname)) {
     return await ctx.next();
   }
@@ -117,13 +120,14 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
 export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
   if (isEdgeOwnedOauthDocument(pathname)) return false;
   if (isEdgeRenderedPublicDirectory(pathname)) return false;
+  // Keep the retired shell route local so it can reliably redirect during a
+  // rolling AppView deploy. The canonical management page remains proxied.
+  if (pathname === "/account/products") return false;
   return pathname === "/apps" || pathname.startsWith("/apps/") ||
     pathname === "/hosts" || pathname.startsWith("/hosts/") ||
     pathname === "/account" || pathname.startsWith("/account/") ||
     pathname === "/admin" || pathname.startsWith("/admin/") ||
-    pathname === "/users" || pathname.startsWith("/users/") ||
     pathname === "/login/select" ||
-    pathname === "/passkeys" ||
     pathname === "/oauth" || pathname.startsWith("/oauth/") ||
     pathname === "/api/apps" || pathname.startsWith("/api/apps/") ||
     pathname === "/api/hosts" || pathname.startsWith("/api/hosts/") ||
@@ -131,8 +135,6 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/admin" || pathname.startsWith("/api/admin/") ||
     pathname === "/api/login/selection" ||
     pathname === "/api/login/account-hosts" ||
-    pathname.startsWith("/api/login/passkeys/") ||
-    pathname === "/api/passkeys" || pathname.startsWith("/api/passkeys/") ||
     pathname === "/api/registry" || pathname.startsWith("/api/registry/") ||
     pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
     pathname === "/api/atproto/blob" ||
@@ -529,9 +531,6 @@ async function appviewProxyRequestBody(
 function appviewRequestBodyLimit(pathname: string): number {
   if (pathname === "/api/registry/profile") {
     return PROFILE_APPVIEW_REQUEST_BODY_BYTES;
-  }
-  if (pathname === "/api/account/profile") {
-    return ACCOUNT_PROFILE_APPVIEW_REQUEST_BODY_BYTES;
   }
   if (shouldBufferAppviewRequestBody(pathname)) {
     return MAX_APPVIEW_HANDOFF_BODY_BYTES;

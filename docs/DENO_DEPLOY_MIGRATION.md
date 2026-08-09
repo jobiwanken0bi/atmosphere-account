@@ -19,12 +19,12 @@ Official docs:
 
 ## Target Runtime Split
 
-- **Deno Deploy:** public Fresh web app, hosted Atmosphere Login picker, docs,
-  static SDK assets, client metadata, JWKS, and light OAuth/public metadata
-  routes.
+- **Deno Deploy:** public Fresh web app, hosted Login with Atmosphere picker,
+  docs, static SDK assets, client metadata, JWKS, and light OAuth/public
+  metadata routes.
 - **Railway appview/API:** public directory read model APIs for apps, hosts,
-  search, reviews, favorites, admin status, DB-backed Atmosphere Login routes,
-  developer app registration, and heavier appview reads.
+  search, reviews, favorites, admin status, DB-backed Login with Atmosphere
+  routes, developer app registration, and heavier appview reads.
 - **Railway indexer/jobs:** always-on Jetstream indexer, backfills, rescoring,
   and heavier background jobs.
 - **Railway Postgres:** canonical appview database used by the Railway appview
@@ -53,7 +53,7 @@ Completed:
 - Deployed a non-production revision:
   `https://atmosphere-account-8xsphfpb5py3.atmospheremoney.deno.net`
 - Verified preview liveness, readiness, DB access, Railway indexer heartbeat,
-  OAuth client metadata, login JWKS, and Atmosphere Login manifest.
+  OAuth client metadata, login JWKS, and Login with Atmosphere manifest.
 - Deployed production revision:
   `https://console.deno.com/atmospheremoney/atmosphere-account/builds/8xsphfpb5py3`
 - Verified production:

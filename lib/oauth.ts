@@ -5,8 +5,8 @@
  * https://atproto.com/specs/oauth
  *
  * Usage from routes:
- *   - startLogin(handle)         -> { redirectUrl, stateKey }
- *   - completeCallback(params)   -> session bound to a DID
+ *   - startLogin(handle)         -> redirect URL + state/browser binding
+ *   - completeCallback(...)      -> session bound to a DID
  *   - getValidSession(did)       -> tokens (auto-refreshes if needed)
  *   - authedFetch(did, url, init) -> calls PDS with DPoP-bound access token
  *
@@ -78,7 +78,6 @@ export interface OAuthClientOptions {
   continuation?: "login_selection";
   /** Restore the alternate-account chooser if authorization is interrupted. */
   chooseAnotherAccount?: boolean;
-  reauthenticate?: boolean;
   /** Context retained only to explain a partial/conflicting grant on retry. */
   action?: OAuthAction;
   targetName?: string;
@@ -213,9 +212,7 @@ export type SignInIntent = "user" | "project";
 
 interface FlowState {
   state: string;
-  /** SHA-256 of the secret held only in the initiating browser's short-lived
-   * state-specific cookie. This prevents login CSRF/session swapping when an
-   * otherwise valid authorization response is replayed in another browser. */
+  /** Hash of the secret held only by the browser that initiated this state. */
   browserBindingHash: string;
   pkceVerifier: string;
   dpopPrivateJwk: JsonWebKey;
@@ -234,7 +231,7 @@ interface FlowState {
   did?: string;
   handle?: string;
   pdsUrl: string;
-  prompt?: "create" | "login";
+  prompt?: "create";
   continuation?: "login_selection";
   chooseAnotherAccount?: boolean;
   returnTo?: string;
@@ -278,7 +275,7 @@ interface DpopProofOptions {
   accessToken?: string;
 }
 
-/** RFC 9449 binds a proof to the request URI without its query or fragment. */
+/** RFC 9449 binds a proof to the request URI without query or fragment. */
 export function normalizeDpopHtu(value: string): string {
   const url = new URL(value);
   url.search = "";
@@ -665,9 +662,7 @@ export async function startLogin(
       options?.action ?? null,
       capabilities ?? ["identity"],
     )
-  ) {
-    throw new Error("invalid OAuth continuation binding");
-  }
+  ) throw new Error("invalid OAuth continuation binding");
   const id = await resolveIdentity(handleOrDid);
   const persistSession = shouldPersistOAuthSession(
     options?.persistSession,
@@ -698,11 +693,6 @@ export async function startLogin(
     : DEFAULT_OAUTH_SCOPE);
   const config = oauthClientConfig({ ...options, scope: requestedScope });
   const asMeta = await discoverAuthServer(id.pdsUrl);
-  const prompt = oauthReauthenticationPrompt(
-    asMeta.prompt_values_supported,
-    options?.reauthenticate === true,
-    new URL(asMeta.issuer).hostname,
-  );
   const clientId = oauthClientId(config);
 
   const dpop = await generateEs256KeyPair();
@@ -727,7 +717,6 @@ export async function startLogin(
     did: id.did,
     handle: id.handle,
     pdsUrl: id.pdsUrl,
-    prompt,
     continuation: options?.continuation,
     chooseAnotherAccount: options?.chooseAnotherAccount,
     returnTo: returnTo ?? undefined,
@@ -743,34 +732,6 @@ export async function startLogin(
   authUrl.searchParams.set("request_uri", parRes.requestUri);
 
   return { redirectUrl: authUrl.toString(), state, browserBinding };
-}
-
-export class OAuthReauthenticationUnsupportedError extends Error {
-  constructor(host: string) {
-    super(
-      `${host} does not advertise the OAuth login prompt required for passkey changes`,
-    );
-    this.name = "OAuthReauthenticationUnsupportedError";
-  }
-}
-
-function oauthReauthenticationPrompt(
-  supported: readonly string[] | undefined,
-  required: boolean,
-  host: string,
-): "login" | undefined {
-  if (!required) return undefined;
-  if (!supported?.includes("login")) {
-    throw new OAuthReauthenticationUnsupportedError(host);
-  }
-  return "login";
-}
-
-export function oauthReauthenticationPromptForTest(
-  supported: readonly string[] | undefined,
-  required: boolean,
-): "login" | undefined {
-  return oauthReauthenticationPrompt(supported, required, "host.example");
 }
 
 export class OAuthAccountCreationUnsupportedError extends Error {
@@ -804,9 +765,7 @@ export async function startHostAccountCreation(
       options?.action ?? null,
       capabilities ?? ["identity"],
     )
-  ) {
-    throw new Error("invalid OAuth continuation binding");
-  }
+  ) throw new Error("invalid OAuth continuation binding");
   const requiredScope = capabilities
     ? scopeForCapabilities(capabilities)
     : undefined;
@@ -921,9 +880,7 @@ async function pushParRequest(
     const errBody = await readOAuthServerJson(res).catch(() => ({})) as {
       error?: string;
     };
-    if (
-      errBody.error === "use_dpop_nonce" && attempt === 0 && newNonce
-    ) {
+    if (errBody.error === "use_dpop_nonce" && attempt === 0 && newNonce) {
       return await pushParRequest(flow, 1);
     }
     throw new Error(`PAR error: ${oauthServerErrorCode(errBody.error)}`);
@@ -931,6 +888,7 @@ async function pushParRequest(
   if (!res.ok) {
     throw new Error(`PAR failed: HTTP ${res.status}`);
   }
+
   requireDpopNonce(newNonce, "PAR");
   const json = await readOAuthServerJson(res) as Record<string, unknown>;
   if (
@@ -938,9 +896,7 @@ async function pushParRequest(
     json.request_uri.length > 2_048 ||
     typeof json.expires_in !== "number" ||
     !Number.isFinite(json.expires_in) || json.expires_in <= 0
-  ) {
-    throw new Error("PAR response was invalid");
-  }
+  ) throw new Error("PAR response was invalid");
   return { requestUri: json.request_uri, expiresIn: json.expires_in };
 }
 
@@ -955,7 +911,6 @@ export interface CallbackResult {
   continuation?: "login_selection";
   chooseAnotherAccount?: boolean;
   mode?: "create";
-  reauthenticated: boolean;
   capabilities?: OAuthCapability[];
   grantedScope: string;
   authorizationSufficient: boolean;
@@ -967,6 +922,7 @@ export interface CallbackResult {
 export interface CancelledOAuthFlow {
   returnTo?: string;
   intent?: SignInIntent;
+  prompt?: "create";
   continuation?: "login_selection";
   chooseAnotherAccount?: boolean;
   mode?: "create";
@@ -1008,7 +964,7 @@ export function oauthRecoveryModeForPrompt(
 
 async function flowMatchesBrowserBinding(
   flow: Pick<FlowState, "browserBindingHash">,
-  browserBinding: string | undefined,
+  browserBinding?: string,
 ): Promise<boolean> {
   return typeof browserBinding === "string" && browserBinding.length > 0 &&
     await sha256B64u(browserBinding) === flow.browserBindingHash;
@@ -1016,7 +972,7 @@ async function flowMatchesBrowserBinding(
 
 export async function flowMatchesBrowserBindingForTest(
   browserBindingHash: string,
-  browserBinding: string | undefined,
+  browserBinding?: string,
 ): Promise<boolean> {
   return await flowMatchesBrowserBinding(
     { browserBindingHash },
@@ -1028,12 +984,12 @@ export async function flowMatchesBrowserBindingForTest(
  * needed to restore the action that initiated it. */
 export async function cancelOAuthFlow(
   state: string,
-  expectedClient?: OAuthCallbackClientBinding,
-  browserBinding?: string,
+  expectedClient: OAuthCallbackClientBinding,
+  browserBinding: string,
 ): Promise<CancelledOAuthFlow | null> {
   const flow = await loadFlowState(state);
   if (!flow) return null;
-  if (expectedClient && !flowMatchesCallbackClient(flow, expectedClient)) {
+  if (!flowMatchesCallbackClient(flow, expectedClient)) {
     return null;
   }
   if (!await flowMatchesBrowserBinding(flow, browserBinding)) return null;
@@ -1041,6 +997,7 @@ export async function cancelOAuthFlow(
   return {
     returnTo: flow.returnTo,
     intent: flow.intent,
+    prompt: flow.prompt,
     continuation: flow.continuation,
     chooseAnotherAccount: flow.chooseAnotherAccount,
     mode: oauthRecoveryModeForPrompt(flow.prompt),
@@ -1052,17 +1009,13 @@ export async function cancelOAuthFlow(
 }
 
 export async function completeCallback(
-  params: {
-    state: string;
-    code: string;
-    iss: string;
-  },
-  expectedClient?: OAuthCallbackClientBinding,
-  browserBinding?: string,
+  params: { state: string; code: string; iss: string },
+  expectedClient: OAuthCallbackClientBinding,
+  browserBinding: string,
 ): Promise<CallbackResult> {
   const flow = await loadFlowState(params.state);
   if (!flow) throw new Error("invalid or expired state");
-  if (expectedClient && !flowMatchesCallbackClient(flow, expectedClient)) {
+  if (!flowMatchesCallbackClient(flow, expectedClient)) {
     throw new Error("OAuth callback client mismatch");
   }
   if (!await flowMatchesBrowserBinding(flow, browserBinding)) {
@@ -1076,9 +1029,7 @@ export async function completeCallback(
       flow.action ?? null,
       flow.capabilities ?? ["identity"],
     )
-  ) {
-    throw new Error("invalid OAuth continuation binding");
-  }
+  ) throw new Error("invalid OAuth continuation binding");
   ensureConfigured({
     clientId: flow.oauthClientId,
     redirectUri: flow.redirectUri,
@@ -1173,7 +1124,6 @@ export async function completeCallback(
     continuation: flow.continuation,
     chooseAnotherAccount: flow.chooseAnotherAccount,
     mode: oauthRecoveryModeForPrompt(flow.prompt),
-    reauthenticated: flow.prompt === "login",
     capabilities: flow.capabilities,
     grantedScope: tokenRes.scope,
     authorizationSufficient,
@@ -1327,9 +1277,7 @@ async function tokenRequest(
     const errBody = await readOAuthServerJson(res).catch(() => ({})) as {
       error?: string;
     };
-    if (
-      errBody.error === "use_dpop_nonce" && attempt === 0 && newNonce
-    ) {
+    if (errBody.error === "use_dpop_nonce" && attempt === 0 && newNonce) {
       return tokenRequest(flow, bodyParams, 1);
     }
     throw new Error(`token error: ${oauthServerErrorCode(errBody.error)}`);
@@ -1337,6 +1285,7 @@ async function tokenRequest(
   if (!res.ok) {
     throw new Error(`token request failed: HTTP ${res.status}`);
   }
+
   requireDpopNonce(newNonce, "token");
   const tokenBody = await readOAuthServerJson(res).catch(() => null);
   return parseTokenResponse(tokenBody, {
@@ -1418,7 +1367,7 @@ async function refreshSessionIdentity(
     }
     return (await loadSession(session.did)) ?? null;
   } catch {
-    // Discovery errors can retain authorization/session details in causes.
+    // Discovery errors can retain authorization details in their cause chain.
     if (IS_DEV) console.warn("session identity refresh failed");
     return session;
   }
@@ -1439,7 +1388,7 @@ export async function getValidSession(
     session = await refreshSession(session);
     return await refreshSessionIdentity(session);
   } catch {
-    // Refresh errors can include access, refresh, DPoP, or private-key data.
+    // Refresh errors can retain access, refresh, DPoP, or private-key data.
     if (IS_DEV && !options.quiet) console.warn("session refresh failed");
     return null;
   }

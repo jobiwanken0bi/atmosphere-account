@@ -8,7 +8,7 @@ import {
 } from "../lib/oauth-action-copy.ts";
 import { ensureSigninFormRuntime } from "../lib/signin-form-runtime.ts";
 import { useDialog } from "../lib/use-dialog.ts";
-import SignInForm, { accountCreationFallbackHref } from "./SignInForm.tsx";
+import SignInForm from "./SignInForm.tsx";
 
 interface Props {
   fallbackHref: string;
@@ -34,14 +34,30 @@ interface Props {
  * dialog is the progressively enhanced in-page experience.
  */
 export default function ContextualSignInDialog(
+  props: Props,
+) {
+  return createPortal(
+    <div
+      class="modal-backdrop contextual-signin-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
+      <ContextualSignInDialogCard {...props} />
+    </div>,
+    document.body,
+  );
+}
+
+/** Portal-free dialog body so the complete account chooser can be covered by
+ * focused server-rendering tests as well as the live island flow. */
+export function ContextualSignInDialogCard(
   {
-    fallbackHref,
     returnTo,
     action,
     capabilities,
     targetName,
     onClose,
-    closeLabel = "Cancel",
     intent,
     rememberedAccounts = [],
     initialHandle,
@@ -69,80 +85,58 @@ export default function ContextualSignInDialog(
     ensureSigninFormRuntime();
   }, []);
 
-  return createPortal(
+  return (
     <div
-      class="modal-backdrop contextual-signin-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      class="modal-card signin-modal-card auth-dialog-card"
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={bodyId}
+      tabIndex={-1}
     >
-      <div
-        class="modal-card signin-modal-card"
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={bodyId}
-        tabIndex={-1}
+      <button
+        type="button"
+        class="auth-dialog-close"
+        aria-label={forceReauthorization
+          ? "Close permission request"
+          : "Close Login with Atmosphere"}
+        onClick={onClose}
       >
-        <div class="modal-close-rail">
-          <button
-            type="button"
-            class="modal-close-button"
-            aria-label={forceReauthorization
-              ? "Close permission request"
-              : "Close sign-in"}
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        </div>
-        <div class="modal-header">
-          <h2 id={titleId} class="modal-title">{dialogTitle}</h2>
-          <p id={bodyId} class="modal-body-text">
-            {(restrictAccount || forceReauthorization) && initialHandle
-              ? copy.upgradeBody(initialHandle)
-              : copy.signInBody}
-          </p>
-        </div>
-        <SignInForm
-          returnTo={returnTo}
-          intent={intent}
-          capabilities={capabilities}
-          action={action}
-          targetName={targetName}
-          rememberedAccounts={restrictAccount ? [] : rememberedAccounts}
-          initialHandle={initialHandle}
-          initialDid={restrictAccount ? initialDid : undefined}
-          allowAccountCreation={allowAccountCreation}
-          submitLabel="Continue"
-          forceReauthorization={forceReauthorization}
-          lockInitialHandle={restrictAccount}
-          onAuthorizationStart={onAuthorizationStart}
-        />
-        {allowAccountCreation && (
-          <p class="signin-modal-account-link">
-            Need an account?{" "}
-            <a href={accountCreationFallbackHref(fallbackHref)}>Create one</a>.
-          </p>
-        )}
-        <div class="profile-review-composer-actions">
-          <button
-            type="button"
-            class="profile-form-button-link"
-            onClick={onClose}
-          >
-            {closeLabel}
-          </button>
-        </div>
+        <span aria-hidden="true">×</span>
+      </button>
+      <div class="modal-header auth-dialog-header">
+        <h2 id={titleId} class="modal-title auth-brand-title">
+          <img src="/union.svg" alt="" width="28" height="28" />
+          <span>{dialogTitle}</span>
+        </h2>
+        <p id={bodyId} class="modal-body-text">
+          {(restrictAccount || forceReauthorization) && initialHandle
+            ? copy.upgradeBody(initialHandle)
+            : copy.signInBody}
+        </p>
       </div>
-    </div>,
-    document.body,
+      <SignInForm
+        returnTo={returnTo}
+        intent={intent}
+        capabilities={capabilities}
+        action={action}
+        targetName={targetName}
+        rememberedAccounts={restrictAccount ? [] : rememberedAccounts}
+        initialHandle={initialHandle}
+        initialDid={restrictAccount ? initialDid : undefined}
+        allowAccountCreation={allowAccountCreation}
+        submitLabel="Continue"
+        forceReauthorization={forceReauthorization}
+        lockInitialHandle={restrictAccount}
+        onAuthorizationStart={onAuthorizationStart}
+      />
+    </div>
   );
 }
 
 export function contextualDialogTitle(forceReauthorization: boolean): string {
   return forceReauthorization
     ? "Additional permission required"
-    : "Sign in with Atmosphere account";
+    : "Login with Atmosphere";
 }

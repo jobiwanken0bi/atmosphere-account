@@ -1,9 +1,6 @@
 import { define, type State } from "../../utils.ts";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
-import PasskeyLogin from "../../islands/PasskeyLogin.tsx";
-import type { CreateAccountHostOption } from "../../lib/create-account-hosts.ts";
-import { listCreateAccountHostOptions } from "../../lib/create-account-hosts.ts";
 import {
   appendSelectionToReturnUri,
   type LoginApp,
@@ -54,7 +51,8 @@ interface PickerPageProps {
   request: LoginRequest | null;
   selectPath: string | null;
   pickerAccounts: PickerAccount[];
-  createAccountHosts: CreateAccountHostOption[];
+  cancelHref: string | null;
+  loginError: string | null;
   error: string | null;
   status: number;
 }
@@ -70,13 +68,9 @@ const PICKER_SELECTION_RATE_LIMIT = {
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      () => appviewUnavailable(),
+      (err) => appviewUnavailable("login picker page", err),
     );
     if (proxied) return proxied;
-
-    if (ctx.url.search.length > MAX_PICKER_FORM_BYTES) {
-      return browserHandoffError("request URL too large", 414, false);
-    }
 
     const opened = await checkProxyAwareRateLimit(ctx.req, {
       scope: "login-picker-open",
@@ -104,7 +98,7 @@ export const handler = define.handlers({
 
   async POST(ctx) {
     const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-      () => appviewUnavailable(),
+      (err) => appviewUnavailable("login picker selection", err),
     );
     if (proxied) return proxied;
 
@@ -172,19 +166,22 @@ export const handler = define.handlers({
         ? browserHandoffDocument(redirectUrl)
         : browserHandoffResponse(redirectUrl, { json: wantsJson });
     } catch (err) {
-      return browserHandoffError(
-        publicLoginPickerMessage(err, true),
-        loginPickerFailureStatus(err, true),
-        wantsJson,
-      );
+      if (err instanceof RequestBodyTooLargeError) {
+        return browserHandoffError(
+          "request body too large",
+          413,
+          wantsJson,
+        );
+      }
+      const { message, status } = safePickerFailure(err);
+      return browserHandoffError(message, status, wantsJson);
     }
   },
 });
 
-function appviewUnavailable(): Response {
-  // The proxy error can include the full request URL, including OAuth state.
-  console.error("[appview] login picker proxy failed");
-  return new Response("Atmosphere Login is temporarily unavailable.", {
+function appviewUnavailable(_scope: string, _err: unknown): Response {
+  console.error("[appview] Login with Atmosphere proxy failed");
+  return new Response("Login with Atmosphere is temporarily unavailable.", {
     status: 503,
     headers: {
       "cache-control": "no-store",
@@ -195,26 +192,16 @@ function appviewUnavailable(): Response {
 
 async function optionalFormData(req: Request): Promise<FormData> {
   const contentType = req.headers.get("content-type") ?? "";
-  if (!contentType || !req.body) return new FormData();
-  const form = await readFormDataRequestWithLimit(req, MAX_PICKER_FORM_BYTES);
-  if (!form) throw new LoginRequestError("invalid picker form");
-  return form;
+  if (!contentType) return new FormData();
+  return await readFormDataRequestWithLimit(req, MAX_PICKER_FORM_BYTES) ??
+    new FormData();
 }
 
 function inputValue(sourceUrl: URL, form: FormData, key: string): string {
-  const formValues = form.getAll(key);
-  const queryValues = sourceUrl.searchParams.getAll(key);
-  if (formValues.length > 1 || queryValues.length > 1) {
-    throw new LoginRequestError(`duplicate ${key}`);
-  }
-  const formValue = formValues[0];
-  if (formValue !== undefined && typeof formValue !== "string") {
-    throw new LoginRequestError(`invalid ${key}`);
-  }
-  if (formValue !== undefined && queryValues.length > 0) {
-    throw new LoginRequestError(`duplicate ${key}`);
-  }
-  return formValue ?? queryValues[0] ?? "";
+  const formValue = form.get(key);
+  return typeof formValue === "string"
+    ? formValue
+    : sourceUrl.searchParams.get(key) ?? "";
 }
 
 function readLoginRequestFromInput(
@@ -267,11 +254,8 @@ async function handleIntentSelection(
       },
     );
   } catch (err) {
-    return browserHandoffError(
-      publicLoginPickerMessage(err),
-      loginPickerFailureStatus(err),
-      false,
-    );
+    const { message, status } = safePickerFailure(err);
+    return browserHandoffError(message, status, false);
   }
 }
 
@@ -352,7 +336,7 @@ async function buildPickerPageProps(
 ): Promise<PickerPageProps> {
   try {
     const request = readLoginRequest(ctx.url);
-    const { app } = await resolveLoginAppForRequest(request);
+    const { app, returnUri } = await resolveLoginAppForRequest(request);
     const pickerAccounts = await Promise.all(
       getPickerAccounts(ctx.state).map(async (account) => {
         return {
@@ -365,65 +349,78 @@ async function buildPickerPageProps(
         };
       }),
     );
-    const createAccountHosts = await listCreateAccountHostOptions({
-      app,
-      pageSize: 24,
-    }).catch(() => {
-      console.warn("[login] account host discovery failed");
-      return [];
-    });
     return {
       app,
       request,
       selectPath: loginRequestToPath(request),
       pickerAccounts,
-      createAccountHosts,
+      cancelHref: pickerCancelHref(app.clientId, request, returnUri),
+      loginError: loginPickerErrorMessage(
+        ctx.url.searchParams.get("login_error"),
+      ),
       error: null,
       status: 200,
     };
   } catch (err) {
+    const failure = safePickerFailure(err);
     return {
       app: null,
       request: null,
       selectPath: null,
       pickerAccounts: [],
-      createAccountHosts: [],
-      error: publicLoginPickerMessage(err),
-      status: loginPickerFailureStatus(err),
+      cancelHref: null,
+      loginError: null,
+      error: failure.message,
+      status: failure.status,
     };
   }
 }
 
-const LOGIN_PICKER_FAILURE_MESSAGE =
-  "Unable to continue. Return to the app and try again.";
-
-function publicLoginPickerMessage(
-  error: unknown,
-  allowBodyTooLarge = false,
-): string {
-  return allowBodyTooLarge && error instanceof RequestBodyTooLargeError
-    ? "request body too large"
-    : LOGIN_PICKER_FAILURE_MESSAGE;
-}
-
-function loginPickerFailureStatus(
-  error: unknown,
-  allowBodyTooLarge = false,
-): number {
-  if (allowBodyTooLarge && error instanceof RequestBodyTooLargeError) {
-    return 413;
+function safePickerFailure(
+  err: unknown,
+): { message: string; status: number } {
+  if (err instanceof LoginRequestError) {
+    return { message: err.message, status: err.status };
   }
-  return error instanceof LoginRequestError ? error.status : 400;
+  console.error("[login] picker request failed");
+  return {
+    message:
+      "Login with Atmosphere could not complete this request. Return to the app and try again.",
+    status: 503,
+  };
 }
 
-export function publicLoginPickerFailureForTest(error: unknown): {
-  message: string;
-  status: number;
-} {
-  return {
-    message: publicLoginPickerMessage(error, true),
-    status: loginPickerFailureStatus(error, true),
-  };
+function pickerCancelHref(
+  clientId: string,
+  request: LoginRequest,
+  returnUri: URL,
+): string {
+  const url = new URL(returnUri);
+  url.searchParams.set("error", "access_denied");
+  url.searchParams.set(
+    "error_description",
+    "Login with Atmosphere was cancelled.",
+  );
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("state", request.state);
+  return url.toString();
+}
+
+function loginPickerErrorMessage(value: string | null): string | null {
+  return value === "authorization_cancelled"
+    ? "Login was cancelled at your account host. Nothing was shared; choose an account to try again."
+    : null;
+}
+
+export function pickerCancelHrefForTest(
+  request: LoginRequest,
+  input: { clientId: string; returnUri: string },
+): string {
+  return pickerCancelHref(
+    input.clientId,
+    request,
+    new URL(input.returnUri),
+  );
 }
 
 async function createPickerSelectionPath(
@@ -476,7 +473,8 @@ function LoginPickerPage(props: PickerPageProps) {
     request,
     selectPath,
     pickerAccounts,
-    createAccountHosts,
+    cancelHref,
+    loginError,
     error,
   } = props;
   return (
@@ -485,14 +483,11 @@ function LoginPickerPage(props: PickerPageProps) {
         <div class="container signin-page-container login-picker-container">
           <p class="text-eyebrow">Account picker</p>
           <h1 class="text-section login-picker-title">
-            <span>Continue with</span>
-            <span class="login-picker-title-brand">
-              <img src="/union.svg" alt="" width="36" height="36" />
-              <span>Atmosphere</span>
-            </span>
+            <img src="/union.svg" alt="" width="36" height="36" />
+            <span>Login with Atmosphere</span>
           </h1>
           <div class="glass signin-page-card login-picker-card">
-            {error || !app || !request || !selectPath
+            {error || !app || !request || !selectPath || !cancelHref
               ? (
                 <LoginPickerError
                   message={error ?? "Invalid login request."}
@@ -501,10 +496,10 @@ function LoginPickerPage(props: PickerPageProps) {
               : (
                 <LoginPickerBody
                   app={app}
-                  request={request}
                   selectPath={selectPath}
                   pickerAccounts={pickerAccounts}
-                  createAccountHosts={createAccountHosts}
+                  cancelHref={cancelHref}
+                  loginError={loginError}
                 />
               )}
           </div>
@@ -515,17 +510,14 @@ function LoginPickerPage(props: PickerPageProps) {
 }
 
 function LoginPickerBody(
-  { app, request, selectPath, pickerAccounts, createAccountHosts }: {
+  { app, selectPath, pickerAccounts, cancelHref, loginError }: {
     app: LoginApp;
-    request: LoginRequest;
     selectPath: string;
     pickerAccounts: PickerAccount[];
-    createAccountHosts: CreateAccountHostOption[];
+    cancelHref: string;
+    loginError: string | null;
   },
 ) {
-  const hostEndpoint = `/api/login/account-hosts?client_id=${
-    encodeURIComponent(app.clientId)
-  }`;
   return (
     <>
       <header class="login-picker-app">
@@ -537,14 +529,14 @@ function LoginPickerBody(
         <StatusPill app={app} />
       </header>
       <PickerTrustNotice app={app} />
-
-      <PasskeyLogin
-        clientId={request.clientId}
-        returnUri={request.returnUri}
-        state={request.state}
-        scope={request.scope}
-        appName={app.appName}
-      />
+      {loginError && (
+        <p
+          class="profile-form-status profile-form-status--error login-picker-inline-error"
+          role="alert"
+        >
+          {loginError}
+        </p>
+      )}
 
       {pickerAccounts.length > 0
         ? (
@@ -576,7 +568,7 @@ function LoginPickerBody(
                     </strong>
                     <span>Use this account with {app.appName}</span>
                   </span>
-                  <span class="login-picker-account-action">Continue</span>
+                  <span class="login-picker-account-action">Choose</span>
                 </a>
               ))}
             </div>
@@ -590,10 +582,7 @@ function LoginPickerBody(
               <div class="login-picker-add-account-body">
                 <SignInForm
                   returnTo={selectPath}
-                  continuation="login_selection"
                   rememberedAccounts={[]}
-                  createAccountHosts={createAccountHosts}
-                  createAccountHostsEndpoint={hostEndpoint}
                   rich
                 />
               </div>
@@ -606,16 +595,14 @@ function LoginPickerBody(
               ? (
                 <SignInForm
                   returnTo={selectPath}
-                  continuation="login_selection"
                   rememberedAccounts={[]}
-                  createAccountHosts={createAccountHosts}
-                  createAccountHostsEndpoint={hostEndpoint}
                   rich
                 />
               )
               : (
                 <p class="text-body">
-                  Atmosphere Login is not configured on this deployment yet.
+                  Login with Atmosphere is not configured on this deployment
+                  yet.
                 </p>
               )}
           </div>
@@ -624,6 +611,9 @@ function LoginPickerBody(
       <p class="login-picker-footnote">
         {app.appName} will ask your account host to finish signing you in.
       </p>
+      <a class="login-picker-cancel" href={cancelHref} rel="nofollow">
+        Cancel and return to {app.appName}
+      </a>
     </>
   );
 }
@@ -666,8 +656,8 @@ function PickerTrustNotice({ app }: { app: LoginApp }) {
     <div class="login-picker-notice login-picker-notice--unverified">
       <strong>Unverified app</strong>
       <span>
-        This app has not been reviewed by Atmosphere yet. Check that you
-        recognize the app before continuing. App logos appear after trusted
+        This app has not been reviewed by AtmosphereAccount.com yet. Check that
+        you recognize the app before continuing. App logos appear after trusted
         review.
       </span>
     </div>
@@ -682,7 +672,7 @@ function LoginPickerError({ message }: { message: string }) {
       <p class="text-body">{message}</p>
       <p class="text-body-sm">
         {blocked
-          ? "Atmosphere cannot continue this sign-in request. Return to the app or choose another app."
+          ? "Login with Atmosphere cannot continue this request. Return to the app or choose another app."
           : "This app did not send enough information to open the account picker. Return to the app and try again."}
       </p>
     </div>

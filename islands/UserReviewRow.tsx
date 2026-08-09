@@ -38,6 +38,7 @@ export default function UserReviewRow(p: Props) {
   const reauthorization = useSignal<ContextualReauthorization | null>(null);
 
   const remove = async () => {
+    if (status.value === "deleting") return;
     if (!globalThis.confirm(p.copy.confirmDelete)) return;
     status.value = "deleting";
     error.value = null;
@@ -56,7 +57,7 @@ export default function UserReviewRow(p: Props) {
             ? contextualReauthorization({
               returnTo: accountReviewDeleteReturnPath(p.reviewId),
               action: "legacy_review_manage",
-              capabilities: ["legacy_review_manage"],
+              capabilities: ["legacy_review"],
               targetName: p.targetName,
             })
             : null);

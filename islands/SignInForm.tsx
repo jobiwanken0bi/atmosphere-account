@@ -1,13 +1,17 @@
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
+import BskyIcon from "../components/icons/BskyIcon.tsx";
 import { useT } from "../i18n/mod.ts";
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 import type { CreateAccountHostOption } from "../lib/create-account-hosts.ts";
 import type { OAuthCapability } from "../lib/oauth-scopes.ts";
 import {
+  isAccountCreationAction,
   isOAuthActionCapabilityRequest,
   type OAuthAction,
 } from "../lib/oauth-action.ts";
 import { isPlainLinkActivation } from "../lib/link-activation.ts";
+
+export type SignInMode = "signin" | "create";
 
 interface Props {
   /** Optional path to redirect to after successful login (defaults to
@@ -21,38 +25,27 @@ interface Props {
   intent?: "user" | "project";
   rememberedAccounts?: Array<{ did: string; handle: string }>;
   rich?: boolean;
+  mode?: SignInMode;
   initialHandle?: string;
-  /** Stable account identifier used when the visible handle is locked for a
-   * DID-owned action. Handles are mutable and must remain display-only. */
+  /** Stable identifier used when a DID-owned action must stay on its owner.
+   * Handles can change and remain display-only. */
   initialDid?: string;
   createAccountHosts?: CreateAccountHostOption[];
   createAccountHostsEndpoint?: string;
+  createAccountError?: string | null;
+  createAccountHostsUnavailable?: boolean;
+  createAccountStartUnavailable?: boolean;
   /** Product capabilities required by the action that opened this form. */
   capabilities?: readonly OAuthCapability[];
   /** Human-readable action context retained through OAuth error/retry paths. */
   action?: OAuthAction;
   targetName?: string;
-  /** Non-persistent external login-picker handoff. */
   continuation?: "login_selection";
-  /** Keep recovery in the account chooser when this form was opened from
-   * “Use another account”. */
   chooseAnotherAccount?: boolean;
-  /** Which rich picker panel is visible before client enhancement runs. */
-  initialMode?: "signin" | "create";
-  /** Some actions require an existing account and cannot be completed by a
-   * newly created one. */
   allowAccountCreation?: boolean;
-  /** Override used by contextual permission prompts. */
   submitLabel?: string;
-  /** Force remembered accounts through a fresh OAuth login instead of
-   * accepting a refreshed token whose advertised scope may have just been
-   * rejected by the PDS. */
   forceReauthorization?: boolean;
-  /** Keep a DID-owned pending action on the account that created it. */
   lockInitialHandle?: boolean;
-  /** Runs synchronously immediately before a chooser form or direct account
-   * creation link leaves the page. Used to arm one-shot draft resumption only
-   * after the user actually continues authorization. */
   onAuthorizationStart?: () => void;
 }
 export type { CreateAccountHostOption } from "../lib/create-account-hosts.ts";
@@ -63,16 +56,19 @@ export default function SignInForm(
     intent,
     rememberedAccounts = [],
     rich = false,
+    mode = "signin",
     initialHandle,
     initialDid,
     createAccountHosts = [],
     createAccountHostsEndpoint,
+    createAccountError = null,
+    createAccountHostsUnavailable = false,
+    createAccountStartUnavailable = false,
     capabilities = ["identity"],
     action,
     targetName,
     continuation,
     chooseAnotherAccount = false,
-    initialMode = "signin",
     allowAccountCreation = true,
     submitLabel,
     forceReauthorization = false,
@@ -84,98 +80,126 @@ export default function SignInForm(
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const handleId = `signin-handle-${id}`;
   const previewId = `signin-handle-preview-${id}`;
-  const signInTabId = `signin-tab-${id}`;
-  const createTabId = `signin-create-tab-${id}`;
-  const signInPanelId = `signin-panel-${id}`;
-  const createPanelId = `signin-create-panel-${id}`;
   const hasRememberedAccounts = !lockInitialHandle &&
     rememberedAccounts.length > 0;
   const manualInitiallyVisible = !hasRememberedAccounts || !!initialHandle ||
     chooseAnotherAccount;
-  const enhanceFlow = rich || hasRememberedAccounts;
+  const enhanceFlow = mode === "signin" && (rich || hasRememberedAccounts);
   const initialSigninView = manualInitiallyVisible ? "manual" : "saved";
-  const resolvedMode = allowAccountCreation ? initialMode : "signin";
-  const continueLabel = submitLabel ??
-    (rich ? "Continue" : t.explore.create.signIn);
-  const hasModeTabs = rich && allowAccountCreation;
-  const modeHref = (mode: "signin" | "create") =>
-    signinModeFallbackHref({
-      mode,
-      returnTo,
-      intent,
-      capabilities,
-      action,
-      targetName,
-      continuation,
-      chooseAnotherAccount,
-      initialHandle,
-    });
-  const savedAccountsHref = signinModeFallbackHref({
-    mode: "signin",
+  const continueLabel = submitLabel ?? "Login with Atmosphere";
+  const normalizedAction = action ?? "account";
+  const canCreateAccount = allowAccountCreation &&
+    isAccountCreationAction(normalizedAction) &&
+    isOAuthActionCapabilityRequest(normalizedAction, capabilities);
+  const loginSelectionContinuation = continuation ??
+    (isLoginSelectionReturnTo(returnTo) ? "login_selection" : undefined);
+  const loginHref = signinFallbackHref({
     returnTo,
     intent,
     capabilities,
     action,
     targetName,
-    continuation,
+    continuation: loginSelectionContinuation,
   });
-  const anotherAccountHref = signinModeFallbackHref({
-    mode: "signin",
+  const createAccountHref = canCreateAccount
+    ? accountCreationFallbackHref(loginHref)
+    : null;
+  const savedAccountsHref = signinFallbackHref({
     returnTo,
     intent,
     capabilities,
     action,
     targetName,
-    continuation,
+    continuation: loginSelectionContinuation,
+  });
+  const anotherAccountHref = signinFallbackHref({
+    returnTo,
+    intent,
+    capabilities,
+    action,
+    targetName,
+    continuation: loginSelectionContinuation,
     chooseAnotherAccount: true,
   });
+
+  if (mode === "create") {
+    return (
+      <div class={`signin-flow signin-flow--rich signin-flow--create`}>
+        {createAccountError && (
+          <p
+            class="profile-form-status profile-form-status--error signin-inline-error"
+            role="alert"
+          >
+            {createAccountError}
+          </p>
+        )}
+        <div
+          class="signin-create-explainer"
+          role="group"
+          aria-label="About your account"
+        >
+          <article class="signin-create-explainer-card">
+            <span class="signin-create-explainer-icon" aria-hidden="true">
+              ⌂
+            </span>
+            <h2>Your host</h2>
+            <p>
+              Your host is where your account lives. Create an account with a
+              host and you’ll return here when it’s ready. You can use the same
+              account with any <a href="/apps">app</a> in the Atmosphere.
+            </p>
+          </article>
+          <article class="signin-create-explainer-card">
+            <span class="signin-create-explainer-icon" aria-hidden="true">
+              ↗
+            </span>
+            <h2>Your account</h2>
+            <p>
+              Your account is yours: you can move it to another host later, and
+              if you own a domain, you can use it as your handle - for example,
+              {" "}
+              <strong>you.com</strong>.
+            </p>
+          </article>
+        </div>
+        <div class="signin-rich-header signin-create-host-heading">
+          <h2>Choose an account host</h2>
+          <p>
+            These hosts let you start signup here. You’ll enter any password or
+            invite code with the host.
+          </p>
+        </div>
+        <CreateAccountHostChooser
+          initialHosts={createAccountHosts}
+          initialError={createAccountHostsUnavailable}
+          disabled={createAccountStartUnavailable}
+          endpoint={createAccountHostsEndpoint}
+          returnTo={returnTo}
+          intent={intent}
+          capabilities={capabilities}
+          action={action}
+          targetName={targetName}
+          continuation={loginSelectionContinuation}
+          onAuthorizationStart={onAuthorizationStart}
+        />
+        <p class="signin-existing-account-link">
+          Already have an account? <a href={loginHref}>Login with Atmosphere</a>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div
       class={`signin-flow ${rich ? "signin-flow--rich" : ""}`}
       data-signin-flow={enhanceFlow ? "true" : undefined}
-      data-initial-mode={resolvedMode}
+      data-initial-mode="signin"
       data-initial-signin-view={initialSigninView}
       data-remembered-count={String(
         hasRememberedAccounts ? rememberedAccounts.length : 0,
       )}
     >
-      {hasModeTabs && (
-        <div class="signin-tabs" role="tablist" aria-label="Sign in options">
-          <a
-            href={modeHref("signin")}
-            class={`signin-tab${resolvedMode === "signin" ? " is-active" : ""}`}
-            role="tab"
-            aria-selected={resolvedMode === "signin" ? "true" : "false"}
-            aria-controls={signInPanelId}
-            id={signInTabId}
-            tabIndex={resolvedMode === "signin" ? 0 : -1}
-            data-signin-tab="signin"
-          >
-            Sign in
-          </a>
-          <a
-            href={modeHref("create")}
-            class={`signin-tab${resolvedMode === "create" ? " is-active" : ""}`}
-            role="tab"
-            aria-selected={resolvedMode === "create" ? "true" : "false"}
-            aria-controls={createPanelId}
-            id={createTabId}
-            tabIndex={resolvedMode === "create" ? 0 : -1}
-            data-signin-tab="create"
-          >
-            Create account
-          </a>
-        </div>
-      )}
-
-      <section
-        data-signin-panel="signin"
-        id={hasModeTabs ? signInPanelId : undefined}
-        role={hasModeTabs ? "tabpanel" : undefined}
-        aria-labelledby={hasModeTabs ? signInTabId : undefined}
-        hidden={rich && resolvedMode === "create"}
-      >
+      <section>
         {hasRememberedAccounts && (
           <div
             class="signin-subview signin-saved-view"
@@ -184,7 +208,11 @@ export default function SignInForm(
           >
             {rich && (
               <div class="signin-rich-header">
-                <h2>Choose an account</h2>
+                <h2>Connect your Atmosphere account</h2>
+                <p>
+                  Choose an account saved on this device, or add another
+                  Atmosphere account.
+                </p>
               </div>
             )}
             <div class="signin-account-list" aria-label="Saved accounts">
@@ -193,7 +221,7 @@ export default function SignInForm(
                 <form
                   key={account.did}
                   method="POST"
-                  action={forceReauthorization || continuation
+                  action={forceReauthorization || loginSelectionContinuation
                     ? "/oauth/login"
                     : "/oauth/switch"}
                   class="signin-account-switch-form"
@@ -201,7 +229,7 @@ export default function SignInForm(
                 >
                   <input
                     type="hidden"
-                    name={forceReauthorization || continuation
+                    name={forceReauthorization || loginSelectionContinuation
                       ? "handle"
                       : "did"}
                     value={account.did}
@@ -218,11 +246,11 @@ export default function SignInForm(
                   {chooseAnotherAccount && (
                     <input type="hidden" name="choose" value="another" />
                   )}
-                  {continuation && (
+                  {loginSelectionContinuation && (
                     <input
                       type="hidden"
                       name="continuation"
-                      value={continuation}
+                      value={loginSelectionContinuation}
                     />
                   )}
                   {targetName && (
@@ -305,11 +333,25 @@ export default function SignInForm(
             <div class="signin-rich-header">
               <h2>
                 {hasRememberedAccounts
-                  ? "Use another account"
-                  : "Enter your handle"}
+                  ? "Choose another account"
+                  : "Enter your account handle"}
               </h2>
+              <p>
+                Enter your Atmosphere handle — the same one you use with Bluesky
+                or other apps in the Atmosphere.
+              </p>
             </div>
           )}
+          <div class="signin-bluesky-note">
+            <span class="signin-bluesky-note-icon" aria-hidden="true">
+              <BskyIcon />
+            </span>
+            <p>
+              <strong>Already use Bluesky?</strong>{" "}
+              You already have an Atmosphere account. Enter your Bluesky handle
+              below.
+            </p>
+          </div>
           <form
             method="POST"
             action="/oauth/login"
@@ -319,25 +361,25 @@ export default function SignInForm(
             data-preview-loading={t.explore.create.previewLoading}
             data-preview-not-found={t.explore.create.previewNotFound}
             data-submit-label={continueLabel}
-            data-submitting-label="Opening sign-in…"
-            data-error-label="Couldn’t start sign-in. Check the handle and try again."
+            data-submitting-label="Redirecting…"
+            data-error-label="Login with Atmosphere could not be started. Check the handle or try again shortly."
           >
             {lockInitialHandle && initialDid && (
               <input type="hidden" name="handle" value={initialDid} />
             )}
             {returnTo && <input type="hidden" name="next" value={returnTo} />}
-            {intent && <input type="hidden" name="intent" value={intent} />}
-            {action && <input type="hidden" name="action" value={action} />}
-            {chooseAnotherAccount && (
-              <input type="hidden" name="choose" value="another" />
-            )}
-            {continuation && (
+            {loginSelectionContinuation && (
               <input
                 type="hidden"
                 name="continuation"
-                value={continuation}
+                value={loginSelectionContinuation}
               />
             )}
+            {chooseAnotherAccount && (
+              <input type="hidden" name="choose" value="another" />
+            )}
+            {intent && <input type="hidden" name="intent" value={intent} />}
+            {action && <input type="hidden" name="action" value={action} />}
             {targetName && (
               <input type="hidden" name="name" value={targetName} />
             )}
@@ -384,8 +426,6 @@ export default function SignInForm(
                   <div
                     class="signin-selected"
                     data-signin-selected="true"
-                    role="status"
-                    aria-live="polite"
                     hidden
                   />
                 </div>
@@ -395,44 +435,43 @@ export default function SignInForm(
               </div>
             </div>
           </form>
+
+          {createAccountHref && (
+            <a
+              class="signin-create-account-link"
+              href={createAccountHref}
+              onClick={(event) => {
+                if (isPlainLinkActivation(event)) onAuthorizationStart?.();
+              }}
+            >
+              <span>
+                <strong>Create an Atmosphere account</strong>
+                <small>Choose a host and return to this exact action.</small>
+              </span>
+              <span aria-hidden="true">→</span>
+            </a>
+          )}
         </div>
       </section>
-
-      {hasModeTabs && (
-        <section
-          data-signin-panel="create"
-          id={createPanelId}
-          role="tabpanel"
-          aria-labelledby={createTabId}
-          hidden={resolvedMode !== "create"}
-        >
-          <div class="signin-rich-header">
-            <h2>Choose an account host</h2>
-            <p>
-              Your host creates your account and keeps it online. You’ll return
-              here when it’s ready.
-            </p>
-          </div>
-          <CreateAccountHostChooser
-            initialHosts={createAccountHosts}
-            endpoint={createAccountHostsEndpoint}
-            returnTo={returnTo}
-            intent={intent}
-            capabilities={capabilities}
-            action={action}
-            targetName={targetName}
-            continuation={continuation}
-            onAuthorizationStart={onAuthorizationStart}
-          />
-        </section>
-      )}
     </div>
   );
+}
+
+function isLoginSelectionReturnTo(returnTo?: string): boolean {
+  if (!returnTo) return false;
+  try {
+    return new URL(returnTo, "https://local.invalid").pathname ===
+      "/login/select";
+  } catch {
+    return false;
+  }
 }
 
 function CreateAccountHostChooser(
   {
     initialHosts,
+    initialError,
+    disabled,
     endpoint,
     returnTo,
     intent,
@@ -443,6 +482,8 @@ function CreateAccountHostChooser(
     onAuthorizationStart,
   }: {
     initialHosts: CreateAccountHostOption[];
+    initialError?: boolean;
+    disabled?: boolean;
     endpoint?: string;
     returnTo?: string;
     intent?: "user" | "project";
@@ -462,7 +503,8 @@ function CreateAccountHostChooser(
   );
   const [hosts, setHosts] = useState(initialHosts);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState(!!initialError);
+  const [retryKey, setRetryKey] = useState(0);
   const firstHostSearch = useRef(true);
   const filterMenuRef = useRef<HTMLDetailsElement>(null);
 
@@ -548,7 +590,7 @@ function CreateAccountHostChooser(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [endpoint, query, signupFilter, initialHosts]);
+  }, [endpoint, query, signupFilter, initialHosts, retryKey]);
 
   return (
     <div class="signin-host-chooser">
@@ -562,7 +604,7 @@ function CreateAccountHostChooser(
             type="search"
             value={query}
             onInput={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Search hosts…"
+            placeholder="Search name, domain, description, or location…"
             autocomplete="off"
           />
         </label>
@@ -632,15 +674,24 @@ function CreateAccountHostChooser(
         {loading
           ? "Searching hosts…"
           : error
-          ? "Couldn’t refresh the list. Showing the hosts already loaded."
+          ? hosts.length > 0
+            ? "Showing saved hosts; live search is temporarily unavailable."
+            : "The host directory is temporarily unavailable."
           : `${hosts.length} ${hosts.length === 1 ? "host" : "hosts"}`}
       </div>
+      {error && (
+        <button
+          type="button"
+          class="signin-host-retry"
+          onClick={() => setRetryKey((value) => value + 1)}
+        >
+          Try loading hosts again
+        </button>
+      )}
       <div class="signin-host-list" aria-busy={loading ? "true" : "false"}>
         {!loading && !error && hosts.length === 0 && (
           <div class="signin-host-empty">
-            {query.trim() || signupFilter !== "all"
-              ? "No account hosts match your search or filters."
-              : "No account hosts are available right now."}
+            No account hosts match those filters.
           </div>
         )}
         {hosts.map((host) => {
@@ -653,25 +704,11 @@ function CreateAccountHostChooser(
             targetName,
             continuation,
           );
-          return (
-            <a
-              key={host.host}
-              class={`signin-host-row${
-                host.recommended ? " is-recommended" : ""
-              }${host.oauthAccountCreation ? " is-direct" : ""}`}
-              href={href}
-              target={host.oauthAccountCreation ? undefined : "_blank"}
-              rel={host.oauthAccountCreation
-                ? "nofollow"
-                : "noopener noreferrer"}
-              onClick={(event) => {
-                if (
-                  !host.oauthAccountCreation ||
-                  !isPlainLinkActivation(event)
-                ) return;
-                onAuthorizationStart?.();
-              }}
-            >
+          const className = `signin-host-row${
+            host.recommended ? " is-recommended" : ""
+          }${host.oauthAccountCreation ? " is-direct" : ""}`;
+          const content = (
+            <>
               <span class="signin-host-mark" aria-hidden="true">
                 {host.name.slice(0, 1)}
                 {host.avatarUrl && (
@@ -700,14 +737,47 @@ function CreateAccountHostChooser(
                   {host.location ? ` · ${host.location}` : ""}
                 </em>
               </span>
-              <span class="signin-account-status">{host.statusLabel}</span>
-            </a>
+              <span class="signin-account-status">
+                {host.signupStatus === "invite_required"
+                  ? "Invite required"
+                  : "Open signup"}
+              </span>
+            </>
           );
+          return disabled
+            ? (
+              <div
+                key={host.host}
+                class={`${className} is-disabled`}
+                role="link"
+                aria-disabled="true"
+              >
+                {content}
+              </div>
+            )
+            : (
+              <a
+                key={host.host}
+                class={className}
+                href={href}
+                target={host.oauthAccountCreation ? undefined : "_blank"}
+                rel={host.oauthAccountCreation
+                  ? "nofollow"
+                  : "noopener noreferrer"}
+                onClick={(event) => {
+                  if (
+                    host.oauthAccountCreation &&
+                    isPlainLinkActivation(event)
+                  ) onAuthorizationStart?.();
+                }}
+              >
+                {content}
+              </a>
+            );
         })}
       </div>
       <p class="signin-host-privacy-note">
-        Only hosts that can create an account here are shown. Atmosphere never
-        sees your password or invite code.
+        Passwords and invite codes stay with the account host you choose.
       </p>
     </div>
   );
@@ -723,9 +793,15 @@ export function createAccountHostHref(
   continuation?: "login_selection",
 ): string {
   if (!host.oauthAccountCreation) return host.href;
-  if (!isOAuthActionCapabilityRequest(action, capabilities)) {
+  const normalizedAction = action ?? "account";
+  if (!isAccountCreationAction(normalizedAction)) {
     throw new TypeError(
-      `Invalid capability bundle for OAuth action "${action ?? "account"}"`,
+      `Account creation is not available for OAuth action "${normalizedAction}"`,
+    );
+  }
+  if (!isOAuthActionCapabilityRequest(normalizedAction, capabilities)) {
+    throw new TypeError(
+      `Invalid capability bundle for OAuth action "${normalizedAction}"`,
     );
   }
   const params = new URLSearchParams({ host: host.host });
@@ -734,7 +810,7 @@ export function createAccountHostHref(
   for (const capability of capabilities) {
     params.append("capability", capability);
   }
-  if (action) params.set("action", action);
+  params.set("action", normalizedAction);
   if (targetName?.trim()) params.set("name", targetName.trim().slice(0, 120));
   if (continuation) params.set("continuation", continuation);
   return `/oauth/create?${params.toString()}`;
@@ -748,9 +824,8 @@ export function accountCreationFallbackHref(fallbackHref: string): string {
   return `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
 }
 
-export function signinModeFallbackHref(
+export function signinFallbackHref(
   {
-    mode,
     returnTo,
     intent,
     capabilities = ["identity"],
@@ -758,9 +833,7 @@ export function signinModeFallbackHref(
     targetName,
     continuation,
     chooseAnotherAccount = false,
-    initialHandle,
   }: {
-    mode: "signin" | "create";
     returnTo?: string;
     intent?: "user" | "project";
     capabilities?: readonly OAuthCapability[];
@@ -768,7 +841,6 @@ export function signinModeFallbackHref(
     targetName?: string;
     continuation?: "login_selection";
     chooseAnotherAccount?: boolean;
-    initialHandle?: string;
   },
 ): string {
   const params = new URLSearchParams();
@@ -781,8 +853,6 @@ export function signinModeFallbackHref(
     params.append("capability", capability);
   }
   if (chooseAnotherAccount) params.set("choose", "another");
-  if (initialHandle?.trim()) params.set("handle", initialHandle.trim());
-  if (mode === "create") params.set("mode", "create");
   const query = params.toString();
   return `/signin${query ? `?${query}` : ""}`;
 }
@@ -790,9 +860,7 @@ export function signinModeFallbackHref(
 function isSafeSigninFallback(value: string): boolean {
   if (
     !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")
-  ) {
-    return false;
-  }
+  ) return false;
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);
     if (code < 32 || code === 127) return false;

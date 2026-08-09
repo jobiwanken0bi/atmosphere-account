@@ -1,5 +1,4 @@
 import { define } from "../utils.ts";
-import { asset } from "fresh/runtime";
 import Nav from "../components/Nav.tsx";
 import Footer from "../components/Footer.tsx";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
@@ -21,7 +20,10 @@ import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
 import { hostDetailHref } from "../lib/host-directory-navigation.ts";
 import { getMessages } from "../i18n/mod.ts";
 import ContextualSignInLink from "../islands/ContextualSignInLink.tsx";
-import { oauthSigninUrl } from "../lib/oauth-action.ts";
+import {
+  HOST_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../lib/oauth-action.ts";
 
 export default define.page(async function HostsPage(ctx) {
   const copy = getMessages(ctx.state.locale).hostsDirectory;
@@ -41,7 +43,7 @@ export default define.page(async function HostsPage(ctx) {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="hosts-section">
+        <main class="hosts-section" id="main-content">
           <div class="container hosts-container">
             <header class="hosts-header">
               <div>
@@ -243,9 +245,9 @@ export default define.page(async function HostsPage(ctx) {
             )}
             <DirectoryHiddenHostCta copy={copy} account={account} />
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
-        <script type="module" src={asset("/hosts-filter-menu.js")} />
+        <script type="module" src="/hosts-filter-menu.js" />
       </div>
     </div>
   );
@@ -391,8 +393,10 @@ function DirectoryHiddenHostCta(
             href={detectedHostClaimSigninHref()}
             returnTo="/hosts/claim"
             action="host_claim"
-            capabilities={["identity"]}
+            capabilities={HOST_MANAGEMENT_CAPABILITIES}
             targetName="your account host"
+            title="Login with Atmosphere"
+            body="Choose the account that will claim and manage this host, including its public profile and images. DNS verification separately proves control of the host domain."
             label={copy.claimDetectedHost}
             className="directory-register-button"
             trailingArrow
@@ -407,7 +411,7 @@ function detectedHostClaimSigninHref(): string {
   return oauthSigninUrl({
     next: "/hosts/claim",
     action: "host_claim",
-    capabilities: ["identity"],
+    capabilities: HOST_MANAGEMENT_CAPABILITIES,
     name: "your account host",
   });
 }

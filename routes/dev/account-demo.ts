@@ -117,14 +117,19 @@ async function seedDemoConnections(user: { did: string; handle: string }) {
           INSERT INTO login_app (
             client_id, app_name, app_uri, logo_uri,
             allowed_return_uris, allowed_origins, status,
-            contact_did, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 'trusted', ?, ?, ?)
+            contact_did, link_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 'trusted', NULL, 'system_fixture', ?, ?)
           ON CONFLICT(client_id) DO UPDATE SET
             app_name = excluded.app_name,
             app_uri = excluded.app_uri,
             logo_uri = excluded.logo_uri,
             status = excluded.status,
+            contact_did = NULL,
+            app_did = NULL,
+            app_profile_uri = NULL,
+            link_status = 'system_fixture',
             updated_at = excluded.updated_at
+          WHERE login_app.link_status = 'system_fixture'
         `,
         args: [
           app.clientId,
@@ -133,7 +138,6 @@ async function seedDemoConnections(user: { did: string; handle: string }) {
           app.logo,
           JSON.stringify([`${app.uri}/callback`]),
           JSON.stringify([new URL(app.uri).origin]),
-          user.did,
           now - 30 * 24 * 60 * 60 * 1000,
           now,
         ],

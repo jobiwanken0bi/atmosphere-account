@@ -11,11 +11,9 @@ export const OAUTH_CAPABILITIES = [
   "review",
   "review_manage",
   "legacy_review",
-  "legacy_review_manage",
   "favorite",
   "app",
   "host",
-  "profile",
   "media",
 ] as const;
 
@@ -33,12 +31,7 @@ const CAPABILITY_SCOPES: Record<OAuthCapability, readonly string[]> = {
   identity: [],
   review: [THIRD_PARTY_REVIEW_SCOPE],
   review_manage: [REVIEW_MANAGE_SCOPE],
-  legacy_review: [
-    "repo:com.atmosphereaccount.registry.review?action=create",
-  ],
-  legacy_review_manage: [
-    "repo:com.atmosphereaccount.registry.review?action=update&action=delete",
-  ],
+  legacy_review: ["repo:com.atmosphereaccount.registry.review"],
   favorite: [FAVORITE_SCOPE],
   app: [
     "repo:community.lexicon.app.profile",
@@ -52,11 +45,6 @@ const CAPABILITY_SCOPES: Record<OAuthCapability, readonly string[]> = {
   host: [
     "repo:account.atmosphere.host.profile",
     "repo:account.atmosphere.host.service",
-  ],
-  // The user-profile record currently shares the legacy registry collection
-  // with app profiles, but it is a separate product capability.
-  profile: [
-    "repo:com.atmosphereaccount.registry.profile?action=create&action=update",
   ],
   media: ["blob:image/*"],
 };
@@ -286,13 +274,7 @@ function capabilityIsGranted(
       return repoActionsGranted(
         grants,
         "com.atmosphereaccount.registry.review",
-        ["create"],
-      );
-    case "legacy_review_manage":
-      return repoActionsGranted(
-        grants,
-        "com.atmosphereaccount.registry.review",
-        ["update", "delete"],
+        ALL_REPO_ACTIONS,
       );
     case "favorite":
       return repoActionsGranted(
@@ -316,12 +298,6 @@ function capabilityIsGranted(
         "account.atmosphere.host.service",
       ].every((collection) =>
         repoActionsGranted(grants, collection, ALL_REPO_ACTIONS)
-      );
-    case "profile":
-      return repoActionsGranted(
-        grants,
-        "com.atmosphereaccount.registry.profile",
-        ["create", "update"],
       );
     case "media":
       return blobScopeGranted(grants.blobs, "image/*");
@@ -394,7 +370,7 @@ function expandKnownPermissionSet(
   grants: Map<string, Set<RepoAction>>,
   token: string,
 ): void {
-  const id = token;
+  const id = token.split("?", 1)[0];
   if (id === "include:fyi.atstore.authThirdPartyReviews") {
     addRepoGrant(grants, "fyi.atstore.profile", ["create"]);
     addRepoGrant(grants, "fyi.atstore.listing.review", ["create"]);
@@ -428,7 +404,7 @@ function expandKnownPermissionSet(
 }
 
 function isKnownPermissionSet(token: string): boolean {
-  const id = token;
+  const id = token.split("?", 1)[0];
   return id === "include:fyi.atstore.authThirdPartyReviews" ||
     id === "include:fyi.atstore.authBasic" ||
     id === "include:com.atmosphereaccount.registry.fullPermissions";

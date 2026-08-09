@@ -45,3 +45,19 @@ Deno.test("picker smoke follows imports within the appview asset namespace", () 
     "/assets/legacy.js",
   ]);
 });
+
+Deno.test("picker smoke enforces the canonical login label", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./smoke-picker-assets.ts", import.meta.url),
+  );
+  assertEquals(
+    source.includes('assertContains(pickerHtml, "Continue with"'),
+    false,
+  );
+  assertEquals(
+    source.includes(
+      'assertContains(pickerHtml, "Login with Atmosphere", "picker HTML")',
+    ),
+    true,
+  );
+});

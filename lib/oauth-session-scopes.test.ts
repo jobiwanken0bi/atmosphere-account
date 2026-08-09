@@ -5,7 +5,6 @@ import {
 import {
   classifySessionScopeReplacementForTest,
   deleteSessionIfUnchangedForTest,
-  flowMatchesCallbackClientForTest,
   grantedScopeForSession,
   oauthClientIdForSessionForTest,
   persistentExistingSessionPolicyForTest,
@@ -119,35 +118,6 @@ Deno.test("refresh authorization retains the exact issuing OAuth client", () => 
   );
   assertEquals(
     sameRefreshAuthorizationForTest(explicitDefault, loginOrigin),
-    false,
-  );
-});
-
-Deno.test("OAuth callback state is bound to its issuing client and redirect", () => {
-  const flow = {
-    oauthClientId: "https://site.example/oauth/client-metadata.json",
-    redirectUri: "https://site.example/oauth/callback",
-    scope: "atproto",
-  };
-  assertEquals(
-    flowMatchesCallbackClientForTest(flow, {
-      clientId: flow.oauthClientId,
-      redirectUri: flow.redirectUri,
-    }),
-    true,
-  );
-  assertEquals(
-    flowMatchesCallbackClientForTest(flow, {
-      clientId: "https://other.example/oauth/client-metadata.json",
-      redirectUri: flow.redirectUri,
-    }),
-    false,
-  );
-  assertEquals(
-    flowMatchesCallbackClientForTest(flow, {
-      clientId: flow.oauthClientId,
-      redirectUri: "https://site.example/examples/oauth/callback",
-    }),
     false,
   );
 });

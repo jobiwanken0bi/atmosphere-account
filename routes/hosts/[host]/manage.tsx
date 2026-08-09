@@ -37,6 +37,7 @@ import {
   type SessionData,
 } from "../../../lib/oauth.ts";
 import {
+  HOST_MANAGEMENT_CAPABILITIES,
   oauthReauthorizationUrl,
   oauthSigninUrl,
 } from "../../../lib/oauth-action.ts";
@@ -44,7 +45,6 @@ import {
   getBskyProfile,
   isPdsScopeMissingError,
   PdsBlobUploadError,
-  PdsRecordWriteError,
   uploadBlob,
 } from "../../../lib/pds.ts";
 import {
@@ -60,6 +60,7 @@ import {
   withoutHostProfileResumeMarker,
 } from "../../../lib/host-profile-resume.ts";
 import { isLocalDevHostClaim } from "../../../lib/host-claim-proof.ts";
+import { createHostOwnerTransferIntent } from "../../../lib/host-owner-transfer-intent.ts";
 import { oauthAddAccountHref } from "../oauth-entry.ts";
 
 type ManageState =
@@ -122,7 +123,7 @@ interface HostManagePageProps {
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      () => appviewUnavailable(),
+      (err) => appviewUnavailable("host manage page", err),
     );
     if (proxied) return proxied;
 
@@ -158,11 +159,17 @@ export const handler = define.handlers({
     if (
       state === "ready" &&
       !isLocalDevHostClaim(host.host) &&
-      !await getSessionForCapabilities(ctx.state.user.did, ["host"], {
-        quiet: true,
-      })
+      !await getSessionForCapabilities(
+        ctx.state.user.did,
+        HOST_MANAGEMENT_CAPABILITIES,
+        { quiet: true },
+      )
     ) {
-      return redirectToAuthorization(host, ctx.url, ["host"]);
+      return redirectToAuthorization(
+        host,
+        ctx.url,
+        HOST_MANAGEMENT_CAPABILITIES,
+      );
     }
     return ctx.render(
       <HostManagePage
@@ -176,10 +183,16 @@ export const handler = define.handlers({
           (ctx.url.searchParams.get("linkError") === "1"
             ? "The app connection could not be completed. Ask the app owner to start a new connection from app hosting."
             : null)}
-        notice={ctx.url.searchParams.get("linked") === "1"
-          ? "Host connected to the app successfully."
+        notice={ctx.url.searchParams.get("transferred") === "1"
+          ? "Managing account changed. You can remove the temporary DNS record now. Review the profile and app connections before republishing."
+          : ctx.url.searchParams.get("linked") === "1"
+          ? ctx.url.searchParams.get("dns") === "1"
+            ? "Host claimed and connected. You can remove the temporary DNS record now."
+            : "Host connected to the app successfully."
           : ctx.url.searchParams.get("claimed") === "1"
-          ? "Host claimed successfully. Review its directory visibility and account routes below."
+          ? ctx.url.searchParams.get("dns") === "1"
+            ? "Host claimed. You can remove the temporary DNS record now, then review the settings below."
+            : "Host claimed successfully. Review its directory visibility and account routes below."
           : null}
       />,
       { status: state === "ready" ? 200 : 403 },
@@ -188,7 +201,7 @@ export const handler = define.handlers({
 
   async POST(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      () => appviewUnavailable(),
+      (err) => appviewUnavailable("host manage update", err),
     );
     if (proxied) return proxied;
 
@@ -219,11 +232,7 @@ export const handler = define.handlers({
         { status: 404 },
       );
     }
-    if (!ctx.state.user) {
-      return requestAcceptsJson(ctx.req)
-        ? hostProfileJsonResponse(401, { error: "not_authenticated" })
-        : redirectToSignin(host, ctx.url);
-    }
+    if (!ctx.state.user) return redirectToSignin(host, ctx.url);
 
     const claim = await getAccountHostClaim(host.host).catch(() => null);
     const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
@@ -252,21 +261,16 @@ export const handler = define.handlers({
         MAX_HOST_MANAGE_FORM_BYTES,
       );
     } catch (error) {
-      return new Response(
-        error instanceof RequestBodyTooLargeError
-          ? "request body too large"
-          : "invalid host form",
-        { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
-      );
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response("request body too large", { status: 413 });
+      }
+      form = null;
     }
     const values = valuesFromForm(form, host);
     const action = textValue(form?.get("action"));
     const hostProfileJson = action === "save_profile" &&
       requestAcceptsJson(ctx.req);
-    const requiredCapabilities = action === "save_profile" &&
-        fileFromForm(form?.get("avatarUpload"))
-      ? ["host", "media"] as const
-      : ["host"] as const;
+    const requiredCapabilities = HOST_MANAGEMENT_CAPABILITIES;
     const session = await getSessionForCapabilities(
       ctx.state.user.did,
       requiredCapabilities,
@@ -299,6 +303,44 @@ export const handler = define.handlers({
         />,
         { status: 422 },
       );
+    }
+    if (action === "start_owner_transfer") {
+      if (localDevFixture) {
+        return new Response(
+          "Local .test fixtures cannot change manager because they cannot complete public DNS verification.",
+          { status: 400, headers: { "cache-control": "no-store" } },
+        );
+      }
+      if (!session) {
+        return redirectToAuthorization(host, ctx.url, requiredCapabilities);
+      }
+      const transfer = await createHostOwnerTransferIntent({
+        host: host.host,
+        authenticatedOwnerDid: ctx.state.user.did,
+      });
+      if (!transfer.ok) {
+        return ctx.render(
+          <HostManagePage
+            host={host}
+            claim={claim}
+            state="ready"
+            account={account}
+            values={valuesFromHost(host)}
+            validation={null}
+            error="The managing-account change could not be started. Refresh and try again."
+          />,
+          { status: 409 },
+        );
+      }
+      const next = managedHostTransferNextHref(host, transfer.value.token);
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: oauthAddAccountHref(
+            managedHostTransferAuthorizationHref(host, next),
+          ),
+        },
+      });
     }
     if (action === "save_listing") {
       const listed = form?.get("directory_listing") === "1";
@@ -345,6 +387,7 @@ export const handler = define.handlers({
               host,
               ctx.url,
               requiredCapabilities,
+              true,
             );
           }
           return redirectToAuthorization(
@@ -484,7 +527,12 @@ export const handler = define.handlers({
       );
       if (!publication.ok) {
         if (publication.reauthorization) {
-          return redirectToAuthorization(host, ctx.url, ["host"], true);
+          return redirectToAuthorization(
+            host,
+            ctx.url,
+            HOST_MANAGEMENT_CAPABILITIES,
+            true,
+          );
         }
         return ctx.render(
           <HostManagePage
@@ -536,8 +584,8 @@ export const handler = define.handlers({
   },
 });
 
-function appviewUnavailable(): Response {
-  console.error("[appview] host management proxy failed");
+function appviewUnavailable(scope: string, err: unknown): Response {
+  console.error(`[appview] ${scope} proxy failed:`, err);
   return new Response("Host management is temporarily unavailable.", {
     status: 503,
     headers: {
@@ -597,7 +645,13 @@ async function publishManagedHostProfile(
       serviceRecordCid: records.service.cid,
     };
   } catch (err) {
-    return managedHostPublishFailure("profile", err);
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      message:
+        `Host record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
+      reauthorization: isHostAuthorizationError(err),
+    };
   }
 }
 
@@ -633,7 +687,13 @@ async function publishManagedHostService(
       serviceRecordCid: service.cid,
     };
   } catch (err) {
-    return managedHostPublishFailure("settings", err);
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      message:
+        `Host service record publish failed: ${message}. Sign in again if this account was authorized before host permissions were added.`,
+      reauthorization: isHostAuthorizationError(err),
+    };
   }
 }
 
@@ -662,30 +722,20 @@ async function uploadHostAvatar(
       }`,
     };
   } catch (err) {
-    return managedHostPublishFailure("avatar", err);
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      message: `Host avatar upload failed: ${message}`,
+      reauthorization: isHostAuthorizationError(err),
+    };
   }
-}
-
-export function managedHostPublishFailure(
-  operation: "profile" | "settings" | "avatar",
-  error: unknown,
-): { ok: false; message: string; reauthorization: boolean } {
-  const message = operation === "profile"
-    ? "We couldn't publish the host profile. Try again."
-    : operation === "settings"
-    ? "We couldn't publish the host settings. Try again."
-    : "We couldn't upload the host avatar. Try again.";
-  return {
-    ok: false,
-    message,
-    reauthorization: isHostAuthorizationError(error),
-  };
 }
 
 function isHostAuthorizationError(value: unknown): boolean {
   if (isPdsScopeMissingError(value)) return true;
   if (value instanceof PdsBlobUploadError && value.status === 403) return true;
-  return value instanceof PdsRecordWriteError && value.status === 403;
+  return value instanceof Error &&
+    /(?:ScopeMissingError|failed: HTTP 403)/i.test(value.message);
 }
 
 function fileFromForm(
@@ -711,7 +761,10 @@ function HostManagePage(props: HostManagePageProps) {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="hosts" />
-        <section class="signin-page-section host-manage-section">
+        <main
+          class="signin-page-section host-manage-section"
+          id="main-content"
+        >
           <div class="container signin-page-container">
             <a
               href={publicHostPageIsReady
@@ -719,7 +772,7 @@ function HostManagePage(props: HostManagePageProps) {
                 : "/hosts"}
               class="text-link-button"
             >
-              {publicHostPageIsReady ? "Back to host" : "Back to hosts"}
+              ← {publicHostPageIsReady ? "Back to host" : "Back to hosts"}
             </a>
             <div class="glass signin-page-card host-manage-card">
               {host
@@ -738,11 +791,10 @@ function HostManagePage(props: HostManagePageProps) {
                       </div>
                     </div>
                     <p class="text-body host-claim-copy">
-                      Atmosphere is a router, not an account manager. You
-                      control three things: where new people sign up with you,
-                      where Atmosphere sends your users to manage their account,
-                      and how your listing looks. The controls themselves stay
-                      on your own host.
+                      Manage where people create accounts, where they return for
+                      account settings, and how this host appears in the
+                      directory. Passwords, sessions, recovery, and migration
+                      stay with your host.
                     </p>
                     <ManageBody
                       host={host}
@@ -754,7 +806,7 @@ function HostManagePage(props: HostManagePageProps) {
                       notice={notice ?? null}
                       dashboard={dashboard}
                       activeDid={account.user?.did ?? ""}
-                      currentHandle={account.user?.handle ?? ""}
+                      activeHandle={account.user?.handle ?? ""}
                       rememberedAccounts={account.rememberedAccounts}
                     />
                   </>
@@ -770,7 +822,7 @@ function HostManagePage(props: HostManagePageProps) {
                 )}
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -788,7 +840,7 @@ function ManageBody(
     notice,
     dashboard,
     activeDid,
-    currentHandle,
+    activeHandle,
     rememberedAccounts,
   }: {
     host: AccountHost;
@@ -800,7 +852,7 @@ function ManageBody(
     notice: string | null;
     dashboard: ReturnType<typeof buildHostDashboardState>;
     activeDid: string;
-    currentHandle: string;
+    activeHandle: string;
     rememberedAccounts: Array<{ did: string; handle: string }>;
   },
 ) {
@@ -812,10 +864,8 @@ function ManageBody(
         )}
         <p class="host-claim-panel-title">Claim required</p>
         <p class="text-body">
-          Configure <code>contact.email</code> in this PDS’s live{" "}
-          <code>com.atproto.server.describeServer</code>{" "}
-          response, then follow the emailed verification link before saving host
-          account-page settings.
+          Verify control of the host with a temporary DNS TXT record before
+          saving host account-page settings.
         </p>
         <a
           class="directory-register-button host-claim-secondary-action"
@@ -837,7 +887,7 @@ function ManageBody(
           Operator verification unavailable
         </p>
         <p class="text-body">
-          Atmosphere could not reverify the stored ownership claim, so it is not
+          This site could not reverify the stored ownership claim, so it is not
           showing that claimant as the operator or allowing listing changes.
           Nothing has been changed; try again later.
         </p>
@@ -893,11 +943,10 @@ function ManageBody(
         <div class="host-detail-dashboard-head">
           <div>
             <p class="text-eyebrow">Public directory</p>
-            <h2>Choose whether this PDS is listed</h2>
+            <h2>Show this host in the directory</h2>
             <p class="text-body">
-              Automatic filtering keeps likely personal PDSes private. As the
-              verified operator, you can explicitly include or remove this PDS
-              from the public Hosts directory without changing the relay data.
+              This host is listed because you manage it. Turn visibility off to
+              hide its directory card and public host page.
             </p>
           </div>
         </div>
@@ -911,7 +960,7 @@ function ManageBody(
             />
             <span class="profile-form-toggle-body">
               <span class="profile-form-toggle-label">
-                Show this PDS in the public directory
+                Show this host in the public directory
               </span>
               <span class="profile-form-toggle-hint">
                 Turning this off hides the host page and directory card. You can
@@ -935,12 +984,11 @@ function ManageBody(
         <div class="host-detail-dashboard-head">
           <div>
             <p class="text-eyebrow">Sign-up</p>
-            <h2>Where new people sign up with you</h2>
+            <h2>Where people create accounts</h2>
             <p class="text-body">
-              This is the lever that decides whether you appear as a place to
-              create an account in the “Continue with Atmosphere” picker.
-              Sign-up always happens on your own site — Atmosphere only links
-              out and never sees invite codes.
+              Choose whether this host appears as a place to create an account
+              during Login with Atmosphere. Account creation stays on your site;
+              this directory only links people there.
             </p>
           </div>
         </div>
@@ -1028,9 +1076,10 @@ function ManageBody(
           <p class="text-eyebrow">Apps and host identity</p>
           <h2>Connect this host to its apps</h2>
           <p class="text-body">
-            Confirm whether an app is this same product, operated by the same
-            organization, or only a host listing. Different app accounts must
-            approve the connection too.
+            The app and host keep separate public profiles. Verified connections
+            show whether the host provides account services for an app or the
+            two share an operator. Different app accounts must approve the
+            connection too.
           </p>
         </div>
         <a
@@ -1040,6 +1089,45 @@ function ManageBody(
           Manage app connections
         </a>
       </section>
+      {isLocalDevHostClaim(host.host)
+        ? (
+          <section class="host-manage-current directory-relationship-entry">
+            <div>
+              <p class="text-eyebrow">Managing account</p>
+              <h2>Local fixture manager</h2>
+              <p class="text-body">
+                Managing-account changes are unavailable for local{" "}
+                <code>.test</code>{" "}
+                fixtures because they cannot complete public DNS verification.
+              </p>
+            </div>
+          </section>
+        )
+        : (
+          <section class="host-manage-current directory-relationship-entry">
+            <div>
+              <p class="text-eyebrow">Managing account</p>
+              <h2>
+                Managed by <AtmosphereHandle handle={claim?.claimantHandle} />
+              </h2>
+              <p class="text-body">
+                One account manages this host. To change it, choose the new
+                account and prove control again with DNS. This account stays in
+                control until verification succeeds.
+              </p>
+            </div>
+            <form method="POST">
+              <input
+                type="hidden"
+                name="action"
+                value="start_owner_transfer"
+              />
+              <button type="submit" class="directory-register-button">
+                Change managing account
+              </button>
+            </form>
+          </section>
+        )}
       <section class="host-manage-current host-manage-profile-section">
         <div class="host-detail-dashboard-head">
           <div>
@@ -1069,8 +1157,8 @@ function ManageBody(
                 />
               </label>
               <p class="profile-form-hint host-register-avatar-hint">
-                Optional. Uploaded host avatars are stored as blobs in the
-                signed-in host account's PDS.
+                Optional. Uploaded host avatars are stored with the signed-in
+                managing account.
               </p>
             </div>
             <div class="profile-form-fields">
@@ -1150,6 +1238,7 @@ function ManageBody(
                     name="bskyProfileVisible"
                     value="1"
                     checked={values.bskyProfileVisible}
+                    aria-label="Show Bluesky profile button on the public host page"
                   />
                   <span class="atmosphere-toggle-track" aria-hidden="true">
                     <span class="atmosphere-toggle-thumb" />
@@ -1173,7 +1262,7 @@ function ManageBody(
               did={activeDid}
               host={host.host}
               targetName={host.displayName}
-              currentHandle={currentHandle}
+              currentHandle={activeHandle}
               rememberedAccounts={rememberedAccounts}
             />
           </div>
@@ -1184,12 +1273,10 @@ function ManageBody(
         <div class="host-detail-dashboard-head">
           <div>
             <p class="text-eyebrow">Account management</p>
-            <h2>Where Atmosphere sends your users</h2>
+            <h2>Where people manage their accounts</h2>
             <p class="text-body">
-              You already run account controls — passwords, sessions, OAuth
-              grants, exports, migration. Atmosphere doesn’t replace them; it
-              deep-links your users back to them from their Atmosphere account
-              page.
+              This site links people back to the account controls on your host
+              for passwords, sessions, OAuth grants, exports, and migration.
             </p>
           </div>
         </div>
@@ -1214,13 +1301,13 @@ function ManageBody(
             <div class="host-claim-panel">
               <p class="host-claim-panel-title">No account page yet</p>
               <p class="text-body">
-                Add your PDS service endpoint below. Atmosphere then routes
-                users to the /account path on that origin unless you set an
+                Add your PDS service endpoint below. This site then routes
+                people to the /account path on that origin unless you set an
                 override.
               </p>
             </div>
           )}
-        <form method="POST" class="host-manage-form">
+        <form method="POST" class="host-manage-form" data-submit-once="true">
           <label class="profile-form-field">
             <span class="profile-form-label">PDS service endpoint</span>
             <input
@@ -1247,7 +1334,7 @@ function ManageBody(
               placeholder="https://pds.example/account"
             />
             <span class="profile-form-hint">
-              Optional. Atmosphere uses `/account` on the PDS endpoint by
+              Optional. This site uses `/account` on the PDS endpoint by
               default. Add an override only when this host uses another URL.
             </span>
           </label>
@@ -1290,16 +1377,18 @@ function ManageBody(
               type="submit"
               name="action"
               value="validate"
+              data-pending-label="Validating manifest…"
             >
-              Validate manifest
+              <span data-submit-once-label>Validate manifest</span>
             </button>
             <button
               class="directory-register-button host-manage-save"
               type="submit"
               name="action"
               value="save"
+              data-pending-label="Saving host settings…"
             >
-              <span>Save host account settings</span>
+              <span data-submit-once-label>Save account links</span>
             </button>
           </div>
         </form>
@@ -1362,7 +1451,7 @@ function ValidationPanel(
         <p class="text-body">
           {validation.ok
             ? `${supported} standardized capabilities are marked supported.`
-            : "Fix the errors below before Atmosphere saves compatibility."}
+            : "Fix the errors below before this site saves compatibility."}
         </p>
         <p class="host-manage-validation-url">{validation.url}</p>
       </div>
@@ -1421,7 +1510,7 @@ function manageStateError(state: ManageState): string | null {
 }
 
 function redirectToSignin(host: AccountHost, url: URL): Response {
-  return redirectToAuthorization(host, url, ["host"]);
+  return redirectToAuthorization(host, url, HOST_MANAGEMENT_CAPABILITIES);
 }
 
 function redirectToAuthorization(
@@ -1443,23 +1532,17 @@ function hostProfileReauthorizationResponse(
   host: AccountHost,
   url: URL,
   capabilities: readonly ("host" | "media")[],
+  force = false,
 ): Response {
   return hostProfileJsonResponse(403, {
     error: "reauth_required",
-    reauthUrl: hostProfileReauthorizationHref(
+    reauthUrl: managedHostAuthorizationHref(
       host,
       hostProfileResumePath(url),
       capabilities,
+      force,
     ),
   });
-}
-
-export function hostProfileReauthorizationHref(
-  host: Pick<AccountHost, "displayName">,
-  next: string,
-  capabilities: readonly ("host" | "media")[],
-): string {
-  return managedHostAuthorizationHref(host, next, capabilities, true);
 }
 
 function hostProfileErrorResponse(status: number, detail: string): Response {
@@ -1486,7 +1569,7 @@ function requestAcceptsJson(request: Request): boolean {
 export function managedHostAuthorizationHref(
   host: Pick<AccountHost, "displayName">,
   next: string,
-  capabilities: readonly ("host" | "media")[] = ["host"],
+  capabilities: readonly ("host" | "media")[] = HOST_MANAGEMENT_CAPABILITIES,
   force = false,
 ): string {
   const buildUrl = force ? oauthReauthorizationUrl : oauthSigninUrl;
@@ -1503,6 +1586,28 @@ export function managedHostAddAccountHref(
   next: string,
 ): string {
   return oauthAddAccountHref(managedHostAuthorizationHref(host, next));
+}
+
+export function managedHostTransferNextHref(
+  host: Pick<AccountHost, "host" | "operatorListingOptIn">,
+  transferToken: string,
+): string {
+  return `/hosts/${encodeURIComponent(host.host)}/claim?${new URLSearchParams({
+    transfer_intent: transferToken,
+    publish: host.operatorListingOptIn === false ? "0" : "1",
+  })}`;
+}
+
+export function managedHostTransferAuthorizationHref(
+  host: Pick<AccountHost, "displayName">,
+  next: string,
+): string {
+  return oauthSigninUrl({
+    next,
+    action: "host_transfer",
+    capabilities: HOST_MANAGEMENT_CAPABILITIES,
+    name: host.displayName,
+  });
 }
 
 function valuesFromHost(host: AccountHost): ManageFormValues {

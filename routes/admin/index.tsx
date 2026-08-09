@@ -66,7 +66,7 @@ function AdminHome(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
-        <section class="admin-section">
+        <main id="main-content" class="admin-section">
           <div class="container" style={{ maxWidth: "920px" }}>
             <header class="admin-header">
               <h1 class="text-section">{t.overview.headline}</h1>
@@ -100,7 +100,7 @@ function AdminHome(
                 <p class="admin-card-count">{loginAppReviews}</p>
                 <h2 class="admin-card-title">Login app trust</h2>
                 <p class="admin-card-body">
-                  Review Atmosphere Login app identity, domains, logos, and
+                  Review Login with Atmosphere app identity, domains, logos, and
                   return URI allow-lists.
                 </p>
               </a>
@@ -119,7 +119,7 @@ function AdminHome(
               </a>
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

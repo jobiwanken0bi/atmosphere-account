@@ -22,7 +22,8 @@ COPY --chown=deno:deno . .
 
 USER deno
 
-RUN deno task build
+RUN deno task build \
+  && deno cache --node-modules-dir=auto scripts/migrate-postgres.ts
 
 ENV DENO_ENV=production
 

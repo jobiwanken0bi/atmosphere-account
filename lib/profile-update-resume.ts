@@ -1,3 +1,19 @@
+import { isSafeRelativePath } from "./security.ts";
+import { createAtprotoTid } from "./tid.ts";
+
+export const PROFILE_UPDATE_RESUME_PARAM = "profile-update-resume";
+export const PROFILE_UPDATE_DELETE_RESUME_PARAM =
+  "profile-update-delete-resume";
+
+export type ProfileUpdateResumeKind = "save" | "delete";
+
+const FALLBACK_RETURN_TO = "/apps/manage";
+const PARSE_ORIGIN = "https://atmosphere.invalid";
+
+function relativeLocation(url: URL): string {
+  return url.pathname + url.search + url.hash;
+}
+
 export interface ProfileUpdateDraft {
   rkey: string | null;
   title: string;
@@ -20,16 +36,81 @@ export function profileUpdatePendingKey(projectDid: string): string {
   return `profile-update:save:${encodeURIComponent(projectDid)}`;
 }
 
-export function profileUpdateResumeMarker(projectDid: string): string {
-  return `atmosphere:resume-profile-update:${projectDid}`;
-}
-
 export function profileUpdateDeletePendingKey(projectDid: string): string {
   return `profile-update:delete:${encodeURIComponent(projectDid)}`;
 }
 
-export function profileUpdateDeleteResumeMarker(projectDid: string): string {
-  return `atmosphere:resume-profile-update-delete:${projectDid}`;
+export function profileUpdateResumeProofKey(
+  projectDid: string,
+  kind: ProfileUpdateResumeKind,
+): string {
+  const pendingKey = kind === "save"
+    ? profileUpdatePendingKey(projectDid)
+    : profileUpdateDeletePendingKey(projectDid);
+  return "atmosphere:browser-resume-marker:profile-update:" + kind + ":" +
+    encodeURIComponent(pendingKey);
+}
+
+export function profileUpdateReturnToWithoutResume(returnTo: string): string {
+  const safeReturnTo = isSafeRelativePath(returnTo)
+    ? returnTo
+    : FALLBACK_RETURN_TO;
+  const url = new URL(safeReturnTo, PARSE_ORIGIN);
+  url.searchParams.delete(PROFILE_UPDATE_RESUME_PARAM);
+  url.searchParams.delete(PROFILE_UPDATE_DELETE_RESUME_PARAM);
+  return relativeLocation(url);
+}
+
+export function profileUpdateResumeReturnTo(
+  returnTo: string,
+  projectDid: string,
+  kind: ProfileUpdateResumeKind,
+): string {
+  const url = new URL(
+    profileUpdateReturnToWithoutResume(returnTo),
+    PARSE_ORIGIN,
+  );
+  url.searchParams.set(
+    kind === "save"
+      ? PROFILE_UPDATE_RESUME_PARAM
+      : PROFILE_UPDATE_DELETE_RESUME_PARAM,
+    projectDid,
+  );
+  return relativeLocation(url);
+}
+
+export interface ProfileUpdateResumeLocation {
+  hadMarker: boolean;
+  shouldResume: boolean;
+  kind: ProfileUpdateResumeKind | null;
+  cleanLocation: string;
+}
+
+/** Consume exactly one action marker. Duplicate, conflicting, or wrong-DID
+ * markers are cleaned from the URL but never authorize a repository write. */
+export function profileUpdateResumeLocation(
+  href: string,
+  projectDid: string,
+): ProfileUpdateResumeLocation {
+  const url = new URL(href, PARSE_ORIGIN);
+  const saveMarkers = url.searchParams.getAll(PROFILE_UPDATE_RESUME_PARAM);
+  const deleteMarkers = url.searchParams.getAll(
+    PROFILE_UPDATE_DELETE_RESUME_PARAM,
+  );
+  url.searchParams.delete(PROFILE_UPDATE_RESUME_PARAM);
+  url.searchParams.delete(PROFILE_UPDATE_DELETE_RESUME_PARAM);
+
+  const markerCount = saveMarkers.length + deleteMarkers.length;
+  const kind: ProfileUpdateResumeKind | null = markerCount === 1
+    ? saveMarkers.length === 1 ? "save" : "delete"
+    : null;
+  const marker = kind === "save" ? saveMarkers[0] : deleteMarkers[0];
+  return {
+    hadMarker: markerCount > 0,
+    shouldResume: kind !== null && marker === projectDid,
+    kind,
+    cleanLocation: relativeLocation(url),
+  };
 }
 
 export function pendingProfileUpdateAction(
@@ -93,4 +174,3 @@ export function pendingProfileUpdateDeleteForDid(
   const rkey = pending.rkey.trim();
   return rkey && rkey.length <= 512 ? rkey : null;
 }
-import { createAtprotoTid } from "./tid.ts";

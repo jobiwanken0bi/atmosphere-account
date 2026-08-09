@@ -30,10 +30,7 @@ export function repeatedSearchValues(
   return values;
 }
 
-export function singleFormString(
-  form: FormData,
-  key: string,
-): string | null {
+export function singleFormString(form: FormData, key: string): string | null {
   const values = form.getAll(key);
   if (values.length > 1) throw new InvalidOAuthRequestInputError();
   if (values.length === 0) return null;
@@ -43,10 +40,7 @@ export function singleFormString(
   return values[0];
 }
 
-export function repeatedFormStrings(
-  form: FormData,
-  key: string,
-): string[] {
+export function repeatedFormStrings(form: FormData, key: string): string[] {
   const values = form.getAll(key);
   if (
     values.length > MAX_OAUTH_CONTEXT_VALUES ||
@@ -108,11 +102,7 @@ export function optionalSafeRelativePath(value: string | null): string | null {
   return value;
 }
 
-/**
- * Authorization context must have one canonical source. Accepting the same
- * field in both the URL and request body invites proxy/framework parser
- * disagreements and makes it unclear which value was authorized.
- */
+/** Authorization context must have one canonical source. */
 export function rejectSearchFormOverlap(
   params: URLSearchParams,
   form: FormData,

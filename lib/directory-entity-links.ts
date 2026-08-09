@@ -255,13 +255,22 @@ export async function listVerifiedDirectoryEntityLinksForHosts(
   });
   const links: Record<string, DirectoryEntityAppLink[]> = {};
   const ownerCache = new Map<string, Promise<string | null>>();
-  for (const row of rows) {
-    const link = rowToAppLink(row);
-    if (
-      !link ||
-      !await linkIsCurrentlyAuthorized(row, link, ownerCache)
-    ) continue;
-    (links[link.host] ??= []).push(link);
+  // A directory page can contain links for many hosts. Resolve authority in
+  // small parallel batches rather than serializing two claim lookups per host;
+  // the shared promise cache still coalesces every row for the same host.
+  const concurrency = 8;
+  for (let offset = 0; offset < rows.length; offset += concurrency) {
+    const checked = await Promise.all(
+      rows.slice(offset, offset + concurrency).map(async (row) => {
+        const link = rowToAppLink(row);
+        return link && await linkIsCurrentlyAuthorized(row, link, ownerCache)
+          ? link
+          : null;
+      }),
+    );
+    for (const link of checked) {
+      if (link) (links[link.host] ??= []).push(link);
+    }
   }
   return links;
 }

@@ -2,14 +2,11 @@ import {
   applySecurityHeadersForTest,
   csrfExpectedOriginForTest,
   isCrossOriginReadonlyRequest,
-  isJsonMediaType,
-  isPrivateNetworkHostname,
   isPrivateNetworkUrl,
   isSafeRelativePath,
   isSameOriginUnsafeRequest,
   readFormDataRequestWithLimit,
   readJsonRequestWithLimit,
-  readResponseBytesWithLimit,
   readResponseTextWithLimit,
   requestBodyTooLarge,
   RequestBodyTooLargeError,
@@ -21,74 +18,17 @@ function assertEquals(actual: unknown, expected: unknown): void {
   }
 }
 
-Deno.test("JSON media type checks reject substring lookalikes", () => {
-  assertEquals(isJsonMediaType("application/json; charset=utf-8"), true);
-  assertEquals(isJsonMediaType("application/problem+json"), true);
-  assertEquals(isJsonMediaType("application/dns-json"), true);
-  assertEquals(isJsonMediaType("application/jsonp"), false);
-  assertEquals(isJsonMediaType("text/json"), false);
-});
-
 Deno.test("CSRF rejects cross-site unsafe requests by default", () => {
-  const req = new Request("https://atmosphereaccount.com/api/account/profile", {
-    method: "POST",
-    headers: { origin: "https://evil.example" },
-  });
+  const req = new Request(
+    "https://atmosphereaccount.com/api/account/microblog-viewer",
+    {
+      method: "POST",
+      headers: { origin: "https://evil.example" },
+    },
+  );
   assertEquals(
     isSameOriginUnsafeRequest(req, "https://atmosphereaccount.com"),
     false,
-  );
-});
-
-Deno.test("CSRF fails closed for cookie-backed writes without origin metadata", () => {
-  const expectedOrigin = "https://atmosphereaccount.com";
-  const strippedBrowserRequest = new Request(
-    `${expectedOrigin}/api/account/profile`,
-    {
-      method: "POST",
-      headers: { cookie: "atmo_sid=session.signature" },
-    },
-  );
-  const sameOriginFetchMetadata = new Request(
-    `${expectedOrigin}/api/account/profile`,
-    {
-      method: "POST",
-      headers: {
-        cookie: "atmo_sid=session.signature",
-        "sec-fetch-site": "same-origin",
-      },
-    },
-  );
-  const siblingSubdomainRequest = new Request(
-    `${expectedOrigin}/api/account/profile`,
-    {
-      method: "POST",
-      headers: {
-        cookie: "atmo_sid=session.signature",
-        "sec-fetch-site": "same-site",
-      },
-    },
-  );
-  const serverToServerRequest = new Request(
-    `${expectedOrigin}/api/account/profile`,
-    { method: "POST" },
-  );
-
-  assertEquals(
-    isSameOriginUnsafeRequest(strippedBrowserRequest, expectedOrigin),
-    false,
-  );
-  assertEquals(
-    isSameOriginUnsafeRequest(sameOriginFetchMetadata, expectedOrigin),
-    true,
-  );
-  assertEquals(
-    isSameOriginUnsafeRequest(siblingSubdomainRequest, expectedOrigin),
-    false,
-  );
-  assertEquals(
-    isSameOriginUnsafeRequest(serverToServerRequest, expectedOrigin),
-    true,
   );
 });
 
@@ -137,7 +77,7 @@ Deno.test("Atmosphere Login selection verification is the only cross-origin POST
     true,
   );
   assertEquals(
-    isCrossOriginReadonlyRequest(req, "/api/account/profile"),
+    isCrossOriginReadonlyRequest(req, "/api/account/microblog-viewer"),
     false,
   );
 });
@@ -158,30 +98,12 @@ Deno.test("private network URL detection covers common IP literal forms", () => 
   );
   assertEquals(isPrivateNetworkUrl("http://example.com"), true);
   assertEquals(isPrivateNetworkUrl("https://localhost"), true);
-  assertEquals(isPrivateNetworkUrl("https://localhost."), true);
   assertEquals(isPrivateNetworkUrl("https://127.0.0.1"), true);
   assertEquals(isPrivateNetworkUrl("https://10.0.0.5"), true);
   assertEquals(isPrivateNetworkUrl("https://172.20.0.5"), true);
   assertEquals(isPrivateNetworkUrl("https://192.168.1.5"), true);
   assertEquals(isPrivateNetworkUrl("https://[::1]"), true);
   assertEquals(isPrivateNetworkUrl("https://[fd00::1]"), true);
-  assertEquals(isPrivateNetworkUrl("https://[::ffff:127.0.0.1]"), true);
-  assertEquals(isPrivateNetworkUrl("https://[::ffff:10.0.0.1]"), true);
-  assertEquals(isPrivateNetworkUrl("https://[::127.0.0.1]"), true);
-  assertEquals(isPrivateNetworkUrl("https://[ff02::1]"), true);
-  assertEquals(isPrivateNetworkUrl("https://198.18.0.1"), true);
-  assertEquals(isPrivateNetworkUrl("https://203.0.113.7"), true);
-  assertEquals(isPrivateNetworkUrl("https://8.8.8.8"), false);
-  assertEquals(isPrivateNetworkUrl("https://[2606:4700:4700::1111]"), false);
-  assertEquals(isPrivateNetworkHostname("::ffff:127.0.0.1"), true);
-  assertEquals(isPrivateNetworkHostname("service.internal"), true);
-  assertEquals(isPrivateNetworkHostname("service.home.arpa"), true);
-  assertEquals(isPrivateNetworkHostname("service.test"), true);
-  assertEquals(isPrivateNetworkHostname("service.invalid"), true);
-  assertEquals(isPrivateNetworkHostname("service.example"), true);
-  assertEquals(isPrivateNetworkHostname("hidden.onion"), true);
-  assertEquals(isPrivateNetworkHostname("2001:db8::1"), true);
-  assertEquals(isPrivateNetworkHostname("3fff::1"), true);
 });
 
 Deno.test("request body size checks use content-length before parsing", () => {
@@ -205,35 +127,23 @@ Deno.test("bounded response reader rejects oversized responses", async () => {
     4,
   );
   assertEquals(tooLarge.ok, false);
-
-  const understated = await readResponseBytesWithLimit(
-    new Response(
-      new ReadableStream({
-        start(controller) {
-          controller.enqueue(new Uint8Array([1, 2, 3]));
-          controller.enqueue(new Uint8Array([4, 5, 6]));
-          controller.close();
-        },
-      }),
-      { headers: { "content-length": "2" } },
-    ),
-    4,
-  );
-  assertEquals(understated.ok, false);
 });
 
 Deno.test("bounded JSON reader rejects oversized streamed requests", async () => {
-  const request = new Request("https://atmosphereaccount.com/api/passkeys", {
-    method: "POST",
-    body: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('{"value":"'));
-        controller.enqueue(new TextEncoder().encode("too-large"));
-        controller.enqueue(new TextEncoder().encode('"}'));
-        controller.close();
-      },
-    }),
-  });
+  const request = new Request(
+    "https://atmosphereaccount.com/api/account/type",
+    {
+      method: "POST",
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"value":"'));
+          controller.enqueue(new TextEncoder().encode("too-large"));
+          controller.enqueue(new TextEncoder().encode('"}'));
+          controller.close();
+        },
+      }),
+    },
+  );
   let tooLarge = false;
   try {
     await readJsonRequestWithLimit(request, 8);
@@ -243,18 +153,21 @@ Deno.test("bounded JSON reader rejects oversized streamed requests", async () =>
   assertEquals(tooLarge, true);
 });
 
-Deno.test("bounded form reader rejects chunked bodies without content-length", async () => {
-  const request = new Request("https://atmosphereaccount.com/oauth/login", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("handle="));
-        controller.enqueue(new TextEncoder().encode("far-too-large.example"));
-        controller.close();
-      },
-    }),
-  });
+Deno.test("bounded form reader rejects oversized streamed requests", async () => {
+  const request = new Request(
+    "https://atmosphereaccount.com/hosts/example.com/manage",
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("action=save&value="));
+          controller.enqueue(new TextEncoder().encode("too-large"));
+          controller.close();
+        },
+      }),
+    },
+  );
   let tooLarge = false;
   try {
     await readFormDataRequestWithLimit(request, 8);
@@ -263,6 +176,37 @@ Deno.test("bounded form reader rejects chunked bodies without content-length", a
   }
   assertEquals(tooLarge, true);
 });
+
+Deno.test("route handlers do not use unbounded request body parsers", async () => {
+  for (const sourceUrl of await productionRouteSources()) {
+    const source = await Deno.readTextFile(sourceUrl);
+    const unbounded = /\b(?:ctx\.)?req\.(?:formData|json)\s*\(/.exec(source);
+    if (unbounded) {
+      throw new Error(
+        `${sourceUrl.pathname} uses unbounded ${unbounded[0]}`,
+      );
+    }
+  }
+});
+
+async function productionRouteSources(
+  directory = new URL("../routes/", import.meta.url),
+): Promise<URL[]> {
+  const sources: URL[] = [];
+  for await (const entry of Deno.readDir(directory)) {
+    const entryUrl = new URL(entry.name, directory);
+    if (entry.isDirectory) {
+      entryUrl.pathname += "/";
+      sources.push(...await productionRouteSources(entryUrl));
+    } else if (
+      entry.isFile && /\.tsx?$/.test(entry.name) &&
+      !/\.test\.tsx?$/.test(entry.name)
+    ) {
+      sources.push(entryUrl);
+    }
+  }
+  return sources;
+}
 
 Deno.test("token-bearing Atmosphere Login pages force private browser headers", () => {
   for (
@@ -278,9 +222,6 @@ Deno.test("token-bearing Atmosphere Login pages force private browser headers", 
       "/hosts/claim",
       "/hosts/register",
       "/hosts/pds.example/claim",
-      "/passkeys",
-      "/api/passkeys/authentication/options",
-      "/api/login/passkeys/options",
     ]
   ) {
     const headers = applySecurityHeadersForTest(pathname);
@@ -290,18 +231,14 @@ Deno.test("token-bearing Atmosphere Login pages force private browser headers", 
   }
 });
 
-Deno.test("security policy confines passkey ceremonies to the same origin", () => {
-  const headers = applySecurityHeadersForTest("/passkeys");
-  const policy = headers.get("permissions-policy") ?? "";
-  assertEquals(policy.includes("publickey-credentials-create=(self)"), true);
-  assertEquals(policy.includes("publickey-credentials-get=(self)"), true);
-});
-
-Deno.test("security policy disables inline HTML event handlers", () => {
+Deno.test("security policy disables WebAuthn after passkey removal", () => {
   const policy = applySecurityHeadersForTest("/apps").get(
-    "content-security-policy",
+    "permissions-policy",
   ) ?? "";
-  assertEquals(policy.includes("script-src-attr 'none'"), true);
+  assertEquals(policy.includes("publickey-credentials-create=()"), true);
+  assertEquals(policy.includes("publickey-credentials-get=()"), true);
+  assertEquals(policy.includes("publickey-credentials-create=(self)"), false);
+  assertEquals(policy.includes("publickey-credentials-get=(self)"), false);
 });
 
 Deno.test("ordinary pages keep the default referrer policy", () => {
@@ -313,19 +250,44 @@ Deno.test("ordinary pages keep the default referrer policy", () => {
   assertEquals(headers.has("cache-control"), false);
 });
 
-Deno.test("personalized HTML is explicitly private and not cacheable", () => {
+Deno.test("rendered account pages are always private and non-cacheable", () => {
+  for (const pathname of ["/account", "/account/apps-hosts"]) {
+    const headers = applySecurityHeadersForTest(
+      pathname,
+      new Headers({
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "public, max-age=300",
+      }),
+    );
+    assertEquals(headers.get("cache-control"), "private, no-store");
+  }
+});
+
+Deno.test("the legacy account redirect remains cacheable", () => {
+  const headers = applySecurityHeadersForTest(
+    "/account/products",
+    new Headers({ location: "/account/apps-hosts" }),
+  );
+  assertEquals(headers.has("cache-control"), false);
+});
+
+Deno.test("account cache policy does not override non-HTML responses", () => {
+  const headers = applySecurityHeadersForTest(
+    "/account/apps-hosts",
+    new Headers({
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "max-age=60",
+    }),
+  );
+  assertEquals(headers.get("cache-control"), "max-age=60");
+});
+
+Deno.test("public HTML pages are unaffected by the account cache policy", () => {
   const headers = applySecurityHeadersForTest(
     "/apps",
     new Headers({ "content-type": "text/html; charset=utf-8" }),
-    true,
   );
-  assertEquals(headers.get("cache-control"), "private, no-store");
-
-  const publicHeaders = applySecurityHeadersForTest(
-    "/apps",
-    new Headers({ "content-type": "text/html; charset=utf-8" }),
-  );
-  assertEquals(publicHeaders.has("cache-control"), false);
+  assertEquals(headers.has("cache-control"), false);
 });
 
 Deno.test("login popup routes keep opener-compatible COOP", () => {

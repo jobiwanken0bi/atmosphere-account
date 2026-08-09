@@ -1,20 +1,10 @@
 /**
- * "Add another account" entry point for the AccountMenu switcher and
- * for contextual "use another account" actions.
- *
- * The active app session remains intact while the chooser is open. A
- * different account only becomes active after its OAuth callback succeeds,
- * so leaving the chooser does not sign the current account out.
- *
- * Optionally accepts an `intent` query/form param (`user` | `project`) plus
- * action context. Every value is forwarded to the contextual `/signin`
- * picker so replacing the active account cannot silently narrow the pending
- * authorization or lose its return destination.
- *
- * Both GET and POST are deliberately side-effect free. They only open the
- * chooser; a successful OAuth callback performs the eventual account switch.
+ * Open the contextual chooser for another account without mutating the
+ * current session. The active identity changes only after a successful OAuth
+ * callback, so closing this chooser never signs the person out.
  */
 import { define } from "../../utils.ts";
+import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import {
   readFormDataRequestWithLimit,
   rejectLargeRequest,
@@ -65,9 +55,7 @@ export function addAccountSigninLocation(
   context: AddAccountAuthorizationContext,
   options: { requireConfirmation?: boolean; chooseAnother?: boolean } = {},
 ): string {
-  if (
-    !isOAuthActionCapabilityRequest(context.action, context.capabilities)
-  ) {
+  if (!isOAuthActionCapabilityRequest(context.action, context.capabilities)) {
     throw new TypeError("invalid action capability combination");
   }
   if (
@@ -78,9 +66,7 @@ export function addAccountSigninLocation(
       context.action,
       context.capabilities,
     )
-  ) {
-    throw new TypeError("invalid authorization continuation");
-  }
+  ) throw new TypeError("invalid authorization continuation");
   const params = new URLSearchParams();
   if (context.next) params.set("next", context.next);
   if (context.intent) params.set("intent", context.intent);
@@ -101,6 +87,11 @@ export function addAccountSigninLocation(
 export async function handleAddAccountRequest(
   ctx: { req: Request; url: URL },
 ): Promise<Response> {
+  const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(() =>
+    appviewUnavailable()
+  );
+  if (proxied) return proxied;
+
   if (ctx.req.method !== "GET") {
     const large = rejectLargeRequest(ctx.req, MAX_ADD_ACCOUNT_BODY_BYTES);
     if (large) return large;
@@ -125,7 +116,10 @@ export async function handleAddAccountRequest(
     capabilities = normalizeOAuthCapabilities(
       repeatedSearchValues(ctx.url.searchParams, "capability"),
     );
-    const rawQueryAction = singleSearchValue(ctx.url.searchParams, "action");
+    const rawQueryAction = singleSearchValue(
+      ctx.url.searchParams,
+      "action",
+    );
     if (rawQueryAction !== null && !isOAuthAction(rawQueryAction)) {
       throw new InvalidOAuthRequestInputError();
     }
@@ -150,10 +144,7 @@ export async function handleAddAccountRequest(
       );
       intent = optionalEnum(
         singleFormString(form, "intent"),
-        [
-          "user",
-          "project",
-        ] as const,
+        ["user", "project"] as const,
       ) ?? intent;
       next = optionalSafeRelativePath(singleFormString(form, "next")) ?? next;
       const formCapabilities = repeatedFormStrings(form, "capability");
@@ -197,9 +188,7 @@ export async function handleAddAccountRequest(
       capabilities,
     )
   ) {
-    return new Response("invalid authorization continuation", {
-      status: 400,
-    });
+    return new Response("invalid authorization continuation", { status: 400 });
   }
   const signin = addAccountSigninLocation(
     { intent, next, capabilities, action, targetName, continuation },
@@ -215,3 +204,14 @@ export const handler = define.handlers({
   GET: handleAddAccountRequest,
   POST: handleAddAccountRequest,
 });
+
+function appviewUnavailable(): Response {
+  console.error("[appview] OAuth add-account proxy failed");
+  return new Response("Adding another account is temporarily unavailable.", {
+    status: 503,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "text/plain; charset=utf-8",
+    },
+  });
+}

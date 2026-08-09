@@ -11,13 +11,12 @@ import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import {
   type CallbackResult,
+  type CancelledOAuthFlow,
   cancelOAuthFlow,
   completeCallback,
   isOAuthConfigured,
   type SignInIntent,
 } from "../../lib/oauth.ts";
-import type { OAuthCapability } from "../../lib/oauth-scopes.ts";
-import type { OAuthAction } from "../../lib/oauth-action.ts";
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import {
   buildSessionCookie,
@@ -37,15 +36,17 @@ import {
   updateAppUserProfile,
 } from "../../lib/account-types.ts";
 import { observeAccountHost } from "../../lib/account-hosts.ts";
-import { getProfileByDid } from "../../lib/registry.ts";
+import { microblogAccountIdentity } from "../../lib/microblog-account-identity.ts";
 import { isSafeRelativePath } from "../../lib/security.ts";
 import { readLoginRequest } from "../../lib/atmosphere-login.ts";
 import { createLoginSelectionIntent } from "../../lib/login-selection-intent.ts";
 import {
-  buildPasskeyManagementCookie,
-  clearPasskeyManagementCookie,
-  isPasskeyManagementReturnTo,
-} from "../../lib/passkey-management.ts";
+  isAccountCreationAction,
+  isOAuthActionCapabilityRequest,
+  type OAuthAction,
+  oauthCreateAccountUrl,
+} from "../../lib/oauth-action.ts";
+import type { OAuthCapability } from "../../lib/oauth-scopes.ts";
 import {
   InvalidOAuthRequestInputError,
   singleSearchValue,
@@ -86,9 +87,7 @@ export function oauthRetryLocation(context: OAuthRetryContext): string {
   return `/signin?${retry.toString()}`;
 }
 
-export function oauthErrorPermission(
-  error: string,
-): "denied" | "failed" {
+export function oauthErrorPermission(error: string): "denied" | "failed" {
   return error === "access_denied" || error === "user_cancelled"
     ? "denied"
     : "failed";
@@ -119,10 +118,6 @@ export function oauthCompletedFailureLocation(
     capabilities: result.capabilities ?? ["identity"],
     intent: result.intent,
     mode: result.mode,
-    // The completed identity may differ from the still-active browser session
-    // when local session rotation fails. Force the retry through an explicit
-    // account choice so the old identity cannot accidentally resume the new
-    // identity's pending action.
     chooseAnotherAccount: true,
     action: result.action,
     targetName: result.targetName,
@@ -164,83 +159,59 @@ export const handler = define.handlers({
       })
     ) {
       return new Response(
-        "Sign-in isn’t available right now. Try again shortly.",
-        {
-          status: 503,
-        },
+        "Login with Atmosphere isn’t available right now. Try again shortly.",
+        { status: 503, headers: { "cache-control": "no-store" } },
       );
     }
     let callback;
     try {
       callback = readOAuthCallbackParameters(ctx.url);
     } catch {
+      return new Response("This sign-in link is invalid.", {
+        status: 400,
+        headers: { "cache-control": "no-store" },
+      });
+    }
+    const { state, code, iss, error } = callback;
+    if (!state) {
       return new Response(
-        "This sign-in link is invalid. Return to Atmosphere and try again.",
+        "This sign-in link has expired or is incomplete. Return to the previous page and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
     }
-    const { state, code, iss, error } = callback;
-    const browserBinding = state
-      ? readOAuthFlowBindingCookie(ctx.req, state)
-      : null;
-    if (state && !browserBinding) {
+    const browserBinding = readOAuthFlowBindingCookie(ctx.req, state);
+    if (!browserBinding) {
       return new Response(
-        "This sign-in link was opened in a different browser or has expired. Return to Atmosphere and try again.",
+        "This sign-in link was opened in a different browser or has expired. Return to the previous page and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
     }
     if (error) {
-      const permission = oauthErrorPermission(error);
-      if (state) {
-        const cancelled = await cancelOAuthFlow(state, {
-          clientId: oauth.clientId,
-          redirectUri: oauth.redirectUri,
-        }, browserBinding ?? undefined).catch(() => null);
-        if (cancelled) {
-          const rawReturnTo = cancelled.returnTo;
-          const returnTo = rawReturnTo && isSafeRelativePath(rawReturnTo)
-            ? rawReturnTo
-            : "/account";
-          if (cancelled.continuation === "login_selection") {
-            return withClearedOAuthFlowBinding(
-              new Response(null, {
-                status: 303,
-                headers: { location: returnTo },
-              }),
-              state,
-            );
-          }
-          return withClearedOAuthFlowBinding(
-            new Response(null, {
-              status: 303,
-              headers: {
-                location: oauthRetryLocation({
-                  next: returnTo,
-                  permission,
-                  capabilities: cancelled.capabilities ?? ["identity"],
-                  intent: cancelled.intent,
-                  mode: cancelled.mode,
-                  chooseAnotherAccount: cancelled.chooseAnotherAccount,
-                  action: cancelled.action,
-                  targetName: cancelled.targetName,
-                  handle: cancelled.handle,
-                }),
-              },
-            }),
-            state,
-          );
-        }
+      const cancelled = await cancelOAuthFlow(
+        state,
+        { clientId: oauth.clientId, redirectUri: oauth.redirectUri },
+        browserBinding,
+      ).catch(() => null);
+      if (cancelled) {
+        const permission = oauthErrorPermission(error);
+        const location = permission === "denied"
+          ? oauthCancellationRedirect(cancelled)
+          : oauthFailureRedirect(cancelled);
+        return withClearedOAuthFlowBinding(
+          new Response(null, {
+            status: 303,
+            headers: { location, "cache-control": "no-store" },
+          }),
+          state,
+        );
       }
-      // If state expired or the provider omitted it, there is no trustworthy
-      // action context to restore. Still return a comprehensible, retryable
-      // recovery screen instead of exposing the provider's protocol error.
       return withClearedOAuthFlowBinding(
         new Response(null, {
           status: 303,
           headers: {
             location: oauthRetryLocation({
               next: "/account",
-              permission,
+              permission: oauthErrorPermission(error),
               capabilities: ["identity"],
               action: "account",
             }),
@@ -250,11 +221,11 @@ export const handler = define.handlers({
         state,
       );
     }
-    if (!state || !code || !iss) {
+    if (!code || !iss) {
       return withClearedOAuthFlowBinding(
         new Response(
-          "This sign-in link has expired or is incomplete. Return to Atmosphere and try again.",
-          { status: 400 },
+          "This sign-in link has expired or is incomplete. Return to the previous page and try again.",
+          { status: 400, headers: { "cache-control": "no-store" } },
         ),
         state,
       );
@@ -262,10 +233,11 @@ export const handler = define.handlers({
     let completedResult: Awaited<ReturnType<typeof completeCallback>> | null =
       null;
     try {
-      const result = await completeCallback({ state, code, iss }, {
-        clientId: oauth.clientId,
-        redirectUri: oauth.redirectUri,
-      }, browserBinding ?? undefined);
+      const result = await completeCallback(
+        { state, code, iss },
+        { clientId: oauth.clientId, redirectUri: oauth.redirectUri },
+        browserBinding,
+      );
       completedResult = result;
       await observeAccountHost(result.pdsUrl).catch(() => {});
 
@@ -281,13 +253,9 @@ export const handler = define.handlers({
         pdsUrl: result.pdsUrl,
       });
 
-      const [bskyProfile, atmosphereProfile, existingAppUser] = await Promise
+      const [bskyProfile, existingAppUser] = await Promise
         .all([
           getBskyProfile(result.pdsUrl, result.did).catch(() => null),
-          getProfileByDid(result.did, {
-            includeTakenDown: true,
-            profileType: "user",
-          }).catch(() => null),
           getAppUser(result.did).catch(() => null),
         ]);
 
@@ -297,9 +265,8 @@ export const handler = define.handlers({
        *  - `intent === "project"` (clicked "Register an app")
        *      → mark as project, take them to the project dashboard.
        *  - `intent === "user"` or unset (header sign-in, review CTAs)
-       *      → mark as user in the local account cache. An Atmosphere user
-       *        profile is authoritative when present; the microblog profile
-       *        supplies the initial fallback otherwise.
+       *      → mark as user in the local account cache and use the account's
+       *        microblog profile for its display identity.
        *
        * If the DID already has a type (re-sign-in or upgrade flows),
        * the intent is ignored and the existing classification stands.
@@ -309,21 +276,7 @@ export const handler = define.handlers({
       if (accountType == null) {
         accountType = result.intent === "project" ? "project" : "user";
       }
-      const identityProfile = accountType === "user" && atmosphereProfile
-        ? {
-          displayName: atmosphereProfile.name,
-          bio: atmosphereProfile.description,
-          avatarCid: atmosphereProfile.avatarCid,
-          avatarMime: atmosphereProfile.avatarMime,
-        }
-        : bskyProfile
-        ? {
-          displayName: bskyProfile.displayName ?? null,
-          bio: bskyProfile.description ?? null,
-          avatarCid: bskyProfile.avatar?.ref.$link ?? null,
-          avatarMime: bskyProfile.avatar?.mimeType ?? null,
-        }
-        : null;
+      const identityProfile = microblogAccountIdentity(bskyProfile);
 
       if (!existingAppUser) {
         await setAppUserType({
@@ -335,7 +288,7 @@ export const handler = define.handlers({
           avatarMime: identityProfile?.avatarMime ?? null,
           accountType,
         }).catch(() => {});
-      } else if (identityProfile) {
+      } else {
         await updateAppUserProfile({
           did: result.did,
           handle: result.handle,
@@ -367,6 +320,7 @@ export const handler = define.handlers({
       if (!result.authorizationSufficient || result.scopeConflict) {
         destination = oauthRetryLocation({
           next: destination,
+          handle: result.handle,
           permission: result.scopeConflict ? "concurrent" : "partial",
           capabilities: result.capabilities ?? ["identity"],
           intent: result.intent,
@@ -374,42 +328,27 @@ export const handler = define.handlers({
           chooseAnotherAccount: result.chooseAnotherAccount,
           action: result.action,
           targetName: result.targetName,
-          handle: result.handle,
         });
       }
-      const passkeyManagementCookie =
-        isPasskeyManagementReturnTo(returnTo) && result.reauthenticated
-          ? await buildPasskeyManagementCookie(result.did)
-          : clearPasskeyManagementCookie();
+      // Mint the replacement before revoking the old app session. Deliver it
+      // only after the old SID has been durably removed.
       const sessionCookie = buildSessionCookie(
         await createSession({ did: result.did, handle: result.handle }),
       );
-      // Finish all fallible callback bookkeeping before rotating the browser
-      // session. Mint the replacement first so a create failure preserves the
-      // current account, then require the old SID to be revoked before the
-      // replacement cookie is delivered.
       await destroySession(ctx.req);
       const headers = new Headers({
         location: destination,
+        "cache-control": "no-store",
       });
       headers.append("set-cookie", sessionCookie);
       for (const cookie of rememberedCookies) {
         headers.append("set-cookie", cookie);
       }
-      // OAuth can switch the active identity. A previous account's short-lived
-      // passkey-management elevation is replaced or explicitly cleared.
-      headers.append("set-cookie", passkeyManagementCookie);
       const clearBinding = clearOAuthFlowBindingCookie(state);
       if (clearBinding) headers.append("set-cookie", clearBinding);
       return new Response(null, { status: 303, headers });
     } catch {
-      // Do not serialize OAuth library errors: their cause chain can include
-      // private client-key material and token exchange payloads.
       console.error("[oauth] callback failed");
-      // `completeCallback` consumes the one-time flow state. Preserve its
-      // already-validated action context if later local session/bookkeeping
-      // work fails, instead of dropping the person onto a generic account
-      // retry that loses their original deep link and requested permission.
       if (completedResult) {
         return withClearedOAuthFlowBinding(
           new Response(null, {
@@ -422,56 +361,23 @@ export const handler = define.handlers({
           state,
         );
       }
-      const failed = state
-        ? await cancelOAuthFlow(state, {
-          clientId: oauth.clientId,
-          redirectUri: oauth.redirectUri,
-        }, browserBinding ?? undefined).catch(() => null)
-        : null;
-      if (failed) {
-        const returnTo = failed.returnTo && isSafeRelativePath(failed.returnTo)
-          ? failed.returnTo
-          : "/account";
-        if (failed.continuation === "login_selection") {
-          return withClearedOAuthFlowBinding(
-            new Response(null, {
-              status: 303,
-              headers: { location: returnTo, "cache-control": "no-store" },
-            }),
-            state,
-          );
-        }
-        return withClearedOAuthFlowBinding(
-          new Response(null, {
-            status: 303,
-            headers: {
-              location: oauthRetryLocation({
-                next: returnTo,
-                permission: "failed",
-                capabilities: failed.capabilities ?? ["identity"],
-                intent: failed.intent,
-                mode: failed.mode,
-                chooseAnotherAccount: failed.chooseAnotherAccount,
-                action: failed.action,
-                targetName: failed.targetName,
-                handle: failed.handle,
-              }),
-              "cache-control": "no-store",
-            },
-          }),
-          state,
-        );
-      }
+      const failed = await cancelOAuthFlow(
+        state,
+        { clientId: oauth.clientId, redirectUri: oauth.redirectUri },
+        browserBinding,
+      ).catch(() => null);
       return withClearedOAuthFlowBinding(
         new Response(null, {
           status: 303,
           headers: {
-            location: oauthRetryLocation({
-              next: "/account",
-              permission: "failed",
-              capabilities: ["identity"],
-              action: "account",
-            }),
+            location: failed
+              ? oauthFailureRedirect(failed)
+              : oauthRetryLocation({
+                next: "/account",
+                permission: "failed",
+                capabilities: ["identity"],
+                action: "account",
+              }),
             "cache-control": "no-store",
           },
         }),
@@ -480,6 +386,102 @@ export const handler = define.handlers({
     }
   },
 });
+
+export function oauthCancellationRedirect(
+  cancelled: CancelledOAuthFlow,
+): string {
+  const rawReturnTo = cancelled.returnTo;
+  const returnTo = rawReturnTo && isSafeRelativePath(rawReturnTo)
+    ? rawReturnTo
+    : "/account";
+  const capabilities = cancelled.capabilities ?? ["identity"];
+  const action = cancelled.action ?? "account";
+
+  if (
+    cancelled.prompt === "create" && isAccountCreationAction(action) &&
+    isOAuthActionCapabilityRequest(action, capabilities)
+  ) {
+    return oauthCreateAccountUrl({
+      next: returnTo,
+      intent: cancelled.intent,
+      capabilities,
+      action,
+      name: cancelled.targetName,
+      error: "authorization_cancelled",
+    });
+  }
+
+  if (cancelled.continuation === "login_selection") {
+    return appendSafeRelativeQuery(
+      returnTo,
+      "login_error",
+      "authorization_cancelled",
+    );
+  }
+
+  const retry = new URLSearchParams({
+    next: returnTo,
+    permission: "denied",
+  });
+  if (cancelled.chooseAnotherAccount) retry.set("choose", "another");
+  for (const capability of capabilities) {
+    retry.append("capability", capability);
+  }
+  retry.set("action", action);
+  if (cancelled.intent) retry.set("intent", cancelled.intent);
+  if (cancelled.targetName) retry.set("name", cancelled.targetName);
+  if (cancelled.handle) retry.set("handle", cancelled.handle);
+  return `/signin?${retry}`;
+}
+
+function oauthFailureRedirect(failed: CancelledOAuthFlow): string {
+  const returnTo = failed.returnTo && isSafeRelativePath(failed.returnTo)
+    ? failed.returnTo
+    : "/account";
+  const capabilities = failed.capabilities ?? ["identity"];
+  const action = failed.action ?? "account";
+  if (
+    failed.mode === "create" && isAccountCreationAction(action) &&
+    isOAuthActionCapabilityRequest(action, capabilities)
+  ) {
+    return oauthCreateAccountUrl({
+      next: returnTo,
+      intent: failed.intent,
+      capabilities,
+      action,
+      name: failed.targetName,
+      error: "creation_unavailable",
+    });
+  }
+  if (failed.continuation === "login_selection") {
+    return appendSafeRelativeQuery(
+      returnTo,
+      "login_error",
+      "authorization_failed",
+    );
+  }
+  return oauthRetryLocation({
+    next: returnTo,
+    permission: "failed",
+    capabilities,
+    intent: failed.intent,
+    mode: failed.mode,
+    chooseAnotherAccount: failed.chooseAnotherAccount,
+    action,
+    targetName: failed.targetName,
+    handle: failed.handle,
+  });
+}
+
+function appendSafeRelativeQuery(
+  path: string,
+  key: string,
+  value: string,
+): string {
+  const url = new URL(path, "https://local.invalid");
+  url.searchParams.set(key, value);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
 
 function withClearedOAuthFlowBinding(
   response: Response,
@@ -492,7 +494,6 @@ function withClearedOAuthFlowBinding(
 }
 
 function appviewUnavailable(): Response {
-  // Proxy errors can include the callback URL and its code, state, and issuer.
   console.error("[appview] OAuth callback proxy failed");
   return new Response("Sign in callback is temporarily unavailable.", {
     status: 503,

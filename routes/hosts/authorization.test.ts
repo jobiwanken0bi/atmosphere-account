@@ -1,35 +1,22 @@
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
-  assertEquals,
-  assertStringIncludes,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { h } from "preact";
-import { renderToString } from "preact-render-to-string";
-import {
-  ClaimedHostManagementLink,
-  hostClaimAddAccountHref,
   hostClaimAuthorizationHref,
-  hostClaimDetailHref,
+  hostClaimExpiredLinkContinuationPathForTest,
+  hostClaimManageLocation,
 } from "./[host]/claim.tsx";
-import { hostDetailOutcomeNotice } from "./[host].tsx";
 import { hostAuthorizationHref } from "./[host]/manage/apps.tsx";
 import {
-  hostProfileReauthorizationHref,
-  managedHostAddAccountHref,
   managedHostAuthorizationHref,
-  managedHostPublishFailure,
+  managedHostTransferAuthorizationHref,
+  managedHostTransferNextHref,
 } from "./[host]/manage.tsx";
 import { detectedHostClaimAuthorizationHref } from "./claim.tsx";
-import {
-  hostRegistrationAddAccountHref,
-  hostRegistrationAuthorizationHref,
-  hostRegistrationPublishFailure,
-} from "./register.tsx";
+import { hostRegistrationAuthorizationHref } from "./register.tsx";
 import { hostProfileResumePath } from "../../lib/host-profile-resume.ts";
-import { PdsBlobUploadError, PdsRecordWriteError } from "../../lib/pds.ts";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
 
-Deno.test("host claim authorization is contextual and identity-only", () => {
+Deno.test("host claim authorization includes complete host and image management", () => {
   const source = new URL(
     "https://atmosphereaccount.com/hosts/pds.example.social/claim?publish=1&from=detected",
   );
@@ -37,113 +24,23 @@ Deno.test("host claim authorization is contextual and identity-only", () => {
     next: "/hosts/pds.example.social/claim?publish=1&from=detected",
     action: "host_claim",
     name: "Example PDS",
-    capabilities: ["identity"],
+    capabilities: ["host", "media"],
   });
 });
 
-Deno.test("host claim account replacement keeps its identity-only action context", () => {
-  assertAuthorizationHref(
-    hostClaimAddAccountHref(
-      HOST,
-      "/hosts/pds.example.social/claim?publish=0&from=detected",
-    ),
-    {
-      entryPath: "/oauth/add-account",
-      next: "/hosts/pds.example.social/claim?publish=0&from=detected",
+Deno.test("an unvalidated transfer query cannot select transfer authorization", () => {
+  for (const value of ["", "   ", "forged-token"]) {
+    const source = new URL(
+      "https://atmosphereaccount.com/hosts/pds.example.social/claim",
+    );
+    source.searchParams.set("transfer_intent", value);
+    assertAuthorizationHref(hostClaimAuthorizationHref(HOST, source), {
+      next: `/hosts/pds.example.social/claim${source.search}`,
       action: "host_claim",
       name: "Example PDS",
-      capabilities: ["identity"],
-    },
-  );
-});
-
-Deno.test("host claim outcomes land on public detail with their notices intact", () => {
-  assertEquals(
-    hostClaimDetailHref(HOST, { claimed: true }),
-    "/hosts/pds.example.social?claimed=1",
-  );
-  assertEquals(
-    hostClaimDetailHref(HOST, { claimed: true, linked: true }),
-    "/hosts/pds.example.social?claimed=1&linked=1",
-  );
-  assertEquals(
-    hostClaimDetailHref(HOST, { claimed: true, linkError: true }),
-    "/hosts/pds.example.social?claimed=1&linkError=1",
-  );
-
-  assertEquals(
-    hostDetailOutcomeNotice(
-      new URL(
-        "https://atmosphereaccount.com/hosts/pds.example.social?claimed=1",
-      ),
-    ),
-    { kind: "ok", text: "Host claimed successfully." },
-  );
-  assertEquals(
-    hostDetailOutcomeNotice(
-      new URL(
-        "https://atmosphereaccount.com/hosts/pds.example.social?claimed=1&linked=1",
-      ),
-    ),
-    { kind: "ok", text: "Host claimed and connected to the app successfully." },
-  );
-  assertEquals(
-    hostDetailOutcomeNotice(
-      new URL(
-        "https://atmosphereaccount.com/hosts/pds.example.social?claimed=1&linkError=1",
-      ),
-    ),
-    {
-      kind: "error",
-      text:
-        "Host claimed, but the app connection could not be completed. Ask the app owner to start a new connection from app hosting.",
-    },
-  );
-});
-
-Deno.test("claimed host management is contextual until host access is ready", () => {
-  const account = {
-    user: { did: "did:plc:owner", handle: "owner.example" },
-    accountType: null,
-    avatarUrl: null,
-    publicProfileHandle: null,
-    accountHost: null,
-    rememberedAccounts: [{
-      did: "did:plc:owner",
-      handle: "owner.example",
-    }],
-  };
-  const contextual = renderToString(
-    h(ClaimedHostManagementLink, {
-      host: HOST,
-      authorized: false,
-      account,
-    }),
-  );
-  const fallback = new URL(
-    firstHref(contextual),
-    "https://atmosphereaccount.com",
-  );
-  assertEquals(fallback.pathname, "/signin");
-  assertEquals(
-    fallback.searchParams.get("next"),
-    "/hosts/pds.example.social/manage",
-  );
-  assertEquals(fallback.searchParams.get("action"), "host_manage");
-  assertEquals(fallback.searchParams.getAll("capability"), ["host"]);
-  assertEquals(fallback.searchParams.get("name"), "Example PDS");
-  assertStringIncludes(contextual, 'aria-haspopup="dialog"');
-
-  const authorized = renderToString(
-    h(ClaimedHostManagementLink, {
-      host: HOST,
-      authorized: true,
-      account,
-    }),
-  );
-  assertEquals(firstHref(authorized), "/hosts/pds.example.social/manage");
-  assertEquals(authorized.includes("/signin?"), false);
-  assertEquals(authorized.includes('aria-haspopup="dialog"'), false);
+      capabilities: ["host", "media"],
+    });
+  }
 });
 
 Deno.test("detected host claim preserves its lookup deep link", () => {
@@ -154,8 +51,61 @@ Deno.test("detected host claim preserves its lookup deep link", () => {
     next: "/hosts/claim?domain=pds.example.social&from=directory",
     action: "host_claim",
     name: "pds.example.social",
-    capabilities: ["identity"],
+    capabilities: ["host", "media"],
   });
+});
+
+Deno.test("an app-owned detected-host selector authenticates the app before account switching", () => {
+  const source = new URL(
+    "https://atmosphereaccount.com/hosts/claim?link_intent=signed-selector&domain=pds.example.social",
+  );
+  assertAuthorizationHref(
+    detectedHostClaimAuthorizationHref(source, {
+      app: { name: "Field Notes" },
+    }),
+    {
+      next:
+        "/hosts/claim?link_intent=signed-selector&domain=pds.example.social",
+      action: "app",
+      name: "Field Notes",
+      capabilities: ["app", "media"],
+    },
+  );
+
+  const boundHostStep = new URL(
+    "https://atmosphereaccount.com/hosts/pds.example.social/claim?link_intent=signed-bound-intent&from=detected",
+  );
+  assertAuthorizationHref(hostClaimAuthorizationHref(HOST, boundHostStep), {
+    next:
+      "/hosts/pds.example.social/claim?link_intent=signed-bound-intent&from=detected",
+    action: "host_claim",
+    name: "Example PDS",
+    capabilities: ["host", "media"],
+  });
+});
+
+Deno.test("an expired app link never outlives or blocks DNS host ownership", () => {
+  const continuation = hostClaimExpiredLinkContinuationPathForTest(HOST.host);
+  assertEquals(
+    continuation,
+    "/hosts/pds.example.social/claim?publish=1&linkError=1",
+  );
+  assertAuthorizationHref(
+    hostClaimAuthorizationHref(
+      HOST,
+      new URL(continuation, "https://atmosphereaccount.com"),
+    ),
+    {
+      next: continuation,
+      action: "host_claim",
+      name: "Example PDS",
+      capabilities: ["host", "media"],
+    },
+  );
+  assertEquals(
+    hostClaimManageLocation(HOST.host, false, true),
+    "/hosts/pds.example.social/manage?claimed=1&dns=1&linkError=1",
+  );
 });
 
 Deno.test("host management authorization preserves deep links", () => {
@@ -168,7 +118,7 @@ Deno.test("host management authorization preserves deep links", () => {
       next: "/hosts/pds.example.social/manage?linked=1&tab=routes",
       action: "host_manage",
       name: "Example PDS",
-      capabilities: ["host"],
+      capabilities: ["host", "media"],
     },
   );
 
@@ -179,27 +129,11 @@ Deno.test("host management authorization preserves deep links", () => {
     next: "/hosts/pds.example.social/manage/apps?saved=1",
     action: "host_manage",
     name: "Example PDS",
-    capabilities: ["host"],
+    capabilities: ["host", "media"],
   });
 });
 
-Deno.test("host management account replacement keeps host permission context", () => {
-  assertAuthorizationHref(
-    managedHostAddAccountHref(
-      HOST,
-      "/hosts/pds.example.social/manage?tab=routes",
-    ),
-    {
-      entryPath: "/oauth/add-account",
-      next: "/hosts/pds.example.social/manage?tab=routes",
-      action: "host_manage",
-      name: "Example PDS",
-      capabilities: ["host"],
-    },
-  );
-});
-
-Deno.test("host avatar publication adds media to the host capability", () => {
+Deno.test("host registration starts with the complete host and image job", () => {
   const source = new URL(
     "https://atmosphereaccount.com/hosts/register?host=local-pds.test&link_intent=opaque",
   );
@@ -218,68 +152,57 @@ Deno.test("host avatar publication adds media to the host capability", () => {
   );
 });
 
-Deno.test("host publishing failures never expose PDS response bodies", () => {
-  const secret = "upstream-secret-body-and-request-id";
-  const recordError = new PdsRecordWriteError(
-    "putRecord",
-    502,
-    secret,
+Deno.test("host management reuses the same bundle granted during claim", () => {
+  const claimUrl = new URL(
+    "https://atmosphereaccount.com/hosts/pds.example.social/claim",
   );
-  const avatarError = new PdsBlobUploadError(502, secret);
-  const failures = [
-    hostRegistrationPublishFailure("avatar", avatarError),
-    hostRegistrationPublishFailure("record", recordError),
-    managedHostPublishFailure("profile", recordError),
-    managedHostPublishFailure("settings", recordError),
-    managedHostPublishFailure("avatar", avatarError),
-  ];
-
-  assertEquals(
-    failures.map((failure) => failure.message),
-    [
-      "We couldn't upload the host avatar. Try again.",
-      "We couldn't publish this host. Try again.",
-      "We couldn't publish the host profile. Try again.",
-      "We couldn't publish the host settings. Try again.",
-      "We couldn't upload the host avatar. Try again.",
-    ],
+  const manageUrl = new URL(
+    "https://atmosphereaccount.com/hosts/pds.example.social/manage",
   );
-  assertEquals(
-    failures.some((failure) => JSON.stringify(failure).includes(secret)),
-    false,
+  const claim = new URL(
+    hostClaimAuthorizationHref(HOST, claimUrl),
+    "https://atmosphereaccount.com",
   );
-
-  const permissionFailure = hostRegistrationPublishFailure(
-    "record",
-    new PdsRecordWriteError(
-      "putRecord",
-      403,
-      JSON.stringify({ error: "ScopeMissingError", detail: secret }),
+  const manage = new URL(
+    managedHostAuthorizationHref(
+      HOST,
+      `${manageUrl.pathname}${manageUrl.search}`,
     ),
+    "https://atmosphereaccount.com",
   );
-  assertEquals(permissionFailure.reauthorization, true);
-  assertEquals(permissionFailure.message.includes(secret), false);
-
-  const forgedPermissionText = managedHostPublishFailure(
-    "settings",
-    new Error(`putRecord failed: HTTP 403: ${secret}`),
+  assertEquals(claim.searchParams.getAll("capability"), ["host", "media"]);
+  assertEquals(
+    manage.searchParams.getAll("capability"),
+    claim.searchParams.getAll("capability"),
   );
-  assertEquals(forgedPermissionText.reauthorization, false);
-  assertEquals(forgedPermissionText.message.includes(secret), false);
 });
 
-Deno.test("host registration account replacement keeps its registration deep link", () => {
+Deno.test("host manager change preserves one contextual transfer and full grant", () => {
+  const next = managedHostTransferNextHref(
+    { ...HOST, operatorListingOptIn: false },
+    "signed-transfer-intent",
+  );
+  assertEquals(
+    next,
+    "/hosts/pds.example.social/claim?transfer_intent=signed-transfer-intent&publish=0",
+  );
+  assertAuthorizationHref(managedHostTransferAuthorizationHref(HOST, next), {
+    next,
+    action: "host_transfer",
+    name: "Example PDS",
+    capabilities: ["host", "media"],
+  });
   assertAuthorizationHref(
-    hostRegistrationAddAccountHref(
-      "/hosts/register?link_intent=opaque&host=local-pds.test",
-      "Local PDS",
+    hostClaimAuthorizationHref(
+      HOST,
+      new URL(next, "https://atmosphereaccount.com"),
+      "host_transfer",
     ),
     {
-      entryPath: "/oauth/add-account",
-      next: "/hosts/register?link_intent=opaque&host=local-pds.test",
-      action: "host_manage",
-      name: "Local PDS",
-      capabilities: ["host"],
+      next,
+      action: "host_transfer",
+      name: "Example PDS",
+      capabilities: ["host", "media"],
     },
   );
 });
@@ -289,7 +212,7 @@ Deno.test("managed host avatar authorization returns through the resume marker",
     "https://atmosphereaccount.com/hosts/pds.example.social/manage?tab=profile",
   );
   assertAuthorizationHref(
-    hostProfileReauthorizationHref(
+    managedHostAuthorizationHref(
       HOST,
       hostProfileResumePath(source),
       ["host", "media"],
@@ -302,21 +225,11 @@ Deno.test("managed host avatar authorization returns through the resume marker",
       capabilities: ["host", "media"],
     },
   );
-  const authorization = new URL(
-    hostProfileReauthorizationHref(
-      HOST,
-      hostProfileResumePath(source),
-      ["host", "media"],
-    ),
-    "https://atmosphereaccount.com",
-  );
-  assertEquals(authorization.searchParams.get("permission"), "required");
 });
 
 function assertAuthorizationHref(
   href: string,
   expected: {
-    entryPath?: string;
     next: string;
     action: string;
     name: string;
@@ -324,7 +237,7 @@ function assertAuthorizationHref(
   },
 ): void {
   const url = new URL(href, "https://atmosphereaccount.com");
-  assertEquals(url.pathname, expected.entryPath ?? "/signin");
+  assertEquals(url.pathname, "/signin");
   assertEquals(url.searchParams.get("next"), expected.next);
   assertEquals(url.searchParams.get("action"), expected.action);
   assertEquals(url.searchParams.get("name"), expected.name);
@@ -332,10 +245,4 @@ function assertAuthorizationHref(
     url.searchParams.getAll("capability"),
     expected.capabilities,
   );
-}
-
-function firstHref(html: string): string {
-  const href = html.match(/href="([^"]+)"/)?.[1];
-  if (!href) throw new Error(`Expected an href in ${html}`);
-  return href.replaceAll("&amp;", "&");
 }

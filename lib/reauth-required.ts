@@ -30,8 +30,8 @@ interface ContextualReauthorizationInput {
   intent?: "user" | "project";
 }
 
-/** Build the same fail-closed context locally when the page session expires
- * before an API can return its usual reauthorization URL. */
+/** Build fail-closed chooser context when the page session expires before an
+ * API can return its normal reauthorization URL. */
 export function contextualReauthorization(
   input: ContextualReauthorizationInput,
 ): ContextualReauthorization | null {
@@ -40,9 +40,7 @@ export function contextualReauthorization(
   if (
     !capabilities ||
     !isOAuthActionCapabilityRequest(input.action, capabilities)
-  ) {
-    return null;
-  }
+  ) return null;
   const targetName = safeOAuthTargetName(input.targetName) ?? "";
   const fallbackHref = oauthReauthorizationUrl({
     next: input.returnTo,
@@ -75,21 +73,16 @@ export function reauthUrlFromApiPayload(payload: unknown): string | null {
   return isSafeRelativePath(value) ? value : null;
 }
 
-/**
- * Parse the server-provided full-page recovery URL into the narrow inputs used
- * by the in-page account chooser. The URL is still untrusted browser input:
- * only the contextual `/signin` recovery route, an explicit safe return path,
- * and an allowlisted action/capability bundle are accepted.
- */
+/** Parse the server recovery URL into the narrow inputs used by the in-page
+ * chooser. Every value remains untrusted until the contextual route, return
+ * path, action, and complete capability bundle have been validated. */
 export function contextualReauthorizationFromApiPayload(
   payload: unknown,
 ): ContextualReauthorization | null {
   if (
     !payload || typeof payload !== "object" || Array.isArray(payload) ||
     (payload as Record<string, unknown>).error !== "reauth_required"
-  ) {
-    return null;
-  }
+  ) return null;
   const fallbackHref = reauthUrlFromApiPayload(payload);
   if (!fallbackHref) return null;
 
@@ -99,9 +92,7 @@ export function contextualReauthorizationFromApiPayload(
     url.searchParams.get("permission") !== "required" ||
     url.searchParams.getAll("permission").length !== 1 ||
     url.searchParams.has("scope")
-  ) {
-    return null;
-  }
+  ) return null;
 
   const nextValues = url.searchParams.getAll("next");
   const actionValues = url.searchParams.getAll("action");
@@ -113,19 +104,13 @@ export function contextualReauthorizationFromApiPayload(
     actionValues.length !== 1 || !isOAuthAction(actionValues[0]) ||
     nameValues.length > 1 || intentValues.length > 1 ||
     capabilityValues.length === 0
-  ) {
-    return null;
-  }
+  ) return null;
 
   const capabilities = normalizeOAuthCapabilities(capabilityValues);
   const action = actionValues[0];
-  if (
-    !capabilities ||
-    !isOAuthActionCapabilityRequest(action, capabilities)
-  ) {
+  if (!capabilities || !isOAuthActionCapabilityRequest(action, capabilities)) {
     return null;
   }
-
   const rawIntent = intentValues[0];
   const intent = rawIntent === "user" || rawIntent === "project"
     ? rawIntent

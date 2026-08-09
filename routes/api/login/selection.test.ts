@@ -1,6 +1,7 @@
 import type { AtmosphereSelectionClaims } from "../../../lib/atmosphere-login-sdk.ts";
 import type { LoginApp } from "../../../lib/atmosphere-login.ts";
 import {
+  canAppVerifySelection,
   canOriginReadSelectionVerification,
   hasCompleteSelectionBinding,
   selectionCorsHeaders,
@@ -37,6 +38,12 @@ function app(overrides: Partial<LoginApp> = {}): LoginApp {
     appName: "Example App",
     appUri: "https://app.example.com",
     logoUri: "https://app.example.com/icon.png",
+    appDid: "did:plc:owner",
+    appProfileUri: "at://did:plc:owner/app.profile/example",
+    appProfileSlug: "example",
+    linkStatus: "linked",
+    identityAvailable: true,
+    loginAvailability: "available",
     allowedReturnUris: [
       "https://app.example.com/auth/atmosphere/selected",
     ],
@@ -48,6 +55,8 @@ function app(overrides: Partial<LoginApp> = {}): LoginApp {
     reviewDecisionAt: null,
     reviewDecisionBy: null,
     reviewDecisionReason: null,
+    reviewRevision: "review-1",
+    environmentRevision: "environment-1",
     contactDid: "did:plc:owner",
     preferredAccountHost: null,
     registered: true,
@@ -224,6 +233,55 @@ Deno.test("selection verifier CORS rejects blocked apps", () => {
       },
       app({ status: "blocked" }),
     ),
+    false,
+  );
+});
+
+Deno.test("selection verifier CORS rejects orphaned app registrations", () => {
+  assertEquals(
+    canOriginReadSelectionVerification(
+      "https://app.example.com",
+      {
+        token: "token",
+        expectedIssuer: "https://atmosphereaccount.com",
+        expectedClientId: "https://app.example.com/oauth/client-metadata.json",
+        expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
+        expectedState: "state-123",
+      },
+      app({ identityAvailable: false, appProfileSlug: null }),
+    ),
+    false,
+  );
+});
+
+Deno.test("selection verifier CORS rejects moderator-suspended app profiles", () => {
+  assertEquals(
+    canOriginReadSelectionVerification(
+      "https://app.example.com",
+      {
+        token: "token",
+        expectedIssuer: "https://atmosphereaccount.com",
+        expectedClientId: "https://app.example.com/oauth/client-metadata.json",
+        expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
+        expectedState: "state-123",
+      },
+      app({ loginAvailability: "moderated" }),
+    ),
+    false,
+  );
+});
+
+Deno.test("server-side selection verification rejects moderator-suspended app profiles", () => {
+  const input = {
+    token: "token",
+    expectedIssuer: "https://atmosphereaccount.com",
+    expectedClientId: "https://app.example.com/oauth/client-metadata.json",
+    expectedReturnUri: "https://app.example.com/auth/atmosphere/selected",
+    expectedState: "state-123",
+  };
+  assertEquals(canAppVerifySelection(input, app()), true);
+  assertEquals(
+    canAppVerifySelection(input, app({ loginAvailability: "taken_down" })),
     false,
   );
 });

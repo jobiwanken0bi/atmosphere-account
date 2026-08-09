@@ -6,7 +6,7 @@
 
 Atmosphere Account is an open-source account, app-directory, host-registry, and
 login interoperability service for the AT Protocol ecosystem. It provides the
-shared "Continue with Atmosphere" account picker without becoming an OAuth token
+shared "Login with Atmosphere" account picker without becoming an OAuth token
 broker or taking control away from a user's account host.
 
 - **Live site:** [atmosphereaccount.com](https://atmosphereaccount.com)
@@ -17,9 +17,9 @@ broker or taking control away from a user's account host.
 - **Tangled:**
   [joebasser.com/atmosphere-account](https://tangled.org/@joebasser.com/atmosphere-account)
 
-The project is actively developed and runs in production. Atmosphere Login v0.1
-is the current compatibility contract; host lexicons that are explicitly marked
-draft may still change before publication.
+The project is actively developed and runs in production. Login with Atmosphere
+v0.1 is the current compatibility contract; host lexicons that are explicitly
+marked draft may still change before publication.
 
 ## What is in this repository?
 
@@ -33,7 +33,7 @@ draft may still change before publication.
   document metadata.
 
 See [Architecture](./docs/ARCHITECTURE.md) for system boundaries and the
-repository map. The security boundary is especially important: Atmosphere does
+repository map. The security boundary is especially important: this service does
 not store app OAuth tokens, recovery material, private keys, or PDS backups.
 
 ## Quick start
@@ -118,7 +118,7 @@ locale or new user-facing copy.
 ## Documentation
 
 - [Architecture](./docs/ARCHITECTURE.md)
-- [Atmosphere Login v0.1](./docs/ATMOSPHERE_LOGIN.md)
+- [Login with Atmosphere v0.1](./docs/ATMOSPHERE_LOGIN.md)
 - [Integration examples](./docs/ATMOSPHERE_LOGIN_INTEGRATIONS.md)
 - [Host dashboard](./docs/HOST_DASHBOARD.md)
 - [Host lexicon draft](./docs/HOST_LEXICON.md)

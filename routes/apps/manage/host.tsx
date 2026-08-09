@@ -1,6 +1,7 @@
 import { define } from "../../../utils.ts";
 import Nav from "../../../components/Nav.tsx";
 import Footer from "../../../components/Footer.tsx";
+import ConfirmedActionForm from "../../../islands/ConfirmedActionForm.tsx";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import {
   getAccountHost,
@@ -9,7 +10,6 @@ import {
 import {
   type AppListing,
   getAppListingById,
-  getAppListingByIdentifier,
 } from "../../../lib/app-directory.ts";
 import {
   defineDirectoryEntityLink,
@@ -30,12 +30,18 @@ import {
   selectManagedApp,
 } from "../../../lib/managed-products.ts";
 import { getSessionForCapabilities } from "../../../lib/oauth.ts";
-import { oauthSigninUrl } from "../../../lib/oauth-action.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../../../lib/oauth-action.ts";
 import {
   createAppHostLinkIntent,
   createBoundAppHostLinkIntent,
 } from "../../../lib/app-host-link-intent.ts";
-import ConfirmedActionForm from "../../../islands/ConfirmedActionForm.tsx";
+import {
+  appHostRelationshipLabel,
+  appHostRelationshipOption,
+} from "../../../lib/app-host-relationship-copy.ts";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -145,7 +151,7 @@ export const handler = define.handlers({
     const host = await getAccountHost(hostId).catch(() => null);
     if (!host) {
       return await renderForOwner(ctx, {
-        error: "That host is not in the Atmosphere host directory yet.",
+        error: "That host is not in the host directory yet.",
         success: null,
       });
     }
@@ -218,50 +224,33 @@ async function loadOwnedApp(
     return redirect(oauthSigninUrl({
       next,
       action: "app",
-      capabilities: ["app"],
+      capabilities: APP_MANAGEMENT_CAPABILITIES,
       name: "your app",
     }));
   }
-  const explicitIdentifier = identifier?.trim() ?? "";
-  let requestedApp: AppListing | null = null;
-  if (explicitIdentifier) {
-    try {
-      requestedApp = await getAppListingById(explicitIdentifier);
-      requestedApp ??= await getAppListingByIdentifier(explicitIdentifier, {
-        syncLegacy: false,
-      });
-    } catch (error) {
-      return appviewUnavailable(error);
-    }
-  }
-  if (explicitIdentifier && !requestedApp) {
-    return new Response("App listing not found.", { status: 404 });
-  }
-  if (requestedApp && !userControlsAppListing(requestedApp, user.did)) {
-    return new Response("This account cannot manage that app listing.", {
-      status: 403,
-    });
-  }
-  const session = await getSessionForCapabilities(user.did, ["app"], {
-    quiet: true,
-  });
+  const session = await getSessionForCapabilities(
+    user.did,
+    APP_MANAGEMENT_CAPABILITIES,
+    {
+      quiet: true,
+    },
+  );
   if (!session) {
     return redirect(oauthSigninUrl({
       next,
       action: "app",
-      capabilities: ["app"],
-      name: requestedApp?.name ?? "your app",
+      capabilities: APP_MANAGEMENT_CAPABILITIES,
+      name: "your app",
     }));
   }
-  let portfolio;
-  try {
-    portfolio = await loadManagedAppPortfolio({
-      did: user.did,
-      pdsUrl: session.pdsUrl,
-    });
-  } catch (error) {
-    return appviewUnavailable(error);
-  }
+  const portfolio = await loadManagedAppPortfolio({
+    did: user.did,
+    pdsUrl: session?.pdsUrl,
+  }).catch(() => ({
+    apps: [],
+    discoveredAtstoreCount: 0,
+    syncUnavailable: true,
+  }));
   if (portfolio.apps.length === 0) {
     return new Response("Publish the app listing before connecting a host.", {
       status: 404,
@@ -290,7 +279,10 @@ function AppHostRelationshipsPage(props: {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} active="apps" />
-        <section class="signin-page-section host-manage-section">
+        <main
+          id="main-content"
+          class="signin-page-section host-manage-section"
+        >
           <div class="container signin-page-container relationship-manage-container">
             <a href="/apps/manage" class="text-link-button">
               ← Back to app management
@@ -299,9 +291,9 @@ function AppHostRelationshipsPage(props: {
               <p class="text-eyebrow">Host identity</p>
               <h1 class="host-claim-title">{app.name}</h1>
               <p class="text-body host-claim-copy">
-                Connect this app to a host run as part of the product or by the
-                same organization. Explicit, verified connections override
-                Atmosphere's DID-based fallback.
+                The app and host keep separate public profiles. Verified
+                connections show whether the host provides account services for
+                the app or the two share an operator.
               </p>
               {apps.length > 1 && (
                 <form method="GET" class="managed-app-switcher">
@@ -348,9 +340,7 @@ function AppHostRelationshipsPage(props: {
                       <div>
                         <strong>{link.hostDisplayName}</strong>
                         <p>
-                          {link.relationship === "same_product"
-                            ? "Same product"
-                            : "Same organization, separate product"}
+                          {appHostRelationshipLabel(link.relationship)}
                         </p>
                         <span
                           class={`relationship-status relationship-status--${link.status}`}
@@ -370,16 +360,16 @@ function AppHostRelationshipsPage(props: {
                           </a>
                         )}
                         <ConfirmedActionForm
-                          action="/apps/manage/host"
+                          action={appHostManageHref(app.id)}
                           fields={{
                             action: "remove",
                             appListingId: app.id,
                             host: link.host,
                           }}
                           label="Remove"
-                          confirmation={`Remove the connection between ${app.name} and ${link.hostDisplayName}?`}
-                          buttonClass="profile-form-button-secondary"
-                          ariaLabel={`Remove connection to ${link.hostDisplayName}`}
+                          confirmation={`Remove the connection between ${app.name} and ${link.hostDisplayName}? You can connect them again later.`}
+                          buttonClass="account-dashboard-mini-button account-dashboard-mini-button--danger"
+                          ariaLabel={`Remove ${link.hostDisplayName} from ${app.name}`}
                         />
                       </div>
                     </article>
@@ -397,7 +387,11 @@ function AppHostRelationshipsPage(props: {
                     </p>
                   </div>
                 </div>
-                <form method="POST" class="host-manage-form">
+                <form
+                  method="POST"
+                  class="host-manage-form"
+                  data-submit-once="true"
+                >
                   <input
                     type="hidden"
                     name="appListingId"
@@ -407,10 +401,10 @@ function AppHostRelationshipsPage(props: {
                     <span class="profile-form-label">Relationship</span>
                     <select class="profile-form-input" name="relationship">
                       <option value="same_product">
-                        Same product — this host is part of the app
+                        {appHostRelationshipOption("same_product")}
                       </option>
                       <option value="same_operator">
-                        Same operator — we also run this separate host
+                        {appHostRelationshipOption("same_operator")}
                       </option>
                     </select>
                   </label>
@@ -420,12 +414,17 @@ function AppHostRelationshipsPage(props: {
                       type="submit"
                       name="action"
                       value="start_detected"
+                      data-pending-label="Finding PDS…"
                     >
-                      Find a detected PDS
+                      <span data-submit-once-label>Find a detected PDS</span>
                     </button>
                   </div>
                 </form>
-                <form method="POST" class="host-manage-form">
+                <form
+                  method="POST"
+                  class="host-manage-form"
+                  data-submit-once="true"
+                >
                   <input type="hidden" name="action" value="define" />
                   <input
                     type="hidden"
@@ -447,10 +446,10 @@ function AppHostRelationshipsPage(props: {
                     <span class="profile-form-label">Relationship</span>
                     <select class="profile-form-input" name="relationship">
                       <option value="same_product">
-                        Same product — this host is part of the app
+                        {appHostRelationshipOption("same_product")}
                       </option>
                       <option value="same_operator">
-                        Same operator — we also run this host
+                        {appHostRelationshipOption("same_operator")}
                       </option>
                     </select>
                   </label>
@@ -458,14 +457,18 @@ function AppHostRelationshipsPage(props: {
                     If the host is claimed by another DID, switch to that
                     account on the next screen to complete approval.
                   </p>
-                  <button class="directory-register-button" type="submit">
-                    Save connection
+                  <button
+                    class="directory-register-button"
+                    type="submit"
+                    data-pending-label="Saving connection…"
+                  >
+                    <span data-submit-once-label>Save connection</span>
                   </button>
                 </form>
               </section>
             </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>

@@ -111,7 +111,7 @@ Deno.test("existing-review session recovery requests manage access", () => {
   });
   assertEquals(reviewMutationAuthorization("legacy_review", true), {
     action: "legacy_review_manage",
-    capabilities: ["legacy_review_manage"],
+    capabilities: ["legacy_review"],
   });
   assertEquals(reviewMutationAuthorization("review", false), {
     action: "review",

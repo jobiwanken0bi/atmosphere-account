@@ -45,7 +45,7 @@ export const handler = define.handlers({
       if (
         !session ||
         !hasOAuthCapabilities(grantedScopeForSession(session), [
-          "legacy_review_manage",
+          "legacy_review",
         ])
       ) {
         return reauthorizationRequired(user.handle, target.handle);
@@ -99,7 +99,7 @@ function reauthorizationRequired(handle: string, target: string): Response {
     reauthUrl: oauthReauthorizationUrl({
       next,
       action: "legacy_review_manage",
-      capabilities: ["legacy_review_manage"],
+      capabilities: ["legacy_review"],
       name: target,
     }),
     handle,

@@ -1,5 +1,10 @@
 import ContextualSignInLink from "../islands/ContextualSignInLink.tsx";
-import { oauthSigninUrl } from "../lib/oauth-action.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  HOST_MANAGEMENT_CAPABILITIES,
+  oauthSigninUrl,
+} from "../lib/oauth-action.ts";
+import { authActionCopy } from "../lib/oauth-action-copy.ts";
 import ManagementActionIcon, {
   type ManagementActionIconName,
 } from "./ManagementActionIcon.tsx";
@@ -31,13 +36,13 @@ export function ownerManagementAuthorizationHref(
     ? oauthSigninUrl({
       next: destinationHref,
       action: "app",
-      capabilities: ["app"],
+      capabilities: APP_MANAGEMENT_CAPABILITIES,
       name: targetName,
     })
     : oauthSigninUrl({
       next: destinationHref,
       action: "host_manage",
-      capabilities: ["host"],
+      capabilities: HOST_MANAGEMENT_CAPABILITIES,
       name: targetName,
     });
 }
@@ -70,7 +75,10 @@ export default function OwnerManagementLink(
   }
 
   const action = kind === "app" ? "app" : "host_manage";
-  const capabilities = kind === "app" ? ["app"] as const : ["host"] as const;
+  const capabilities = kind === "app"
+    ? APP_MANAGEMENT_CAPABILITIES
+    : HOST_MANAGEMENT_CAPABILITIES;
+  const copy = authActionCopy(action, targetName);
   return (
     <ContextualSignInLink
       href={ownerManagementAuthorizationHref({
@@ -82,6 +90,8 @@ export default function OwnerManagementLink(
       action={action}
       capabilities={capabilities}
       targetName={targetName}
+      title={copy.title}
+      body={copy.signInBody}
       label={label}
       className={className}
       leadingIcon={leadingIcon}

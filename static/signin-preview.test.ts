@@ -3,63 +3,34 @@ import {
   assertStringIncludes,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-Deno.test("sign-in enhancement keeps server errors out of the UI", async () => {
-  const script = await Deno.readTextFile(
+Deno.test("sign-in preview exposes keyboard selection and associated errors", async () => {
+  const source = await Deno.readTextFile(
     new URL("./signin-preview.js", import.meta.url),
   );
-  assertStringIncludes(
-    script,
-    "Couldn’t start sign-in. Check the handle and try again.",
-  );
-  assertEquals(script.includes("body.error"), false);
+  assertStringIncludes(source, 'button.addEventListener("click"');
+  assertStringIncludes(source, 'event.key === "ArrowDown"');
+  assertStringIncludes(source, 'event.key === "Home"');
+  assertStringIncludes(source, 'error.setAttribute("role", "alert")');
+  assertStringIncludes(source, 'input.setAttribute("aria-errormessage"');
+  assertStringIncludes(source, "throw new Error(errorLabel)");
+  assertEquals(source.includes("body.error"), false);
+  assertEquals(source.includes("String(err)"), false);
 });
 
-Deno.test("choosing a handle match moves focus out of the hidden listbox", async () => {
-  const script = await Deno.readTextFile(
+Deno.test("sign-in preview no longer implements incomplete ARIA tabs", async () => {
+  const source = await Deno.readTextFile(
     new URL("./signin-preview.js", import.meta.url),
   );
-  assertStringIncludes(
-    script,
-    'selectedBox?.querySelector(\n          ".signin-selected-clear",',
-  );
-  assertStringIncludes(script, "clearSelection.focus()");
-  assertStringIncludes(script, "input.focus()");
+  assertEquals(source.includes("data-signin-tab"), false);
+  assertEquals(source.includes("data-signin-panel"), false);
+  assertEquals(source.includes("setMode("), false);
 });
 
-Deno.test("combobox semantics are added only with the interactive list", async () => {
-  const script = await Deno.readTextFile(
+Deno.test("sign-in preview uses native buttons instead of an incomplete combobox pattern", async () => {
+  const source = await Deno.readTextFile(
     new URL("./signin-preview.js", import.meta.url),
   );
-  assertStringIncludes(script, 'input.setAttribute("role", "combobox")');
-  assertStringIncludes(
-    script,
-    'input.setAttribute("aria-autocomplete", "list")',
-  );
-  assertStringIncludes(
-    script,
-    'input.setAttribute("aria-controls", previewId)',
-  );
-});
-
-Deno.test("enhanced mode links switch in place", async () => {
-  const script = await Deno.readTextFile(
-    new URL("./signin-preview.js", import.meta.url),
-  );
-  assertStringIncludes(script, 'tab.addEventListener("click", (event) => {');
-  assertStringIncludes(script, "event.preventDefault()");
-  assertStringIncludes(script, "setPageCopy(mode)");
-  assertStringIncludes(script, "`data-signin-copy-${mode}`");
-});
-
-Deno.test("sign-in validates server destinations before browser navigation", async () => {
-  const script = await Deno.readTextFile(
-    new URL("./signin-preview.js", import.meta.url),
-  );
-  assertStringIncludes(script, "safeNavigationDestination(body.redirectUrl)");
-  assertStringIncludes(script, "globalThis.location.assign(destination)");
-  assertStringIncludes(script, "target.username || target.password");
-  assertStringIncludes(script, 'target.protocol === "https:"');
-  for (const suffix of [".test", ".invalid", ".example", ".onion"]) {
-    assertStringIncludes(script, `host.endsWith("${suffix}")`);
-  }
+  assertEquals(source.includes('setAttribute("role", "listbox")'), false);
+  assertEquals(source.includes('setAttribute("role", "option")'), false);
+  assertEquals(source.includes('setAttribute("aria-expanded"'), false);
 });

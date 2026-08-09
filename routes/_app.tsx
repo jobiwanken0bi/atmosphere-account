@@ -138,6 +138,11 @@ export default define.page(function App(ctx) {
           <Component />
         </I18nProvider>
         <script type="module" src={asset("/page-skeleton.js")} />
+        <script
+          id="submit-once-runtime"
+          type="module"
+          src={asset("/submit-once.js")}
+        />
         {needsLoginHandoff && (
           <script
             id="login-handoff-runtime"

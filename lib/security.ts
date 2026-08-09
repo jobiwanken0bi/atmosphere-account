@@ -85,9 +85,7 @@ export async function readJsonRequestWithLimit(
   }
 }
 
-/** Parse browser form data only after consuming the body through the same
- * runtime byte ceiling used for JSON. `Content-Length` is merely an early
- * rejection hint; chunked requests cannot bypass this limit. */
+/** Parse form data only after enforcing a runtime byte ceiling. */
 export async function readFormDataRequestWithLimit(
   req: Request,
   maxBytes: number,
@@ -99,11 +97,10 @@ export async function readFormDataRequestWithLimit(
   ) return null;
   const bytes = await readRequestBytesWithLimit(req, maxBytes);
   if (bytes === null) return new FormData();
-  const body = new Uint8Array(bytes).buffer;
   const parsed = new Request("https://request.invalid/", {
     method: "POST",
     headers: { "content-type": contentType },
-    body,
+    body: new Uint8Array(bytes).buffer,
   });
   return await parsed.formData().catch(() => null);
 }
@@ -153,10 +150,9 @@ export async function readResponseTextWithLimit(
     : bounded;
 }
 
-/** Consume an upstream response through a hard byte ceiling. This must be
- * used instead of `arrayBuffer()`, `text()`, or `json()` for endpoints whose
- * response size is controlled by another server. A declared Content-Length
- * is only an early rejection hint; the streaming counter is authoritative. */
+/** Consume an upstream response through a hard byte ceiling. A declared
+ * Content-Length is only an early rejection hint; the streaming counter is
+ * authoritative for chunked and incorrectly declared responses. */
 export async function readResponseBytesWithLimit(
   response: Response,
   maxBytes: number,
@@ -253,24 +249,21 @@ export function isPrivateNetworkHostname(hostname: string): boolean {
   if (ipv6.slice(0, 7).every((word) => word === 0) && ipv6[7] === 1) {
     return true;
   }
+
   if (
-    (first & 0xfe00) === 0xfc00 || // unique-local fc00::/7
-    (first & 0xffc0) === 0xfe80 || // link-local fe80::/10
-    (first & 0xffc0) === 0xfec0 || // deprecated site-local fec0::/10
-    (first & 0xff00) === 0xff00 // multicast ff00::/8
+    (first & 0xfe00) === 0xfc00 ||
+    (first & 0xffc0) === 0xfe80 ||
+    (first & 0xffc0) === 0xfec0 ||
+    (first & 0xff00) === 0xff00
   ) return true;
 
-  // IANA special-purpose ranges without ordinary globally reachable hosts.
   if (
-    first === 0x0100 && ipv6.slice(1, 4).every((word) => word === 0) || // discard-only 100::/64
-    first === 0x2001 && ipv6[1] === 0x0002 && ipv6[2] === 0 || // benchmarking 2001:2::/48
-    first === 0x2001 && ipv6[1] === 0x0db8 || // documentation 2001:db8::/32
-    first === 0x3fff && (ipv6[1] & 0xf000) === 0 // documentation 3fff::/20
+    first === 0x0100 && ipv6.slice(1, 4).every((word) => word === 0) ||
+    first === 0x2001 && ipv6[1] === 0x0002 && ipv6[2] === 0 ||
+    first === 0x2001 && ipv6[1] === 0x0db8 ||
+    first === 0x3fff && (ipv6[1] & 0xf000) === 0
   ) return true;
 
-  // IPv4-compatible and IPv4-mapped IPv6 literals are normalized to hex by
-  // URL (for example ::ffff:127.0.0.1 becomes ::ffff:7f00:1). Classify the
-  // embedded address instead of relying on its original textual spelling.
   const mapped = ipv6.slice(0, 5).every((word) => word === 0) &&
     ipv6[5] === 0xffff;
   const compatible = ipv6.slice(0, 6).every((word) => word === 0);
@@ -365,10 +358,6 @@ export function isSameOriginUnsafeRequest(
   if (fetchSite === "same-origin") return true;
   if (fetchSite === "cross-site" || fetchSite === "same-site") return false;
 
-  // Non-browser clients do not necessarily send Fetch Metadata or referrer
-  // headers. They are not vulnerable to cookie-based CSRF when they are not
-  // presenting a browser session, so retain that API compatibility while
-  // failing closed for authenticated browser writes with stripped metadata.
   return !req.headers.has("cookie");
 }
 
@@ -400,18 +389,22 @@ function isPopupCompatibleLoginRoute(pathname: string): boolean {
     pathname === "/examples/atmosphere-login/callback";
 }
 
-function applySecurityHeaders(
-  headers: Headers,
-  pathname: string,
-  personalizedHtml = false,
-): void {
+function isRenderedAccountHtml(headers: Headers, pathname: string): boolean {
+  if (pathname !== "/account" && !pathname.startsWith("/account/")) {
+    return false;
+  }
+  return headers.get("content-type")?.toLowerCase().startsWith("text/html") ===
+    true;
+}
+
+function applySecurityHeaders(headers: Headers, pathname: string): void {
   setDefault(headers, "x-content-type-options", "nosniff");
   setDefault(headers, "x-frame-options", "DENY");
   setDefault(headers, "referrer-policy", "strict-origin-when-cross-origin");
   setDefault(
     headers,
     "permissions-policy",
-    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-create=(self), publickey-credentials-get=(self)",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-create=(), publickey-credentials-get=()",
   );
   setDefault(headers, "cross-origin-opener-policy", "same-origin");
   setDefault(headers, "content-security-policy", IS_DEV ? DEV_CSP : PROD_CSP);
@@ -427,19 +420,11 @@ function applySecurityHeaders(
     headers.set("cache-control", "no-store");
     headers.set("x-robots-tag", "noindex, nofollow");
   }
-  if (
-    pathname === "/passkeys" || pathname.startsWith("/api/passkeys") ||
-    pathname.startsWith("/api/login/passkeys")
-  ) {
-    headers.set("referrer-policy", "no-referrer");
-    headers.set("cache-control", "no-store");
-    headers.set("x-robots-tag", "noindex, nofollow");
+  if (isRenderedAccountHtml(headers, pathname)) {
+    headers.set("cache-control", "private, no-store");
   }
   if (isPopupCompatibleLoginRoute(pathname)) {
     headers.set("cross-origin-opener-policy", "same-origin-allow-popups");
-  }
-  if (personalizedHtml) {
-    headers.set("cache-control", "private, no-store");
   }
   if (
     pathname === "/atmosphere-login.js" ||
@@ -449,27 +434,34 @@ function applySecurityHeaders(
   }
 }
 
+function applyPersonalizedHtmlCachePolicy(
+  headers: Headers,
+  personalizedHtml: boolean,
+): void {
+  if (personalizedHtml) headers.set("cache-control", "private, no-store");
+}
+
 export function applySecurityHeadersForTest(
   pathname: string,
   headers = new Headers(),
   personalizedHtml = false,
 ): Headers {
-  applySecurityHeaders(headers, pathname, personalizedHtml);
+  applySecurityHeaders(headers, pathname);
+  applyPersonalizedHtmlCachePolicy(headers, personalizedHtml);
   return headers;
 }
 
 export const securityHeadersMiddleware = define.middleware(async (ctx) => {
   const response = await ctx.next();
   try {
+    applySecurityHeaders(response.headers, ctx.url.pathname);
     const isHtml = response.headers.get("content-type")?.toLowerCase()
       .startsWith("text/html") ?? false;
-    const personalizedHtml = isHtml && Boolean(
-      ctx.state.user || ctx.state.rememberedAccounts?.length,
-    );
-    applySecurityHeaders(
+    applyPersonalizedHtmlCachePolicy(
       response.headers,
-      ctx.url.pathname,
-      personalizedHtml,
+      isHtml && Boolean(
+        ctx.state.user || ctx.state.rememberedAccounts?.length,
+      ),
     );
     return response;
   } catch {

@@ -7,11 +7,12 @@ COPY deno.json deno.lock ./
 COPY lib ./lib
 COPY lexicons ./lexicons
 COPY scripts ./scripts
+COPY sql ./sql
 COPY worker ./worker
 COPY utils.ts ./utils.ts
 
 RUN deno install --frozen \
-  && deno cache --node-modules-dir=auto worker/indexer.ts scripts/migrate-db.ts
+  && deno cache --node-modules-dir=auto worker/indexer.ts scripts/migrate-db.ts scripts/migrate-postgres.ts
 
 ENV DENO_ENV=production
 

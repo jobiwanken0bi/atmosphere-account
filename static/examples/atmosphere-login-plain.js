@@ -6,6 +6,6 @@
     `${origin}/examples/atmosphere-login/client-metadata.json`;
   button.dataset.returnUri = `${origin}/examples/atmosphere-login/callback`;
   button.dataset.scope = "atproto";
-  button.dataset.appName = "Plain HTML Atmosphere Login example";
+  button.dataset.appName = "Plain HTML Login with Atmosphere example";
   button.dataset.appHomepage = `${origin}/examples/atmosphere-login-plain.html`;
 })();

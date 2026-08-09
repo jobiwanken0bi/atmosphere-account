@@ -9,6 +9,6 @@ Deno.test("app registration carries project intent through every directory CTA",
     assertEquals(url.searchParams.get("next"), "/apps/manage?new=1");
     assertEquals(url.searchParams.get("intent"), "project");
     assertEquals(url.searchParams.get("action"), "app");
-    assertEquals(url.searchParams.getAll("capability"), ["app"]);
+    assertEquals(url.searchParams.getAll("capability"), ["app", "media"]);
   }
 });

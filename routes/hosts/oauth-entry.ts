@@ -1,8 +1,4 @@
-/**
- * Reuse an action-scoped `/signin` URL at the account-replacement entry point.
- * The original builder has already validated the action/capability bundle; only
- * the route that opens the another-account chooser changes here.
- */
+/** Reuse a validated action-scoped sign-in URL at the add-account entry. */
 export function oauthAddAccountHref(authorizationHref: string): string {
   const base = new URL("https://atmosphereaccount.invalid");
   const authorization = new URL(authorizationHref, base);

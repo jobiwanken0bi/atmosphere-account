@@ -1,11 +1,4 @@
-/**
- * Initiate the atproto OAuth flow. Accepts a handle (or DID) via either
- *   - GET ?handle=...   (no-JS form submit)
- *   - POST { handle }   (form-urlencoded body or JSON)
- *
- * Resolves the handle, runs PAR against the user's authorization server,
- * and 302s the browser to the consent screen.
- */
+/** Initiate an AT Protocol OAuth flow from a contextual account chooser. */
 import { define } from "../../utils.ts";
 import {
   isOAuthConfigured,
@@ -21,7 +14,6 @@ import {
   RequestBodyTooLargeError,
 } from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
-import { isPasskeyManagementReturnTo } from "../../lib/passkey-management.ts";
 import {
   IDENTITY_OAUTH_SCOPE,
   normalizeOAuthCapabilities,
@@ -47,12 +39,8 @@ import {
   singleFormString,
   singleSearchValue,
 } from "../../lib/oauth-request-input.ts";
-import {
-  hasValidLoginSelectionContinuationBinding,
-} from "../../lib/oauth-continuation.ts";
+import { hasValidLoginSelectionContinuationBinding } from "../../lib/oauth-continuation.ts";
 import { buildOAuthFlowBindingCookie } from "../../lib/oauth-flow-binding.ts";
-
-export { isValidLoginSelectionContinuation } from "../../lib/oauth-continuation.ts";
 
 const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
 const LOGIN_CONTEXT_FIELDS = [
@@ -101,7 +89,6 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
   if (queryAction !== null && !isOAuthAction(queryAction)) {
     throw new InvalidOAuthRequestInputError();
   }
-  const actionFromQs = queryAction;
   const targetNameFromQs = safeOAuthTargetName(
     singleSearchValue(url.searchParams, "name"),
   ) ?? null;
@@ -113,7 +100,7 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
       continuation: continuationFromQs,
       chooseAnotherAccount: chooseFromQs === "another",
       capabilities: capabilitiesFromQs,
-      action: actionFromQs,
+      action: queryAction,
       targetName: targetNameFromQs,
     };
   }
@@ -128,36 +115,27 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
     if (bodyAction !== null && !isOAuthAction(bodyAction)) {
       throw new InvalidOAuthRequestInputError();
     }
-    const bodyIntent = optionalEnum(
-      optionalJsonString(body, "intent"),
-      [
-        "user",
-        "project",
-      ] as const,
-    );
-    const bodyContinuation = optionalEnum(
-      optionalJsonString(body, "continuation"),
-      ["login_selection"] as const,
-    );
-    const bodyChoose = optionalEnum(
-      optionalJsonString(body, "choose"),
-      [
-        "another",
-      ] as const,
-    );
     return {
       handle: optionalJsonString(body, "handle")?.trim() || fromQs?.trim() ||
         null,
       next: optionalSafeRelativePath(optionalJsonString(body, "next")) ??
         nextFromQs,
-      intent: bodyIntent ?? intentFromQs,
-      continuation: bodyContinuation ?? continuationFromQs,
-      chooseAnotherAccount: bodyChoose === "another" ||
-        chooseFromQs === "another",
+      intent: optionalEnum(
+        optionalJsonString(body, "intent"),
+        ["user", "project"] as const,
+      ) ?? intentFromQs,
+      continuation: optionalEnum(
+        optionalJsonString(body, "continuation"),
+        ["login_selection"] as const,
+      ) ?? continuationFromQs,
+      chooseAnotherAccount: optionalEnum(
+            optionalJsonString(body, "choose"),
+            ["another"] as const,
+          ) === "another" || chooseFromQs === "another",
       capabilities: bodyCapabilities
         ? normalizeOAuthCapabilities(bodyCapabilities)
         : capabilitiesFromQs,
-      action: bodyAction ?? actionFromQs,
+      action: bodyAction ?? queryAction,
       targetName: safeOAuthTargetName(optionalJsonString(body, "name")) ??
         targetNameFromQs,
     };
@@ -172,23 +150,6 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
     );
     if (!form) throw new InvalidOAuthRequestInputError();
     rejectSearchFormOverlap(url.searchParams, form, LOGIN_CONTEXT_FIELDS);
-    const formIntent = optionalEnum(
-      singleFormString(form, "intent"),
-      [
-        "user",
-        "project",
-      ] as const,
-    );
-    const formContinuation = optionalEnum(
-      singleFormString(form, "continuation"),
-      ["login_selection"] as const,
-    );
-    const formChoose = optionalEnum(
-      singleFormString(form, "choose"),
-      [
-        "another",
-      ] as const,
-    );
     const formCapabilities = repeatedFormStrings(form, "capability");
     const formAction = singleFormString(form, "action");
     if (formAction !== null && !isOAuthAction(formAction)) {
@@ -199,14 +160,22 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
         null,
       next: optionalSafeRelativePath(singleFormString(form, "next")) ??
         nextFromQs,
-      intent: formIntent ?? intentFromQs,
-      continuation: formContinuation ?? continuationFromQs,
-      chooseAnotherAccount: formChoose === "another" ||
-        chooseFromQs === "another",
+      intent: optionalEnum(
+        singleFormString(form, "intent"),
+        ["user", "project"] as const,
+      ) ?? intentFromQs,
+      continuation: optionalEnum(
+        singleFormString(form, "continuation"),
+        ["login_selection"] as const,
+      ) ?? continuationFromQs,
+      chooseAnotherAccount: optionalEnum(
+            singleFormString(form, "choose"),
+            ["another"] as const,
+          ) === "another" || chooseFromQs === "another",
       capabilities: formCapabilities.length > 0
         ? normalizeOAuthCapabilities(formCapabilities)
         : capabilitiesFromQs,
-      action: formAction ?? actionFromQs,
+      action: formAction ?? queryAction,
       targetName: safeOAuthTargetName(singleFormString(form, "name")) ??
         targetNameFromQs,
     };
@@ -219,18 +188,16 @@ export async function readLoginInputForTest(req: Request): Promise<LoginInput> {
 }
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
-  const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-    (err) => appviewUnavailable("oauth login", err),
+  const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(() =>
+    appviewUnavailable()
   );
   if (proxied) return proxied;
-
   const limited = await enforceDurableRateLimit(ctx.req, {
     scope: "oauth-login-start",
     capacity: 20,
     refillMs: 60_000,
   });
   if (limited) return limited;
-
   if (ctx.req.method !== "GET") {
     const large = rejectLargeRequest(ctx.req, MAX_OAUTH_LOGIN_BODY_BYTES);
     if (large) return large;
@@ -238,11 +205,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   const wantsJson = ctx.req.headers.get("x-atmosphere-login") === "1" ||
     (ctx.req.headers.get("accept") ?? "").includes("application/json");
   if (ctx.url.search.length > MAX_OAUTH_LOGIN_BODY_BYTES) {
-    return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
-      414,
-      wantsJson,
-    );
+    return publicLoginError("This sign-in link is invalid.", 414, wantsJson);
   }
   const oauth = oauthClientConfigForRequest(ctx.url, ctx.req.headers);
   const oauthOptions = {
@@ -251,7 +214,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   };
   if (!isOAuthConfigured(oauthOptions)) {
     return publicLoginError(
-      "Sign-in isn’t available right now. Try again shortly.",
+      "Login with Atmosphere isn’t available right now. Try again shortly.",
       503,
       wantsJson,
     );
@@ -260,16 +223,15 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   try {
     input = await getLoginInput(ctx.req, ctx.url);
   } catch (error) {
-    const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
     return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
-      status,
+      "This sign-in link is invalid.",
+      error instanceof RequestBodyTooLargeError ? 413 : 400,
       wantsJson,
     );
   }
   const {
-    handle: handleStr,
-    next: returnTo,
+    handle,
+    next,
     intent,
     continuation,
     chooseAnotherAccount,
@@ -277,52 +239,33 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     action,
     targetName,
   } = input;
-  if (!handleStr) {
+  if (!handle) {
     return publicLoginError(
       "Enter an Atmosphere handle to continue.",
       400,
       wantsJson,
     );
   }
-  if (!capabilities) {
-    return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
-      400,
-      wantsJson,
-    );
-  }
-  if (!isOAuthActionCapabilityRequest(action, capabilities)) {
-    return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
-      400,
-      wantsJson,
-    );
-  }
   if (
+    !capabilities || !isOAuthActionCapabilityRequest(action, capabilities) ||
     !hasValidLoginSelectionContinuationBinding(
-      returnTo,
+      next,
       continuation,
       intent,
       action,
-      capabilities,
+      capabilities ?? ["identity"],
     )
-  ) {
-    return publicLoginError(
-      "This sign-in link is invalid. Return to Atmosphere and try again.",
-      400,
-      wantsJson,
-    );
-  }
+  ) return publicLoginError("This sign-in link is invalid.", 400, wantsJson);
+
   try {
     const { redirectUrl, state, browserBinding } = await startLogin(
-      handleStr,
-      returnTo,
+      handle,
+      next,
       intent,
       {
         ...oauthOptions,
         continuation: continuation ?? undefined,
         chooseAnotherAccount,
-        reauthenticate: isPasskeyManagementReturnTo(returnTo),
         action: action ?? undefined,
         targetName: targetName ?? undefined,
         ...(continuation === "login_selection"
@@ -334,60 +277,39 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
           : { capabilities }),
       },
     );
-    const headers = new Headers();
+    const headers = new Headers({ "cache-control": "no-store" });
     headers.append(
       "set-cookie",
       buildOAuthFlowBindingCookie(state, browserBinding),
     );
     if (wantsJson) {
       headers.set("content-type", "application/json; charset=utf-8");
-      headers.set("cache-control", "no-store");
       return new Response(JSON.stringify({ redirectUrl }), {
         status: 200,
         headers,
       });
     }
     headers.set("location", redirectUrl);
-    headers.set("cache-control", "no-store");
-    return new Response(null, {
-      status: 303,
-      headers,
-    });
+    return new Response(null, { status: 303, headers });
   } catch {
-    // OAuth failures can retain request/JWK context in their cause chain.
-    // Keep production logs useful without serializing that sensitive object.
     console.warn("[oauth] sign-in start failed");
-    return oauthLoginFailureResponse(wantsJson);
+    return publicLoginError(
+      "Couldn’t start sign-in. Check the handle and try again.",
+      400,
+      wantsJson,
+    );
   }
 }
 
 export const handler = define.handlers({ GET: handle, POST: handle });
 
-export function oauthLoginFailureResponse(wantsJson: boolean): Response {
-  return publicLoginError(
-    "Couldn’t start sign-in. Check the handle and try again.",
-    400,
-    wantsJson,
-  );
-}
-
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
-  return new Response("Sign in is temporarily unavailable.", {
+function appviewUnavailable(): Response {
+  console.error("[appview] OAuth login proxy failed");
+  return new Response("Login with Atmosphere is temporarily unavailable.", {
     status: 503,
     headers: {
       "cache-control": "no-store",
       "content-type": "text/plain; charset=utf-8",
-    },
-  });
-}
-
-function jsonError(message: string, status: number): Response {
-  return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: {
-      "cache-control": "no-store",
-      "content-type": "application/json; charset=utf-8",
     },
   });
 }
@@ -397,11 +319,17 @@ function publicLoginError(
   status: number,
   wantsJson: boolean,
 ): Response {
-  return wantsJson ? jsonError(message, status) : new Response(message, {
-    status,
-    headers: {
-      "cache-control": "no-store",
-      "content-type": "text/plain; charset=utf-8",
+  const headers = {
+    "cache-control": "no-store",
+    "content-type": wantsJson
+      ? "application/json; charset=utf-8"
+      : "text/plain; charset=utf-8",
+  };
+  return new Response(
+    wantsJson ? JSON.stringify({ error: message }) : message,
+    {
+      status,
+      headers,
     },
-  });
+  );
 }

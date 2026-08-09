@@ -159,6 +159,14 @@ export async function readAppHostLinkIntent(
   token: string | null | undefined,
   options: AppHostLinkIntentOptions = {},
 ): Promise<AppHostLinkIntentReadResult> {
+  return await readSignedAppHostLinkIntent(token, options, false);
+}
+
+async function readSignedAppHostLinkIntent(
+  token: string | null | undefined,
+  options: AppHostLinkIntentOptions,
+  acceptExpired: boolean,
+): Promise<AppHostLinkIntentReadResult> {
   const raw = token?.trim() ?? "";
   if (!raw) return { ok: false, reason: "missing" };
   if (raw.length > MAX_TOKEN_LENGTH) return { ok: false, reason: "invalid" };
@@ -188,7 +196,6 @@ export async function readAppHostLinkIntent(
   if (!validIntentShape(value)) return { ok: false, reason: "invalid" };
 
   const now = options.now ?? Date.now();
-  if (value.expiresAt <= now) return { ok: false, reason: "expired" };
   if (
     value.issuedAt > now + MAX_FUTURE_SKEW_MS ||
     value.expiresAt <= value.issuedAt ||
@@ -196,9 +203,51 @@ export async function readAppHostLinkIntent(
   ) {
     return { ok: false, reason: "invalid" };
   }
+  if (value.expiresAt <= now && !acceptExpired) {
+    return { ok: false, reason: "expired" };
+  }
   return {
     ok: true,
     value: { token: raw, intent: value },
+  };
+}
+
+/**
+ * Inspect only the signed, host-bound identity of an expired capability. This
+ * never reactivates it or resolves the app; it lets a longer-running host DNS
+ * claim discard the expired connection step without letting a forged,
+ * selector-stage, or different-host token weaken the claim route.
+ */
+export async function inspectExpiredBoundAppHostLinkIntent(
+  token: string | null | undefined,
+  expectedHost: string,
+  options: AppHostLinkIntentOptions = {},
+): Promise<
+  | {
+    ok: true;
+    value: { token: string; intent: BoundAppHostLinkIntent };
+  }
+  | { ok: false; reason: AppHostLinkIntentFailureReason }
+> {
+  const checked = await readSignedAppHostLinkIntent(token, options, true);
+  if (!checked.ok) return checked;
+  const now = options.now ?? Date.now();
+  if (checked.value.intent.expiresAt > now) {
+    return { ok: false, reason: "invalid" };
+  }
+  if (checked.value.intent.kind !== "bound") {
+    return { ok: false, reason: "wrong_stage" };
+  }
+  const host = normalizeIntentHost(expectedHost);
+  if (!host || host !== checked.value.intent.host) {
+    return { ok: false, reason: "host_mismatch" };
+  }
+  return {
+    ok: true,
+    value: {
+      token: checked.value.token,
+      intent: checked.value.intent,
+    },
   };
 }
 

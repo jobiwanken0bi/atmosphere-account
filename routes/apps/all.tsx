@@ -12,9 +12,14 @@ import {
 import { searchAppsFromAppview } from "../../lib/appview-client.ts";
 import { appCollectionLabel } from "../../lib/app-collections.ts";
 import { EdgeStaleCache } from "../../lib/edge-cache.ts";
-import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
-import { oauthSigninUrl } from "../../lib/oauth-action.ts";
-import { getSessionForCapabilities } from "../../lib/oauth.ts";
+import AppDirectoryOwnerCta, {
+  appRegistrationSigninHref as ownerRegistrationSigninHref,
+} from "../../components/explore/AppDirectoryOwnerCta.tsx";
+
+/** Shared registration URL retained for route-level and no-JS contract tests. */
+export function appRegistrationSigninHref(): string {
+  return ownerRegistrationSigninHref();
+}
 
 interface BrowseAppsData {
   query: string;
@@ -25,7 +30,6 @@ interface BrowseAppsData {
   total: number;
   result: AppSearchResult;
   account: ReturnType<typeof buildAccountMenuProps>;
-  appAuthorized: boolean;
 }
 
 const APP_BROWSE_CACHE_TTL_MS = 30 * 1000;
@@ -55,14 +59,6 @@ export const handler = define.handlers({
     })
       .catch(() => emptyBrowseResult(page));
 
-    const account = buildAccountMenuProps(ctx.state);
-    const appAuthorized = account.user
-      ? Boolean(
-        await getSessionForCapabilities(account.user.did, ["app"], {
-          quiet: true,
-        }).catch(() => null),
-      )
-      : false;
     const data: BrowseAppsData = {
       query,
       tags,
@@ -71,8 +67,7 @@ export const handler = define.handlers({
       pageSize: result.pageSize,
       total: result.total,
       result,
-      account,
-      appAuthorized,
+      account: buildAccountMenuProps(ctx.state),
     };
 
     return ctx.render(<BrowseAppsPage data={data} />);
@@ -130,66 +125,63 @@ function BrowseAppsPage({ data }: { data: BrowseAppsData }) {
     <div id="page-top">
       <div class="content-layer">
         <Nav account={data.account} active="apps" />
-        <div class="app-browse-top-link">
-          <div class="container">
-            <a href="/apps" class="app-browse-home-link">
-              <span class="app-browse-home-arrow" aria-hidden="true">
-                ←
-              </span>
-              <span>Apps home</span>
-            </a>
-          </div>
-        </div>
-        <StoreHero
-          initialQuery={data.query}
-          activeTag={data.tags[0] ?? null}
-          sort={data.sort}
-          searchAction="/apps/all"
-          eyebrow="Browse apps"
-          headline="Browse all Atmosphere apps."
-          subhead="Search the directory, choose a collection, or sort by what is new."
-          controls={
-            <AppBrowseControls
-              initialQuery={data.query}
-              selectedTags={data.tags}
-              sort={data.sort}
-              tags={data.result.tags}
-            />
-          }
-        />
-
-        <section class="explore-controls app-browse-controls">
-          <div class="container">
-            <div class="app-directory-results-heading app-directory-results-heading--left">
-              <p class="text-eyebrow">{resultLabel(data)}</p>
-              <h2 class="text-subsection">{browseTitle(data)}</h2>
+        <main id="main-content">
+          <div class="app-browse-top-link">
+            <div class="container">
+              <a href="/apps" class="app-browse-home-link">
+                <span class="app-browse-home-arrow" aria-hidden="true">
+                  ←
+                </span>
+                <span>Apps home</span>
+              </a>
             </div>
           </div>
-        </section>
+          <StoreHero
+            initialQuery={data.query}
+            activeTag={data.tags[0] ?? null}
+            sort={data.sort}
+            searchAction="/apps/all"
+            eyebrow="Browse apps"
+            headline="Browse all Atmosphere apps."
+            subhead="Search the directory, choose a collection, or sort by what is new."
+            controls={
+              <AppBrowseControls
+                initialQuery={data.query}
+                selectedTags={data.tags}
+                sort={data.sort}
+                tags={data.result.tags}
+              />
+            }
+          />
 
-        <section id="app-results" class="section app-browse-results-section">
-          <div class="container">
-            <AppGrid
-              apps={data.result.apps}
-              filtered={Boolean(data.query) || data.tags.length > 0}
-              resetHref="/apps/all"
-            />
-            <AppPagination
-              page={data.page}
-              pageSize={data.pageSize}
-              total={data.total}
-              query={data.query}
-              tags={data.tags}
-              sort={data.sort}
-            />
-            <DirectoryRegisterCta
-              href="/apps/manage?new=1"
-              label="Register an app"
-              account={data.account}
-              appAuthorized={data.appAuthorized}
-            />
-          </div>
-        </section>
+          <section class="explore-controls app-browse-controls">
+            <div class="container">
+              <div class="app-directory-results-heading app-directory-results-heading--left">
+                <p class="text-eyebrow">{resultLabel(data)}</p>
+                <h2 class="text-subsection">{browseTitle(data)}</h2>
+              </div>
+            </div>
+          </section>
+
+          <section id="app-results" class="section app-browse-results-section">
+            <div class="container">
+              <AppGrid
+                apps={data.result.apps}
+                filtered={Boolean(data.query) || data.tags.length > 0}
+                resetHref="/apps/all"
+              />
+              <AppPagination
+                page={data.page}
+                pageSize={data.pageSize}
+                total={data.total}
+                query={data.query}
+                tags={data.tags}
+                sort={data.sort}
+              />
+              <AppDirectoryOwnerCta account={data.account} />
+            </div>
+          </section>
+        </main>
 
         <Footer variant="compact" />
       </div>
@@ -263,7 +255,11 @@ function AppPagination(
     <nav class="app-pagination" aria-label="Apps pagination">
       {page > 1
         ? (
-          <a class="app-pagination-link" href={pageHref(page - 1, data)}>
+          <a
+            class="app-pagination-link"
+            href={pageHref(page - 1, data)}
+            rel="prev"
+          >
             Previous
           </a>
         )
@@ -273,59 +269,15 @@ function AppPagination(
       </span>
       {page < pageCount
         ? (
-          <a class="app-pagination-link" href={pageHref(page + 1, data)}>
+          <a
+            class="app-pagination-link"
+            href={pageHref(page + 1, data)}
+            rel="next"
+          >
             Next
           </a>
         )
         : <span class="app-pagination-link is-disabled">Next</span>}
     </nav>
   );
-}
-
-function DirectoryRegisterCta(
-  { href, label, account, appAuthorized }: {
-    href: string;
-    label: string;
-    account: ReturnType<typeof buildAccountMenuProps>;
-    appAuthorized: boolean;
-  },
-) {
-  return (
-    <div class="directory-register-cta">
-      {account.user && appAuthorized
-        ? (
-          <a href={href} class="directory-register-button">
-            <span class="directory-register-button-icon" aria-hidden="true">
-              +
-            </span>
-            <span>{label}</span>
-          </a>
-        )
-        : (
-          <ContextualSignInLink
-            href={appRegistrationSigninHref()}
-            returnTo="/apps/manage?new=1"
-            intent="project"
-            action="app"
-            capabilities={["app"]}
-            targetName="your app"
-            label={label}
-            className="directory-register-button"
-            leadingPlus
-            rememberedAccounts={account.rememberedAccounts}
-            initialHandle={account.user?.handle}
-          />
-        )}
-    </div>
-  );
-}
-
-export function appRegistrationSigninHref(): string {
-  return oauthSigninUrl({
-    next: "/apps/manage?new=1",
-    intent: "project",
-    action: "app",
-    capabilities: ["app"],
-    name: "your app",
-  });
 }

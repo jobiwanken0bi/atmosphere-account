@@ -164,7 +164,13 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
         : "invalid request",
     }, { status: error instanceof RequestBodyTooLargeError ? 413 : 400 });
   }
-  const corsHeaders = await selectionCorsHeaders(ctx.req, input);
+  const normalizedClientId = normalizeUrl(input.expectedClientId);
+  const currentApp = normalizedClientId
+    ? await getLoginApp(normalizedClientId)
+    : null;
+  const corsHeaders = await selectionCorsHeaders(ctx.req, input, {
+    getLoginApp: () => Promise.resolve(currentApp),
+  });
   const token = input.token;
   if (!token) {
     return json(
@@ -189,6 +195,17 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
           "complete binding expectations are required: provide client_id, return_uri, state, and iss",
       },
       { status: 400 },
+      corsHeaders,
+    );
+  }
+  if (!canAppVerifySelection(input, currentApp)) {
+    return json(
+      {
+        active: false,
+        bound: false,
+        error: "login environment is unavailable",
+      },
+      { status: 403 },
       corsHeaders,
     );
   }
@@ -316,8 +333,26 @@ export function canOriginReadSelectionVerification(
   const returnUri = normalizeUrl(input.expectedReturnUri);
   if (!normalizedOrigin || !clientId || !returnUri) return false;
   if (normalizeOrigin(returnUri) !== normalizedOrigin) return false;
+  return canAppVerifySelection(input, app, options);
+}
+
+/**
+ * Require the current app registration to remain eligible before token
+ * verification. This protects server-to-server callers as well as browsers;
+ * CORS alone is not an authorization boundary.
+ */
+export function canAppVerifySelection(
+  input: SelectionVerificationInput,
+  app: LoginApp | null,
+  options: { dev?: boolean } = {},
+): boolean {
+  const clientId = normalizeUrl(input.expectedClientId);
+  const returnUri = normalizeUrl(input.expectedReturnUri);
+  if (!clientId || !returnUri) return false;
   if (app) {
-    return app.status !== "blocked" && app.clientId === clientId &&
+    return app.identityAvailable && app.loginAvailability === "available" &&
+      app.status !== "blocked" &&
+      app.clientId === clientId &&
       registeredAppAllowsReturnUri(app, returnUri);
   }
   return isUnregisteredDevLoginReturnAllowed(clientId, returnUri, {

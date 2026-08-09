@@ -1,10 +1,4 @@
-/**
- * Forget a remembered account. Removes it from the per-device
- * `atmo_accounts` cookie and deletes the server-side OAuth session
- * row so the refresh token can no longer be used. If the account
- * being forgotten happens to be the currently active one, the app
- * session cookie is cleared as well so the user is signed out.
- */
+/** Remove a remembered account and its durable OAuth refresh grant. */
 import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { deleteSession } from "../../lib/oauth.ts";
@@ -24,7 +18,6 @@ import {
   rejectLargeRequest,
   RequestBodyTooLargeError,
 } from "../../lib/security.ts";
-import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 import {
   InvalidOAuthRequestInputError,
   optionalJsonString,
@@ -52,8 +45,8 @@ async function readDid(req: Request): Promise<string | null> {
 
 async function handle(ctx: { req: Request }): Promise<Response> {
   const url = new URL(ctx.req.url);
-  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch((err) =>
-    appviewUnavailable("oauth forget", err)
+  const proxied = await proxyAppviewApiResponse(url, ctx.req).catch(() =>
+    appviewUnavailable()
   );
   if (proxied) return proxied;
 
@@ -76,52 +69,28 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     ctx.req.headers.get("cookie"),
   );
   const sessionUser = await peekSessionUser(ctx.req).catch(() => null);
-
-  // OAuth sessions are keyed only by DID, so accepting an arbitrary browser
-  // value here would let an anonymous caller revoke another account's stored
-  // refresh grant. Require proof that this browser either owns the active app
-  // session or carries the signed remembered-account entry for the target.
+  // OAuth sessions are keyed only by DID. Never let an arbitrary browser
+  // value revoke another account's stored refresh grant.
   if (!canForgetOAuthSession(did, sessionUser, remembered)) {
     return new Response("account not remembered on this device", {
       status: 403,
       headers: { "cache-control": "no-store" },
     });
   }
-
-  // SQL deletion is already idempotent. A database failure is different from
-  // an absent row: do not remove the browser's only visible account control
-  // while silently leaving its durable refresh grant active server-side.
   if (!await revokeOAuthSessionForForget(did)) {
-    return new Response("Removing this account is temporarily unavailable.", {
-      status: 503,
-      headers: {
-        "cache-control": "no-store",
-        "content-type": "text/plain; charset=utf-8",
-      },
-    });
+    return appviewUnavailable();
   }
 
   const headers = new Headers({ location: "/account" });
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   for (const cookie of await removeRememberedAccountCookies(remembered, did)) {
     headers.append("set-cookie", cookie);
   }
-
-  /** If they're forgetting the account they're currently signed in
-   *  as, clear the live app session too. */
   if (sessionUser?.did === did) {
     if (!await destroyActiveAppSessionForForget(ctx.req)) {
-      return new Response("Removing this account is temporarily unavailable.", {
-        status: 503,
-        headers: {
-          "cache-control": "no-store",
-          "content-type": "text/plain; charset=utf-8",
-        },
-      });
+      return appviewUnavailable();
     }
     headers.append("set-cookie", clearSessionCookie());
   }
-
   return new Response(null, { status: 303, headers });
 }
 
@@ -160,8 +129,8 @@ export async function destroyActiveAppSessionForForget(
 
 export const handler = define.handlers({ POST: handle });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(): Response {
+  console.error("[appview] OAuth forget operation unavailable");
   return new Response("Removing this account is temporarily unavailable.", {
     status: 503,
     headers: {

@@ -17,7 +17,10 @@ import { getSessionForCapabilities } from "../../../lib/oauth.ts";
 import { getProfileRecord } from "../../../lib/pds.ts";
 import { getProfileByDid } from "../../../lib/registry.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
-import { oauthReauthorizationUrl } from "../../../lib/oauth-action.ts";
+import {
+  APP_MANAGEMENT_CAPABILITIES,
+  oauthReauthorizationUrl,
+} from "../../../lib/oauth-action.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -47,14 +50,17 @@ export const handler = define.handlers({
       return jsonError(403, "project_account_required");
     }
 
-    const session = await getSessionForCapabilities(user.did, ["app"]);
+    const session = await getSessionForCapabilities(
+      user.did,
+      APP_MANAGEMENT_CAPABILITIES,
+    );
     if (!session) {
       return jsonResponse(403, {
         error: "reauth_required",
         reauthUrl: oauthReauthorizationUrl({
           next: "/apps/manage?migrate=shared-records",
           action: "app",
-          capabilities: ["app"],
+          capabilities: APP_MANAGEMENT_CAPABILITIES,
           name: "this app",
         }),
       });
@@ -137,10 +143,11 @@ export const handler = define.handlers({
         communityProfileUri: community.uri,
         communityProfileCid: community.cid,
       });
-    } catch {
-      console.error("[shared-record-migration] putRecord failed");
+    } catch (err) {
+      console.error("[shared-record-migration] putRecord failed:", err);
       return jsonResponse(502, {
         error: "publish_failed",
+        detail: err instanceof Error ? err.message : String(err),
       });
     }
   },

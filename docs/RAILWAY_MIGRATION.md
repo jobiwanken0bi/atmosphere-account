@@ -16,6 +16,8 @@ runtime should run on Railway or call a Railway appview API.
 
 Repo-side deployment files:
 
+- `railway.json` runs the Postgres schema migration as a blocking Railway
+  pre-deploy command.
 - `railway.indexer.Dockerfile` runs the Jetstream indexer.
 - `railway.web.Dockerfile` runs the Fresh/Deno web/appview server when the
   server-side runtime is deployed on Railway.
@@ -109,6 +111,33 @@ deno run -A --node-modules-dir=auto worker/indexer.ts
 The `indexer` service must run one replica only. The app's `worker_lease` table
 protects against duplicate consumers, but one active Railway replica avoids
 wasted Jetstream/PDS/DB traffic.
+
+## Automatic Schema Migrations
+
+The source-linked Railway services use the root `railway.json`. Before Railway
+starts a new web/appview or indexer deployment, its pre-deploy phase runs:
+
+```sh
+deno task db:migrate:postgres
+```
+
+Both application images include `scripts/` and `sql/`, and cache the Postgres
+migration entrypoint during their image builds. A migration failure therefore
+blocks the new deployment instead of letting code start against an older schema.
+
+Web and indexer deployments may begin concurrently. The Postgres-only runner
+adds a transaction-scoped advisory lock immediately after the schema's `BEGIN`.
+Whichever service acquires it first applies the migration; the other waits for
+that transaction to finish and then reruns the idempotent schema. The lock is
+not written into `sql/neon/001_initial.sql`, so the separate Neon
+statement-by-statement migration path is unchanged.
+
+Keep the migration in Railway's pre-deploy phase, not in either service `CMD`.
+That preserves a clear deploy failure boundary and avoids serving traffic or
+consuming Jetstream before the schema is ready. The manual
+`deno task db:migrate:postgres` command remains available for operator-led
+repair and disposable-environment work. Adding this policy to the repository
+does not itself connect to or modify production.
 
 ## Deployment provenance
 

@@ -76,7 +76,7 @@ Deno.test("owner management CTAs render contextual permission fallbacks for narr
     );
     assertEquals(
       fallback.searchParams.getAll("capability"),
-      [context.kind === "app" ? "app" : "host"],
+      [context.kind === "app" ? "app" : "host", "media"],
       context.label,
     );
     assertEquals(

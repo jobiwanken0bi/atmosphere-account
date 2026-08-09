@@ -40,11 +40,6 @@ export class EdgeStaleCache<Value> {
       return Promise.resolve(entry.value as Value);
     }
 
-    // `staleMs` is the hard freshness ceiling. Once it has elapsed, remove the
-    // old value before loading so an outage cannot keep a deleted or revoked
-    // public record alive indefinitely.
-    if (entry?.hasValue) this.entries.delete(key);
-
     return this.refresh(key, load);
   }
 
@@ -52,16 +47,14 @@ export class EdgeStaleCache<Value> {
     const entry = this.entries.get(key);
     if (entry?.refreshPromise) return entry.refreshPromise;
 
-    // Convert a synchronous loader throw into a rejected promise while still
-    // invoking the loader immediately, which preserves cold-load coalescing.
-    let loaded: Promise<Value>;
-    try {
-      loaded = load();
-    } catch (error) {
-      loaded = Promise.reject(error);
-    }
-    const refreshPromise = loaded
+    const refreshPromise: Promise<Value> = load()
       .then((value) => {
+        const current = this.entries.get(key);
+        if (
+          current?.refreshPromise && current.refreshPromise !== refreshPromise
+        ) {
+          return value;
+        }
         this.setEntry(key, {
           value,
           hasValue: true,
@@ -70,12 +63,23 @@ export class EdgeStaleCache<Value> {
         return value;
       })
       .catch((err) => {
-        if (entry?.hasValue) return entry.value as Value;
+        if (
+          entry?.hasValue &&
+          this.now() - entry.refreshedAt < this.options.staleMs
+        ) {
+          return entry.value as Value;
+        }
+        // A failed refresh must not revive a value beyond the configured stale
+        // window. Remove the in-flight copy so a later request can recover with
+        // a genuinely cold load instead of repeatedly serving expired data.
+        if (this.entries.get(key)?.refreshPromise === refreshPromise) {
+          this.entries.delete(key);
+        }
         throw err;
       })
       .finally(() => {
         const current = this.entries.get(key);
-        if (!current) return;
+        if (!current || current.refreshPromise !== refreshPromise) return;
         if (!current.hasValue) {
           this.entries.delete(key);
           return;

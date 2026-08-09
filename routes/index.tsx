@@ -17,13 +17,15 @@ export default define.page(function Home(ctx) {
       <GlassClouds />
       <div class="content-layer">
         <Nav account={buildAccountMenuProps(ctx.state)} />
-        <Hero />
-        <WhatIsAtmosphere />
-        <OnePlace />
-        <Features />
-        <BlueskySection />
-        <CrossPollination />
-        <YourChoice />
+        <main id="main-content">
+          <Hero />
+          <WhatIsAtmosphere />
+          <OnePlace />
+          <Features />
+          <BlueskySection />
+          <CrossPollination />
+          <YourChoice />
+        </main>
         <Footer />
       </div>
     </div>

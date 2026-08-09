@@ -94,7 +94,7 @@ Deno.test("selectAtmosphereLoginPublicJwk fails when the requested kid is absent
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login JWKS did not include key current",
+      "Login with Atmosphere JWKS did not include key current",
     );
     return;
   }
@@ -171,7 +171,7 @@ Deno.test("fetchAtmosphereLoginPublicJwkForToken requires a token kid", async ()
   } catch (error) {
     assertEquals(
       error instanceof Error ? error.message : String(error),
-      "Atmosphere Login selection token did not include a kid",
+      "Login with Atmosphere selection token did not include a kid",
     );
     return;
   }

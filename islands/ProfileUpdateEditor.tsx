@@ -19,12 +19,20 @@ import {
   pendingProfileUpdateDeleteForDid,
   pendingProfileUpdateDraftForDid,
   profileUpdateDeletePendingKey,
-  profileUpdateDeleteResumeMarker,
   type ProfileUpdateDraft,
   profileUpdatePendingKey,
-  profileUpdateResumeMarker,
+  type ProfileUpdateResumeKind,
+  profileUpdateResumeLocation,
+  profileUpdateResumeProofKey,
+  profileUpdateResumeReturnTo,
+  profileUpdateReturnToWithoutResume,
   publishableProfileUpdateDraft,
 } from "../lib/profile-update-resume.ts";
+import { oauthCancellationLocation } from "../lib/oauth-cancellation.ts";
+import {
+  browserResumeMarkerValue,
+  isFreshBrowserResumeMarker,
+} from "../lib/browser-resume-marker.ts";
 import ContextualReauthorizationDialog from "./ContextualReauthorizationDialog.tsx";
 
 export type EditableProfileUpdate = Pick<
@@ -75,9 +83,24 @@ function updateFromResponse(update: unknown): EditableProfileUpdate | null {
 export function profileUpdateReauthorization(
   payload: unknown,
   targetName: string,
+  projectDid: string,
+  kind: ProfileUpdateResumeKind,
+  currentReturnTo?: string,
 ): ContextualReauthorization | null {
   const serverContext = contextualReauthorizationFromApiPayload(payload);
-  if (serverContext) return serverContext;
+  if (serverContext) {
+    return contextualReauthorization({
+      returnTo: profileUpdateResumeReturnTo(
+        currentReturnTo ?? serverContext.returnTo,
+        projectDid,
+        kind,
+      ),
+      action: serverContext.action,
+      capabilities: serverContext.capabilities,
+      targetName: serverContext.targetName,
+      intent: serverContext.intent,
+    });
+  }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }
@@ -86,9 +109,13 @@ export function profileUpdateReauthorization(
     return null;
   }
   return contextualReauthorization({
-    returnTo: "/apps/manage",
+    returnTo: profileUpdateResumeReturnTo(
+      currentReturnTo ?? "/apps/manage",
+      projectDid,
+      kind,
+    ),
     action: "app",
-    capabilities: ["app"],
+    capabilities: ["app", "media"],
     targetName,
   });
 }
@@ -112,13 +139,17 @@ export default function ProfileUpdateEditor(
   const submitting = useSignal(false);
   const deletingRkey = useSignal<string | null>(null);
   const reauthorization = useSignal<ContextualReauthorization | null>(null);
+  const reauthorizationKind = useSignal<ProfileUpdateResumeKind | null>(null);
   const message = useSignal<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
   const pendingKey = profileUpdatePendingKey(projectDid);
-  const resumeMarker = profileUpdateResumeMarker(projectDid);
   const deletePendingKey = profileUpdateDeletePendingKey(projectDid);
-  const deleteResumeMarker = profileUpdateDeleteResumeMarker(projectDid);
+  const resumeProofKey = profileUpdateResumeProofKey(projectDid, "save");
+  const deleteResumeProofKey = profileUpdateResumeProofKey(
+    projectDid,
+    "delete",
+  );
 
   const resetForm = () => {
     editingRkey.value = null;
@@ -153,7 +184,7 @@ export default function ProfileUpdateEditor(
     tangledCommitUrl.value = draft.tangledCommitUrl;
   };
 
-  const removeResumeMarker = (key: string) => {
+  const removeResumeProof = (key: string) => {
     try {
       sessionStorage.removeItem(key);
     } catch {
@@ -163,13 +194,19 @@ export default function ProfileUpdateEditor(
   };
 
   const clearAuthorizationState = async () => {
-    removeResumeMarker(resumeMarker);
-    removeResumeMarker(deleteResumeMarker);
+    removeResumeProof(resumeProofKey);
+    removeResumeProof(deleteResumeProofKey);
     await Promise.all([
       clearPendingBrowserAction(pendingKey).catch(() => {}),
       clearPendingBrowserAction(deletePendingKey).catch(() => {}),
     ]);
   };
+
+  const currentReturnTo = () =>
+    profileUpdateReturnToWithoutResume(
+      globalThis.location.pathname + globalThis.location.search +
+        globalThis.location.hash,
+    );
 
   const publishDraft = async (draft: ProfileUpdateDraft) => {
     const publishable = publishableProfileUpdateDraft(draft);
@@ -184,7 +221,13 @@ export default function ProfileUpdateEditor(
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const authorization = profileUpdateReauthorization(data, currentHandle);
+      const authorization = profileUpdateReauthorization(
+        data,
+        currentHandle,
+        projectDid,
+        "save",
+        currentReturnTo(),
+      );
       if (authorization) {
         try {
           await savePendingBrowserAction(
@@ -192,11 +235,11 @@ export default function ProfileUpdateEditor(
             pendingProfileUpdateAction(projectDid, publishable),
             { ownerDid: projectDid },
           );
-          sessionStorage.setItem(resumeMarker, projectDid);
         } catch {
           await clearPendingBrowserAction(pendingKey).catch(() => {});
           throw new Error(t.saveError);
         }
+        reauthorizationKind.value = "save";
         reauthorization.value = authorization;
         return;
       }
@@ -209,54 +252,10 @@ export default function ProfileUpdateEditor(
       ...updates.value.filter((row) => row.rkey !== update.rkey),
     ].sort((a, b) => b.createdAt - a.createdAt);
     await clearPendingBrowserAction(pendingKey).catch(() => {});
-    try {
-      sessionStorage.removeItem(resumeMarker);
-    } catch {
-      // The write succeeded; unavailable storage must not report failure.
-    }
+    removeResumeProof(resumeProofKey);
     resetForm();
     message.value = { kind: "ok", text: t.saved };
   };
-
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem(resumeMarker) !== projectDid) return;
-      sessionStorage.removeItem(resumeMarker);
-    } catch {
-      // Resume is optional when browser storage is unavailable.
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const pending = await loadPendingBrowserAction<
-        PendingProfileUpdateAction
-      >(
-        pendingKey,
-      ).catch(() => null);
-      const draft = pendingProfileUpdateDraftForDid(pending, projectDid);
-      if (!draft) {
-        await clearPendingBrowserAction(pendingKey).catch(() => {});
-        return;
-      }
-      if (cancelled) return;
-      restoreDraft(draft);
-      submitting.value = true;
-      message.value = null;
-      try {
-        await publishDraft(draft);
-      } catch (err) {
-        message.value = {
-          kind: "error",
-          text: err instanceof Error ? err.message : t.saveError,
-        };
-      } finally {
-        submitting.value = false;
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const saveUpdate = async (event: Event) => {
     event.preventDefault();
@@ -293,6 +292,9 @@ export default function ProfileUpdateEditor(
         const authorization = profileUpdateReauthorization(
           data,
           currentHandle,
+          projectDid,
+          "delete",
+          currentReturnTo(),
         );
         if (authorization) {
           try {
@@ -301,11 +303,11 @@ export default function ProfileUpdateEditor(
               pendingProfileUpdateDeleteAction(projectDid, rkey),
               { ownerDid: projectDid },
             );
-            sessionStorage.setItem(deleteResumeMarker, projectDid);
           } catch {
             await clearPendingBrowserAction(deletePendingKey).catch(() => {});
             throw new Error(t.deleteError);
           }
+          reauthorizationKind.value = "delete";
           reauthorization.value = authorization;
           return;
         }
@@ -313,7 +315,7 @@ export default function ProfileUpdateEditor(
       }
       if (data.ok !== true) throw new Error(t.deleteError);
       await clearPendingBrowserAction(deletePendingKey).catch(() => {});
-      removeResumeMarker(deleteResumeMarker);
+      removeResumeProof(deleteResumeProofKey);
       updates.value = updates.value.filter((update) => update.rkey !== rkey);
       if (editingRkey.value === rkey) resetForm();
       message.value = { kind: "ok", text: t.deleted };
@@ -328,25 +330,83 @@ export default function ProfileUpdateEditor(
   };
 
   useEffect(() => {
-    try {
-      if (sessionStorage.getItem(deleteResumeMarker) !== projectDid) return;
-      sessionStorage.removeItem(deleteResumeMarker);
-    } catch {
+    let href = globalThis.location.href;
+    let wasCancelled = false;
+    for (
+      const kind of [
+        "profile-update",
+        "profile-update-delete",
+      ] as const
+    ) {
+      const cancellation = oauthCancellationLocation(href, kind);
+      wasCancelled ||= cancellation.wasCancelled;
+      href = cancellation.cleanLocation;
+    }
+    if (wasCancelled) {
+      globalThis.history.replaceState(null, "", href);
+      void clearAuthorizationState();
       return;
     }
+
+    const resume = profileUpdateResumeLocation(href, projectDid);
+    if (resume.hadMarker) {
+      globalThis.history.replaceState(null, "", resume.cleanLocation);
+    }
+    let saveProof: string | null = null;
+    let deleteProof: string | null = null;
+    try {
+      saveProof = sessionStorage.getItem(resumeProofKey);
+      deleteProof = sessionStorage.getItem(deleteResumeProofKey);
+      sessionStorage.removeItem(resumeProofKey);
+      sessionStorage.removeItem(deleteResumeProofKey);
+    } catch {
+      // Fail closed: a return marker without same-tab proof never writes.
+    }
+    const proof = resume.kind === "save" ? saveProof : deleteProof;
+    if (!resume.shouldResume || !isFreshBrowserResumeMarker(proof)) {
+      void clearAuthorizationState();
+      return;
+    }
+
     let cancelled = false;
     (async () => {
-      const pending = await loadPendingBrowserAction(
-        deletePendingKey,
-      ).catch(() => null);
+      if (resume.kind === "save") {
+        const pending = await loadPendingBrowserAction<
+          PendingProfileUpdateAction
+        >(pendingKey).catch(() => null);
+        const draft = pendingProfileUpdateDraftForDid(pending, projectDid);
+        if (!draft) {
+          await clearAuthorizationState();
+          return;
+        }
+        if (cancelled) return;
+        restoreDraft(draft);
+        submitting.value = true;
+        message.value = null;
+        try {
+          await publishDraft(draft);
+        } catch (err) {
+          message.value = {
+            kind: "error",
+            text: err instanceof Error ? err.message : t.saveError,
+          };
+        } finally {
+          submitting.value = false;
+        }
+        return;
+      }
+
+      const pending = await loadPendingBrowserAction(deletePendingKey).catch(
+        () => null,
+      );
       const rkey = pendingProfileUpdateDeleteForDid(pending, projectDid);
       if (!rkey) {
-        await clearPendingBrowserAction(deletePendingKey).catch(() => {});
+        await clearAuthorizationState();
         return;
       }
       if (cancelled) return;
       if (!confirm(t.confirmDelete)) {
-        await clearPendingBrowserAction(deletePendingKey).catch(() => {});
+        await clearAuthorizationState();
         return;
       }
       await deleteUpdate(rkey, { confirmFirst: false });
@@ -503,12 +563,32 @@ export default function ProfileUpdateEditor(
           currentHandle={currentHandle}
           rememberedAccounts={rememberedAccounts}
           restrictToCurrentAccount
+          onAuthorizationStart={() => {
+            const kind = reauthorizationKind.value;
+            if (!kind) return;
+            armProfileUpdateResume(
+              profileUpdateResumeProofKey(projectDid, kind),
+            );
+          }}
           onClose={() => {
             reauthorization.value = null;
+            reauthorizationKind.value = null;
             void clearAuthorizationState();
           }}
         />
       )}
     </>
   );
+}
+
+export function armProfileUpdateResume(
+  proofKey: string,
+  storage: Pick<Storage, "setItem"> = globalThis.sessionStorage,
+): boolean {
+  try {
+    storage.setItem(proofKey, browserResumeMarkerValue());
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -6,13 +6,10 @@ import Footer from "../../components/Footer.tsx";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
 import UserMicroblogViewerButton from "../../islands/UserMicroblogViewerButton.tsx";
-import UserProfileEditButton from "../../islands/UserProfileEditButton.tsx";
-import UpgradeToProjectModal from "../../islands/UpgradeToProjectModal.tsx";
 import ConfirmedActionForm, {
   disconnectAppConfirmation,
   forgetAccountConfirmation,
 } from "../../islands/ConfirmedActionForm.tsx";
-import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getAppUser } from "../../lib/account-types.ts";
@@ -25,22 +22,16 @@ import {
   getAccountHost,
   listManagedAccountHosts,
 } from "../../lib/account-hosts.ts";
-import { listVisibleAppListingsByAccountDid } from "../../lib/app-directory.ts";
+import { listManagedAppListingsByAccountDid } from "../../lib/app-directory.ts";
 import {
   buildHostAccountRoute,
   type HostAccountRouteState,
 } from "../../lib/host-account-routing.ts";
-import {
-  getValidSession,
-  grantedScopeForSession,
-  isOAuthConfigured,
-} from "../../lib/oauth.ts";
-import { hasOAuthCapabilities } from "../../lib/oauth-scopes.ts";
+import { isOAuthConfigured } from "../../lib/oauth.ts";
 import type { RememberedAccount } from "../../lib/remembered-accounts.ts";
-import { getProfileMicroblogViewer } from "../../lib/bsky-clients.ts";
-import { getProfileByDid } from "../../lib/registry.ts";
-import { effectiveUserProfile } from "../../lib/user-profile-source.ts";
-import { IS_DEV, loginOrigin } from "../../lib/env.ts";
+import { microblogAccountIdentity } from "../../lib/microblog-account-identity.ts";
+import { loadSession } from "../../lib/oauth.ts";
+import { getBskyProfile } from "../../lib/pds.ts";
 import { isSafeRelativePath } from "../../lib/security.ts";
 
 function safeNext(raw: string | null): string | null {
@@ -60,17 +51,57 @@ function safeHandle(raw: string | null): string | undefined {
   return handle;
 }
 
-const APP_UPGRADE_COPY = {
-  button: "Register an app",
-  modalTitle: "Register an app with this account?",
-  modalBody:
-    "This account will represent the app. You’ll approve access to publish and manage its profile and listing.",
-  signInWithProjectLink: "Use a different account",
-  yes: "Continue to app registration",
-  cancel: "Cancel",
-  submitting: "Opening sign-in…",
-  error: "Couldn’t start sign-in. Please try again.",
-};
+export function accountManagesProfiles(
+  appCount: number,
+  hostCount: number,
+): boolean {
+  return appCount > 0 || hostCount > 0;
+}
+
+export function accountManagementNavigationFlags(
+  appCount: number,
+  hostCount: number,
+): {
+  hasManagedAppProfile: boolean;
+  hasManagedHostProfiles: boolean;
+  hasManagedProfiles: boolean;
+} {
+  const hasManagedAppProfile = appCount > 0;
+  const hasManagedHostProfiles = hostCount > 0;
+  return {
+    hasManagedAppProfile,
+    hasManagedHostProfiles,
+    hasManagedProfiles: hasManagedAppProfile || hasManagedHostProfiles,
+  };
+}
+
+export function managedProfilesDashboardCopy(
+  appCount: number,
+  hostCount: number,
+): { description: string; calloutTitle: string; calloutBody: string } {
+  if (appCount > 0 && hostCount > 0) {
+    return {
+      description: "Manage the app and host profiles operated by this account.",
+      calloutTitle: "App and host profiles stay separate.",
+      calloutBody:
+        "Edit their details, connections, images, and app developer settings in one place.",
+    };
+  }
+  if (appCount > 0) {
+    return {
+      description: "Manage the app profile represented by this account.",
+      calloutTitle: "Your app has its own public profile.",
+      calloutBody:
+        "Edit its details, images, host connections, and developer settings.",
+    };
+  }
+  return {
+    description: "Manage the host profiles operated by this account.",
+    calloutTitle: "Each host has its own public profile.",
+    calloutBody:
+      "Edit host details, images, managing-account settings, and app connections.",
+  };
+}
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -100,28 +131,24 @@ async function AccountPage(
   const user = ctx.state.user;
   const next = safeNext(ctx.url.searchParams.get("next")) ?? "/account";
   const initialHandle = safeHandle(ctx.url.searchParams.get("handle"));
-  const upgradeIntent = ctx.url.searchParams.get("upgrade") === "app"
-    ? "app"
-    : null;
   if (!user) {
     return (
       <div id="page-top">
         <div class="content-layer">
           <Nav account={account} />
-          <section class="account-home-section">
+          <main class="account-home-section" id="main-content">
             <div class="container account-home-container">
               <p class="text-eyebrow">Manage account</p>
               <h1 class="text-section">Sign in to manage your account</h1>
               <p class="text-body mt-2">
-                View your profile, connected apps, and security settings.
+                See which Atmosphere account you are using, where it is hosted,
+                and the apps you have opened through Login with Atmosphere.
               </p>
               <div class="glass signin-page-card">
                 {isOAuthConfigured()
                   ? (
                     <SignInForm
                       returnTo={next}
-                      capabilities={["identity"]}
-                      action="account"
                       rememberedAccounts={account.rememberedAccounts}
                       initialHandle={initialHandle}
                     />
@@ -129,25 +156,24 @@ async function AccountPage(
                   : <p class="text-body">Sign in is not ready yet.</p>}
               </div>
             </div>
-          </section>
+          </main>
           <Footer variant="compact" />
         </div>
       </div>
     );
   }
 
-  const [appUser, atmosphereProfile] = await Promise.all([
+  const session = await loadSession(user.did).catch(() => null);
+  const [appUser, microblogProfile] = await Promise.all([
     getAppUser(user.did).catch(() => null),
-    getProfileByDid(user.did, { profileType: "user" }).catch(() => null),
+    session
+      ? getBskyProfile(session.pdsUrl, user.did).catch(() => null)
+      : Promise.resolve(null),
   ]);
-  const effectiveProfile = effectiveUserProfile({
-    handle: user.handle,
-    appUser,
-    atmosphereProfile,
-  });
-  const displayName = effectiveProfile.displayName;
-  const avatarUrl = effectiveProfile.avatarCid && effectiveProfile.avatarMime
-    ? bskyCdnAvatarUrl(user.did, effectiveProfile.avatarCid)
+  const accountIdentity = microblogAccountIdentity(microblogProfile);
+  const displayName = accountIdentity.displayName || user.handle;
+  const avatarUrl = accountIdentity.avatarCid && accountIdentity.avatarMime
+    ? bskyCdnAvatarUrl(user.did, accountIdentity.avatarCid)
     : null;
   const accountHost = account.accountHost;
   const fullHost = accountHost
@@ -160,27 +186,21 @@ async function AccountPage(
   const [loginConnections, managedHosts, managedApps] = await Promise.all([
     listLoginConnectionsForAccount(user.did).catch(() => []),
     listManagedAccountHosts(user.did).catch(() => []),
-    listVisibleAppListingsByAccountDid(user.did).catch(() => []),
+    listManagedAppListingsByAccountDid(user.did).catch(() => []),
   ]);
-  const primaryManagedHost = managedHosts[0] ?? null;
-  const managesHost = managedHosts.length > 0;
-  const isAppAccount = ctx.state.accountType === "project";
-  const managesApps = isAppAccount || managedApps.length > 0;
-  const managementSession = isAppAccount || primaryManagedHost
-    ? await getValidSession(user.did, { quiet: true }).catch(() => null)
-    : null;
-  const managementScope = managementSession
-    ? grantedScopeForSession(managementSession)
-    : null;
-  const appAuthorized = hasOAuthCapabilities(managementScope, ["app"]);
-  const hostAuthorized = hasOAuthCapabilities(managementScope, ["host"]);
-  const legacyAppTargetName =
-    managedApps.find((app) =>
-      app.legacyProfileDid === user.did ||
-      (!app.atstoreListingUri && app.profileDid === user.did)
-    )?.name ?? displayName;
-  const autoOpenAppUpgrade = upgradeIntent === "app";
-  const showAdvancedDetails = managesApps || managesHost;
+  const managementFlags = accountManagementNavigationFlags(
+    managedApps.length,
+    managedHosts.length,
+  );
+  const navigationAccount = {
+    ...account,
+    ...managementFlags,
+  };
+  const hasManagedProfiles = managementFlags.hasManagedProfiles;
+  const managedProfilesCopy = managedProfilesDashboardCopy(
+    managedApps.length,
+    managedHosts.length,
+  );
   const rememberedAccounts = account.rememberedAccounts;
   const hasKnownHost = Boolean(accountHost?.displayName);
   const hostedBy = accountHost?.displayName ?? "Account host not detected";
@@ -189,37 +209,17 @@ async function AccountPage(
     : "Account host not detected";
   const hostDirectoryUrl = hostRoute?.directoryUrl ?? "/hosts";
   const browserLabel = currentBrowserLabel(ctx.req.headers);
-  const roleLabels = [
-    ...(managesApps
-      ? [
-        managedApps.length > 1
-          ? `Manages ${managedApps.length} apps`
-          : "Manages an app",
-      ]
-      : []),
-    ...(managesHost
-      ? [
-        managedHosts.length > 1
-          ? `Manages ${managedHosts.length} hosts`
-          : "Manages a host",
-      ]
-      : []),
-  ];
-  const microblogViewer = getProfileMicroblogViewer(
-    appUser?.bskyClientId ?? null,
-  );
-  const publicProfileUrl = microblogViewer.profileUrl(user.handle);
-  const passkeyManagementUrl = new URL(
-    "/passkeys",
-    IS_DEV ? ctx.url.origin : loginOrigin(),
-  );
-  passkeyManagementUrl.searchParams.set("handle", user.handle);
-
+  const blueskyProfileUrl = `https://bsky.app/profile/${
+    encodeURIComponent(user.handle)
+  }`;
   return (
     <div id="page-top">
       <div class="content-layer">
-        <Nav account={account} />
-        <section class="account-home-section account-dashboard-section">
+        <Nav account={navigationAccount} />
+        <main
+          class="account-home-section account-dashboard-section"
+          id="main-content"
+        >
           <div class="container account-dashboard-container">
             <header class="account-dashboard-page-head">
               <div class="account-dashboard-page-head-row">
@@ -234,15 +234,9 @@ async function AccountPage(
                   />
                 </div>
               </div>
-              <UpgradeToProjectModal
-                initiallyOpen={autoOpenAppUpgrade}
-                showTrigger={false}
-                currentHandle={user.handle}
-                rememberedAccounts={rememberedAccounts}
-                copy={APP_UPGRADE_COPY}
-              />
               <p>
-                Manage your profile, connected apps, and account security.
+                Your Bluesky identity, account host, connected apps, saved
+                accounts, and preferences.
               </p>
             </header>
 
@@ -263,107 +257,53 @@ async function AccountPage(
                     : <span>{initialFor(displayName)}</span>}
                 </div>
                 <div class="account-dashboard-identity">
-                  <p class="text-eyebrow">Profile</p>
+                  <p class="text-eyebrow">Bluesky identity</p>
                   <h2>{displayName}</h2>
                   <p class="account-home-handle">
                     <AtmosphereHandle handle={user.handle} />
                   </p>
                   <div class="account-dashboard-identity-tags">
                     <span class="account-home-pill">{hostStatusLabel}</span>
-                    {roleLabels.map((label) => (
-                      <span class="account-home-pill" key={label}>{label}</span>
-                    ))}
                   </div>
-                </div>
-              </div>
-              <div class="account-dashboard-hero-side">
-                <div class="account-dashboard-actions">
-                  {(managesApps || managesHost) && (
-                    <a
-                      href="/account/products"
-                      class="account-dashboard-button account-dashboard-button--primary"
-                    >
-                      <AccountIcon name="apps" />
-                      <span>Manage products</span>
-                    </a>
-                  )}
-                  {isAppAccount && (
-                    <OwnerManagementLink
-                      authorized={appAuthorized}
-                      kind="app"
-                      destinationHref="/apps/manage"
-                      targetName={legacyAppTargetName}
-                      label="Edit app profile"
-                      className="account-dashboard-button account-dashboard-button--secondary"
-                      leadingIcon="edit"
-                      rememberedAccounts={rememberedAccounts}
-                      initialHandle={user.handle}
-                    />
-                  )}
-                  <ProfileSourcePanel
-                    did={user.did}
-                    currentHandle={user.handle}
-                    rememberedAccounts={rememberedAccounts}
-                    profileUrl={publicProfileUrl}
-                    profileViewerName={microblogViewer.name}
-                    displayName={displayName}
-                    bio={effectiveProfile.bio}
-                    avatarUrl={avatarUrl}
-                    microblogVisible={appUser?.bskyButtonVisible ?? true}
-                    websiteUrl={effectiveProfile.websiteUrl}
-                    websiteVisible={effectiveProfile.hasAtmosphereProfile
-                      ? Boolean(effectiveProfile.websiteUrl)
-                      : appUser?.websiteVisible ?? false}
-                    hasAtmosphereProfile={effectiveProfile.hasAtmosphereProfile}
-                  />
-                  {managesHost && primaryManagedHost && (
-                    <OwnerManagementLink
-                      authorized={hostAuthorized}
-                      kind="host"
-                      destinationHref={`/hosts/${
-                        encodeURIComponent(primaryManagedHost.host)
-                      }/manage`}
-                      targetName={primaryManagedHost.displayName}
-                      label="Manage host profile"
-                      className="account-dashboard-button account-dashboard-button--secondary"
-                      leadingIcon="host"
-                      rememberedAccounts={rememberedAccounts}
-                      initialHandle={user.handle}
-                    />
-                  )}
+                  <a
+                    href={blueskyProfileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="account-dashboard-text-link"
+                  >
+                    <span>Manage profile in Bluesky</span>
+                    <span aria-hidden="true">↗</span>
+                    <span class="sr-only">(opens in a new tab)</span>
+                  </a>
                 </div>
               </div>
             </article>
 
-            <main class="account-dashboard-main">
-              {(managesApps || managesHost) && (
+            <div class="account-dashboard-main">
+              {hasManagedProfiles && (
                 <DashboardSection
-                  id="managed-products"
-                  eyebrow="Owner workspace"
-                  title="Managed products"
+                  id="apps-hosts"
+                  eyebrow="Profiles"
+                  title="Apps and hosts"
                   icon="apps"
-                  description="Keep app profiles, account hosts, and universal login registrations together without merging their public identities."
+                  description={managedProfilesCopy.description}
                   badge={`${managedApps.length} app${
                     managedApps.length === 1 ? "" : "s"
                   } · ${managedHosts.length} host${
                     managedHosts.length === 1 ? "" : "s"
                   }`}
                 >
-                  <div class="account-dashboard-passkey">
+                  <div class="account-dashboard-callout account-dashboard-callout--section-content">
                     <div>
-                      <strong>One place for every role</strong>
-                      <p>
-                        Connect an app to a host as the same product or as a
-                        separately operated service, and manage approvals when
-                        the owner accounts differ.
-                      </p>
+                      <strong>{managedProfilesCopy.calloutTitle}</strong>
+                      <p>{managedProfilesCopy.calloutBody}</p>
                     </div>
                     <a
-                      href="/account/products"
+                      href="/account/apps-hosts"
                       class="account-dashboard-button account-dashboard-button--primary"
                     >
                       <AccountIcon name="apps" />
-                      <span>Open managed products</span>
+                      <span>Manage apps and hosts</span>
                     </a>
                   </div>
                 </DashboardSection>
@@ -381,51 +321,23 @@ async function AccountPage(
                   eyebrow="Apps"
                   title="Connected apps"
                   icon="apps"
-                  description="Apps you open with Continue with Atmosphere will appear here."
+                  description="Apps you open through Login with Atmosphere will appear here."
                   badge={loginConnections.length > 0
                     ? `${loginConnections.length} connected`
                     : "None yet"}
                 >
                   <ApplicationsPanel
                     connections={loginConnections}
-                    showDeveloperAction
                   />
                 </DashboardSection>
               </div>
-
-              <DashboardSection
-                id="passkeys"
-                eyebrow="Security"
-                title="Passkeys"
-                icon="key"
-                description="Use your device to confirm this account faster during universal sign in."
-                badge="Optional"
-              >
-                <div class="account-dashboard-passkey">
-                  <div>
-                    <strong>Faster account confirmation</strong>
-                    <p>
-                      A passkey lets you confirm this account without signing in
-                      again. Your account host may still ask you to approve a
-                      new app or feature.
-                    </p>
-                  </div>
-                  <a
-                    href={passkeyManagementUrl.toString()}
-                    class="account-dashboard-button account-dashboard-button--primary"
-                  >
-                    <AccountIcon name="key" />
-                    <span>Manage passkeys</span>
-                  </a>
-                </div>
-              </DashboardSection>
 
               <DashboardSection
                 id="saved-accounts"
                 eyebrow="This browser"
                 title="Saved accounts"
                 icon="browser"
-                description="Atmosphere can offer these accounts when you switch accounts on this browser."
+                description="These accounts can appear when you switch accounts in this browser."
                 badge={rememberedCountLabel(rememberedAccounts.length)}
               >
                 <div class="account-dashboard-browser-summary">
@@ -447,24 +359,22 @@ async function AccountPage(
                 />
               </DashboardSection>
 
-              {showAdvancedDetails && (
-                <details class="glass account-home-details account-dashboard-details">
-                  <summary>Advanced details</summary>
-                  <dl>
-                    <div>
-                      <dt>DID</dt>
-                      <dd>{user.did}</dd>
-                    </div>
-                    <div>
-                      <dt>Host endpoint</dt>
-                      <dd>{accountHost?.endpoint ?? "Unknown"}</dd>
-                    </div>
-                  </dl>
-                </details>
-              )}
-            </main>
+              <details class="glass account-home-details account-dashboard-details">
+                <summary>Advanced account details</summary>
+                <dl>
+                  <div>
+                    <dt>DID</dt>
+                    <dd>{user.did}</dd>
+                  </div>
+                  <div>
+                    <dt>Host endpoint</dt>
+                    <dd>{accountHost?.endpoint ?? "Unknown"}</dd>
+                  </div>
+                </dl>
+              </details>
+            </div>
           </div>
-        </section>
+        </main>
         <Footer variant="compact" />
       </div>
     </div>
@@ -472,99 +382,6 @@ async function AccountPage(
 }
 
 export default define.page(AccountPage);
-
-function ProfileSourcePanel(
-  {
-    did,
-    currentHandle,
-    rememberedAccounts,
-    profileUrl,
-    profileViewerName,
-    displayName,
-    bio,
-    avatarUrl,
-    microblogVisible,
-    websiteUrl,
-    websiteVisible,
-    hasAtmosphereProfile,
-  }: {
-    did: string;
-    currentHandle: string;
-    rememberedAccounts: Array<{ did: string; handle: string }>;
-    profileUrl: string;
-    profileViewerName: string;
-    displayName: string;
-    bio: string;
-    avatarUrl: string | null;
-    microblogVisible: boolean;
-    websiteUrl: string | null;
-    websiteVisible: boolean;
-    hasAtmosphereProfile: boolean;
-  },
-) {
-  return (
-    <div class="account-dashboard-profile-source">
-      <div>
-        <p class="text-eyebrow">Atmosphere profile</p>
-        <strong>
-          {hasAtmosphereProfile
-            ? "Saved with your account"
-            : "Make this profile your own"}
-        </strong>
-        {hasAtmosphereProfile
-          ? (
-            <p>
-              This is your Atmosphere profile. Your microblog profile stays
-              separate.
-            </p>
-          )
-          : (
-            <p>
-              These details come from your microblog profile for now. Save them
-              to create an Atmosphere profile with your account.
-            </p>
-          )}
-      </div>
-      <div class="account-dashboard-actions">
-        <UserProfileEditButton
-          did={did}
-          currentHandle={currentHandle}
-          rememberedAccounts={rememberedAccounts}
-          displayName={displayName}
-          bio={bio}
-          avatarUrl={avatarUrl}
-          microblogVisible={microblogVisible}
-          websiteUrl={websiteUrl}
-          websiteVisible={websiteVisible}
-          triggerLabel={hasAtmosphereProfile
-            ? "Edit profile"
-            : "Create profile"}
-          title={hasAtmosphereProfile
-            ? "Edit your Atmosphere profile"
-            : "Create your Atmosphere profile"}
-          description="This profile travels with your Atmosphere account. It won’t change your microblog profile."
-          nameLabel="Name"
-          namePlaceholder="Your name"
-          bioLabel="Bio"
-          bioPlaceholder="Tell people a little about yourself"
-          saveLabel={hasAtmosphereProfile ? "Save changes" : "Create profile"}
-          savingLabel="Saving…"
-          savedLabel="Profile saved"
-          errorLabel="Couldn't save your profile."
-        />
-        <a
-          href={profileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="account-dashboard-button account-dashboard-button--secondary"
-        >
-          <AccountIcon name="external" />
-          <span>Open in {profileViewerName}</span>
-        </a>
-      </div>
-    </div>
-  );
-}
 
 function DashboardSection(
   { id, eyebrow, title, icon, description, badge, children }: {
@@ -628,7 +445,7 @@ function HostAccountRouterPanel(
             )
             : (
               <p>
-                Atmosphere could not identify where this account is hosted yet.
+                This site could not identify where this account is hosted yet.
                 Host management will appear here when we know where the account
                 lives.
               </p>
@@ -677,11 +494,8 @@ function HostAccountRouterPanel(
   );
 }
 
-function ApplicationsPanel(
-  { connections, showDeveloperAction }: {
-    connections: LoginConnection[];
-    showDeveloperAction: boolean;
-  },
+export function ApplicationsPanel(
+  { connections }: { connections: LoginConnection[] },
 ) {
   if (connections.length === 0) {
     return (
@@ -694,22 +508,11 @@ function ApplicationsPanel(
             <span class="account-home-connection-copy">
               <strong>No connected apps yet</strong>
               <span>
-                Apps opened with Continue with Atmosphere will appear here.
+                Apps opened through Login with Atmosphere will appear here.
               </span>
             </span>
           </div>
         </article>
-        {showDeveloperAction && (
-          <div class="account-dashboard-panel-actions">
-            <a
-              href="/account/developer/apps"
-              class="account-dashboard-button account-dashboard-button--secondary"
-            >
-              <AccountIcon name="code" />
-              <span>Register an app</span>
-            </a>
-          </div>
-        )}
       </div>
     );
   }
@@ -761,27 +564,17 @@ function ApplicationsPanel(
               label="Remove"
               confirmation={disconnectAppConfirmation(connection.appName)}
               formClass="account-dashboard-app-actions"
+              buttonClass="account-dashboard-mini-button account-dashboard-mini-button--danger"
               ariaLabel={`Remove ${connection.appName} from connected apps`}
             />
           </article>
         ))}
       </div>
-      {showDeveloperAction && (
-        <div class="account-dashboard-panel-actions">
-          <a
-            href="/account/developer/apps"
-            class="account-dashboard-button account-dashboard-button--secondary"
-          >
-            <AccountIcon name="code" />
-            <span>Register an app</span>
-          </a>
-        </div>
-      )}
     </>
   );
 }
 
-function RememberedAccountsPanel(
+export function RememberedAccountsPanel(
   { accounts, currentDid, currentDisplayName }: {
     accounts: RememberedAccount[];
     currentDid: string;
@@ -842,7 +635,10 @@ function RememberedAccountsPanel(
                   account.handle,
                   isCurrent,
                 )}
-                ariaLabel={`Remove @${account.handle} from saved accounts`}
+                buttonClass="account-dashboard-mini-button account-dashboard-mini-button--danger"
+                ariaLabel={`Remove @${
+                  account.handle.replace(/^@/, "")
+                } from saved accounts`}
               />
             </div>
           </article>
@@ -855,12 +651,9 @@ function RememberedAccountsPanel(
 type AccountIconName =
   | "apps"
   | "browser"
-  | "code"
   | "directory"
-  | "edit"
   | "external"
-  | "host"
-  | "key";
+  | "host";
 
 function AccountIcon(
   { name, class: className = "" }: { name: AccountIconName; class?: string },
@@ -895,26 +688,11 @@ function AccountIcon(
           <path d="M10 7h.01" />
         </svg>
       );
-    case "code":
-      return (
-        <svg {...common}>
-          <path d="m9 8-4 4 4 4" />
-          <path d="m15 8 4 4-4 4" />
-          <path d="m13 5-2 14" />
-        </svg>
-      );
     case "directory":
       return (
         <svg {...common}>
           <path d="M4 6.5h6l1.6 2H20v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
           <path d="M4 10h16" />
-        </svg>
-      );
-    case "edit":
-      return (
-        <svg {...common}>
-          <path d="M12 20h8" />
-          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" />
         </svg>
       );
     case "external":
@@ -931,15 +709,6 @@ function AccountIcon(
           <path d="M4.5 10.5 12 4l7.5 6.5" />
           <path d="M6.5 9.5V19h11V9.5" />
           <path d="M10 19v-5h4v5" />
-        </svg>
-      );
-    case "key":
-      return (
-        <svg {...common}>
-          <circle cx="8.5" cy="12" r="3.5" />
-          <path d="M12 12h8" />
-          <path d="M17 12v3" />
-          <path d="M20 12v2" />
         </svg>
       );
   }
@@ -966,7 +735,7 @@ function displayNameFromHandle(handle: string): string {
 
 function friendlyConnectionSubtitle(connection: LoginConnection): string {
   const label = readableHost(connection.appUri ?? connection.clientId);
-  return label ? label : "Connected with Atmosphere";
+  return label ? label : "Connected through Login with Atmosphere";
 }
 
 function selectionCountLabel(count: number): string {

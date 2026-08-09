@@ -2,7 +2,7 @@
  * Avatar for the currently signed-in user, used by the explore-page
  * AccountMenu. Resolution order:
  *
- *   1. The account type's Atmosphere profile avatar, redirected to the CDN.
+ *   1. A project account's legacy Atmosphere app-profile avatar.
  *   2. Bluesky `app.bsky.actor.profile` avatar redirected to the same CDN —
  *      covers the case where the user has signed in but hasn't published a
  *      registry profile yet.
@@ -33,23 +33,25 @@ export const handler = define.handlers({
     const user = ctx.state.user;
     if (!user) return notFound();
 
-    /** Prefer the registry avatar. This route stays per-session for cache
-     *  busting, but the image bytes come from Bluesky's CDN. */
-    const profile = await getProfileByDid(user.did, {
-      profileType: ctx.state.accountType === "project" ? "project" : "user",
-    }).catch(() => null);
-    if (profile?.avatarCid) {
-      return new Response(null, {
-        status: 302,
-        headers: {
-          location: bskyCdnAvatarUrl(user.did, profile.avatarCid),
-          "cache-control": "private, max-age=300, stale-while-revalidate=86400",
-        },
-      });
+    /** Legacy app accounts still use the registry avatar for their project. */
+    if (ctx.state.accountType === "project") {
+      const profile = await getProfileByDid(user.did, {
+        profileType: "project",
+      }).catch(() => null);
+      if (profile?.avatarCid) {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: bskyCdnAvatarUrl(user.did, profile.avatarCid),
+            "cache-control":
+              "private, max-age=300, stale-while-revalidate=86400",
+          },
+        });
+      }
     }
 
-    /** No registry profile yet — fall back to the user's Bluesky avatar so
-     *  the menu still shows something familiar after their first sign-in. */
+    /** Ordinary accounts use their Bluesky avatar. Project accounts fall back
+     *  to it when their legacy app profile has no avatar. */
     const session = await loadSession(user.did).catch(() => null);
     if (!session) return notFound();
     const bsky = await getBskyProfile(session.pdsUrl, user.did).catch(() =>

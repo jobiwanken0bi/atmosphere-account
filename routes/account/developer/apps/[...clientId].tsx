@@ -2,13 +2,17 @@ import Nav from "../../../../components/Nav.tsx";
 import Footer from "../../../../components/Footer.tsx";
 import DeveloperAppTestConsole from "../../../../islands/DeveloperAppTestConsole.tsx";
 import LoginAppLogoReachability from "../../../../islands/LoginAppLogoReachability.tsx";
+import ConfirmedActionForm from "../../../../islands/ConfirmedActionForm.tsx";
 import { define } from "../../../../utils.ts";
 import { proxyAppviewPageResponse } from "../../../../lib/appview-client.ts";
 import { buildAccountMenuProps } from "../../../../lib/account-menu-props.ts";
 import {
   buildLoginAppProductionChecks,
   buildLoginAppReadiness,
+  deleteLoginAppForOwner,
   getLoginAppForOwner,
+  getLoginAppProfileForOwner,
+  listLoginPreferredHostChoicesForApp,
   type LoginApp,
   loginAppDetailPath,
   type LoginAppIdentityCheck,
@@ -25,22 +29,27 @@ import {
   RequestBodyTooLargeError,
 } from "../../../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../../../lib/rate-limit.ts";
-import {
-  type AccountHost,
-  listClaimedAccountHostsForOwner,
-} from "../../../../lib/account-hosts.ts";
+import { type AccountHost } from "../../../../lib/account-hosts.ts";
 import { developerAuthorizationHref } from "../../../../lib/oauth-entry-context.ts";
+import {
+  loginEnvironmentLabel,
+  loginEnvironmentStatusLabel,
+} from "../../../../lib/login-environment-display.ts";
+import { PreferredHostField } from "../apps.tsx";
+import { developerAppAccessRedirect } from "../../../../lib/developer-app-access.ts";
+
+type LoginAppProfile = NonNullable<
+  Awaited<ReturnType<typeof getLoginAppProfileForOwner>>
+>;
 
 interface DeveloperAppFormValues {
-  appName: string;
-  appUri: string;
-  logoUri: string;
   allowedReturnUris: string;
   preferredAccountHost: string;
 }
 
 interface DeveloperAppDetailProps {
   account: ReturnType<typeof buildAccountMenuProps>;
+  profile: LoginAppProfile;
   app: LoginApp | null;
   checks: LoginAppIdentityCheck[];
   readiness: LoginAppReadiness | null;
@@ -58,24 +67,46 @@ const MAX_DEVELOPER_APP_DETAIL_FORM_BYTES = 32_768;
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("developer app detail page", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
     const user = ctx.state.user;
     if (!user) return redirectToSignin(ctx.url);
 
-    const [app, claimedHosts] = await Promise.all([
-      getLoginAppForOwner(
+    const accessRedirect = await developerAppAccessRedirect(user.did).catch(
+      () => appviewUnavailable(),
+    );
+    if (accessRedirect) return accessRedirect;
+
+    let profile: LoginAppProfile | null;
+    try {
+      profile = await getLoginAppProfileForOwner(user.did);
+    } catch {
+      return appviewUnavailable();
+    }
+    if (!profile) return appviewUnavailable();
+
+    let app: LoginApp | null;
+    try {
+      app = await getLoginAppForOwner(
         user.did,
         clientIdFromParams(ctx.params.clientId),
-      ).catch(() => null),
-      loadPreferredHostChoices(user.did),
-    ]);
+      );
+    } catch {
+      return appviewUnavailable();
+    }
+    let claimedHosts: AccountHost[];
+    try {
+      claimedHosts = await loadPreferredHostChoices(user.did, profile);
+    } catch {
+      return appviewUnavailable();
+    }
     if (!app) {
       return ctx.render(
         <DeveloperAppDetailPage
           account={buildAccountMenuProps(ctx.state)}
+          profile={profile}
           app={null}
           checks={[]}
           readiness={null}
@@ -83,7 +114,7 @@ export const handler = define.handlers({
           values={emptyValues()}
           claimedHosts={claimedHosts}
           reviewNotes=""
-          error="App registration not found."
+          error="Login environment not found."
           message={null}
           status={404}
         />,
@@ -96,6 +127,7 @@ export const handler = define.handlers({
     return ctx.render(
       <DeveloperAppDetailPage
         account={buildAccountMenuProps(ctx.state)}
+        profile={profile}
         app={app}
         checks={checks}
         readiness={readiness}
@@ -112,12 +144,25 @@ export const handler = define.handlers({
 
   async POST(ctx) {
     const proxied = await proxyAppviewPageResponse(ctx.url, ctx.req).catch(
-      (err) => appviewUnavailable("developer app detail update", err),
+      () => appviewUnavailable(),
     );
     if (proxied) return proxied;
 
     const user = ctx.state.user;
     if (!user) return redirectToSignin(ctx.url);
+
+    const accessRedirect = await developerAppAccessRedirect(user.did).catch(
+      () => appviewUnavailable(),
+    );
+    if (accessRedirect) return accessRedirect;
+
+    let profile: LoginAppProfile | null;
+    try {
+      profile = await getLoginAppProfileForOwner(user.did);
+    } catch {
+      return appviewUnavailable();
+    }
+    if (!profile) return appviewUnavailable();
 
     const limited = await enforceDurableRateLimit(ctx.req, {
       scope: "developer-app-update",
@@ -133,12 +178,23 @@ export const handler = define.handlers({
     if (large) return large;
 
     const clientId = clientIdFromParams(ctx.params.clientId);
-    const claimedHosts = await loadPreferredHostChoices(user.did);
-    const app = await getLoginAppForOwner(user.did, clientId).catch(() => null);
+    let claimedHosts: AccountHost[];
+    try {
+      claimedHosts = await loadPreferredHostChoices(user.did);
+    } catch {
+      return appviewUnavailable();
+    }
+    let app: LoginApp | null;
+    try {
+      app = await getLoginAppForOwner(user.did, clientId);
+    } catch {
+      return appviewUnavailable();
+    }
     if (!app) {
       return ctx.render(
         <DeveloperAppDetailPage
           account={buildAccountMenuProps(ctx.state)}
+          profile={profile}
           app={null}
           checks={[]}
           readiness={null}
@@ -146,7 +202,7 @@ export const handler = define.handlers({
           values={emptyValues()}
           claimedHosts={claimedHosts}
           reviewNotes=""
-          error="App registration not found."
+          error="Login environment not found."
           message={null}
           status={404}
         />,
@@ -164,7 +220,7 @@ export const handler = define.handlers({
       return new Response(
         error instanceof RequestBodyTooLargeError
           ? "request body too large"
-          : "invalid app form",
+          : "invalid login environment form",
         { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
       );
     }
@@ -172,19 +228,30 @@ export const handler = define.handlers({
     const values = valuesFromForm(form, app);
     const reviewNotes = formText(form, "review_notes");
     try {
+      if (action === "delete") {
+        return await deleteLoginEnvironmentAction(
+          user.did,
+          clientId,
+          formText(form, "confirm_client_id"),
+        );
+      }
       if (action === "request-review") {
         await requestLoginAppTrustReview(user.did, clientId, reviewNotes);
         return redirectTo(`${loginAppDetailPath(clientId)}?saved=review`);
       }
+      if (action !== "save") {
+        throw new LoginRequestError("Unknown login environment action");
+      }
       await registerLoginAppForOwner(user.did, {
-        appName: values.appName,
         clientId,
-        appUri: values.appUri,
-        logoUri: values.logoUri,
         allowedReturnUris: splitAllowedReturnUris(values.allowedReturnUris),
         preferredAccountHost: values.preferredAccountHost,
+        expectedEnvironmentRevision: formText(
+          form,
+          "expected_environment_revision",
+        ),
       });
-      return redirectTo(`${loginAppDetailPath(clientId)}?saved=app`);
+      return redirectTo(`${loginAppDetailPath(clientId)}?saved=environment`);
     } catch (err) {
       const current = await getLoginAppForOwner(user.did, clientId).catch(() =>
         app
@@ -199,14 +266,17 @@ export const handler = define.handlers({
       return ctx.render(
         <DeveloperAppDetailPage
           account={buildAccountMenuProps(ctx.state)}
+          profile={profile}
           app={current}
           checks={checks}
           readiness={readiness}
           defaultOrigin={ctx.url.origin}
-          values={values}
+          values={status === 409 && current ? valuesFromApp(current) : values}
           claimedHosts={claimedHosts}
           reviewNotes={reviewNotes}
-          error={err instanceof Error ? err.message : String(err)}
+          error={err instanceof LoginRequestError
+            ? err.message
+            : "The login environment could not be saved. Please try again."}
           message={null}
           status={status}
         />,
@@ -216,10 +286,10 @@ export const handler = define.handlers({
   },
 });
 
-function appviewUnavailable(scope: string, err: unknown): Response {
-  console.error(`[appview] ${scope} proxy failed:`, err);
+function appviewUnavailable(): Response {
+  console.error("[appview] developer environment unavailable");
   return new Response(
-    "Developer app registration is temporarily unavailable.",
+    "Developer settings are temporarily unavailable.",
     {
       status: 503,
       headers: {
@@ -230,9 +300,10 @@ function appviewUnavailable(scope: string, err: unknown): Response {
   );
 }
 
-function DeveloperAppDetailPage(
+export function DeveloperAppDetailPage(
   {
     account,
+    profile,
     app,
     checks,
     readiness,
@@ -248,20 +319,25 @@ function DeveloperAppDetailPage(
     <div id="page-top">
       <div class="content-layer">
         <Nav account={account} />
-        <section class="account-home-section account-dashboard-section">
+        <section
+          id="main-content"
+          class="account-home-section account-dashboard-section"
+        >
           <div class="container account-dashboard-container">
             <a
-              href="/account/developer/apps#registered-apps"
+              href="/account/developer/apps#login-environments"
               class="account-dashboard-text-link"
             >
-              Back to developer apps
+              <span aria-hidden="true">←</span> Back
             </a>
 
             {!app
               ? (
                 <div class="glass account-dashboard-empty mt-4">
-                  <h1>App not found</h1>
-                  <p>{error ?? "This app registration could not be found."}</p>
+                  <h1 class="text-section">Login environment not found</h1>
+                  <p>
+                    {error ?? "This login environment could not be found."}
+                  </p>
                 </div>
               )
               : (
@@ -271,28 +347,30 @@ function DeveloperAppDetailPage(
                       class="login-picker-app-mark account-developer-hero-app-mark"
                       aria-hidden="true"
                     >
-                      {app.logoUri
+                      {profile.logoUri
                         ? (
                           <img
-                            src={app.logoUri}
+                            src={profile.logoUri}
                             alt=""
                             loading="lazy"
                             decoding="async"
                           />
                         )
-                        : <span>{app.appName.slice(0, 1).toUpperCase()}</span>}
+                        : <span>{profile.name.slice(0, 1).toUpperCase()}</span>}
                     </div>
                     <div>
-                      <p class="text-eyebrow">Developer app</p>
-                      <h1 class="text-section">{app.appName}</h1>
+                      <p class="text-eyebrow">Login environment</p>
+                      <h1 class="text-section">
+                        {loginEnvironmentLabel(app.clientId)}
+                      </h1>
                       <p class="text-body mt-2">
-                        Edit app identity, request trusted review, and confirm
-                        the exact return URIs Atmosphere can send selection
-                        tokens back to.
+                        Manage the client ID and exact return URLs for{" "}
+                        {profile.name}. Its name, homepage, and logo come from
+                        the app profile.
                       </p>
                     </div>
                     <span class={`login-picker-status is-${app.status}`}>
-                      {loginAppStatusLabel(app.status)}
+                      {loginEnvironmentStatusLabel(app.status)}
                     </span>
                   </header>
 
@@ -316,30 +394,27 @@ function DeveloperAppDetailPage(
                   )}
 
                   <div class="account-developer-detail-grid">
-                    <form method="post" class="glass account-developer-form">
+                    <form
+                      method="post"
+                      class="glass account-developer-form"
+                      data-submit-once="true"
+                    >
                       <input type="hidden" name="action" value="save" />
+                      <input
+                        type="hidden"
+                        name="expected_environment_revision"
+                        value={app.environmentRevision ?? ""}
+                      />
                       <div class="account-dashboard-section-head account-developer-form-head">
                         <div>
-                          <p class="text-eyebrow">App identity</p>
-                          <h2>Edit registration</h2>
+                          <p class="text-eyebrow">Environment settings</p>
+                          <h2>Edit login environment</h2>
                           <p>
-                            Changes to a trusted app will return it to review so
-                            the picker never implies stale trust.
+                            Security changes to a trusted environment will
+                            return it to review.
                           </p>
                         </div>
                       </div>
-
-                      <label class="profile-form-field">
-                        <span class="profile-form-label">App name</span>
-                        <input
-                          class="profile-form-input"
-                          type="text"
-                          name="app_name"
-                          value={values.appName}
-                          autocomplete="off"
-                          required
-                        />
-                      </label>
 
                       <label class="profile-form-field">
                         <span class="profile-form-label">Client ID</span>
@@ -350,37 +425,14 @@ function DeveloperAppDetailPage(
                           disabled
                         />
                         <span class="profile-form-hint">
-                          Create a new app registration if you need to change
-                          the client ID.
+                          Add another environment if you need a different client
+                          ID.
                         </span>
                       </label>
 
                       <label class="profile-form-field">
-                        <span class="profile-form-label">Homepage</span>
-                        <input
-                          class="profile-form-input"
-                          type="url"
-                          name="app_uri"
-                          value={values.appUri}
-                          autocomplete="off"
-                          required
-                        />
-                      </label>
-
-                      <label class="profile-form-field">
-                        <span class="profile-form-label">Logo URL</span>
-                        <input
-                          class="profile-form-input"
-                          type="url"
-                          name="logo_uri"
-                          value={values.logoUri}
-                          autocomplete="off"
-                        />
-                      </label>
-
-                      <label class="profile-form-field">
                         <span class="profile-form-label">
-                          Allowed return URIs
+                          Exact return URLs
                         </span>
                         <textarea
                           class="profile-form-input account-developer-textarea"
@@ -390,44 +442,42 @@ function DeveloperAppDetailPage(
                         >
                           {values.allowedReturnUris}
                         </textarea>
+                        <span class="profile-form-hint">
+                          One per line. Scheme, host, port, path, and query must
+                          match exactly.
+                        </span>
                       </label>
 
-                      <label class="profile-form-field">
-                        <span class="profile-form-label">
-                          Preferred account host
-                        </span>
-                        <select
-                          class="profile-form-input"
-                          name="preferred_account_host"
-                          value={values.preferredAccountHost}
-                        >
-                          <option value="">No preferred host</option>
-                          {claimedHosts.map((host) => (
-                            <option value={host.host} key={host.host}>
-                              {host.displayName} ({host.host})
-                            </option>
-                          ))}
-                        </select>
-                        <span class="profile-form-hint">
-                          Only a joinable host claimed by this account can be
-                          pinned as a recommendation. People can always choose
-                          another host.
-                        </span>
-                      </label>
+                      <PreferredHostField
+                        hosts={claimedHosts}
+                        value={values.preferredAccountHost}
+                      />
 
                       <div class="account-developer-form-actions">
                         <button
                           type="submit"
                           class="profile-form-button-primary"
+                          data-pending-label="Saving changes…"
                         >
-                          Save changes
+                          <span data-submit-once-label>Save changes</span>
                         </button>
                       </div>
                     </form>
 
                     <aside class="account-developer-side">
                       <section class="glass account-developer-state-card">
-                        <p class="text-eyebrow">Picker preview</p>
+                        <p class="text-eyebrow">App identity</p>
+                        <div class="account-developer-profile-link-row">
+                          <strong>{profile.name}</strong>
+                          <a
+                            href={`/apps/manage?app=${
+                              encodeURIComponent(profile.listingId)
+                            }`}
+                            class="account-dashboard-text-link"
+                          >
+                            Edit profile
+                          </a>
+                        </div>
                         <PickerPreview app={app} />
                       </section>
 
@@ -447,6 +497,7 @@ function DeveloperAppDetailPage(
                             <form
                               method="post"
                               class="account-developer-review-form"
+                              data-submit-once="true"
                             >
                               <input
                                 type="hidden"
@@ -471,10 +522,13 @@ function DeveloperAppDetailPage(
                                 type="submit"
                                 disabled={readiness?.state !== "ready"}
                                 class="profile-form-button-secondary profile-form-button-secondary--lg"
+                                data-pending-label="Requesting review…"
                               >
-                                {app.reviewStatus === "requested"
-                                  ? "Update review request"
-                                  : "Request trusted review"}
+                                <span data-submit-once-label>
+                                  {app.reviewStatus === "requested"
+                                    ? "Update review request"
+                                    : "Request trusted review"}
+                                </span>
                               </button>
                               {readiness?.state !== "ready" && (
                                 <p class="profile-form-hint">
@@ -494,9 +548,9 @@ function DeveloperAppDetailPage(
                         <p class="text-eyebrow">Run checks</p>
                         <h2 id="production-checks">Production checks</h2>
                         <p>
-                          These checks cover client ID shape, homepage, logo,
-                          HTTPS, exact callbacks, loopback URLs, domain
-                          alignment, and review status.
+                          These checks cover the client ID, exact callbacks,
+                          derived app identity, HTTPS, domain alignment, and
+                          review status.
                         </p>
                       </div>
                     </div>
@@ -536,6 +590,29 @@ function DeveloperAppDetailPage(
                         <code key={uri}>{uri}</code>
                       ))}
                     </div>
+                  </section>
+
+                  <section class="glass account-developer-danger-card">
+                    <div>
+                      <p class="text-eyebrow">Danger zone</p>
+                      <h2>Delete environment</h2>
+                      <p>
+                        Remove this client ID and its return URLs. Apps using it
+                        will no longer be able to start Login with Atmosphere.
+                      </p>
+                    </div>
+                    <ConfirmedActionForm
+                      action={loginAppDetailPath(app.clientId)}
+                      fields={{
+                        action: "delete",
+                        confirm_client_id: app.clientId,
+                      }}
+                      label="Delete environment"
+                      confirmation={`Delete ${
+                        loginEnvironmentLabel(app.clientId)
+                      }? Apps using this client ID will stop working with the Login with Atmosphere picker.`}
+                      buttonClass="profile-form-button-danger"
+                    />
                   </section>
                 </>
               )}
@@ -639,7 +716,11 @@ function RunChecksPanel(
 }
 
 function clientIdFromParams(value: string | undefined): string {
-  return decodeURIComponent(value ?? "");
+  try {
+    return decodeURIComponent(value ?? "");
+  } catch {
+    return "";
+  }
 }
 
 function redirectToSignin(url: URL): Response {
@@ -650,11 +731,31 @@ function redirectTo(location: string): Response {
   return new Response(null, { status: 303, headers: { location } });
 }
 
+export async function deleteLoginEnvironmentAction(
+  ownerDid: string,
+  clientId: string,
+  confirmedClientId: string,
+  remove: (
+    ownerDid: string,
+    clientId: string,
+  ) => Promise<boolean> = deleteLoginAppForOwner,
+): Promise<Response> {
+  if (confirmedClientId !== clientId) {
+    throw new LoginRequestError(
+      "Reload this login environment before deleting it.",
+      409,
+    );
+  }
+  if (!await remove(ownerDid, clientId)) {
+    throw new LoginRequestError("Login environment not found", 404);
+  }
+  return redirectTo(
+    "/account/developer/apps?deleted=1#login-environments",
+  );
+}
+
 function emptyValues(): DeveloperAppFormValues {
   return {
-    appName: "",
-    appUri: "",
-    logoUri: "",
     allowedReturnUris: "",
     preferredAccountHost: "",
   };
@@ -662,9 +763,6 @@ function emptyValues(): DeveloperAppFormValues {
 
 function valuesFromApp(app: LoginApp): DeveloperAppFormValues {
   return {
-    appName: app.appName,
-    appUri: app.appUri ?? "",
-    logoUri: app.logoUri ?? "",
     allowedReturnUris: app.allowedReturnUris.join("\n"),
     preferredAccountHost: app.preferredAccountHost ?? "",
   };
@@ -675,21 +773,19 @@ function valuesFromForm(
   fallback: LoginApp,
 ): DeveloperAppFormValues {
   return {
-    appName: formText(form, "app_name") || fallback.appName,
-    appUri: formText(form, "app_uri") || fallback.appUri || "",
-    logoUri: formText(form, "logo_uri"),
     allowedReturnUris: formText(form, "allowed_return_uris") ||
       fallback.allowedReturnUris.join("\n"),
-    preferredAccountHost: formText(form, "preferred_account_host"),
+    preferredAccountHost: form?.has("preferred_account_host")
+      ? formText(form, "preferred_account_host")
+      : fallback.preferredAccountHost ?? "",
   };
 }
 
-async function loadPreferredHostChoices(did: string): Promise<AccountHost[]> {
-  const hosts = await listClaimedAccountHostsForOwner(did).catch(() => []);
-  return hosts.filter((host) =>
-    !!host.signupUrl &&
-    (host.signupStatus === "open" || host.signupStatus === "invite_required")
-  );
+async function loadPreferredHostChoices(
+  did: string,
+  profile?: LoginAppProfile,
+): Promise<AccountHost[]> {
+  return await listLoginPreferredHostChoicesForApp(did, profile);
 }
 
 function formText(form: FormData | null, key: string): string {
@@ -707,7 +803,7 @@ function displayUrl(value: string | null): string {
 }
 
 function messageFor(value: string | null): string | null {
-  if (value === "app") return "App registration updated.";
+  if (value === "environment") return "Login environment updated.";
   if (value === "review") return "Trusted review requested.";
   return null;
 }
@@ -722,18 +818,18 @@ function reviewHeading(app: LoginApp): string {
 
 function reviewCopy(app: LoginApp): string {
   if (app.status === "trusted") {
-    return "This app is shown as trusted in the picker.";
+    return "This environment is shown as trusted for the app in the picker.";
   }
   if (app.status === "blocked") {
-    return "This app cannot use Atmosphere Login.";
+    return "This environment cannot use Login with Atmosphere.";
   }
   if (app.reviewStatus === "requested") {
-    return "Atmosphere has this app in the trust review queue.";
+    return "This environment is in the trust review queue.";
   }
   if (app.reviewStatus === "rejected") {
     return "The last trusted review request was not approved. Update details and request review again.";
   }
-  return "Request review when the app identity, logo, homepage, and exact return URIs are ready.";
+  return "Request review when the app profile and exact return URLs are ready.";
 }
 
 function noticeTone(app: LoginApp): "trusted" | "development" | "unverified" {
@@ -744,13 +840,13 @@ function noticeTone(app: LoginApp): "trusted" | "development" | "unverified" {
 
 function noticeCopy(app: LoginApp): string {
   if (app.status === "trusted") {
-    return "Atmosphere has reviewed this app identity and its allowed return URIs.";
+    return "This app identity and its allowed return URLs have been reviewed.";
   }
   if (app.status === "development") {
     return "This looks like a local development app. Only continue if you opened this flow yourself.";
   }
   if (app.status === "blocked") {
-    return "This app is unavailable for Atmosphere Login.";
+    return "This app is unavailable for Login with Atmosphere.";
   }
-  return "This app has not been reviewed by Atmosphere yet. Check the app name, logo, and homepage before continuing.";
+  return "This login environment has not been reviewed yet. Check the app profile and exact return URLs before continuing.";
 }

@@ -6,6 +6,7 @@ import {
   DEFAULT_ACCOUNT_HOST_SORT,
   fetchHostProfileForTest,
   isAccountHostPubliclyListable,
+  isCompletedDnsClaimReplayForTest,
   listSeededAccountHostFallback,
   lookupAccountHostHint,
   managedAccountHostsQueryForTest,
@@ -18,10 +19,10 @@ import {
   upsertAccountHostClaimForOwnerForTest,
   validateAccountHostRegistrationInput,
   verifiedAccountHostOwnerDid,
-  writeContactEmailClaimTransactionForTest,
+  writeDnsClaimTransactionForTest,
 } from "./account-hosts.ts";
 import { convertQuestionParameters } from "./neon.ts";
-import { runPostgresTransactionForTest } from "./postgres.ts";
+import type { ResolvedHostOwnerTransferContext } from "./host-owner-transfer-intent.ts";
 
 function assert(condition: unknown, message = "Assertion failed"): void {
   if (!condition) throw new Error(message);
@@ -33,35 +34,86 @@ function assertEquals(actual: unknown, expected: unknown): void {
   if (a !== e) throw new Error(`Expected ${e}, got ${a}`);
 }
 
-Deno.test("fixed Bluesky profile fetch refuses redirects and non-JSON bodies", async () => {
+Deno.test("fixed Bluesky profile fetch bounds and validates upstream responses", async () => {
   const originalFetch = globalThis.fetch;
   try {
-    let mode: "redirect" | "wrong-type" = "redirect";
+    let response = new Response(null, { status: 302 });
     globalThis.fetch =
       ((_input: string | URL | Request, init?: RequestInit) => {
         assertEquals(init?.redirect, "manual");
-        return Promise.resolve(
-          mode === "redirect"
-            ? new Response(null, { status: 302 })
-            : new Response("<html></html>", {
-              headers: { "content-type": "text/html" },
-            }),
-        );
+        return Promise.resolve(response);
       }) as typeof fetch;
-    for (const next of ["redirect", "wrong-type"] as const) {
-      mode = next;
+
+    for (
+      const malicious of [
+        new Response(null, { status: 302 }),
+        new Response("<html></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(256 * 1024));
+              controller.enqueue(new Uint8Array([0x20]));
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+      ]
+    ) {
+      response = malicious;
       let rejected = false;
       try {
         await fetchHostProfileForTest("host.example");
       } catch {
         rejected = true;
       }
-      assert(rejected, `expected ${next} response rejection`);
+      assert(rejected, "expected malicious upstream response rejection");
     }
+
+    for (
+      const invalidIdentity of [
+        { did: "not-a-did", handle: "host.example" },
+        { did: "did:plc:host", handle: "not a handle" },
+      ]
+    ) {
+      response = Response.json(invalidIdentity);
+      assertEquals(await fetchHostProfileForTest("host.example"), null);
+    }
+
+    response = Response.json({
+      did: "did:plc:host",
+      handle: "HOST.EXAMPLE",
+      displayName: " Host operator ",
+      description: " Account hosting ",
+      avatar: "http://127.0.0.1/avatar.png",
+    });
+    assertEquals(await fetchHostProfileForTest("host.example"), {
+      did: "did:plc:host",
+      handle: "host.example",
+      displayName: "Host operator",
+      description: "Account hosting",
+      avatarUrl: null,
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
+
+function resolvedTransferForTest(): ResolvedHostOwnerTransferContext {
+  return {
+    token: "v1.test.signature",
+    intent: {
+      host: "pds.example",
+      previousOwnerDid: "did:plc:old-operator",
+      previousOwnerUpdatedAt: 1_799_998_000_000,
+      jti: "T".repeat(32),
+      issuedAt: 1_799_999_000_000,
+      expiresAt: 1_800_085_400_000,
+    },
+  } as unknown as ResolvedHostOwnerTransferContext;
+}
 
 Deno.test("OAuth host claims preserve an omitted directory preference on Postgres", () => {
   const query = accountHostClaimUpdateQueryForTest({
@@ -228,7 +280,7 @@ Deno.test("privileged seeded-host ownership requires the pinned live DID", async
   );
 });
 
-Deno.test("contact-email ownership does not require the curated social DID", async () => {
+Deno.test("historical contact-email ownership remains operational", async () => {
   const seeded = listSeededAccountHostFallback().find((host) =>
     host.host === "pckt.cafe"
   );
@@ -248,6 +300,33 @@ Deno.test("contact-email ownership does not require the curated social DID", asy
       resolveIdentity: () => {
         resolved = true;
         return Promise.reject(new Error("curated social identity unavailable"));
+      },
+    }),
+    claim.claimantDid,
+  );
+  assertEquals(resolved, false);
+});
+
+Deno.test("DNS ownership does not require the curated social DID", async () => {
+  const seeded = listSeededAccountHostFallback().find((host) =>
+    host.host === "pckt.cafe"
+  );
+  if (!seeded) throw new Error("expected pckt.cafe seed");
+  const claim = {
+    host: seeded.host,
+    claimantDid: "did:plc:dns-operator",
+    claimantHandle: "operator.example",
+    method: "dns_txt" as const,
+    claimedAt: 1,
+    verifiedAt: 1,
+    updatedAt: 1,
+  };
+  let resolved = false;
+  assertEquals(
+    await verifiedAccountHostOwnerDid(seeded, claim, {
+      resolveIdentity: () => {
+        resolved = true;
+        return Promise.reject(new Error("resolver unavailable"));
       },
     }),
     claim.claimantDid,
@@ -276,7 +355,32 @@ Deno.test("ordinary claimed hosts use their guarded claim owner", async () => {
   );
 });
 
-Deno.test("contact-email host claims write an explicit directory preference on Postgres", () => {
+Deno.test("local fixture ownership is invalid outside development", async () => {
+  const host = {
+    ...listSeededAccountHostFallback()[0],
+    host: "fixture.test",
+    source: "manual" as const,
+  };
+  const claim = {
+    host: host.host,
+    claimantDid: "did:plc:fixture",
+    claimantHandle: "fixture.test",
+    method: "local_dev_fixture" as const,
+    claimedAt: 1,
+    verifiedAt: 1,
+    updatedAt: 1,
+  };
+  assertEquals(
+    await verifiedAccountHostOwnerDid(host, claim, { isDev: true }),
+    claim.claimantDid,
+  );
+  assertEquals(
+    await verifiedAccountHostOwnerDid(host, claim, { isDev: false }),
+    null,
+  );
+});
+
+Deno.test("host claims write an explicit directory preference on Postgres", () => {
   const query = accountHostClaimUpdateQueryForTest({
     host: "tranquil.example",
     claimHandle: "owner.example",
@@ -303,7 +407,7 @@ Deno.test("contact-email host claims write an explicit directory preference on P
   ]);
 });
 
-Deno.test("contact-email completion consumes the token and writes both ownership rows on one client", async () => {
+Deno.test("DNS completion consumes proof and writes ownership atomically", async () => {
   const statements: string[] = [];
   const client = {
     execute(
@@ -314,13 +418,13 @@ Deno.test("contact-email completion consumes the token and writes both ownership
     },
   };
 
-  await writeContactEmailClaimTransactionForTest(client, {
-    tokenHash: "token-hash",
+  await writeDnsClaimTransactionForTest(client, {
+    tokenHash: "dns-token-hash",
     claim: {
       host: "pds.example",
       claimantDid: "did:plc:operator",
       claimantHandle: "operator.example",
-      method: "pds_contact_email",
+      method: "dns_txt",
       claimedAt: 1_800_000_000_000,
       verifiedAt: 1_800_000_000_000,
       updatedAt: 1_800_000_000_000,
@@ -345,13 +449,133 @@ Deno.test("contact-email completion consumes the token and writes both ownership
   );
 });
 
+Deno.test("DNS completion replay succeeds only for the current DNS owner", () => {
+  const claim = {
+    host: "pds.example",
+    claimantDid: "did:plc:operator",
+    claimantHandle: "operator.example",
+    method: "dns_txt" as const,
+    claimedAt: 1_800_000_000_000,
+    verifiedAt: 1_800_000_000_000,
+    updatedAt: 1_800_000_000_000,
+  };
+  assert(
+    isCompletedDnsClaimReplayForTest(
+      claim,
+      "did:plc:operator",
+      "did:plc:operator",
+    ),
+  );
+  assert(
+    !isCompletedDnsClaimReplayForTest(
+      claim,
+      "did:plc:another",
+      "did:plc:operator",
+    ),
+  );
+  assert(
+    !isCompletedDnsClaimReplayForTest(
+      { ...claim, method: "pds_contact_email" },
+      "did:plc:operator",
+      "did:plc:operator",
+    ),
+  );
+});
+
+Deno.test("DNS manager transfer swaps exactly one owner and invalidates old host approvals", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      statements.push(
+        typeof query === "string"
+          ? { sql: query, args: [] }
+          : { sql: query.sql, args: query.args ?? [] },
+      );
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+
+  await writeDnsClaimTransactionForTest(client, {
+    tokenHash: "dns-transfer-token-hash",
+    claim: {
+      host: "pds.example",
+      claimantDid: "did:plc:new-operator",
+      claimantHandle: "new.example",
+      method: "dns_txt",
+      claimedAt: 1_800_000_000_000,
+      verifiedAt: 1_800_000_000_000,
+      updatedAt: 1_800_000_000_000,
+    },
+    claimHandle: "new.example",
+    claimDid: "did:plc:new-operator",
+    operatorListingOptIn: false,
+    transfer: resolvedTransferForTest(),
+    timestamp: 1_800_000_000_000,
+  });
+
+  assertEquals(statements.length, 6);
+  assert(statements[1].sql.includes("WHERE host = ? AND claimant_did = ?"));
+  assertEquals(
+    statements[1].args.slice(-3),
+    ["pds.example", "did:plc:old-operator", 1_799_998_000_000],
+  );
+  assert(statements[2].sql.includes("account_host_owner_transfer"));
+  assert(
+    !statements[3].sql.includes("operator_listing_opt_in"),
+    "a manager change must preserve directory visibility",
+  );
+  assert(statements[4].sql.includes("avatar_url = NULL"));
+  assert(statements[4].sql.includes("service_record_uri = NULL"));
+  assert(statements[5].sql.includes("status = 'pending'"));
+  assert(statements[5].sql.includes("host_approved_at = NULL"));
+  assert(!statements[5].sql.includes("app_approved_at ="));
+});
+
+Deno.test("failed DNS manager transfer CAS stops before audit and cleanup", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      return Promise.resolve({
+        rows: [],
+        rowsAffected: statements.length === 2 ? 0 : 1,
+      });
+    },
+  };
+
+  let rejected = false;
+  try {
+    await writeDnsClaimTransactionForTest(client, {
+      tokenHash: "dns-transfer-token-hash",
+      claim: {
+        host: "pds.example",
+        claimantDid: "did:plc:new-operator",
+        claimantHandle: "new.example",
+        method: "dns_txt",
+        claimedAt: 1_800_000_000_000,
+        verifiedAt: 1_800_000_000_000,
+        updatedAt: 1_800_000_000_000,
+      },
+      claimHandle: "new.example",
+      claimDid: "did:plc:new-operator",
+      transfer: resolvedTransferForTest(),
+      timestamp: 1_800_000_000_000,
+    });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+  assertEquals(statements.length, 2);
+});
+
 Deno.test("claim ownership upserts are idempotent only for the same DID", async () => {
   let captured = { sql: "", args: [] as unknown[] };
   const claim = {
     host: "pds.example",
     claimantDid: "did:plc:operator",
     claimantHandle: "operator.example",
-    method: "oauth_atproto_account" as const,
+    method: "dns_txt" as const,
     claimedAt: 1_800_000_000_000,
     verifiedAt: 1_800_000_000_000,
     updatedAt: 1_800_000_000_000,
@@ -379,107 +603,16 @@ Deno.test("claim ownership upserts are idempotent only for the same DID", async 
     },
   }, claim);
   assertEquals(rejected, false);
-});
 
-Deno.test("contact-email completion stops before ownership writes when its token was used", async () => {
-  const statements: string[] = [];
-  const client = {
-    execute(
-      query: string | { sql: string; args?: unknown[] },
-    ) {
-      const sql = typeof query === "string" ? query : query.sql;
-      statements.push(sql);
-      if (/SELECT host, claimant_did, expires_at, consumed_at/.test(sql)) {
-        return Promise.resolve({
-          rows: [{
-            host: "pds.example",
-            claimant_did: "did:plc:operator",
-            expires_at: 1_800_000_100_000,
-            consumed_at: 1_800_000_000_000,
-          }],
-          rowsAffected: 0,
-        });
-      }
-      return Promise.resolve({ rows: [], rowsAffected: 0 });
+  let attemptedLegacyWrite = false;
+  const rejectedLegacy = await upsertAccountHostClaimForOwnerForTest({
+    execute() {
+      attemptedLegacyWrite = true;
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
     },
-  };
-  let message = "";
-  try {
-    await writeContactEmailClaimTransactionForTest(client, {
-      tokenHash: "used-token-hash",
-      claim: {
-        host: "pds.example",
-        claimantDid: "did:plc:operator",
-        claimantHandle: "operator.example",
-        method: "pds_contact_email",
-        claimedAt: 1_800_000_000_000,
-        verifiedAt: 1_800_000_000_000,
-        updatedAt: 1_800_000_000_000,
-      },
-      claimHandle: "operator.example",
-      claimDid: "did:plc:operator",
-      timestamp: 1_800_000_000_000,
-    });
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
-  assertEquals(message, "already_used");
-  assertEquals(statements.length, 2);
-  assert(statements[0].includes("account_host_claim_challenge"));
-  assert(statements[1].includes("account_host_claim_challenge"));
-});
-
-Deno.test("a failed contact-email ownership write rolls token consumption back", async () => {
-  const statements: string[] = [];
-  const writeFailure = new Error("account_host write failed");
-  const pool = {
-    connect: () =>
-      Promise.resolve({
-        query(statement: string) {
-          statements.push(statement);
-          if (
-            statement.includes("UPDATE account_host\n") &&
-            !statement.includes("account_host_claim_challenge")
-          ) {
-            return Promise.reject(writeFailure);
-          }
-          return Promise.resolve({ rows: [], rowCount: 1 });
-        },
-        release() {},
-      }),
-  };
-
-  let caught: unknown = null;
-  try {
-    await runPostgresTransactionForTest(
-      pool,
-      (transaction) =>
-        writeContactEmailClaimTransactionForTest(transaction, {
-          tokenHash: "retryable-token-hash",
-          claim: {
-            host: "pds.example",
-            claimantDid: "did:plc:operator",
-            claimantHandle: "operator.example",
-            method: "pds_contact_email",
-            claimedAt: 1_800_000_000_000,
-            verifiedAt: 1_800_000_000_000,
-            updatedAt: 1_800_000_000_000,
-          },
-          claimHandle: "operator.example",
-          claimDid: "did:plc:operator",
-          timestamp: 1_800_000_000_000,
-        }),
-    );
-  } catch (error) {
-    caught = error;
-  }
-
-  assert(caught === writeFailure);
-  assertEquals(statements[0], "BEGIN");
-  assert(statements[1].includes("account_host_claim_challenge"));
-  assert(statements[2].includes("INSERT INTO account_host_claim"));
-  assert(statements[3].includes("UPDATE account_host\n"));
-  assertEquals(statements.at(-1), "ROLLBACK");
+  }, { ...claim, method: "pds_contact_email" });
+  assertEquals(rejectedLegacy, false);
+  assertEquals(attemptedLegacyWrite, false);
 });
 
 Deno.test("seeded account host fallback includes known public hosts", () => {

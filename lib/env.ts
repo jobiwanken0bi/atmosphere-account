@@ -97,12 +97,6 @@ export const IS_DEV = !IS_HOSTED_RUNTIME &&
 export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");
 export const OAUTH_PUBLIC_JWK = safeGet("OAUTH_PUBLIC_JWK");
 export const OAUTH_KID = safeGet("OAUTH_KID");
-export const PASSKEY_RP_ID = safeGet("PASSKEY_RP_ID");
-
-/** Transactional delivery for PDS contact-email ownership challenges. */
-export const COMAIL_API_KEY = safeGet("COMAIL_API_KEY");
-export const COMAIL_SENDER_DID = safeGet("COMAIL_SENDER_DID");
-export const HOST_CLAIM_EMAIL_FROM = safeGet("HOST_CLAIM_EMAIL_FROM");
 
 function hostedSecret(key: string, devFallback: string): string {
   const value = safeGet(key);

@@ -1,4 +1,5 @@
 import { loadDotEnvIfPresent } from "../lib/cli-env.ts";
+import { withPostgresSchemaMigrationLock } from "../lib/postgres-migration.ts";
 import { createPostgresExecuteClient } from "../lib/postgres.ts";
 
 const DEFAULT_SCHEMA_PATH = "sql/neon/001_initial.sql";
@@ -134,11 +135,12 @@ await loadDotEnvIfPresent();
 const started = performance.now();
 const db = createPostgresExecuteClient();
 const schema = await Deno.readTextFile(schemaPath);
+const migrationSql = withPostgresSchemaMigrationLock(schema);
 const statements = splitSqlStatements(schema)
   .filter((stmt) => !/^(BEGIN|COMMIT|ROLLBACK)$/i.test(stmt.trim()));
 
 try {
-  await db.execute(schema);
+  await db.execute(migrationSql);
 } finally {
   await (db as typeof db & { end?: () => Promise<void> }).end?.();
 }

@@ -11,7 +11,7 @@ Deno.test("saved-account removal warns when it will sign out the current account
   );
   assertEquals(
     forgetAccountConfirmation("bob.example", false),
-    "Remove @bob.example from saved accounts? You’ll need to sign in with its host to use it again.",
+    "Remove @bob.example from saved accounts? You’ll need to use Login with Atmosphere again to switch back.",
   );
 });
 

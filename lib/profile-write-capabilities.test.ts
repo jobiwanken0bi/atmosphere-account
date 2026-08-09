@@ -1,17 +1,14 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import {
-  appProfileWriteCapabilities,
-  userProfileWriteCapabilities,
-} from "./profile-write-capabilities.ts";
+import { appProfileWriteCapabilities } from "./profile-write-capabilities.ts";
 
-Deno.test("app profile writes request media only for new blob bytes", () => {
-  assertEquals(appProfileWriteCapabilities({}), ["app"]);
+Deno.test("app profile writes always use the complete app and image job", () => {
+  assertEquals(appProfileWriteCapabilities({}), ["app", "media"]);
   assertEquals(
     appProfileWriteCapabilities({
       avatarUpload: { dataBase64: "" },
       screenshotUploads: [],
     }),
-    ["app"],
+    ["app", "media"],
   );
   assertEquals(
     appProfileWriteCapabilities({
@@ -29,11 +26,6 @@ Deno.test("app profile writes request media only for new blob bytes", () => {
     appProfileWriteCapabilities({
       screenshotUploads: {} as never,
     }),
-    ["app"],
+    ["app", "media"],
   );
-});
-
-Deno.test("user profile avatar uploads add media permission", () => {
-  assertEquals(userProfileWriteCapabilities(false), ["profile"]);
-  assertEquals(userProfileWriteCapabilities(true), ["profile", "media"]);
 });

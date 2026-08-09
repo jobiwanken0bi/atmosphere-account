@@ -17,12 +17,11 @@ const ACCOUNT_CREATION_BY_ACTION = {
   report_review: true,
   favorite: true,
   app: true,
-  host_claim: false,
+  host_claim: true,
   host_manage: false,
+  host_transfer: true,
   app_host: false,
-  profile: true,
-  developer: true,
-  passkey_manage: false,
+  developer: false,
   relationship_confirm: false,
   admin: false,
 } as const satisfies Record<OAuthAction, boolean>;
@@ -116,9 +115,9 @@ export function authActionCopy(
         eyebrow: "App management",
         title: "Choose your app’s account",
         signInBody:
-          `Use the account that represents ${name}. You’ll approve access to publish and manage its app profile and listing.`,
+          `Use the account that represents ${name}. You’ll approve access to manage its app records and images.`,
         upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Approve app-management access to continue.`,
+          `You’re signed in as @${handle}. Approve access to manage its app records, including images, to continue.`,
       };
     }
     case "host_claim": {
@@ -126,9 +125,10 @@ export function authActionCopy(
       return {
         eyebrow: "Claim an account host",
         title: `Sign in to claim ${name}`,
-        signInBody: "Choose the account that should manage this account host.",
+        signInBody:
+          `Choose the account that will claim and manage ${name}, including its public profile and images. Granting this access does not claim the host; DNS verification separately proves control of its domain.`,
         upgradeBody: (handle) =>
-          `Confirm @${handle} to continue the host claim.`,
+          `Approve access for @${handle} to manage the host’s public profile and images. This does not claim the host; DNS verification separately proves control of its domain.`,
       };
     }
     case "host_manage": {
@@ -137,9 +137,20 @@ export function authActionCopy(
         eyebrow: "Host management",
         title: "Choose the host’s account",
         signInBody:
-          `Use the account that represents ${name}. You’ll approve access to publish and manage its host profile.`,
+          `Use the account that represents ${name}. You’ll approve access to manage its public host profile and images.`,
         upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Approve host-management access to continue.`,
+          `You’re signed in as @${handle}. Approve access to manage its public host profile and images.`,
+      };
+    }
+    case "host_transfer": {
+      const name = targetName || "this account host";
+      return {
+        eyebrow: "Choose a new managing account",
+        title: "Choose the new managing account",
+        signInBody:
+          `Choose the new managing account for ${name}. It will manage the host’s public profile and images after DNS verification separately proves control of the domain. The current manager stays in control until then.`,
+        upgradeBody: (handle) =>
+          `Approve access for @${handle} to manage the host’s public profile and images. Nothing changes until DNS verification separately proves control of the domain.`,
       };
     }
     case "app_host": {
@@ -148,35 +159,18 @@ export function authActionCopy(
         eyebrow: "App and host management",
         title: "Choose the account for both profiles",
         signInBody:
-          `Use the account that represents ${name}. You’ll approve access to manage its app and host profiles.`,
+          `Use the account that represents ${name}. You’ll approve access to manage its app records and images and its public host profile and images.`,
         upgradeBody: (handle) =>
-          `You’re signed in as @${handle}. Approve app and host management access to continue.`,
+          `You’re signed in as @${handle}. Approve access to manage the app records and images and the public host profile and images.`,
       };
     }
-    case "profile":
-      return {
-        eyebrow: "Profile",
-        title: "Sign in to manage your profile",
-        signInBody: "Choose the account whose profile you want to edit.",
-        upgradeBody: (handle) =>
-          `Continue as @${handle} to edit this account’s profile.`,
-      };
     case "developer":
       return {
-        eyebrow: "Developer settings",
+        eyebrow: "Manage app developer settings",
         title: "Manage a login registration",
-        signInBody: "Choose the account that owns this registration.",
+        signInBody:
+          "Choose the account that represents the app. No repository access is required to manage its Login with Atmosphere registrations.",
         upgradeBody: (handle) => `Confirm @${handle} to continue.`,
-      };
-    case "passkey_manage":
-      return {
-        eyebrow: "Passkey verification",
-        title: "Verify your account",
-        signInBody: targetName
-          ? `Sign in with ${targetName} to continue with its passkeys.`
-          : "Choose the account whose passkeys you want to use.",
-        upgradeBody: (handle) =>
-          `Confirm @${handle} to continue with passkeys.`,
       };
     case "relationship_confirm": {
       const name = targetName || "this app and account host";
@@ -197,9 +191,10 @@ export function authActionCopy(
       };
     case "account":
       return {
-        eyebrow: "Account settings",
+        eyebrow: "Atmosphere Account",
         title: "Manage your account",
-        signInBody: "Choose the account whose settings you want to manage.",
+        signInBody:
+          "Choose the account whose settings you want to manage. Identity authentication confirms which account you are using.",
         upgradeBody: (handle) => `Confirm @${handle} to continue.`,
       };
   }

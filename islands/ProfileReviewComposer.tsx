@@ -83,9 +83,9 @@ export function reviewMutationAuthorization(
     : action;
   return {
     action: resolved,
-    capabilities: [
-      resolved,
-    ],
+    capabilities: resolved === "legacy_review_manage"
+      ? ["legacy_review"]
+      : [resolved],
   };
 }
 
@@ -288,6 +288,7 @@ export default function ProfileReviewComposer(
   );
 
   const submit = async () => {
+    if (submitting.value) return;
     submitting.value = true;
     status.value = { kind: "idle" };
     try {
@@ -343,6 +344,7 @@ export default function ProfileReviewComposer(
   };
 
   const remove = async () => {
+    if (submitting.value) return;
     if (!globalThis.confirm("Delete this review? This can’t be undone.")) {
       return;
     }
@@ -567,7 +569,6 @@ export default function ProfileReviewComposer(
           action={authAction}
           targetName={authTargetName}
           rememberedAccounts={rememberedAccounts}
-          closeLabel={copy.cancel}
           onClose={() => authOpen.value = false}
         />
       )}
@@ -578,7 +579,6 @@ export default function ProfileReviewComposer(
           currentHandle={currentHandle}
           rememberedAccounts={rememberedAccounts}
           restrictToCurrentAccount
-          closeLabel={copy.cancel}
           onClose={() => {
             if (draftKey) cancelReviewReauthorization(draftKey);
             reauthorization.value = null;

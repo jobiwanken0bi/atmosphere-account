@@ -133,28 +133,31 @@ When you add or modify a lexicon in `lexicons/`:
 
 ## OAuth integration notes
 
-Atmosphere uses progressive, action-specific OAuth authorization. The `scope` in
+This site uses action-specific OAuth authorization. The `scope` in
 `/oauth/client-metadata.json` is the **maximum** this client may request; it is
 not the scope sent with every authorization request. Each flow requests the
 smallest allowlisted capability bundle needed by the action that opened it (see
 `lib/oauth-scopes.ts`):
 
-| Action                                   | Requested permission                                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Sign in or use the hosted account picker | `atproto` only                                                                             |
-| Write a new shared review                | `include:fyi.atstore.authThirdPartyReviews`                                                |
-| Edit or delete a shared review           | `repo:fyi.atstore.listing.review?action=update&action=delete`                              |
-| Favorite or unfavorite an app            | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                            |
-| Manage an app                            | the community app profile, ATStore profile/detail, and transitional legacy app collections |
-| Manage a host                            | `repo:account.atmosphere.host.profile` and `repo:account.atmosphere.host.service`          |
-| Upload imagery                           | `blob:image/*`, added only when the action actually uses image blobs                       |
+| Action                                   | Requested permission                                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Sign in or use the hosted account picker | `atproto` only                                                                                             |
+| Write a new shared review                | `include:fyi.atstore.authThirdPartyReviews`                                                                |
+| Edit or delete a shared review           | `repo:fyi.atstore.listing.review?action=update&action=delete`                                              |
+| Favorite or unfavorite an app            | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                                            |
+| Register or manage an app                | the community app profile, ATStore profile/detail, transitional legacy app collections, and `blob:image/*` |
+| Claim or manage a host                   | `repo:account.atmosphere.host.profile`, `repo:account.atmosphere.host.service`, and `blob:image/*`         |
 
 Every action bundle also includes `atproto`. When an already-authorized account
-adds a capability, Atmosphere requests the union of its existing grant and the
-new bundle. App and host management are independent capabilities; their union is
-requested only for an explicit combined app-and-host action. Browser input may
-name only the capabilities allowlisted in `lib/oauth-scopes.ts`; arbitrary raw
-scope strings are rejected.
+adds a capability, this site requests the union of its existing grant and the
+new bundle. App and host management are independent, complete jobs. Each
+includes its profile images from the first contextual authorization so routine
+editing does not cause a second media prompt; their union is requested only for
+an explicit combined app-and-host action. Host permission identifies the
+repository that may publish the records, while DNS verification separately
+proves ownership before a claim becomes effective. Browser input may name only
+the capabilities allowlisted in `lib/oauth-scopes.ts`; arbitrary raw scope
+strings are rejected.
 
 The metadata maximum temporarily retains the pre-progressive broad scope union,
 including `include:com.atmosphereaccount.registry.fullPermissions` and

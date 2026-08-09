@@ -29,6 +29,7 @@ import {
 import { readRememberedAccountsFromHeader } from "../../lib/remembered-accounts.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import {
+  isSafeRelativePath,
   readFormDataRequestWithLimit,
   readJsonRequestWithLimit,
   rejectLargeRequest,
@@ -41,7 +42,6 @@ import {
 } from "../../lib/browser-handoff.ts";
 import { devPickerAccountForDid } from "../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../lib/env.ts";
-import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 import {
   hasOAuthCapabilities,
   normalizeOAuthCapabilities,
@@ -53,32 +53,13 @@ import {
   type OAuthAction,
   safeOAuthTargetName,
 } from "../../lib/oauth-action.ts";
-import {
-  InvalidOAuthRequestInputError,
-  optionalEnum,
-  optionalJsonString,
-  optionalJsonStringList,
-  optionalSafeRelativePath,
-  plainJsonRecord,
-  rejectSearchFormOverlap,
-  rejectSearchJsonOverlap,
-  repeatedFormStrings,
-  repeatedSearchValues,
-  singleFormString,
-  singleSearchValue,
-} from "../../lib/oauth-request-input.ts";
 
 const SWITCH_SESSION_TIMEOUT_MS = 5_000;
 const MAX_SWITCH_BODY_BYTES = 8_192;
-const SWITCH_CONTEXT_FIELDS = [
-  "did",
-  "next",
-  "intent",
-  "choose",
-  "capability",
-  "action",
-  "name",
-] as const;
+
+function safeNext(raw: string | null | undefined): string | null {
+  return raw && isSafeRelativePath(raw) ? raw : null;
+}
 
 async function readInput(
   req: Request,
@@ -87,136 +68,101 @@ async function readInput(
   did: string | null;
   next: string | null;
   intent: "user" | "project" | null;
-  chooseAnotherAccount: boolean;
   capabilities: OAuthCapability[] | null;
   action: OAuthAction | null;
   targetName: string | null;
 }> {
   const queryCapabilities = normalizeOAuthCapabilities(
-    repeatedSearchValues(url.searchParams, "capability"),
+    url.searchParams.getAll("capability"),
   );
-  const queryIntent = optionalEnum(
-    singleSearchValue(url.searchParams, "intent"),
-    ["user", "project"] as const,
-  );
-  const queryChoose = optionalEnum(
-    singleSearchValue(url.searchParams, "choose"),
-    ["another"] as const,
-  );
-  const rawQueryAction = singleSearchValue(url.searchParams, "action");
-  if (rawQueryAction !== null && !isOAuthAction(rawQueryAction)) {
-    throw new InvalidOAuthRequestInputError();
-  }
-  const queryAction = rawQueryAction;
-  const queryTargetName = safeOAuthTargetName(
-    singleSearchValue(url.searchParams, "name"),
-  ) ?? null;
-  const queryDid = singleSearchValue(url.searchParams, "did")?.trim() || null;
-  const queryNext = optionalSafeRelativePath(
-    singleSearchValue(url.searchParams, "next"),
-  );
+  const queryIntent = safeIntent(url.searchParams.get("intent"));
+  const rawQueryAction = url.searchParams.get("action");
+  const queryAction = isOAuthAction(rawQueryAction) ? rawQueryAction : null;
+  const queryTargetName = safeOAuthTargetName(url.searchParams.get("name")) ??
+    null;
   const ct = (req.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
-    const body = plainJsonRecord(
-      await readJsonRequestWithLimit(req, MAX_SWITCH_BODY_BYTES),
-    );
-    rejectSearchJsonOverlap(url.searchParams, body, SWITCH_CONTEXT_FIELDS);
-    const bodyCapabilities = optionalJsonStringList(body, "capability");
-    const bodyAction = optionalJsonString(body, "action");
-    if (bodyAction !== null && !isOAuthAction(bodyAction)) {
-      throw new InvalidOAuthRequestInputError();
-    }
-    const bodyIntent = optionalEnum(
-      optionalJsonString(body, "intent"),
-      [
-        "user",
-        "project",
-      ] as const,
-    );
-    const bodyChoose = optionalEnum(
-      optionalJsonString(body, "choose"),
-      [
-        "another",
-      ] as const,
-    );
+    const parsed = await readJsonRequestWithLimit(req, MAX_SWITCH_BODY_BYTES);
+    const body = parsed && typeof parsed === "object" &&
+        !Array.isArray(parsed)
+      ? parsed as {
+        did?: string;
+        next?: string;
+        intent?: string;
+        capability?: string | string[];
+        action?: string;
+        name?: string;
+      }
+      : null;
+    const bodyCapabilities = Array.isArray(body?.capability)
+      ? body.capability
+      : typeof body?.capability === "string"
+      ? [body.capability]
+      : null;
     return {
-      did: optionalJsonString(body, "did")?.trim() || queryDid,
-      next: optionalSafeRelativePath(optionalJsonString(body, "next")) ??
-        queryNext,
-      intent: bodyIntent ?? queryIntent,
-      chooseAnotherAccount: bodyChoose === "another" ||
-        queryChoose === "another",
+      did: body?.did?.trim() ?? null,
+      next: safeNext(body?.next),
+      intent: safeIntent(body?.intent) ?? queryIntent,
       capabilities: bodyCapabilities
         ? normalizeOAuthCapabilities(bodyCapabilities)
         : queryCapabilities,
-      action: bodyAction ?? queryAction,
-      targetName: safeOAuthTargetName(optionalJsonString(body, "name")) ??
-        queryTargetName,
+      action: isOAuthAction(body?.action) ? body.action : queryAction,
+      targetName: safeOAuthTargetName(body?.name) ?? queryTargetName,
     };
   }
-  if (!req.body && !ct) {
+  const form = await readFormDataRequestWithLimit(req, MAX_SWITCH_BODY_BYTES);
+  if (!form) {
     return {
-      did: queryDid,
-      next: queryNext,
+      did: url.searchParams.get("did")?.trim() || null,
+      next: safeNext(url.searchParams.get("next")),
       intent: queryIntent,
-      chooseAnotherAccount: queryChoose === "another",
       capabilities: queryCapabilities,
       action: queryAction,
       targetName: queryTargetName,
     };
   }
-  const form = await readFormDataRequestWithLimit(req, MAX_SWITCH_BODY_BYTES);
-  if (!form) throw new InvalidOAuthRequestInputError();
-  rejectSearchFormOverlap(url.searchParams, form, SWITCH_CONTEXT_FIELDS);
-  const formIntent = optionalEnum(
-    singleFormString(form, "intent"),
-    [
-      "user",
-      "project",
-    ] as const,
-  );
-  const formChoose = optionalEnum(
-    singleFormString(form, "choose"),
-    [
-      "another",
-    ] as const,
-  );
-  const formCapabilities = repeatedFormStrings(form, "capability");
-  const formAction = singleFormString(form, "action");
-  if (formAction !== null && !isOAuthAction(formAction)) {
-    throw new InvalidOAuthRequestInputError();
-  }
+  const v = form.get("did");
+  const next = form.get("next");
+  const intent = form.get("intent");
+  const formCapabilities = form.getAll("capability");
+  const formAction = form.get("action");
+  const formTargetName = form.get("name");
   return {
-    did: singleFormString(form, "did")?.trim() || queryDid,
-    next: optionalSafeRelativePath(singleFormString(form, "next")) ??
-      queryNext,
-    intent: formIntent ?? queryIntent,
-    chooseAnotherAccount: formChoose === "another" ||
-      queryChoose === "another",
+    did: typeof v === "string"
+      ? v.trim()
+      : url.searchParams.get("did")?.trim() || null,
+    next: safeNext(
+      typeof next === "string" ? next : url.searchParams.get("next"),
+    ),
+    intent: safeIntent(typeof intent === "string" ? intent : null) ??
+      queryIntent,
     capabilities: formCapabilities.length > 0
       ? normalizeOAuthCapabilities(formCapabilities)
       : queryCapabilities,
-    action: formAction ?? queryAction,
-    targetName: safeOAuthTargetName(singleFormString(form, "name")) ??
-      queryTargetName,
+    action: isOAuthAction(formAction) ? formAction : queryAction,
+    targetName: safeOAuthTargetName(formTargetName) ?? queryTargetName,
   };
 }
 
+function safeIntent(
+  value: string | null | undefined,
+): "user" | "project" | null {
+  return value === "user" || value === "project" ? value : null;
+}
+
 export function buildSwitchReauthLocation(
-  identifier: string,
+  handle: string,
   next: string | null,
   capabilities: readonly OAuthCapability[] = [],
   intent: "user" | "project" | null = null,
   action: OAuthAction | null = null,
   targetName: string | null = null,
-  chooseAnotherAccount = false,
 ): string {
-  const location = new URLSearchParams({ handle: identifier });
+  const location = new URLSearchParams({ handle });
   if (next) location.set("next", next);
   if (intent) location.set("intent", intent);
   if (action) location.set("action", action);
   if (targetName) location.set("name", targetName);
-  if (chooseAnotherAccount) location.set("choose", "another");
   for (const capability of capabilities) {
     location.append("capability", capability);
   }
@@ -240,56 +186,35 @@ export async function readSwitchAuthorizationInputForTest(
   capabilities: OAuthCapability[] | null;
   action: OAuthAction | null;
   targetName: string | null;
-  chooseAnotherAccount: boolean;
 }> {
-  const {
-    did,
-    next,
-    intent,
-    capabilities,
-    action,
-    targetName,
-    chooseAnotherAccount,
-  } = await readInput(
-    req,
-    new URL(req.url),
-  );
-  return {
-    did,
-    next,
-    intent,
-    capabilities,
-    action,
-    targetName,
-    chooseAnotherAccount,
-  };
+  const { did, next, intent, capabilities, action, targetName } =
+    await readInput(
+      req,
+      new URL(req.url),
+    );
+  return { did, next, intent, capabilities, action, targetName };
 }
 
 function redirectToReauth(
   req: Request,
-  identifier: string,
+  handle: string,
   next: string | null,
   capabilities: readonly OAuthCapability[],
   intent: "user" | "project" | null,
   action: OAuthAction | null,
   targetName: string | null,
-  chooseAnotherAccount: boolean,
 ): Response {
-  const headers = new Headers();
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   return browserHandoffResponse(
     buildSwitchReauthLocation(
-      identifier,
+      handle,
       next,
       capabilities,
       intent,
       action,
       targetName,
-      chooseAnotherAccount,
     ),
     {
       json: wantsBrowserHandoffJson(req),
-      headers,
     },
   );
 }
@@ -297,7 +222,6 @@ function redirectToReauth(
 function switchedSessionHeaders(sessionCookie: string): Headers {
   const headers = new Headers();
   headers.append("set-cookie", sessionCookie);
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   return headers;
 }
 
@@ -347,15 +271,7 @@ async function handle(ctx: { req: Request }): Promise<Response> {
       wantsJson,
     );
   }
-  const {
-    did,
-    next,
-    intent,
-    capabilities,
-    action,
-    targetName,
-    chooseAnotherAccount,
-  } = input;
+  const { did, next, intent, capabilities, action, targetName } = input;
   if (!did) return browserHandoffError("missing did", 400, wantsJson);
   if (!capabilities) {
     return browserHandoffError("invalid capability", 400, wantsJson);
@@ -392,17 +308,11 @@ async function handle(ctx: { req: Request }): Promise<Response> {
     devAccount &&
     devAccount.handle.toLowerCase() === target.handle.toLowerCase()
   ) {
+    await destroySession(ctx.req).catch(() => {});
     const cookieValue = await createSession({
       did: devAccount.did,
       handle: devAccount.handle,
     });
-    // Mint the replacement before deleting the current row. A transient DB
-    // failure must not sign the person out of the account they already had.
-    try {
-      await destroySession(ctx.req);
-    } catch (error) {
-      return appviewUnavailable("oauth switch session rotation", error);
-    }
     return browserHandoffResponse(next ?? "/account", {
       json: wantsJson,
       headers: switchedSessionHeaders(buildSessionCookie(cookieValue)),
@@ -420,13 +330,12 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   if (!oauthSession) {
     return redirectToReauth(
       ctx.req,
-      target.did,
+      target.handle,
       next,
       capabilities,
       intent,
       action,
       targetName,
-      chooseAnotherAccount,
     );
   }
   if (
@@ -437,27 +346,23 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   ) {
     return redirectToReauth(
       ctx.req,
-      target.did,
+      target.handle,
       next,
       capabilities,
       intent,
       action,
       targetName,
-      chooseAnotherAccount,
     );
   }
+
+  /** Drop the previous app session row (if any) so we don't leak
+   *  rows in the table — the cookie itself is overwritten below. */
+  await destroySession(ctx.req).catch(() => {});
 
   const cookieValue = await createSession({
     did: oauthSession.did,
     handle: oauthSession.handle,
   });
-  /** Drop the previous app session row only after its replacement exists.
-   *  The response cookie points at the new row. */
-  try {
-    await destroySession(ctx.req);
-  } catch (error) {
-    return appviewUnavailable("oauth switch session rotation", error);
-  }
   const accountType = await getEffectiveAccountType(oauthSession.did).catch(
     () => null,
   );
@@ -465,7 +370,7 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   return browserHandoffResponse(
     next ??
       (intent === "project" && accountType !== "project"
-        ? "/account?upgrade=app"
+        ? "/apps/manage?new=1"
         : (accountType === "project"
           ? "/apps/manage"
           : accountType === "user"

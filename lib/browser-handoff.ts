@@ -35,7 +35,7 @@ export function browserHandoffDocument(redirectUrl: string): Response {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
-    <title>Continue with Atmosphere</title>
+    <title>Login with Atmosphere</title>
     <link rel="stylesheet" href="${stylesheetHref}">
     <script type="module" src="${handoffScriptSrc}"></script>
   </head>
@@ -65,9 +65,9 @@ export function browserHandoffError(
   json: boolean,
   headers?: HeadersInit,
 ): Response {
-  // This helper is shared by request-validation paths and catch blocks. Only
-  // emit the small set of intentional public messages; an exception message
-  // can otherwise disclose upstream responses, configuration, or stack data.
+  // This helper is used both for intentional validation failures and from
+  // catch blocks. Never reflect an arbitrary exception message: OAuth and
+  // persistence errors can contain credentials, upstream bodies, or paths.
   const publicMessage = publicBrowserHandoffMessage(message);
   const responseHeaders = new Headers(headers);
   responseHeaders.set("cache-control", "no-store");
@@ -84,25 +84,16 @@ export function browserHandoffError(
 function publicBrowserHandoffMessage(message: string): string {
   switch (message) {
     case "request URL too large":
-      return "request URL too large";
     case "request body too large":
-      return "request body too large";
     case "Too many account picker attempts. Try again soon.":
-      return "Too many account picker attempts. Try again soon.";
     case "account not available in this browser":
-      return "account not available in this browser";
     case "This account choice has expired. Return to the app and try again.":
-      return "This account choice has expired. Return to the app and try again.";
     case "invalid authorization context":
-      return "invalid authorization context";
     case "missing did":
-      return "missing did";
     case "invalid capability":
-      return "invalid capability";
     case "invalid action capability combination":
-      return "invalid action capability combination";
     case "account not remembered on this device":
-      return "account not remembered on this device";
+      return message;
     default:
       return "Unable to continue. Return to the app and try again.";
   }

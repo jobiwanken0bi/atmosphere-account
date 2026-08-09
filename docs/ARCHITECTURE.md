@@ -28,7 +28,7 @@ the health endpoints and verified with an exact-commit smoke test.
    flow directly with the selected account's authorization server.
 5. Jetstream and scheduled relay inventory update the Postgres-backed appview.
 
-Atmosphere Login never exchanges or stores the relying app's OAuth token.
+Login with Atmosphere never exchanges or stores the relying app's OAuth token.
 
 ## Repository map
 
@@ -70,7 +70,7 @@ runtime migration path, baseline schema, and migration tests together.
 - Admin routes are deny-by-default when no admin DID is configured.
 - Public images and SVGs are proxied or sanitized with restrictive headers.
 
-See [Atmosphere Login](./ATMOSPHERE_LOGIN.md),
+See [Login with Atmosphere](./ATMOSPHERE_LOGIN.md),
 [Host lexicon](./HOST_LEXICON.md), and [Security policy](../SECURITY.md) for the
 detailed contracts.
 

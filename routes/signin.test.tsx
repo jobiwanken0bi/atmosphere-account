@@ -184,7 +184,7 @@ Deno.test("identity-only confirmation does not claim to add permission", () => {
     "Confirm your account",
   );
   assertEquals(
-    signedInAuthHeading(["profile", "media"]),
+    signedInAuthHeading(["app", "media"]),
     "Approve access to continue",
   );
 });
@@ -193,7 +193,7 @@ Deno.test("media permission gets explicit image-upload context", () => {
   assertEquals(authMediaContext(["app"]), null);
   assertEquals(
     authMediaContext(["app", "media"]),
-    "This also allows the new image you selected to be uploaded.",
+    "This includes image uploads for the app or host profile.",
   );
 });
 
@@ -263,36 +263,36 @@ Deno.test("create mode does not reuse or auto-continue the signed-in account", (
       avatarUrl: null,
       publicProfileHandle: null,
       accountHost: null,
+      hasManagedAppProfile: false,
+      hasManagedHostProfiles: false,
+      hasManagedProfiles: false,
       rememberedAccounts: [{
         did: "did:plc:alice",
         handle: "alice.example",
       }],
     },
     next: "/apps/manage?new=1",
-    capabilities: ["app"],
+    capabilities: ["app", "media"],
     action: "app",
     targetName: "your app",
     permissionState: null,
-    initialMode: "create",
+    mode: "create",
     choosingAnotherAccount: false,
     allowAccountCreation: true,
     createAccountHosts: [],
+    createAccountHostsUnavailable: false,
+    createAccountHostsEndpoint: "/api/login/account-hosts",
+    createAccountError: null,
     oauthConfigured: true,
   }));
 
   assertStringIncludes(html, "Create an Atmosphere account");
   assertStringIncludes(html, 'data-initial-mode="create"');
   assertStringIncludes(html, 'data-signin-page-copy="true"');
-  assertStringIncludes(
-    html,
-    'data-signin-copy-create="Create an Atmosphere account"',
-  );
-  assertStringIncludes(
-    html,
-    'data-signin-copy-signin="Choose your app’s account"',
-  );
   assertStringIncludes(html, "Choose an account host");
   assertEquals(html.includes("Currently signed in"), false);
+  assertEquals(html.includes("Choose where your account will live"), false);
+  assertEquals(html.includes("New account"), false);
 });
 
 Deno.test("another-account mode keeps the current session out of the chooser decision", () => {
@@ -303,6 +303,9 @@ Deno.test("another-account mode keeps the current session out of the chooser dec
       avatarUrl: null,
       publicProfileHandle: null,
       accountHost: null,
+      hasManagedAppProfile: false,
+      hasManagedHostProfiles: false,
+      hasManagedProfiles: false,
       rememberedAccounts: [{
         did: "did:plc:alice",
         handle: "alice.example",
@@ -313,10 +316,13 @@ Deno.test("another-account mode keeps the current session out of the chooser dec
     action: "account",
     targetName: null,
     permissionState: "required",
-    initialMode: "signin",
+    mode: "signin",
     choosingAnotherAccount: true,
     allowAccountCreation: true,
     createAccountHosts: [],
+    createAccountHostsUnavailable: false,
+    createAccountHostsEndpoint: "/api/login/account-hosts",
+    createAccountError: null,
     oauthConfigured: true,
   }));
 

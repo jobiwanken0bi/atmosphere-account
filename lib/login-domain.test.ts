@@ -13,10 +13,11 @@ Deno.test("login domain serves generated picker assets in place", () => {
   assertEquals(isAllowedLoginHostPathForTest("/assets/client-entry.js"), true);
   assertEquals(isAllowedLoginHostPathForTest("/login-handoff.js"), true);
   assertEquals(isAllowedLoginHostPathForTest("/oauth/create"), true);
-  assertEquals(isAllowedLoginHostPathForTest("/passkeys"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/passkeys"), false);
+  assertEquals(isAllowedLoginHostPathForTest("/api/passkeys"), false);
   assertEquals(
     isAllowedLoginHostPathForTest("/api/login/passkeys/options"),
-    true,
+    false,
   );
   assertEquals(
     isAllowedLoginHostPathForTest(

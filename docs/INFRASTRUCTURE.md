@@ -77,10 +77,10 @@ Why Railway Postgres now:
 ## Auth And Off-Protocol Control Plane
 
 `login.atmosphereaccount.com` should feel like an edge-native sign-in surface,
-but the edge is not the authority for Atmosphere Login. Deno Deploy owns the
-fast public experience: the picker shell, SDK assets, public metadata, JWKS, and
-safe cached reads. Railway owns the durable decisions that must be consistent
-across every request.
+but the edge is not the authority for Login with Atmosphere. Deno Deploy owns
+the fast public experience: the picker shell, SDK assets, public metadata, JWKS,
+and safe cached reads. Railway owns the durable decisions that must be
+consistent across every request.
 
 Durable auth/control-plane state stays in Railway Postgres:
 
@@ -131,10 +131,8 @@ POSTGRES_SSL_MODE=disable
 
 Inside Railway, `${{Postgres.DATABASE_URL}}` resolves to the private database
 connection string. Local operator scripts may use Railway's public database URL
-temporarily for migration and copy tasks; public connections use verified TLS by
-default. `POSTGRES_SSL_MODE=no-verify` is an emergency compatibility escape
-hatch and should not be used for normal operation. Public access is not the
-desired permanent web runtime shape.
+temporarily for migration and copy tasks, but that is not the desired permanent
+web runtime shape.
 
 Postgres runtime tasks:
 
@@ -152,6 +150,15 @@ deno task db:copy:postgres -- --write --reset
 # Exercise route-shaped reads against Railway Postgres.
 ATMOSPHERE_DB_BACKEND=postgres deno task db:smoke -- --backend=postgres
 ```
+
+Routine source-linked Railway releases do not depend on an operator running the
+first command manually. The root `railway.json` runs it as a blocking pre-deploy
+command for both the web/appview and indexer images. The generic Postgres runner
+acquires a transaction-scoped advisory lock before any DDL, so concurrent
+service deploys serialize safely and either service can migrate first. A failed
+migration prevents the new service deployment from starting. The advisory lock
+is injected only by the Postgres runner; the shared SQL file and Neon migration
+behavior remain unchanged.
 
 Cutover acceptance checks:
 
@@ -401,10 +408,10 @@ Run schema bootstrap explicitly before deploys and after additive DB changes:
 deno task db:migrate
 ```
 
-Run cleanup for expired OAuth flow state, app sessions, Atmosphere Login replay
-keys, and stale worker leases. Persisted OAuth refresh sessions are retained
-past their short-lived access-token expiry and are cleaned up by the OAuth
-lifecycle itself:
+Run cleanup for expired OAuth flow state, app sessions, Login with Atmosphere
+replay keys, and stale worker leases. Persisted OAuth refresh sessions are
+retained past their short-lived access-token expiry and are cleaned up by the
+OAuth lifecycle itself:
 
 ```sh
 deno task db:maintain
@@ -541,11 +548,9 @@ Hosted environments must set:
 - `SESSION_SECRET`
 - OAuth keys when sign-in/write flows are enabled
 
-Production PDS contact-email claims use Comail. Enroll the sending domain under
-the sender's ATProto DID, publish Comail's DKIM and SPF records, and set
-`COMAIL_API_KEY`, `COMAIL_SENDER_DID`, and `HOST_CLAIM_EMAIL_FROM`. Ownership
-messages are sent with Comail's `verification` category; local development keeps
-using the private on-page preview when these values are absent.
+Production host claims use a temporary, account-bound DNS TXT challenge. They do
+not require an outbound email provider. Explicit local `.test` fixtures keep
+their development-only bypass for visual and integration testing.
 
 The app intentionally refuses local DB and weak session-secret fallbacks in
 hosted runtimes.

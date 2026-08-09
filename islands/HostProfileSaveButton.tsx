@@ -50,8 +50,8 @@ interface HostProfileResponseBody {
 /**
  * Enhances only the public host-profile submit button. The surrounding form
  * remains a normal multipart POST without JavaScript, while hydration adds the
- * IndexedDB handoff needed to carry an avatar File through a progressive OAuth
- * media upgrade.
+ * IndexedDB handoff needed to carry an avatar File through management
+ * reauthorization when an older session lacks the complete host grant.
  */
 export default function HostProfileSaveButton(
   { did, host, targetName, currentHandle, rememberedAccounts = [] }: Props,
@@ -68,7 +68,6 @@ export default function HostProfileSaveButton(
     responseBody: HostProfileResponseBody | null,
     formData: FormData,
   ): Promise<boolean> => {
-    const avatar = formData.get("avatarUpload");
     const contextual = contextualReauthorizationFromApiPayload(responseBody) ??
       (hostProfileResponseNeedsAuthorization(response)
         ? contextualReauthorization({
@@ -76,9 +75,7 @@ export default function HostProfileSaveButton(
             new URL(currentRequestPath(), globalThis.location.origin),
           ),
           action: "host_manage",
-          capabilities: avatar instanceof File && avatar.size > 0
-            ? ["host", "media"]
-            : ["host"],
+          capabilities: ["host", "media"],
           targetName,
         })
         : null);

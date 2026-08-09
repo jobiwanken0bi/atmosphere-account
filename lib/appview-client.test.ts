@@ -36,11 +36,10 @@ Deno.test("early appview proxy covers DB-backed app surfaces before session hydr
       "/hosts/bsky.network",
       "/hosts/register",
       "/account",
+      "/account/apps-hosts",
       "/account/reviews",
       "/admin/app-directory",
-      "/users/joebasser.com",
       "/login/select",
-      "/passkeys",
       "/oauth/add-account",
       "/oauth/callback",
       "/oauth/create",
@@ -258,12 +257,10 @@ Deno.test("early appview proxy covers DB-backed APIs before session hydration", 
     const path of [
       "/api/apps/grain/favorite",
       "/api/hosts/location/infer",
-      "/api/account/profile",
+      "/api/account/microblog-viewer",
       "/api/admin/app-directory/rescore",
       "/api/login/selection",
       "/api/login/account-hosts",
-      "/api/login/passkeys/options",
-      "/api/passkeys/authentication/options",
       "/api/registry/profile",
       "/api/appview/apps/home",
       "/api/atproto/blob",
@@ -275,6 +272,20 @@ Deno.test("early appview proxy covers DB-backed APIs before session hydration", 
   }
 });
 
+Deno.test("retired passkey routes are not forwarded to the appview", () => {
+  for (
+    const path of [
+      "/passkeys",
+      "/api/passkeys",
+      "/api/passkeys/register/options",
+      "/api/login/passkeys/options",
+      "/api/login/passkeys/verify",
+    ]
+  ) {
+    assertEquals(shouldProxyAppviewBeforeSession(path), false);
+  }
+});
+
 Deno.test("early appview proxy leaves static, docs, and health routes on the Deno shell", () => {
   for (
     const path of [
@@ -282,6 +293,7 @@ Deno.test("early appview proxy leaves static, docs, and health routes on the Den
       "/docs",
       "/docs/atmosphere-login",
       "/signin",
+      "/account/products",
       "/api/health/ready",
       "/oauth/client-metadata.json",
       "/oauth/jwks.json",
@@ -580,10 +592,6 @@ Deno.test("appview proxy bounds every streamed request body by route", async () 
   assertEquals(
     appviewRequestBodyLimitForTest("/api/account/type"),
     256 * 1024,
-  );
-  assertEquals(
-    appviewRequestBodyLimitForTest("/api/account/profile"),
-    1_064_000,
   );
   assertEquals(
     appviewRequestBodyLimitForTest("/api/registry/profile"),

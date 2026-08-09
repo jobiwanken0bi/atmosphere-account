@@ -95,7 +95,7 @@ export async function inferHostNetworkLocation(input: {
       ok: false,
       reason: "private_endpoint",
       message:
-        "That PDS endpoint resolves to a local or private IP address, so Atmosphere will not infer a location.",
+        "That PDS endpoint resolves to a local or private IP address, so this site will not infer a location.",
     };
   }
 
