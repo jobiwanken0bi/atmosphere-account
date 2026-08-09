@@ -413,13 +413,6 @@ h1, h2, h3, h4 {
   backface-visibility: hidden;
 }
 
-.nav-docs-icon {
-  display: none;
-  width: 1.1rem;
-  height: 1.1rem;
-  flex: 0 0 auto;
-}
-
 .nav-btn-glass {
   color: #0e1428;
   background: rgba(255, 255, 255, 0.58);
@@ -12006,22 +11999,13 @@ body {
   pointer-events: auto;
 }
 
-.account-menu,
-.account-menu-signin {
+.account-menu {
   pointer-events: auto;
 }
 
 .account-menu {
   position: relative;
   display: inline-block;
-}
-
-/* Signed-out variant: keep the global nav hit target consistent while
- * leaving the account action quieter than the active page pill. */
-.account-menu-signin {
-  min-height: 2.75rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.85rem;
 }
 
 .account-menu-trigger {
@@ -12053,35 +12037,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.account-menu-login-label-compact {
-  display: none;
-}
-
-.account-menu-trigger--signed-out {
-  min-height: 2.75rem;
-  padding: 0.5rem 1rem;
-  color: #fff;
-  background: #254a9e;
-  border-color: rgba(20, 48, 112, 0.3);
-  box-shadow:
-    0 7px 18px rgba(37, 74, 158, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.account-menu-trigger--signed-out:hover {
-  background: #1e428f;
-  box-shadow:
-    0 10px 24px rgba(37, 74, 158, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-.account-menu-trigger--signed-out .account-menu-chevron {
-  color: rgba(255, 255, 255, 0.82);
 }
 
 .account-menu-trigger:focus-visible {
@@ -12350,19 +12305,6 @@ body {
   background: rgba(34, 42, 68, 0.7);
 }
 
-.dark-phase .account-menu-trigger--signed-out {
-  color: #fff;
-  background: #315eb5;
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow:
-    0 7px 18px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
-}
-
-.dark-phase .account-menu-trigger--signed-out:hover {
-  background: #3c6bc4;
-}
-
 .dark-phase .account-menu-chevron {
   color: rgba(255, 255, 255, 0.75);
 }
@@ -12442,22 +12384,13 @@ body {
     display: none;
   }
 
-  .account-menu-trigger--signed-out {
-    padding-inline: 0.85rem;
-  }
-
-  .account-menu-trigger--signed-out .account-menu-trigger-label {
-    display: inline;
-  }
-
   .account-menu-popup {
     min-width: 220px;
   }
 }
 
-/* Keep every primary destination usable on very narrow phones. Docs becomes
- * an icon-only, explicitly labelled link; Login remains visible but drops the
- * redundant ecosystem suffix. Account triggers already collapse to avatar. */
+/* Keep every primary destination usable on very narrow phones. Remembered
+ * and active accounts collapse to their avatar. */
 @media (max-width: 420px) {
   .nav {
     padding-inline: 0.6rem;
@@ -12474,33 +12407,6 @@ body {
 
   .nav-btn {
     padding-inline: 0.65rem;
-  }
-
-  .nav-docs-link {
-    width: 2.4rem;
-    padding-inline: 0;
-  }
-
-  .nav-docs-icon {
-    display: block;
-  }
-
-  .nav-docs-label,
-  .account-menu-login-label-full {
-    display: none;
-  }
-
-  .account-menu-login-label-compact {
-    display: inline;
-  }
-
-  .account-menu-signin,
-  .account-menu-trigger--signed-out {
-    padding-inline: 0.65rem;
-  }
-
-  .account-menu-trigger--signed-out {
-    gap: 0.25rem;
   }
 }
 

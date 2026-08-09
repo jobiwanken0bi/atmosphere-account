@@ -22,13 +22,20 @@ function assertOmits(value: string, expected: string): void {
   }
 }
 
-function renderAppShell(pathname: string, signedIn = false): string {
+function renderAppShell(
+  pathname: string,
+  signedIn = false,
+  remembered = false,
+): string {
   const ctx = {
     Component: () => <main>Page</main>,
     state: {
       locale: "en",
       pageMeta: {},
       user: signedIn ? { did: "did:plc:test", handle: "test.example" } : null,
+      rememberedAccounts: remembered
+        ? [{ did: "did:plc:remembered", handle: "remembered.example" }]
+        : [],
     },
     url: new URL(pathname, "https://atmosphereaccount.com"),
   };
@@ -86,6 +93,10 @@ Deno.test("app shell preserves eager sign-in and saved-account handoff", () => {
   const signedInAccountHtml = renderAppShell("/account", true);
   assertOmits(signedInAccountHtml, "signin-preview-runtime");
   assertIncludes(signedInAccountHtml, 'id="login-handoff-runtime"');
+
+  const rememberedDirectoryHtml = renderAppShell("/apps", false, true);
+  assertOmits(rememberedDirectoryHtml, "signin-preview-runtime");
+  assertIncludes(rememberedDirectoryHtml, 'id="login-handoff-runtime"');
 });
 
 Deno.test("global static assets carry Fresh immutable-cache locks", () => {

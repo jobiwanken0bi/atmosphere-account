@@ -5,10 +5,10 @@ import {
 import { renderToString } from "preact-render-to-string";
 import Nav from "./Nav.tsx";
 
-Deno.test("anonymous navigation keeps the saved-account login control", () => {
+Deno.test("anonymous navigation shows only remembered accounts", () => {
   const html = renderToString(
     <Nav
-      active="docs"
+      active="apps"
       account={{
         user: null,
         rememberedAccounts: [{
@@ -23,22 +23,20 @@ Deno.test("anonymous navigation keeps the saved-account login control", () => {
   assertStringIncludes(html, 'href="#main-content"');
   assertStringIncludes(html, "Skip to main content");
   assertStringIncludes(html, 'href="/apps"');
-  assertStringIncludes(html, 'href="/docs"');
-  assertStringIncludes(html, "nav-docs-link");
-  assertStringIncludes(html, "nav-docs-icon");
-  assertStringIncludes(html, 'aria-label="Docs"');
+  assertEquals(html.includes('href="/docs"'), false);
   assertStringIncludes(html, 'aria-current="page"');
   assertStringIncludes(html, "nav-account");
-  assertStringIncludes(html, "account-menu-trigger--signed-out");
+  assertStringIncludes(html, "remembered.example");
+  assertEquals(html.includes("Login with Atmosphere"), false);
+  assertEquals(html.includes('href="/signin"'), false);
 });
 
-Deno.test("anonymous navigation without saved accounts keeps login available", () => {
+Deno.test("anonymous navigation without saved accounts has no login control", () => {
   const html = renderToString(<Nav account={{ user: null }} />);
 
-  assertStringIncludes(html, "nav-account");
-  assertStringIncludes(html, 'href="/signin"');
-  assertStringIncludes(html, "Login with Atmosphere");
-  assertStringIncludes(html, "account-menu-login-label-compact");
+  assertEquals(html.includes("nav-account"), false);
+  assertEquals(html.includes('href="/signin"'), false);
+  assertEquals(html.includes("Login with Atmosphere"), false);
 });
 
 Deno.test("authenticated navigation retains the account menu", () => {
@@ -62,11 +60,7 @@ Deno.test("narrow navigation keeps every state collision-free and accessible", a
   for (
     const fragment of [
       "@media (max-width: 420px)",
-      ".nav-docs-link",
-      ".nav-docs-icon",
-      ".nav-docs-label,",
-      ".account-menu-login-label-full",
-      ".account-menu-login-label-compact",
+      ".account-menu-trigger-label",
     ]
   ) {
     assertStringIncludes(css, fragment);
@@ -74,7 +68,6 @@ Deno.test("narrow navigation keeps every state collision-free and accessible", a
 
   for (
     const account of [
-      { user: null },
       {
         user: null,
         rememberedAccounts: [{
@@ -91,9 +84,10 @@ Deno.test("narrow navigation keeps every state collision-free and accessible", a
     const html = renderToString(<Nav account={account} />);
     assertStringIncludes(html, 'href="/hosts"');
     assertStringIncludes(html, 'href="/apps"');
-    assertStringIncludes(html, 'href="/docs"');
-    assertStringIncludes(html, 'aria-label="Docs"');
+    assertEquals(html.includes('href="/docs"'), false);
     assertStringIncludes(html, "nav-account");
-    assertEquals(html.includes("nav-docs-link"), true);
   }
+
+  const firstVisitHtml = renderToString(<Nav account={{ user: null }} />);
+  assertEquals(firstVisitHtml.includes("nav-account"), false);
 });
