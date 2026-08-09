@@ -46,7 +46,33 @@ Deno.test("review and report dialogs share one branded account-creation path", (
     );
     assertEquals(html.includes("Need an account?"), false);
     assertEquals(html.includes("signin-modal-account-link"), false);
+    assertStringIncludes(
+      html,
+      '<button type="submit" class="signin-form-submit">Continue</button>',
+    );
   }
+});
+
+Deno.test("contextual dialog preserves task-specific permission copy", () => {
+  const html = renderToString(h(ContextualSignInDialogCard, {
+    fallbackHref: "/signin",
+    returnTo: "/apps/tangled?favorite=save",
+    targetName: "Tangled",
+    action: "favorite",
+    capabilities: ["favorite"],
+    bodyOverride:
+      "Choose the account that will save this app. We’ll only request favorite access.",
+    onClose: () => {},
+  }));
+
+  assertStringIncludes(
+    html,
+    "Choose the account that will save this app. We’ll only request favorite access.",
+  );
+  assertStringIncludes(
+    html,
+    '<button type="submit" class="signin-form-submit">Continue</button>',
+  );
 });
 
 Deno.test("contextual dialog reuses the 44px branded close treatment", async () => {
@@ -58,6 +84,15 @@ Deno.test("contextual dialog reuses the 44px branded close treatment", async () 
   assertStringIncludes(closeRule, "width: 44px");
   assertStringIncludes(closeRule, "height: 44px");
   assertStringIncludes(css, ".auth-brand-title {");
+  const backdropRule = css.match(
+    /\.contextual-signin-backdrop\s*\{([^}]+)\}/,
+  )?.[1] ?? "";
+  const cardRule = css.match(
+    /\.contextual-signin-backdrop \.signin-modal-card\s*\{([^}]+)\}/,
+  )?.[1] ?? "";
+  assertStringIncludes(backdropRule, "overflow-y: auto");
+  assertStringIncludes(cardRule, "overflow: visible");
+  assertStringIncludes(cardRule, "max-height: none");
   assertEquals(css.includes(".modal-close-rail"), false);
   assertEquals(css.includes(".modal-close-button"), false);
 });

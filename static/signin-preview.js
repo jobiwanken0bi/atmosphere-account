@@ -170,14 +170,14 @@ function enhanceForm(form, index) {
   if (form.getAttribute(ENHANCED_ATTR) === "true") return;
   const input = form.querySelector("[data-signin-preview-input]");
   if (!(input instanceof HTMLInputElement)) return;
-  const field = input.parentElement;
-  if (!field) return;
+  const previewWrap = form.querySelector(".signin-form-preview-wrap");
+  if (!(previewWrap instanceof HTMLElement)) return;
 
   form.setAttribute(ENHANCED_ATTR, "true");
   const loadingLabel = form.dataset.previewLoading || "Searching…";
   const notFoundLabel = form.dataset.previewNotFound ||
     "No matching account found.";
-  const submitLabel = form.dataset.submitLabel || "Login with Atmosphere";
+  const submitLabel = form.dataset.submitLabel || "Continue";
   const submittingLabel = form.dataset.submittingLabel || "Redirecting…";
   const errorLabel = form.dataset.errorLabel ||
     "Login with Atmosphere could not be started. Check the handle or try again shortly.";
@@ -188,7 +188,9 @@ function enhanceForm(form, index) {
   preview.className = "signin-form-preview glass";
   preview.setAttribute("aria-live", "polite");
   preview.hidden = true;
-  field.append(preview);
+  // Anchor suggestions to the complete handle/action row so results use the
+  // full available width instead of being squeezed to the input column.
+  previewWrap.append(preview);
 
   let timer = 0;
   let seq = 0;
@@ -302,7 +304,9 @@ function enhanceForm(form, index) {
     if (input.value.trim()) schedule(input.value);
   });
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !preview.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
       hide();
       return;
     }
@@ -326,6 +330,7 @@ function enhanceForm(form, index) {
     else if (event.key === "End") next = options.length - 1;
     else if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       hide();
       input.focus();
       return;
@@ -401,18 +406,35 @@ function enhanceFlow(flow) {
 
   if (manualForm) {
     for (const showManual of showManualButtons) {
-      showManual.addEventListener("click", () => {
+      showManual.addEventListener("click", (event) => {
+        if (!isPlainLinkActivation(event)) return;
+        event.preventDefault();
         setSigninView("manual");
         const input = manualForm.querySelector("[data-signin-preview-input]");
         if (input instanceof HTMLInputElement) input.focus();
       });
     }
     for (const showSaved of showSavedButtons) {
-      showSaved.addEventListener("click", () => setSigninView("saved"));
+      showSaved.addEventListener("click", (event) => {
+        if (!isPlainLinkActivation(event)) return;
+        event.preventDefault();
+        setSigninView("saved");
+        const initialSavedAccount = savedView?.querySelector(
+          '[data-dialog-initial-focus="true"]',
+        );
+        if (initialSavedAccount instanceof HTMLElement) {
+          initialSavedAccount.focus();
+        }
+      });
     }
   }
 
   setSigninView(flow.getAttribute("data-initial-signin-view") || "manual");
+}
+
+function isPlainLinkActivation(event) {
+  return !event.defaultPrevented && event.button === 0 && !event.altKey &&
+    !event.ctrlKey && !event.metaKey && !event.shiftKey;
 }
 
 function hasSigninPreviewTargets() {

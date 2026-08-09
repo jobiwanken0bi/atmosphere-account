@@ -92,6 +92,7 @@ function SignedOutMenu(
 ) {
   const t = useT().nav.account;
   const primaryAccount = rememberedAccounts[0];
+  const hasSingleAccount = rememberedAccounts.length === 1;
   const open = useSignal(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -123,54 +124,119 @@ function SignedOutMenu(
 
   return (
     <div class="account-menu" ref={wrapRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        class="account-menu-trigger"
-        aria-haspopup="dialog"
-        aria-expanded={open.value ? "true" : "false"}
-        aria-controls={popupId}
-        aria-label={t.menuLabel}
-        onClick={() => {
-          open.value = !open.value;
-        }}
-      >
-        <Avatar
-          url={`/api/registry/avatar/${encodeURIComponent(primaryAccount.did)}`}
-          handle={primaryAccount.handle}
-        />
-        <span class="account-menu-trigger-label">
-          <AtmosphereHandle handle={primaryAccount.handle} />
-        </span>
-        <span class="account-menu-chevron" aria-hidden="true">▾</span>
-      </button>
+      {hasSingleAccount
+        ? (
+          <div class="account-menu-saved-control">
+            <form
+              method="POST"
+              action="/oauth/switch"
+              class="account-menu-quick-form"
+            >
+              <input type="hidden" name="did" value={primaryAccount.did} />
+              <button
+                type="submit"
+                class="account-menu-trigger account-menu-quick-trigger"
+                aria-label={t.continueAs(primaryAccount.handle)}
+                title={t.continueAs(primaryAccount.handle)}
+              >
+                <Avatar
+                  url={`/api/registry/avatar/${
+                    encodeURIComponent(primaryAccount.did)
+                  }`}
+                  handle={primaryAccount.handle}
+                />
+                <span class="account-menu-trigger-label">
+                  {t.continueAs(primaryAccount.handle)}
+                </span>
+              </button>
+            </form>
+            <button
+              ref={triggerRef}
+              type="button"
+              class="account-menu-trigger account-menu-options-trigger"
+              aria-haspopup="dialog"
+              aria-expanded={open.value ? "true" : "false"}
+              aria-controls={popupId}
+              aria-label={t.accountOptions}
+              title={t.accountOptions}
+              onClick={() => {
+                open.value = !open.value;
+              }}
+            >
+              <span class="account-menu-chevron" aria-hidden="true">▾</span>
+            </button>
+          </div>
+        )
+        : (
+          <button
+            ref={triggerRef}
+            type="button"
+            class="account-menu-trigger account-menu-choose-trigger"
+            aria-haspopup="dialog"
+            aria-expanded={open.value ? "true" : "false"}
+            aria-controls={popupId}
+            aria-label={t.chooseSavedAccounts(rememberedAccounts.length)}
+            onClick={() => {
+              open.value = !open.value;
+            }}
+          >
+            <span class="account-menu-saved-count" aria-hidden="true">
+              {rememberedAccounts.length}
+            </span>
+            <span class="account-menu-trigger-label">
+              {t.chooseAccount}
+            </span>
+            <span class="account-menu-chevron" aria-hidden="true">▾</span>
+          </button>
+        )}
 
       {open.value && (
         <div
           id={popupId}
-          class="account-menu-popup glass"
+          class="account-menu-popup account-menu-signed-out-popup glass"
           role="dialog"
-          aria-label={t.menuLabel}
+          aria-label={t.chooseAccount}
         >
-          <div class="account-menu-header">
-            <span class="account-menu-header-label">
-              {t.signedOut}
-            </span>
-          </div>
-          <div class="account-menu-divider" aria-hidden="true" />
-          <div class="account-menu-section-label">{t.yourAccounts}</div>
-          {rememberedAccounts.map((account) => (
-            <SwitchRow
-              key={account.did}
-              account={account}
-              forgetLabel={t.forget}
-              switchLabel={t.switchTo(account.handle)}
-              forgetConfirm={t.forgetConfirm(account.handle)}
-            />
-          ))}
+          <RememberedAccountChooser rememberedAccounts={rememberedAccounts} />
         </div>
       )}
     </div>
+  );
+}
+
+/** Exported for focused rendering tests; the surrounding disclosure owns
+ * open/close state while this component owns the chooser's shared content. */
+export function RememberedAccountChooser(
+  { rememberedAccounts }: { rememberedAccounts: RememberedAccount[] },
+) {
+  const t = useT().nav.account;
+  return (
+    <>
+      <div class="account-menu-header">
+        <span class="account-menu-header-title">{t.chooseAccount}</span>
+        <span class="account-menu-header-host">{t.savedAccountHint}</span>
+      </div>
+      <div class="account-menu-divider" aria-hidden="true" />
+      <div class="account-menu-section-label">{t.yourAccounts}</div>
+      {rememberedAccounts.map((account) => (
+        <SwitchRow
+          key={account.did}
+          account={account}
+          continueLabel={t.continue}
+          forgetLabel={t.forget}
+          switchLabel={t.continueAs(account.handle)}
+          forgetConfirm={t.forgetConfirm(account.handle)}
+        />
+      ))}
+      <div class="account-menu-divider" aria-hidden="true" />
+      <a
+        href="/oauth/add-account"
+        class="account-menu-item account-menu-item-add"
+      >
+        <span class="account-menu-add-glyph" aria-hidden="true">+</span>
+        {t.useAnotherAccount}
+      </a>
+    </>
   );
 }
 
@@ -373,12 +439,19 @@ function SignedInMenu(
 interface SwitchRowProps {
   account: RememberedAccount;
   switchLabel: string;
+  continueLabel?: string;
   forgetLabel: string;
   forgetConfirm: string;
 }
 
 function SwitchRow(
-  { account, switchLabel, forgetLabel, forgetConfirm }: SwitchRowProps,
+  {
+    account,
+    switchLabel,
+    continueLabel,
+    forgetLabel,
+    forgetConfirm,
+  }: SwitchRowProps,
 ) {
   return (
     <div class="account-menu-switch-row">
@@ -401,6 +474,9 @@ function SwitchRow(
           <span class="account-menu-switch-handle">
             <AtmosphereHandle handle={account.handle} />
           </span>
+          {continueLabel && (
+            <span class="account-menu-switch-status">{continueLabel}</span>
+          )}
         </button>
       </form>
       <form

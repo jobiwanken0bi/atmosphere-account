@@ -27,6 +27,8 @@ Deno.test("anonymous navigation shows only remembered accounts", () => {
   assertStringIncludes(html, 'aria-current="page"');
   assertStringIncludes(html, "nav-account");
   assertStringIncludes(html, "remembered.example");
+  assertStringIncludes(html, "Continue as @remembered.example");
+  assertStringIncludes(html, 'aria-label="Account options"');
   assertEquals(html.includes("Login with Atmosphere"), false);
   assertEquals(html.includes('href="/signin"'), false);
 });

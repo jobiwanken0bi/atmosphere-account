@@ -1,14 +1,10 @@
 import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import ContentVisualIcon from "../components/icons/ContentVisualIcon.tsx";
-import { createPortal } from "preact/compat";
-import { useDialog } from "../lib/use-dialog.ts";
 import { reauthUrlFromApiPayload } from "../lib/reauth-required.ts";
 import { oauthLoginUrl } from "../lib/oauth-action.ts";
-import {
-  isPlainPrimaryActivation,
-  LoginWithAtmosphereDialog,
-} from "./ContextualSignInLink.tsx";
+import { isPlainPrimaryActivation } from "./ContextualSignInLink.tsx";
+import ContextualSignInDialog from "./ContextualSignInDialog.tsx";
 import {
   type FavoriteMutationIntent,
   favoriteRequestMethod,
@@ -92,10 +88,6 @@ export default function AppLikeButton(
   const likeCount = useSignal(count);
   const error = useSignal("");
   const authOpen = useSignal(false);
-  const authDialogRef = useDialog<HTMLDivElement>(
-    authOpen.value && !signedIn,
-    () => authOpen.value = false,
-  );
 
   useEffect(() => {
     if (!signedIn || isOwner) return;
@@ -138,26 +130,17 @@ export default function AppLikeButton(
             {likeCount.value.toLocaleString()}
           </span>
         </a>
-        {authOpen.value && createPortal(
-          <div
-            class="modal-backdrop"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) authOpen.value = false;
-            }}
-          >
-            <LoginWithAtmosphereDialog
-              id="favorite-signin-title"
-              body={copy.signInBody}
-              onClose={() => authOpen.value = false}
-              dialogRef={authDialogRef}
-              returnTo={returnTo}
-              capabilities={["favorite"]}
-              action="favorite"
-              targetName={targetName}
-              rememberedAccounts={rememberedAccounts}
-            />
-          </div>,
-          document.body,
+        {authOpen.value && (
+          <ContextualSignInDialog
+            fallbackHref={loginHref}
+            bodyOverride={copy.signInBody}
+            onClose={() => authOpen.value = false}
+            returnTo={returnTo}
+            capabilities={["favorite"]}
+            action="favorite"
+            targetName={targetName}
+            rememberedAccounts={rememberedAccounts}
+          />
         )}
       </>
     );

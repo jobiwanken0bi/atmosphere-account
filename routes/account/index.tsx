@@ -139,7 +139,7 @@ async function AccountPage(
           <main class="account-home-section" id="main-content">
             <div class="container account-home-container">
               <p class="text-eyebrow">Manage account</p>
-              <h1 class="text-section">Sign in to manage your account</h1>
+              <h1 class="text-section">Login with Atmosphere</h1>
               <p class="text-body mt-2">
                 See which Atmosphere account you are using, where it is hosted,
                 and the apps you have opened through Login with Atmosphere.
@@ -153,7 +153,11 @@ async function AccountPage(
                       initialHandle={initialHandle}
                     />
                   )
-                  : <p class="text-body">Sign in is not ready yet.</p>}
+                  : (
+                    <p class="text-body">
+                      Login with Atmosphere is not ready yet.
+                    </p>
+                  )}
               </div>
             </div>
           </main>

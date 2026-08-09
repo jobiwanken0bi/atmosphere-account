@@ -4,10 +4,8 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { h } from "preact";
 import { renderToString } from "preact-render-to-string";
-import {
-  isPlainPrimaryActivation,
-  LoginWithAtmosphereDialog,
-} from "./ContextualSignInLink.tsx";
+import { isPlainPrimaryActivation } from "./ContextualSignInLink.tsx";
+import { ContextualSignInDialogCard } from "./ContextualSignInDialog.tsx";
 
 function activation(overrides: Partial<{
   button: number;
@@ -42,9 +40,9 @@ Deno.test("contextual dialog keeps modified and non-primary link activations nat
 });
 
 Deno.test("contextual auth dialog has branded icon, top close, and no bottom cancel", () => {
-  const html = renderToString(h(LoginWithAtmosphereDialog, {
-    id: "test-login-title",
-    body: "Choose the account that will publish this review.",
+  const html = renderToString(h(ContextualSignInDialogCard, {
+    fallbackHref: "/signin",
+    bodyOverride: "Choose the account that will publish this review.",
     onClose: () => {},
     returnTo: "/apps/tangled?review=compose",
     action: "review",
@@ -57,6 +55,10 @@ Deno.test("contextual auth dialog has branded icon, top close, and no bottom can
   assertStringIncludes(html, 'aria-label="Close Login with Atmosphere"');
   assertStringIncludes(html, 'role="dialog"');
   assertStringIncludes(html, 'class="auth-dialog-close"');
+  assertStringIncludes(
+    html,
+    '<button type="submit" class="signin-form-submit">Continue</button>',
+  );
   assertEquals(html.includes(">Cancel<"), false);
   assertStringIncludes(html, "Create an Atmosphere account");
 });

@@ -37,6 +37,14 @@ const en = {
       menuLabel: "Account menu",
       signedInAs: "Signed in as",
       signedOut: "Signed out",
+      chooseAccount: "Choose account",
+      chooseSavedAccounts: (count: number): string =>
+        `Choose from ${count} saved accounts`,
+      continueAs: (handle: string): string => `Continue as @${handle}`,
+      continue: "Continue",
+      accountOptions: "Account options",
+      savedAccountHint:
+        "You’re signed out. Continue with an account saved on this device.",
       signIn: "Login with Atmosphere",
       signInHint:
         "Sign in with your Atmosphere account to publish an app listing.",
@@ -49,9 +57,10 @@ const en = {
       signOut: "Sign out",
       avatarAlt: "Account",
       switchHeading: "Switch account",
-      yourAccounts: "Your accounts",
+      yourAccounts: "Saved accounts",
       switchTo: (handle: string): string => `Switch to @${handle}`,
       addAccount: "Add another account",
+      useAnotherAccount: "Use another account",
       forget: "Forget",
       forgetConfirm: (handle: string): string =>
         `Forget @${handle} on this device? You’ll need to sign in again to switch back.`,
@@ -644,9 +653,9 @@ const en = {
       headline: "Register an app",
       body:
         "Sign in with the app’s Atmosphere account. New app listings publish as shared ATStore records so reviews, favorites, and discovery can work across compatible directories.",
-      signInLabel: "Sign in with your Atmosphere handle",
+      signInLabel: "Atmosphere handle",
       handlePlaceholder: "yourhandle.com",
-      signIn: "Sign in",
+      signIn: "Login",
       configError:
         "OAuth isn’t configured on this deployment yet. Try again shortly.",
       previewLoading: "Looking up account…",
@@ -1054,7 +1063,7 @@ const en = {
     composer: {
       heading: "Write a review",
       modalBody: "Rate this app and add a short note for other people.",
-      signedOut: "Sign in to rate and review this app.",
+      signedOut: "Use Login with Atmosphere to rate and review this app.",
       ownerNote: "You can’t review your own app.",
       ratingLabel: "Rating",
       bodyLabel: "Review (optional)",
@@ -1065,7 +1074,7 @@ const en = {
       update: "Update review",
       submitting: "Saving…",
       delete: "Delete review",
-      signIn: "Sign in",
+      signIn: "Login",
       signInTitle: "Login with Atmosphere",
       signInBody:
         "Choose the Atmosphere account that will own your review. We’ll only request the records needed to publish it.",
@@ -1089,7 +1098,7 @@ const en = {
       like: {
         like: "Like",
         unlike: "Unlike this app",
-        signIn: "Sign in to like this app",
+        signIn: "Login with Atmosphere to like this app",
         signInTitle: "Login with Atmosphere",
         signInBody:
           "Choose the Atmosphere account that will save this app. We’ll only request permission to create or remove its AT Store favorite record.",
@@ -1121,7 +1130,7 @@ const en = {
       done: "Close",
       sentTitle: "Report sent",
       sentBody: "Thanks. We’ll review it shortly.",
-      signInRequired: "Sign in to report reviews.",
+      signInRequired: "Use Login with Atmosphere to report reviews.",
       error: "Couldn’t send the report. Please try again.",
       reasons: {
         harmful: "Harmful or hateful content",

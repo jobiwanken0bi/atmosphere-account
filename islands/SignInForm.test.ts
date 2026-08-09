@@ -128,6 +128,11 @@ Deno.test("sign-in mode links to one canonical contextual create page", () => {
   assertEquals(url.searchParams.getAll("capability"), ["review"]);
   assertStringIncludes(html, "Already use Bluesky?");
   assertStringIncludes(html, "Login with Atmosphere");
+  assertStringIncludes(html, 'data-submit-label="Continue"');
+  assertStringIncludes(
+    html,
+    '<button type="submit" class="signin-form-submit">Continue</button>',
+  );
 });
 
 Deno.test("picker sign-in returns directly to the initiating login request", () => {

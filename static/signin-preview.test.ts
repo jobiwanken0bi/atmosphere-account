@@ -12,6 +12,21 @@ Deno.test("sign-in preview exposes keyboard selection and associated errors", as
   assertStringIncludes(source, 'event.key === "Home"');
   assertStringIncludes(source, 'error.setAttribute("role", "alert")');
   assertStringIncludes(source, 'input.setAttribute("aria-errormessage"');
+  assertStringIncludes(
+    source,
+    'form.querySelector(".signin-form-preview-wrap")',
+  );
+  assertStringIncludes(source, "previewWrap.append(preview)");
+  assertEquals(source.includes("field.append(preview)"), false);
+  assertStringIncludes(source, "if (!isPlainLinkActivation(event)) return");
+  assertStringIncludes(source, "event.preventDefault()");
+  assertStringIncludes(source, 'event.key === "Escape" && !preview.hidden');
+  assertEquals(source.match(/event\.stopPropagation\(\)/g)?.length, 2);
+  assertStringIncludes(
+    source,
+    "if (initialSavedAccount instanceof HTMLElement)",
+  );
+  assertStringIncludes(source, "initialSavedAccount.focus()");
   assertStringIncludes(source, "throw new Error(errorLabel)");
   assertEquals(source.includes("body.error"), false);
   assertEquals(source.includes("String(err)"), false);

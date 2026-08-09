@@ -10076,6 +10076,16 @@ body {
   /* Keep scroll momentum inside the dialog; don't chain to the page behind. */
   overscroll-behavior: contain;
 }
+.contextual-signin-backdrop {
+  align-items: flex-start;
+  overflow-y: auto;
+}
+.contextual-signin-backdrop .signin-modal-card {
+  flex: 0 0 auto;
+  max-height: none;
+  margin-block: auto;
+  overflow: visible;
+}
 .modal-card {
   position: relative;
   width: min(440px, 100%);
@@ -11156,6 +11166,7 @@ body {
 .signin-form-input {
   flex: 1;
   width: 100%;
+  min-height: 3rem;
   padding: 0.7rem 1rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.55);
@@ -11174,12 +11185,17 @@ body {
   border-color: rgba(42, 90, 168, 0.6);
 }
 .signin-form-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
   padding: 0.7rem 1.4rem;
   border-radius: 999px;
-  border: 0;
+  border: 1px solid transparent;
   background: #0e1428;
   color: #fff;
   font: inherit;
+  white-space: nowrap;
   cursor: pointer;
 }
 .signin-form-submit:disabled {
@@ -12008,6 +12024,38 @@ body {
   display: inline-block;
 }
 
+.account-menu-saved-control {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  max-width: 100%;
+}
+
+.account-menu-quick-form {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  margin: 0;
+}
+
+.account-menu-quick-form [data-login-handoff-error] {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 1001;
+  box-sizing: border-box;
+  width: min(18rem, calc(100vw - 1.2rem));
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(146, 32, 32, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 30px rgba(14, 20, 40, 0.18);
+  color: rgba(146, 32, 32, 0.95);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .account-menu-trigger {
   display: inline-flex;
   align-items: center;
@@ -12030,6 +12078,36 @@ body {
 .account-menu-trigger:hover {
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 10px 24px rgba(14, 20, 40, 0.12);
+}
+
+.account-menu-trigger[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.account-menu-quick-trigger {
+  max-width: min(32vw, 18rem);
+}
+
+.account-menu-options-trigger {
+  min-width: 2.75rem;
+  width: 2.75rem;
+  padding: 0;
+  justify-content: center;
+}
+
+.account-menu-saved-count {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(135deg, #7da4dc 0%, #4a7bd9 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  font-weight: 600;
 }
 
 .account-menu-trigger-label {
@@ -12100,6 +12178,13 @@ body {
    * sits over arbitrary hero gradients and we don't want the items to
    * disappear into the sky. */
 }
+
+.account-menu-signed-out-popup {
+  width: 19rem;
+  min-width: 0;
+  max-width: calc(100vw - 1.2rem);
+  box-sizing: border-box;
+}
 .account-menu-popup.glass {
   background: rgba(255, 255, 255, 0.985);
   border: 1px solid rgba(18, 26, 47, 0.12);
@@ -12124,6 +12209,13 @@ body {
   letter-spacing: 0.06em;
   color: rgba(18, 26, 47, 0.55);
   font-family: "IBM Plex Mono", monospace;
+}
+
+.account-menu-header-title {
+  color: #0e1428;
+  font-size: 0.94rem;
+  font-weight: 650;
+  line-height: 1.3;
 }
 
 .account-menu-header-handle {
@@ -12230,6 +12322,7 @@ body {
   align-items: center;
   gap: 0.55rem;
   flex: 1;
+  min-width: 0;
   padding: 0.45rem 0.7rem;
 }
 
@@ -12239,11 +12332,21 @@ body {
 }
 
 .account-menu-switch-handle {
+  flex: 1;
+  min-width: 0;
   font-weight: 500;
   font-size: 0.85rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.account-menu-switch-status {
+  flex-shrink: 0;
+  color: #2c5db4;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .account-menu-forget-form {
@@ -12305,6 +12408,12 @@ body {
   background: rgba(34, 42, 68, 0.7);
 }
 
+.dark-phase .account-menu-quick-form [data-login-handoff-error] {
+  border-color: rgba(244, 163, 163, 0.3);
+  background: rgba(22, 28, 48, 0.98);
+  color: #f4a3a3;
+}
+
 .dark-phase .account-menu-chevron {
   color: rgba(255, 255, 255, 0.75);
 }
@@ -12317,6 +12426,10 @@ body {
 
 .dark-phase .account-menu-header-label {
   color: rgba(255, 255, 255, 0.6);
+}
+
+.dark-phase .account-menu-header-title {
+  color: #f3f5fb;
 }
 
 .dark-phase .account-menu-header-handle {
@@ -12357,6 +12470,10 @@ body {
   color: rgba(255, 255, 255, 0.55);
 }
 
+.dark-phase .account-menu-switch-status {
+  color: #a9c7ff;
+}
+
 .dark-phase .account-menu-forget-btn {
   color: rgba(255, 255, 255, 0.55);
 }
@@ -12382,6 +12499,12 @@ body {
 
   .account-menu-trigger-label {
     display: none;
+  }
+
+  .account-menu-quick-trigger {
+    width: 2.75rem;
+    padding: 0.3rem;
+    justify-content: center;
   }
 
   .account-menu-popup {

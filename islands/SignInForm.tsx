@@ -86,7 +86,7 @@ export default function SignInForm(
     chooseAnotherAccount;
   const enhanceFlow = mode === "signin" && (rich || hasRememberedAccounts);
   const initialSigninView = manualInitiallyVisible ? "manual" : "saved";
-  const continueLabel = submitLabel ?? "Login with Atmosphere";
+  const continueLabel = submitLabel ?? "Continue";
   const normalizedAction = action ?? "account";
   const canCreateAccount = allowAccountCreation &&
     isAccountCreationAction(normalizedAction) &&

@@ -78,6 +78,16 @@ Deno.test("contextual account actions use the universal login product name", () 
     messages.developerResources.badgeAlt === "Login with Atmosphere",
     "developer badge label drifted from the product name",
   );
+  assert(
+    messages.explore.create.signInLabel === "Atmosphere handle",
+    "the handle field should be labelled as a field, not a competing action",
+  );
+  assert(
+    messages.reviews.composer.signIn === "Login" &&
+      messages.reviews.app.like.signIn ===
+        "Login with Atmosphere to like this app",
+    "contextual login triggers drifted back to Sign in",
+  );
 });
 
 Deno.test("home explanation keeps the agreed account and open-internet language", () => {

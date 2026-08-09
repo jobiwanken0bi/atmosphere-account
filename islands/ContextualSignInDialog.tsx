@@ -26,6 +26,9 @@ interface Props {
   allowAccountCreation?: boolean;
   forceReauthorization?: boolean;
   restrictToInitialHandle?: boolean;
+  /** Optional task-specific explanation. The dialog title and actions remain
+   * shared so contextual entry points cannot drift from the login UX. */
+  bodyOverride?: string;
 }
 
 /**
@@ -66,6 +69,7 @@ export function ContextualSignInDialogCard(
     allowAccountCreation: allowAccountCreationOverride,
     forceReauthorization = false,
     restrictToInitialHandle = false,
+    bodyOverride,
   }: Props,
 ) {
   const copy = authActionCopy(action, targetName);
@@ -111,9 +115,10 @@ export function ContextualSignInDialogCard(
           <span>{dialogTitle}</span>
         </h2>
         <p id={bodyId} class="modal-body-text">
-          {(restrictAccount || forceReauthorization) && initialHandle
-            ? copy.upgradeBody(initialHandle)
-            : copy.signInBody}
+          {bodyOverride ??
+            ((restrictAccount || forceReauthorization) && initialHandle
+              ? copy.upgradeBody(initialHandle)
+              : copy.signInBody)}
         </p>
       </div>
       <SignInForm
