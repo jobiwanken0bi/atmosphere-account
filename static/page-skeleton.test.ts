@@ -1,6 +1,14 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { routeKind } from "./page-skeleton.js";
 
+Deno.test("page skeleton reads a stable form action attribute", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./page-skeleton.js", import.meta.url),
+  );
+  assertEquals(source.includes('form.getAttribute("action")'), true);
+  assertEquals(source.includes("new URL(form.action"), false);
+});
+
 Deno.test("page skeletons match current public and management routes", () => {
   const cases = new Map<string, string>([
     ["/", "home"],

@@ -131,14 +131,20 @@ Deno.test("account home management copy does not invent an absent profile type",
   });
 });
 
-Deno.test("account home owns one main landmark and labels the external Bluesky link", async () => {
+Deno.test("account home owns one main landmark and uses the selected microblog viewer", async () => {
   const source = await Deno.readTextFile(
     new URL("./index.tsx", import.meta.url),
   );
   assertEquals(source.match(/<main\b/g)?.length, 2);
   assertEquals(source.match(/<\/main>/g)?.length, 2);
-  assertStringIncludes(source, "Manage profile in Bluesky");
-  assertStringIncludes(source, "(opens in a new tab)");
+  assertStringIncludes(source, "<MicroblogProfileLink");
+  assertStringIncludes(
+    source,
+    "selectedClientId={appUser?.bskyClientId ?? null}",
+  );
+  assertStringIncludes(source, "handle={user.handle}");
+  assertStringIncludes(source, "<span>Advanced</span>");
+  assertStringIncludes(source, "account-dashboard-details-chevron");
 });
 
 Deno.test("account controls keep visible danger treatment and 44px targets", async () => {

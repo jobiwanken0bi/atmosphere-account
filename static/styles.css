@@ -10996,6 +10996,36 @@ body {
   font-weight: 700;
 }
 
+.signin-upgrade-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.signin-upgrade-panel .signin-form,
+.signin-upgrade-panel .signin-account-switch-form {
+  margin: 0;
+}
+
+.signin-account-row--current {
+  cursor: default;
+}
+
+.signin-account-row--current:hover {
+  background: transparent;
+}
+
+.signin-upgrade-other-account {
+  overflow: hidden;
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.signin-upgrade-other-account .signin-account-row {
+  border-top: 0;
+  cursor: pointer;
+}
+
 .signin-form {
   display: flex;
   flex-direction: column;
@@ -11833,6 +11863,10 @@ body {
 .dark-phase .signin-host-row:hover,
 .dark-phase .signin-host-row:focus-visible {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.dark-phase .signin-account-row--current:hover {
+  background: transparent;
 }
 
 .dark-phase .signin-host-search input,
@@ -12936,6 +12970,18 @@ form[data-submit-once-pending="true"] button:disabled {
   flex: 0 0 auto;
 }
 
+.account-dashboard-profile-button {
+  justify-self: start;
+  margin-top: 0.75rem;
+}
+
+.account-dashboard-profile-button-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
 .account-dashboard-button--primary {
   background: #173f82;
   border-color: rgba(23, 63, 130, 0.18);
@@ -13428,6 +13474,30 @@ form[data-submit-once-pending="true"] button:disabled {
 .account-dashboard-details {
   margin-top: 0.85rem;
   margin-bottom: 1rem;
+}
+
+.account-dashboard-details > summary {
+  justify-content: space-between;
+  gap: 0.75rem;
+  list-style: none;
+}
+
+.account-dashboard-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-dashboard-details-chevron {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.16s ease;
+}
+
+.account-dashboard-details[open] .account-dashboard-details-chevron {
+  transform: rotate(225deg);
 }
 
 .account-dashboard-empty {
@@ -14893,20 +14963,6 @@ form[data-submit-once-pending="true"] button:disabled {
   gap: 0.32rem;
 }
 
-.host-card-account-count-compact {
-  display: none;
-}
-
-@container (max-width: 360px) {
-  .host-card-account-count-full {
-    display: none;
-  }
-
-  .host-card-account-count-compact {
-    display: inline;
-  }
-}
-
 .host-card-mark {
   display: inline-flex;
   align-items: center;
@@ -15598,6 +15654,43 @@ form[data-submit-once-pending="true"] button:disabled {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.78rem;
   overflow-wrap: anywhere;
+}
+
+.host-claim-dns-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.host-claim-dns-field code {
+  min-width: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.host-claim-copy-button {
+  min-height: 2.75rem;
+  border: 1px solid rgba(36, 79, 148, 0.24);
+  border-radius: 999px;
+  padding: 0.55rem 0.8rem;
+  background: rgba(255, 255, 255, 0.68);
+  color: #244f94;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.host-claim-copy-button:hover {
+  border-color: rgba(36, 79, 148, 0.46);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.dark-phase .host-claim-copy-button {
+  border-color: rgba(173, 204, 255, 0.36);
+  background: rgba(21, 38, 70, 0.72);
+  color: #d5e4ff;
 }
 
 .host-claim-listing-choice {

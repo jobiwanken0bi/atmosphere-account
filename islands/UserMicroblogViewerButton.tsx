@@ -6,6 +6,10 @@ import {
   PROFILE_MICROBLOG_VIEWERS,
 } from "../lib/bsky-clients.ts";
 import {
+  MICROBLOG_VIEWER_CHANGED_EVENT,
+  type MicroblogViewerChangedDetail,
+} from "../lib/microblog-viewer-events.ts";
+import {
   type ContextualReauthorization,
   contextualReauthorization,
   contextualReauthorizationFromApiPayload,
@@ -176,6 +180,12 @@ export default function UserMicroblogViewerButton(
       }
       selected.value = nextClientId;
       visible.value = nextVisible;
+      globalThis.dispatchEvent(
+        new CustomEvent<MicroblogViewerChangedDetail>(
+          MICROBLOG_VIEWER_CHANGED_EVENT,
+          { detail: { clientId: nextClientId } },
+        ),
+      );
       try {
         sessionStorage.removeItem(pendingKey);
       } catch {

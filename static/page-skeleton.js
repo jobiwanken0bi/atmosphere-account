@@ -536,7 +536,14 @@ if (typeof document !== "undefined") {
 
     globalThis.setTimeout(() => {
       if (event.defaultPrevented) return;
-      const url = new URL(form.action || globalThis.location.href);
+      const rawAction = form.getAttribute("action")?.trim();
+      if (!rawAction) return;
+      let url;
+      try {
+        url = new URL(rawAction, `${globalThis.location.origin}/`);
+      } catch {
+        return;
+      }
       if (!isSkeletonPage(url)) return;
       scheduleSkeleton(url);
     }, 0);

@@ -4,6 +4,8 @@ interface Props {
   text: string;
   label?: string;
   copiedLabel?: string;
+  ariaLabel?: string;
+  copiedAriaLabel?: string;
   className?: string;
 }
 
@@ -12,6 +14,8 @@ export default function CopyTextButton(
     text,
     label = "Copy",
     copiedLabel = "Copied",
+    ariaLabel,
+    copiedAriaLabel,
     className = "directory-register-button",
   }: Props,
 ) {
@@ -30,7 +34,13 @@ export default function CopyTextButton(
   };
 
   return (
-    <button type="button" class={className} onClick={onClick}>
+    <button
+      type="button"
+      class={className}
+      onClick={onClick}
+      aria-live="polite"
+      aria-label={copied.value ? copiedAriaLabel ?? ariaLabel : ariaLabel}
+    >
       {copied.value ? copiedLabel : label}
     </button>
   );

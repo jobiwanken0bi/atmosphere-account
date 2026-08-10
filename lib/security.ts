@@ -383,6 +383,11 @@ function isTokenBearingLoginRoute(pathname: string): boolean {
     /^\/hosts\/[^/]+\/claim$/.test(pathname);
 }
 
+function isHostClaimRoute(pathname: string): boolean {
+  return pathname === "/hosts/claim" ||
+    /^\/hosts\/[^/]+\/claim$/.test(pathname);
+}
+
 function isPopupCompatibleLoginRoute(pathname: string): boolean {
   return pathname === "/login/select" ||
     pathname === "/examples/atmosphere-login/app" ||
@@ -416,7 +421,13 @@ function applySecurityHeaders(headers: Headers, pathname: string): void {
     );
   }
   if (isTokenBearingLoginRoute(pathname)) {
-    headers.set("referrer-policy", "no-referrer");
+    // Some embedded browsers omit Origin on native form submissions. Keep a
+    // same-origin Referer available as the strict CSRF fallback without ever
+    // sending claim tokens or contextual URLs to another origin.
+    headers.set(
+      "referrer-policy",
+      isHostClaimRoute(pathname) ? "same-origin" : "no-referrer",
+    );
     headers.set("cache-control", "no-store");
     headers.set("x-robots-tag", "noindex, nofollow");
   }

@@ -67,3 +67,10 @@ Deno.test("host claim lab destinations enter real claim and manage routes", asyn
     "/hosts/transfer-lab.atmosphereaccount.com/manage",
   );
 });
+
+Deno.test("host claim lab back navigation includes a visible arrow", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./host-claim.tsx", import.meta.url),
+  );
+  assertStringIncludes(source, "← Back to hosts");
+});

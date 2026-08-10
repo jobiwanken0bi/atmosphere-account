@@ -27,6 +27,20 @@ Deno.test("host detail puts the operator action before Advanced", async () => {
   );
 });
 
+Deno.test("host preview cards always show compact account counts", async () => {
+  const [source, styles] = await Promise.all([
+    Deno.readTextFile(new URL("../hosts.tsx", import.meta.url)),
+    Deno.readTextFile(new URL("../../static/styles.css", import.meta.url)),
+  ]);
+
+  assertStringIncludes(source, "{compactAccountCount}");
+  assertStringIncludes(source, "title={compactAccountCount}");
+  assertEquals(source.includes("host-card-account-count-full"), false);
+  assertEquals(source.includes("host-card-account-count-compact"), false);
+  assertEquals(styles.includes("host-card-account-count-full"), false);
+  assertEquals(styles.includes("host-card-account-count-compact"), false);
+});
+
 Deno.test("host detail orders primary actions before related profiles", async () => {
   const [hostSource, appSource, styles] = await Promise.all([
     Deno.readTextFile(new URL("./[host].tsx", import.meta.url)),
@@ -93,6 +107,22 @@ Deno.test("host claim puts the current state before relay details", async () => 
   assertStringIncludes(source, "Manage host");
   assertStringIncludes(source, "← {detectedLookup && linkContext");
   assertStringIncludes(source, '? "Back to host"');
+  assertStringIncludes(source, "then verify it");
+  assertStringIncludes(source, 'ariaLabel="Copy DNS record name"');
+  assertStringIncludes(source, 'ariaLabel="Copy DNS record value"');
+  const dnsFields = source.slice(
+    source.indexOf('<dl class="host-claim-detected-summary">'),
+    source.indexOf(
+      "</dl>",
+      source.indexOf('<dl class="host-claim-detected-summary">'),
+    ),
+  );
+  assert(
+    dnsFields.indexOf("<dt>Type</dt>") < dnsFields.indexOf("<dt>Name</dt>"),
+  );
+  assert(
+    dnsFields.indexOf("<dt>Name</dt>") < dnsFields.indexOf("<dt>Value</dt>"),
+  );
 });
 
 Deno.test("a success notice does not replace an available host backlink", async () => {
@@ -123,6 +153,8 @@ Deno.test("host and owner controls retain phone-sized targets and padding", asyn
       ".host-manage-card {",
       "padding: 1.25rem;",
       ".host-claim-form > .host-claim-panel {",
+      ".host-claim-dns-field {",
+      ".host-claim-copy-button {",
     ]
   ) {
     assertStringIncludes(styles, fragment);

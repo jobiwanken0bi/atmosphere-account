@@ -42,6 +42,7 @@ interface Props {
   targetName?: string;
   continuation?: "login_selection";
   chooseAnotherAccount?: boolean;
+  manualAccountEntry?: boolean;
   allowAccountCreation?: boolean;
   submitLabel?: string;
   forceReauthorization?: boolean;
@@ -69,6 +70,7 @@ export default function SignInForm(
     targetName,
     continuation,
     chooseAnotherAccount = false,
+    manualAccountEntry = false,
     allowAccountCreation = true,
     submitLabel,
     forceReauthorization = false,
@@ -83,7 +85,7 @@ export default function SignInForm(
   const hasRememberedAccounts = !lockInitialHandle &&
     rememberedAccounts.length > 0;
   const manualInitiallyVisible = !hasRememberedAccounts || !!initialHandle ||
-    chooseAnotherAccount;
+    manualAccountEntry;
   const enhanceFlow = mode === "signin" && (rich || hasRememberedAccounts);
   const initialSigninView = manualInitiallyVisible ? "manual" : "saved";
   const continueLabel = submitLabel ?? "Continue";
@@ -120,6 +122,7 @@ export default function SignInForm(
     action,
     targetName,
     continuation: loginSelectionContinuation,
+    chooseAnotherAccount,
   });
   const anotherAccountHref = signinFallbackHref({
     returnTo,
@@ -129,6 +132,7 @@ export default function SignInForm(
     targetName,
     continuation: loginSelectionContinuation,
     chooseAnotherAccount: true,
+    manualAccountEntry: true,
   });
 
   if (mode === "create") {
@@ -222,10 +226,15 @@ export default function SignInForm(
           >
             {rich && (
               <div class="signin-rich-header">
-                <h2>Connect your Atmosphere account</h2>
+                <h2>
+                  {chooseAnotherAccount
+                    ? "Choose another account"
+                    : "Connect your Atmosphere account"}
+                </h2>
                 <p>
-                  Choose an account saved on this device, or add another
-                  Atmosphere account.
+                  {chooseAnotherAccount
+                    ? "Continue with another account saved on this device, or use a different account."
+                    : "Choose an account saved on this device, or add another Atmosphere account."}
                 </p>
               </div>
             )}
@@ -847,6 +856,7 @@ export function signinFallbackHref(
     targetName,
     continuation,
     chooseAnotherAccount = false,
+    manualAccountEntry = false,
   }: {
     returnTo?: string;
     intent?: "user" | "project";
@@ -855,6 +865,7 @@ export function signinFallbackHref(
     targetName?: string;
     continuation?: "login_selection";
     chooseAnotherAccount?: boolean;
+    manualAccountEntry?: boolean;
   },
 ): string {
   const params = new URLSearchParams();
@@ -867,6 +878,7 @@ export function signinFallbackHref(
     params.append("capability", capability);
   }
   if (chooseAnotherAccount) params.set("choose", "another");
+  if (manualAccountEntry) params.set("entry", "manual");
   const query = params.toString();
   return `/signin${query ? `?${query}` : ""}`;
 }

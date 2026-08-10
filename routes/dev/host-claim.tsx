@@ -216,7 +216,7 @@ function DevHostClaimLab(
           class="signin-page-section host-claim-section"
         >
           <div class="container signin-page-container host-claim-lab-container">
-            <a href="/hosts" class="text-link-button">Back to hosts</a>
+            <a href="/hosts" class="text-link-button">← Back to hosts</a>
             <div class="glass signin-page-card host-claim-card host-claim-lab-card">
               <p class="text-eyebrow">Local UX lab</p>
               <h1 class="host-claim-title">Host claim scenarios</h1>

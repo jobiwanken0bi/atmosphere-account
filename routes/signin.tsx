@@ -5,6 +5,7 @@ import SignInForm, {
   type CreateAccountHostOption,
 } from "../islands/SignInForm.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
+import { getAppUser } from "../lib/account-types.ts";
 import { listCreateAccountHostOptions } from "../lib/create-account-hosts.ts";
 import {
   type LoginApp,
@@ -32,6 +33,10 @@ import {
 } from "../lib/oauth-action-copy.ts";
 import { oauthAuthorizationExitHref } from "../lib/oauth-cancellation.ts";
 import { hasValidLoginSelectionContinuationBinding } from "../lib/oauth-continuation.ts";
+import { devPickerAccountForDid } from "../lib/dev-picker-demo.ts";
+import { IS_DEV } from "../lib/env.ts";
+import { appDetailBackNavigation } from "../lib/host-directory-navigation.ts";
+import { isSafeRelativePath } from "../lib/security.ts";
 import {
   InvalidOAuthRequestInputError,
   optionalEnum,
@@ -61,6 +66,7 @@ export const handler = define.handlers({
       intent,
       requestedMode: mode,
       choosingAnotherAccount,
+      manualAccountEntry,
       continuation,
       capabilities,
       action,
@@ -102,6 +108,21 @@ export const handler = define.handlers({
       }
     }
     const account = buildAccountMenuProps(ctx.state);
+    const cachedIdentity = account.user
+      ? await getAppUser(account.user.did).catch(() => null)
+      : null;
+    const devIdentity = account.user && IS_DEV
+      ? devPickerAccountForDid(account.user.did)
+      : null;
+    const currentAccountIdentity = account.user
+      ? {
+        displayName: cachedIdentity?.displayName ??
+          devIdentity?.displayName ?? null,
+        avatarUrl: `/api/registry/avatar/${
+          encodeURIComponent(account.user.did)
+        }`,
+      }
+      : null;
     const createAccountApp = mode === "create"
       ? await createAccountAppForNext(next)
       : null;
@@ -119,6 +140,7 @@ export const handler = define.handlers({
       (
         <SignInPageContent
           account={account}
+          currentAccountIdentity={currentAccountIdentity}
           mode={mode}
           next={next ?? "/account"}
           intent={intent}
@@ -127,6 +149,7 @@ export const handler = define.handlers({
           targetName={targetName}
           permissionState={permissionState}
           choosingAnotherAccount={choosingAnotherAccount}
+          manualAccountEntry={manualAccountEntry}
           continuation={continuation ?? undefined}
           allowAccountCreation={allowAccountCreation}
           initialHandle={initialHandle}
@@ -175,6 +198,10 @@ export function readSignInAuthorizationRequest(url: URL) {
     singleSearchValue(url.searchParams, "choose"),
     ["another"] as const,
   );
+  const entry = optionalEnum(
+    singleSearchValue(url.searchParams, "entry"),
+    ["manual"] as const,
+  );
   const continuation = optionalEnum(
     singleSearchValue(url.searchParams, "continuation"),
     ["login_selection"] as const,
@@ -219,6 +246,7 @@ export function readSignInAuthorizationRequest(url: URL) {
     intent,
     requestedMode: mode === "create" ? "create" as const : "signin" as const,
     choosingAnotherAccount: choose === "another",
+    manualAccountEntry: entry === "manual",
     continuation,
     capabilities,
     action,
@@ -251,6 +279,7 @@ function safeTargetName(raw: string | null): string | null {
 export function SignInPageContent(
   {
     account,
+    currentAccountIdentity,
     mode,
     next,
     intent,
@@ -259,6 +288,7 @@ export function SignInPageContent(
     targetName,
     permissionState,
     choosingAnotherAccount,
+    manualAccountEntry,
     continuation,
     allowAccountCreation,
     initialHandle,
@@ -269,6 +299,10 @@ export function SignInPageContent(
     oauthConfigured,
   }: {
     account: ReturnType<typeof buildAccountMenuProps>;
+    currentAccountIdentity?: {
+      displayName: string | null;
+      avatarUrl: string;
+    } | null;
     mode: "signin" | "create";
     next: string;
     intent?: "user" | "project";
@@ -277,6 +311,7 @@ export function SignInPageContent(
     targetName: string | null;
     permissionState: string | null;
     choosingAnotherAccount: boolean;
+    manualAccountEntry?: boolean;
     continuation?: "login_selection";
     allowAccountCreation: boolean;
     initialHandle?: string;
@@ -295,6 +330,14 @@ export function SignInPageContent(
     ? account.user
     : null;
   const createMode = mode === "create";
+  const backNavigation = contextualAuthorizationBackNavigation(
+    next,
+    action,
+    choosingAnotherAccount,
+  );
+  const chooserAccounts = choosingAnotherAccount && account.user
+    ? account.rememberedAccounts.filter(({ did }) => did !== account.user?.did)
+    : account.rememberedAccounts;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -304,6 +347,11 @@ export function SignInPageContent(
             class="container signin-page-container"
             data-signin-page-copy="true"
           >
+            {backNavigation && (
+              <a href={backNavigation.href} class="text-link-button">
+                ← {backNavigation.label}
+              </a>
+            )}
             {!createMode && <p class="text-eyebrow">{copy.eyebrow}</p>}
             <h1
               class="text-section signin-page-brand-title"
@@ -365,6 +413,11 @@ export function SignInPageContent(
                 ? (
                   <PermissionUpgradeForm
                     user={signedInUser}
+                    displayName={currentAccountIdentity?.displayName ?? null}
+                    avatarUrl={currentAccountIdentity?.avatarUrl ??
+                      `/api/registry/avatar/${
+                        encodeURIComponent(signedInUser.did)
+                      }`}
                     returnTo={next}
                     intent={intent}
                     capabilities={capabilities}
@@ -380,10 +433,11 @@ export function SignInPageContent(
                     capabilities={capabilities}
                     action={action}
                     targetName={targetName ?? undefined}
-                    rememberedAccounts={account.rememberedAccounts}
+                    rememberedAccounts={chooserAccounts}
                     initialHandle={initialHandle}
                     continuation={continuation}
                     chooseAnotherAccount={choosingAnotherAccount}
+                    manualAccountEntry={manualAccountEntry}
                     allowAccountCreation={allowAccountCreation}
                     rich
                   />
@@ -402,9 +456,43 @@ export function SignInPageContent(
   );
 }
 
+export function contextualAuthorizationBackNavigation(
+  returnTo: string,
+  action: OAuthAction,
+  returnToClaim = false,
+): { href: string; label: string } | null {
+  if (action !== "host_claim" && action !== "host_transfer") return null;
+  if (!isSafeRelativePath(returnTo)) return null;
+  try {
+    const url = new URL(returnTo, "https://atmosphere.invalid");
+    const match = /^\/hosts\/([^/]+)\/claim$/.exec(url.pathname);
+    if (!match) return null;
+    const hostNavigation = appDetailBackNavigation(`/hosts/${match[1]}`);
+    if (hostNavigation.label !== "Back to host") return null;
+    if (returnToClaim) {
+      return {
+        href: `${url.pathname}${url.search}${url.hash}`,
+        label: action === "host_transfer"
+          ? "Back to transfer"
+          : "Back to claim",
+      };
+    }
+    return action === "host_transfer"
+      ? {
+        href: `${hostNavigation.href}/manage`,
+        label: "Back to host management",
+      }
+      : hostNavigation;
+  } catch {
+    return null;
+  }
+}
+
 export function PermissionUpgradeForm(
   {
     user,
+    displayName,
+    avatarUrl,
     returnTo,
     intent,
     capabilities,
@@ -413,6 +501,8 @@ export function PermissionUpgradeForm(
     continuation,
   }: {
     user: { did: string; handle: string };
+    displayName?: string | null;
+    avatarUrl?: string | null;
     returnTo: string;
     intent?: "user" | "project";
     capabilities: readonly OAuthCapability[];
@@ -426,11 +516,34 @@ export function PermissionUpgradeForm(
   );
   return (
     <div class="signin-upgrade-panel">
-      <p class="signin-account-list-label">Currently signed in</p>
-      <p class="account-home-handle">
-        <AtmosphereHandle handle={user.handle} />
-      </p>
-      <form method="POST" action="/oauth/login" class="signin-form">
+      <div class="signin-account-list signin-upgrade-account-list">
+        <p class="signin-account-list-label">Currently signed in</p>
+        <div class="signin-account-row signin-account-row--current">
+          <span class="signin-account-avatar" aria-hidden="true">
+            <span class="signin-account-avatar-fallback">
+              {user.handle.slice(0, 1).toUpperCase()}
+            </span>
+            {avatarUrl && (
+              <img
+                src={avatarUrl}
+                alt=""
+                loading="eager"
+                decoding="async"
+                width={38}
+                height={38}
+              />
+            )}
+          </span>
+          <span class="signin-account-copy">
+            <strong>{displayName || "Atmosphere account"}</strong>
+            <span>
+              <AtmosphereHandle handle={user.handle} />
+            </span>
+          </span>
+          <span class="signin-account-status">Current</span>
+        </div>
+      </div>
+      <form method="GET" action="/oauth/login" class="signin-form">
         <input type="hidden" name="handle" value={user.did} />
         <input type="hidden" name="next" value={returnTo} />
         {intent && <input type="hidden" name="intent" value={intent} />}
@@ -452,7 +565,11 @@ export function PermissionUpgradeForm(
             : "Confirm and continue"}
         </button>
       </form>
-      <form method="POST" action="/oauth/add-account" class="signin-form">
+      <form
+        method="GET"
+        action="/oauth/add-account"
+        class="signin-account-list signin-account-switch-form signin-upgrade-other-account"
+      >
         <input type="hidden" name="next" value={returnTo} />
         {intent && <input type="hidden" name="intent" value={intent} />}
         <input type="hidden" name="action" value={action} />
@@ -467,8 +584,18 @@ export function PermissionUpgradeForm(
         {capabilities.map((capability) => (
           <input type="hidden" name="capability" value={capability} />
         ))}
-        <button type="submit" class="profile-form-button-link">
-          Use another Atmosphere account
+        <button type="submit" class="signin-account-row">
+          <span
+            class="signin-account-avatar signin-account-avatar--plus"
+            aria-hidden="true"
+          >
+            +
+          </span>
+          <span class="signin-account-copy">
+            <strong>Use another account</strong>
+            <span>Choose a saved account or enter another handle</span>
+          </span>
+          <span class="signin-account-status">Continue</span>
         </button>
       </form>
     </div>

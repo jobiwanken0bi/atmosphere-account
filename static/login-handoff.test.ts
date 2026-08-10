@@ -19,6 +19,12 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
   if (!source.includes("action.searchParams.append(name, value)")) {
     throw new Error("Expected a bodyless same-origin POST handoff");
   }
+  if (
+    !source.includes('form.getAttribute("action")') ||
+    source.includes("new URL(form.action")
+  ) {
+    throw new Error("Expected submission to use the literal form action");
+  }
   if (!source.includes('"x-atmosphere-login-bodyless": "1"')) {
     throw new Error("Expected an explicit bodyless proxy marker");
   }

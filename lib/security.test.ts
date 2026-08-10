@@ -225,10 +225,28 @@ Deno.test("token-bearing Atmosphere Login pages force private browser headers", 
     ]
   ) {
     const headers = applySecurityHeadersForTest(pathname);
-    assertEquals(headers.get("referrer-policy"), "no-referrer");
+    assertEquals(
+      headers.get("referrer-policy"),
+      pathname === "/hosts/claim" || pathname === "/hosts/pds.example/claim"
+        ? "same-origin"
+        : "no-referrer",
+    );
     assertEquals(headers.get("cache-control"), "no-store");
     assertEquals(headers.get("x-robots-tag"), "noindex, nofollow");
   }
+});
+
+Deno.test("host claim pages retain only a same-origin CSRF fallback", () => {
+  assertEquals(
+    applySecurityHeadersForTest("/hosts/example.com/claim").get(
+      "referrer-policy",
+    ),
+    "same-origin",
+  );
+  assertEquals(
+    applySecurityHeadersForTest("/oauth/login").get("referrer-policy"),
+    "no-referrer",
+  );
 });
 
 Deno.test("security policy disables WebAuthn after passkey removal", () => {

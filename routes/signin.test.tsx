@@ -10,6 +10,7 @@ import {
   authActionCopy,
   authMediaContext,
   AuthorizationExitLink,
+  contextualAuthorizationBackNavigation,
   permissionStatusCopy,
   PermissionUpgradeForm,
   readSignInAuthorizationRequest,
@@ -67,6 +68,52 @@ Deno.test("sign-in authorization context rejects ambiguity and typos", () => {
         `https://atmosphereaccount.com/signin?next=${pickerPath}&action=account&capability=identity`,
       ),
     )
+  );
+  assertEquals(
+    readSignInAuthorizationRequest(
+      new URL(
+        "https://atmosphereaccount.com/signin?action=account&capability=identity&choose=another&entry=manual",
+      ),
+    ).manualAccountEntry,
+    true,
+  );
+});
+
+Deno.test("host authorization has a safe contextual backlink", () => {
+  assertEquals(
+    contextualAuthorizationBackNavigation(
+      "/hosts/pds.example.com/claim?publish=1&from=detected",
+      "host_claim",
+    ),
+    { href: "/hosts/pds.example.com", label: "Back to host" },
+  );
+  assertEquals(
+    contextualAuthorizationBackNavigation(
+      "/hosts/pds.example.com/claim?transfer_intent=opaque",
+      "host_transfer",
+    ),
+    {
+      href: "/hosts/pds.example.com/manage",
+      label: "Back to host management",
+    },
+  );
+  assertEquals(
+    contextualAuthorizationBackNavigation(
+      "/hosts/pds.example.com/claim?dns_token=public-token",
+      "host_claim",
+      true,
+    ),
+    {
+      href: "/hosts/pds.example.com/claim?dns_token=public-token",
+      label: "Back to claim",
+    },
+  );
+  assertEquals(
+    contextualAuthorizationBackNavigation(
+      "https://evil.example/hosts/pds.example.com/claim",
+      "host_claim",
+    ),
+    null,
   );
 });
 
@@ -126,6 +173,8 @@ Deno.test("authorization exit does not reopen or replay the canceled action", ()
 Deno.test("permission upgrade forms retain complete project context", () => {
   const html = renderToString(h(PermissionUpgradeForm, {
     user: { did: "did:plc:app", handle: "app.example" },
+    displayName: "Example App",
+    avatarUrl: "/api/registry/avatar/did%3Aplc%3Aapp",
     returnTo: "/apps/manage?new=1#profile",
     intent: "project",
     capabilities: ["app", "media"],
@@ -134,7 +183,26 @@ Deno.test("permission upgrade forms retain complete project context", () => {
   }));
 
   assertStringIncludes(html, 'action="/oauth/login"');
+  assertStringIncludes(html, 'method="GET" action="/oauth/login"');
+  assertEquals(
+    html.includes('method="POST" action="/oauth/login"'),
+    false,
+  );
   assertStringIncludes(html, 'action="/oauth/add-account"');
+  assertStringIncludes(html, 'method="GET" action="/oauth/add-account"');
+  assertEquals(
+    html.includes('method="POST" action="/oauth/add-account"'),
+    false,
+  );
+  assertStringIncludes(html, "Currently signed in");
+  assertStringIncludes(html, "Example App");
+  assertStringIncludes(html, "app.example");
+  assertStringIncludes(
+    html,
+    'src="/api/registry/avatar/did%3Aplc%3Aapp',
+  );
+  assertStringIncludes(html, "Use another account");
+  assertStringIncludes(html, "Choose a saved account or enter another handle");
   assertStringIncludes(
     html,
     'name="handle" value="did:plc:app"',
@@ -328,10 +396,53 @@ Deno.test("another-account mode keeps the current session out of the chooser dec
     oauthConfigured: true,
   }));
 
-  assertStringIncludes(html, "Choose another account");
+  assertStringIncludes(html, "Enter your account handle");
   assertStringIncludes(html, "Not now");
   assertEquals(html.includes("Currently signed in"), false);
-  assertEquals(count(html, 'name="choose" value="another"'), 2);
+  assertStringIncludes(html, 'data-remembered-count="0"');
+  assertEquals(count(html, 'name="choose" value="another"'), 1);
+});
+
+Deno.test("another-account mode lists only other saved accounts before manual entry", () => {
+  const html = renderToString(h(SignInPageContent, {
+    account: {
+      user: { did: "did:plc:alice", handle: "alice.example" },
+      accountType: "user",
+      avatarUrl: null,
+      publicProfileHandle: null,
+      accountHost: null,
+      hasManagedAppProfile: false,
+      hasManagedHostProfiles: false,
+      hasManagedProfiles: false,
+      rememberedAccounts: [
+        { did: "did:plc:alice", handle: "alice.example" },
+        { did: "did:plc:bob", handle: "bob.example" },
+      ],
+    },
+    next: "/hosts/pds.example.com/claim",
+    capabilities: ["host", "media"],
+    action: "host_claim",
+    targetName: "Example Host",
+    permissionState: "required",
+    mode: "signin",
+    choosingAnotherAccount: true,
+    manualAccountEntry: false,
+    allowAccountCreation: true,
+    createAccountHosts: [],
+    createAccountHostsUnavailable: false,
+    createAccountHostsEndpoint: "/api/login/account-hosts",
+    createAccountError: null,
+    oauthConfigured: true,
+  }));
+
+  assertStringIncludes(html, 'data-initial-signin-view="saved"');
+  assertStringIncludes(html, 'name="did" value="did:plc:bob"');
+  assertEquals(html.includes('name="did" value="did:plc:alice"'), false);
+  assertStringIncludes(html, "Choose another account");
+  assertStringIncludes(html, "Use another account");
+  assertStringIncludes(html, "entry=manual");
+  assertStringIncludes(html, 'href="/hosts/pds.example.com/claim"');
+  assertStringIncludes(html, "← Back to claim");
 });
 
 function count(value: string, needle: string): number {

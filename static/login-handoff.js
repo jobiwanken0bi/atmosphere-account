@@ -100,13 +100,23 @@ function urlEncodedForm(form) {
   return params;
 }
 
+function formActionUrl(form) {
+  const rawAction = form.getAttribute("action")?.trim();
+  if (!rawAction) return null;
+  try {
+    return new URL(rawAction, `${globalThis.location.origin}/`);
+  } catch {
+    return null;
+  }
+}
+
 document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
 
-  const action = new URL(form.action || globalThis.location.href);
+  const action = formActionUrl(form);
   if (
-    action.origin !== globalThis.location.origin ||
+    !action || action.origin !== globalThis.location.origin ||
     !HANDOFF_PATHS.has(action.pathname)
   ) return;
 

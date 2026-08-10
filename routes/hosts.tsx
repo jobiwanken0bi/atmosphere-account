@@ -430,6 +430,9 @@ function HostCard(
   const accountCountLabel = host.observedAccountCount > 0
     ? copy.accounts(host.observedAccountCount)
     : null;
+  const compactAccountCount = host.observedAccountCount > 0
+    ? copy.compactAccountCount(host.observedAccountCount)
+    : null;
   const temporarilyUnavailable = accountHostAvailability(host) === "grace";
   return (
     <a
@@ -451,24 +454,16 @@ function HostCard(
             </p>
           </div>
         </div>
-        {(accountCountLabel || linkedApps.length > 0 ||
+        {(compactAccountCount || linkedApps.length > 0 ||
           temporarilyUnavailable) && (
           <div class="host-card-account-summary">
-            {accountCountLabel && (
+            {compactAccountCount && accountCountLabel && (
               <span
                 class="host-card-account-count"
-                title={accountCountLabel}
+                title={compactAccountCount}
                 aria-label={accountCountLabel}
               >
-                <span class="host-card-account-count-full" aria-hidden="true">
-                  {accountCountLabel}
-                </span>
-                <span
-                  class="host-card-account-count-compact"
-                  aria-hidden="true"
-                >
-                  {copy.compactAccountCount(host.observedAccountCount)}
-                </span>
+                {compactAccountCount}
               </span>
             )}
             {linkedApps.length > 0 && (

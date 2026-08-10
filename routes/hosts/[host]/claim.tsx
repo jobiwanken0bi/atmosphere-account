@@ -3,6 +3,7 @@ import Nav from "../../../components/Nav.tsx";
 import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import HostMark from "../../../components/hosts/HostMark.tsx";
+import CopyTextButton from "../../../islands/CopyTextButton.tsx";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import {
@@ -905,16 +906,10 @@ function ClaimBody(
         <div class="host-claim-panel host-claim-panel-ok">
           <p class="host-claim-panel-title">Add this DNS TXT record</p>
           <p class="text-body">
-            Add the exact record below with your DNS provider. Keep this page
-            open while DNS updates, then verify it.
+            Add the exact record below with your DNS provider, then verify it
+            once DNS updates.
           </p>
           <dl class="host-claim-detected-summary">
-            <div>
-              <dt>Name</dt>
-              <dd>
-                <code>{dnsChallenge.recordName}</code>
-              </dd>
-            </div>
             <div>
               <dt>Type</dt>
               <dd>
@@ -922,9 +917,27 @@ function ClaimBody(
               </dd>
             </div>
             <div>
+              <dt>Name</dt>
+              <dd class="host-claim-dns-field">
+                <code>{dnsChallenge.recordName}</code>
+                <CopyTextButton
+                  text={dnsChallenge.recordName}
+                  ariaLabel="Copy DNS record name"
+                  copiedAriaLabel="DNS record name copied"
+                  className="host-claim-copy-button"
+                />
+              </dd>
+            </div>
+            <div>
               <dt>Value</dt>
-              <dd>
+              <dd class="host-claim-dns-field">
                 <code>{dnsChallenge.recordValue}</code>
+                <CopyTextButton
+                  text={dnsChallenge.recordValue}
+                  ariaLabel="Copy DNS record value"
+                  copiedAriaLabel="DNS record value copied"
+                  className="host-claim-copy-button"
+                />
               </dd>
             </div>
           </dl>

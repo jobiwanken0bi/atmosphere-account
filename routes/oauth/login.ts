@@ -41,6 +41,7 @@ import {
 } from "../../lib/oauth-request-input.ts";
 import { hasValidLoginSelectionContinuationBinding } from "../../lib/oauth-continuation.ts";
 import { buildOAuthFlowBindingCookie } from "../../lib/oauth-flow-binding.ts";
+import { grantDevPickerHostClaimAuthorization } from "../../lib/dev-picker-oauth.ts";
 
 const MAX_OAUTH_LOGIN_BODY_BYTES = 8_192;
 const LOGIN_CONTEXT_FIELDS = [
@@ -256,6 +257,28 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
       capabilities ?? ["identity"],
     )
   ) return publicLoginError("This sign-in link is invalid.", 400, wantsJson);
+
+  if (continuation === null && next) {
+    const devAccount = await grantDevPickerHostClaimAuthorization(ctx.req, {
+      identifier: handle,
+      action,
+      capabilities,
+    }).catch(() => null);
+    if (devAccount) {
+      const headers = new Headers({
+        "cache-control": "no-store",
+        "location": next,
+      });
+      if (wantsJson) {
+        headers.set("content-type", "application/json; charset=utf-8");
+        return new Response(JSON.stringify({ redirectUrl: next }), {
+          status: 200,
+          headers,
+        });
+      }
+      return new Response(null, { status: 303, headers });
+    }
+  }
 
   try {
     const { redirectUrl, state, browserBinding } = await startLogin(

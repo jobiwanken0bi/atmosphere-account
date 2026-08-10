@@ -64,6 +64,12 @@ Deno.test("account navigation uses the Apps and hosts information architecture",
   );
 });
 
+Deno.test("host preview account totals use compact numbers", () => {
+  const compact = getMessages("en").hostsDirectory.compactAccountCount;
+  assert(compact(4_200_000) === "4.2M", "millions should use one decimal");
+  assert(compact(42_000_000) === "42M", "whole millions should stay concise");
+});
+
 Deno.test("contextual account actions use the universal login product name", () => {
   const messages = getMessages("en");
   assert(

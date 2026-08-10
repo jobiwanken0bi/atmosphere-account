@@ -27,6 +27,23 @@ function isLoopbackOrigin(origin: string): boolean {
   }
 }
 
+function equivalentLoopbackOrigin(
+  requestOrigin: string,
+  candidateOrigin: string,
+): boolean {
+  if (!IS_DEV) return false;
+  try {
+    const request = new URL(requestOrigin);
+    const candidate = new URL(candidateOrigin);
+    return isLoopbackOrigin(request.origin) &&
+      isLoopbackOrigin(candidate.origin) &&
+      request.protocol === candidate.protocol &&
+      request.port === candidate.port;
+  } catch {
+    return false;
+  }
+}
+
 export function trustedAtmosphereOrigins(): string[] {
   return [
     ...new Set(
@@ -52,6 +69,21 @@ function forwardedTrustedOrigin(headers?: Headers): string | null {
 
 export function trustedRequestOrigin(url: URL, headers?: Headers): string {
   const normalized = normalizeOrigin(url.origin);
+  if (normalized && IS_DEV) {
+    const browserOrigin = normalizeOrigin(headers?.get("origin") ?? "");
+    if (
+      browserOrigin && equivalentLoopbackOrigin(normalized, browserOrigin)
+    ) {
+      return browserOrigin;
+    }
+    const referer = headers?.get("referer");
+    const refererOrigin = referer ? normalizeOrigin(referer) : null;
+    if (
+      refererOrigin && equivalentLoopbackOrigin(normalized, refererOrigin)
+    ) {
+      return refererOrigin;
+    }
+  }
   if (normalized && isTrustedAtmosphereOrigin(normalized)) return normalized;
   const forwarded = forwardedTrustedOrigin(headers);
   if (forwarded) return forwarded;

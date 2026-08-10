@@ -5,6 +5,7 @@ import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
+import MicroblogProfileLink from "../../islands/MicroblogProfileLink.tsx";
 import UserMicroblogViewerButton from "../../islands/UserMicroblogViewerButton.tsx";
 import ConfirmedActionForm, {
   disconnectAppConfirmation,
@@ -213,9 +214,6 @@ async function AccountPage(
     : "Account host not detected";
   const hostDirectoryUrl = hostRoute?.directoryUrl ?? "/hosts";
   const browserLabel = currentBrowserLabel(ctx.req.headers);
-  const blueskyProfileUrl = `https://bsky.app/profile/${
-    encodeURIComponent(user.handle)
-  }`;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -269,16 +267,10 @@ async function AccountPage(
                   <div class="account-dashboard-identity-tags">
                     <span class="account-home-pill">{hostStatusLabel}</span>
                   </div>
-                  <a
-                    href={blueskyProfileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="account-dashboard-text-link"
-                  >
-                    <span>Manage profile in Bluesky</span>
-                    <span aria-hidden="true">↗</span>
-                    <span class="sr-only">(opens in a new tab)</span>
-                  </a>
+                  <MicroblogProfileLink
+                    selectedClientId={appUser?.bskyClientId ?? null}
+                    handle={user.handle}
+                  />
                 </div>
               </div>
             </article>
@@ -364,7 +356,13 @@ async function AccountPage(
               </DashboardSection>
 
               <details class="glass account-home-details account-dashboard-details">
-                <summary>Advanced account details</summary>
+                <summary>
+                  <span>Advanced</span>
+                  <span
+                    class="account-dashboard-details-chevron"
+                    aria-hidden="true"
+                  />
+                </summary>
                 <dl>
                   <div>
                     <dt>DID</dt>
