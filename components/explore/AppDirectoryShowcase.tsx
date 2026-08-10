@@ -1,8 +1,5 @@
 import type { AppListing, AppTagSummary } from "../../lib/app-directory.ts";
-import {
-  appDisplayTaxonomy,
-  appPrimaryCollection,
-} from "../../lib/app-display.ts";
+import { appPrimaryCollection } from "../../lib/app-display.ts";
 import { appImageUrl } from "../../lib/media.ts";
 import {
   appCollectionForTag,
@@ -14,7 +11,6 @@ import AtmosphereHandle from "../AtmosphereHandle.tsx";
 import ContentVisualIcon, {
   type ContentVisualIconName,
 } from "../icons/ContentVisualIcon.tsx";
-import { AppCollectionBadge } from "./AppCard.tsx";
 
 interface AppSpotlightProps {
   apps: AppListing[];
@@ -48,11 +44,6 @@ function hostname(value: string | null): string | null {
   }
 }
 
-function description(app: AppListing): string {
-  return app.tagline || app.description ||
-    "Explore this app in the Atmosphere.";
-}
-
 function signalText(app: AppListing): string | null {
   if (app.reviewCount > 0 && app.averageRating != null) {
     return `${app.averageRating.toFixed(1)} from ${app.reviewCount} reviews`;
@@ -80,25 +71,34 @@ export function AppDirectoryAvailability(
 }
 
 export function FreshAppCard(
-  { app, compact = false }: { app: AppListing; compact?: boolean },
+  { app, compact = false, spotlight = false }: {
+    app: AppListing;
+    compact?: boolean;
+    spotlight?: boolean;
+  },
 ) {
   const iconUrl = appImageUrl(app.iconUrl, "icon");
+  const mediaWidth = spotlight ? 1200 : 800;
+  const mediaHeight = spotlight ? 630 : 420;
   const bannerUrl = appImageUrl(
     app.heroUrl || app.screenshotUrls[0],
     "media",
-    800,
+    mediaWidth,
     app.heroUrl ? app.heroFallbackUrl : null,
   );
   const bannerFallbackUrl = app.heroUrl
-    ? appImageUrl(app.heroFallbackUrl, "media", 800)
+    ? appImageUrl(app.heroFallbackUrl, "media", mediaWidth)
     : null;
   const mediaUrl = bannerUrl || iconUrl;
   const host = hostname(app.primaryUrl);
   const category = appPrimaryCollection(app) ?? "App";
+  const signal = spotlight ? signalText(app) : null;
 
   return (
     <a
-      class={`glass app-fresh-card${compact ? " app-fresh-card--compact" : ""}`}
+      class={`glass app-fresh-card${compact ? " app-fresh-card--compact" : ""}${
+        spotlight ? " app-fresh-card--spotlight" : ""
+      }`}
       href={appHref(app)}
       aria-label={`View ${app.name}`}
     >
@@ -110,8 +110,11 @@ export function FreshAppCard(
               src={mediaUrl}
               data-fallback-src={bannerFallbackUrl ?? undefined}
               alt=""
-              loading="lazy"
+              loading={spotlight ? "eager" : "lazy"}
               decoding="async"
+              fetchpriority={spotlight ? "high" : undefined}
+              width={bannerUrl ? mediaWidth : 128}
+              height={bannerUrl ? mediaHeight : 128}
             />
           )
           : <span>{app.name.slice(0, 1).toUpperCase()}</span>}
@@ -123,7 +126,7 @@ export function FreshAppCard(
               <img
                 src={iconUrl}
                 alt=""
-                loading="lazy"
+                loading={spotlight ? "eager" : "lazy"}
                 decoding="async"
                 width={64}
                 height={64}
@@ -140,7 +143,10 @@ export function FreshAppCard(
               </span>
             )}
           </span>
-          <span class="app-store-category">{category}</span>
+          <span class="app-fresh-detail-row">
+            <span class="app-store-category">{category}</span>
+            {signal && <span class="app-fresh-signal">{signal}</span>}
+          </span>
         </span>
         <span class="app-fresh-actions">
           <span class="app-fresh-action">View</span>
@@ -152,32 +158,7 @@ export function FreshAppCard(
 
 export function AppSpotlight({ apps }: AppSpotlightProps) {
   if (apps.length === 0) return null;
-  const lead =
-    apps.find((app) => app.heroUrl || app.screenshotUrls.length > 0) ??
-      apps[0];
-  const secondary = apps.filter((app) => app.id !== lead.id);
-  const leadBannerUrl = appImageUrl(
-    lead.heroUrl,
-    "media",
-    1200,
-    lead.heroFallbackUrl,
-  );
-  const leadBannerFallbackUrl = appImageUrl(
-    lead.heroFallbackUrl,
-    "media",
-  );
-  const leadScreenshotUrl = appImageUrl(lead.screenshotUrls[0], "media");
-  const wideMediaUrl = leadBannerUrl || leadScreenshotUrl;
-  const leadIconUrl = appImageUrl(lead.iconUrl, "icon");
-  const host = hostname(lead.primaryUrl);
-  const leadTaxonomy = appDisplayTaxonomy(lead);
-  const leadPrimaryCollection = appPrimaryCollection(lead);
-  const leadSignal = signalText(lead);
-  const leadCollections = leadPrimaryCollection
-    ? leadTaxonomy.collections.filter((collection) =>
-      collection !== leadPrimaryCollection
-    )
-    : leadTaxonomy.collections;
+  const [lead, ...secondary] = apps;
 
   return (
     <section class="app-showcase-section app-showcase-section--spotlight">
@@ -192,123 +173,7 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
           </a>
         </div>
         <div class="app-spotlight-layout">
-          <a
-            class={`glass app-spotlight-card${
-              leadBannerUrl ? " app-spotlight-card--banner" : ""
-            }`}
-            href={appHref(lead)}
-          >
-            <div class="app-spotlight-copy">
-              {leadBannerUrl
-                ? (
-                  <>
-                    <span class="app-spotlight-footer-icon" aria-hidden="true">
-                      {leadIconUrl
-                        ? (
-                          <img
-                            src={leadIconUrl}
-                            alt=""
-                            loading="eager"
-                            decoding="async"
-                            width={72}
-                            height={72}
-                          />
-                        )
-                        : (
-                          <span>
-                            {lead.name.slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                    </span>
-                    <div class="app-spotlight-identity">
-                      <div class="app-spotlight-title-line">
-                        <h3>{lead.name}</h3>
-                        {host && (
-                          <p class="app-spotlight-host">
-                            <AtmosphereHandle handle={host} />
-                          </p>
-                        )}
-                      </div>
-                      <span class="app-spotlight-category">
-                        {leadPrimaryCollection ?? "App"}
-                      </span>
-                    </div>
-                  </>
-                )
-                : (
-                  <div class="app-spotlight-identity">
-                    <h3>{lead.name}</h3>
-                    {host && (
-                      <p class="app-spotlight-host">
-                        <AtmosphereHandle handle={host} />
-                      </p>
-                    )}
-                    <div class="app-spotlight-kicker app-spotlight-kicker--below">
-                      <AppCollectionBadge app={lead} />
-                      {leadSignal && <span>{leadSignal}</span>}
-                    </div>
-                  </div>
-                )}
-              {!leadBannerUrl && (
-                <>
-                  <p class="app-spotlight-description">{description(lead)}</p>
-                  <div class="app-spotlight-tags">
-                    {leadCollections.slice(0, 2).map((collection) => (
-                      <span class="is-collection" key={collection}>
-                        {collection}
-                      </span>
-                    ))}
-                    {leadTaxonomy.tags.slice(0, 3).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                </>
-              )}
-              <span class="app-spotlight-cta">View</span>
-            </div>
-            <div
-              class={`app-spotlight-media${
-                wideMediaUrl
-                  ? leadBannerUrl
-                    ? " app-spotlight-media--banner"
-                    : " app-spotlight-media--screenshot"
-                  : " app-spotlight-media--icon"
-              }`}
-              aria-hidden="true"
-            >
-              {wideMediaUrl
-                ? (
-                  <img
-                    src={wideMediaUrl}
-                    data-fallback-src={leadBannerUrl
-                      ? leadBannerFallbackUrl ?? undefined
-                      : undefined}
-                    alt=""
-                    loading="eager"
-                    decoding="async"
-                    fetchpriority="high"
-                  />
-                )
-                : leadIconUrl
-                ? (
-                  <img
-                    class="app-spotlight-big-icon"
-                    src={leadIconUrl}
-                    alt=""
-                    loading="eager"
-                    decoding="async"
-                    fetchpriority="high"
-                    width={192}
-                    height={192}
-                  />
-                )
-                : (
-                  <div class="app-spotlight-fallback">
-                    {lead.name.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-            </div>
-          </a>
+          <FreshAppCard app={lead} spotlight />
           <div class="app-promo-column">
             {secondary.slice(0, 2).map((app) => (
               <FreshAppCard key={app.id} app={app} compact />
@@ -320,9 +185,15 @@ export function AppSpotlight({ apps }: AppSpotlightProps) {
   );
 }
 
-export function AppCategoryGrid({ tags }: { tags: AppTagSummary[] }) {
+export function AppCategoryGrid(
+  { tags, balanced = false }: { tags: AppTagSummary[]; balanced?: boolean },
+) {
   return (
-    <div class="app-category-grid">
+    <div
+      class={`app-category-grid${
+        balanced ? " app-category-grid--balanced" : ""
+      }`}
+    >
       {tags.map((item) => {
         const collection = appCollectionForTag(item.tag);
         const icon = (collection?.icon ?? "app") as ContentVisualIconName;
@@ -340,11 +211,13 @@ export function AppCategoryGrid({ tags }: { tags: AppTagSummary[] }) {
                 class="app-category-icon-svg"
               />
             </span>
-            <span class="app-category-name">
-              {appCollectionLabel(item.tag)}
-            </span>
-            <span class="app-category-count">
-              {item.count} {item.count === 1 ? "app" : "apps"}
+            <span class="app-category-copy">
+              <span class="app-category-name">
+                {appCollectionLabel(item.tag)}
+              </span>
+              <span class="app-category-count">
+                {item.count} {item.count === 1 ? "app" : "apps"}
+              </span>
             </span>
           </a>
         );
@@ -370,7 +243,7 @@ export function AppCategoryTiles(
             See all
           </a>
         </div>
-        <AppCategoryGrid tags={visibleTags} />
+        <AppCategoryGrid tags={visibleTags} balanced />
       </div>
     </section>
   );

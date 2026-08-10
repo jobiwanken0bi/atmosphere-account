@@ -25,7 +25,10 @@ import {
 } from "../../lib/pds-server-description.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { hostHasCurrentConformance } from "../../lib/host-conformance.ts";
-import { normalizeHostDirectoryReturnTo } from "../../lib/host-directory-navigation.ts";
+import {
+  normalizeHostDirectoryReturnTo,
+  relatedAppHrefFromHost,
+} from "../../lib/host-directory-navigation.ts";
 import { getResolvedAppLinksForHost } from "../../lib/app-directory.ts";
 import type { ResolvedDirectoryAppLink } from "../../lib/app-directory.ts";
 import { getMessages, type Messages } from "../../i18n/mod.ts";
@@ -159,6 +162,7 @@ function HostDetailPage(
       (host.signupStatus === "open" ||
         host.signupStatus === "invite_required"),
   );
+  const canOfferClaim = hostClaimActionAvailable(host, claim);
 
   return (
     <div id="page-top">
@@ -264,23 +268,6 @@ function HostDetailPage(
                 <p class="profile-hero-description">{friendly.summary}</p>
               </div>
               <div class="profile-hero-actions" aria-label="Host actions">
-                {linkedApps.map((app) => (
-                  <DirectoryIdentityLink
-                    key={app.slug}
-                    href={`/apps/${encodeURIComponent(app.slug)}`}
-                    destination="app"
-                    label={app.relationship === "same_operator"
-                      ? `${app.name} app`
-                      : "App"}
-                    accessibleLabel={`View the ${app.name} app profile`}
-                  />
-                ))}
-                {host.homepageUrl && (
-                  <HostVisitLink
-                    href={host.homepageUrl}
-                    label="Explore"
-                  />
-                )}
                 {canOfferSignup && (
                   <HostVisitLink
                     href={host.signupUrl!}
@@ -288,8 +275,28 @@ function HostDetailPage(
                       ? "Request invite"
                       : "Create account"}
                     icon="signup"
+                    primary
                   />
                 )}
+                {host.homepageUrl && (
+                  <HostVisitLink
+                    href={host.homepageUrl}
+                    label="Explore"
+                  />
+                )}
+                {linkedApps.map((app) => (
+                  <DirectoryIdentityLink
+                    key={app.slug}
+                    href={relatedAppHrefFromHost(
+                      app.slug,
+                      host.host,
+                      backHref,
+                    )}
+                    destination="app"
+                    label={linkedApps.length > 1 ? `${app.name} app` : "App"}
+                    accessibleLabel={`View the ${app.name} app profile`}
+                  />
+                ))}
               </div>
             </div>
 
@@ -319,7 +326,9 @@ function HostDetailPage(
                 </span>
                 <div>
                   <p class="text-eyebrow">Host domain</p>
-                  <h2>{handleSummary.label}</h2>
+                  <h2>
+                    <BreakableHostname value={handleSummary.label} />
+                  </h2>
                   <p>{handleSummary.detail}</p>
                 </div>
               </article>
@@ -371,6 +380,13 @@ function HostDetailPage(
                   <p class="host-detail-claim-note">
                     Operator verification is temporarily unavailable. The stored
                     claimant is not being shown as verified.
+                  </p>
+                )
+                : !canOfferClaim
+                ? (
+                  <p class="host-detail-claim-note">
+                    This host is already claimed. Management details are
+                    temporarily unavailable.
                   </p>
                 )
                 : (
@@ -545,12 +561,38 @@ function HostDetailPage(
   );
 }
 
+export function hostClaimActionAvailable(
+  host: Pick<AccountHost, "verificationStatus">,
+  claim: AccountHostClaim | null,
+): boolean {
+  return !claim && host.verificationStatus !== "claimed" &&
+    host.verificationStatus !== "verified";
+}
+
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
+  );
+}
+
+function BreakableHostname({ value }: { value: string }) {
+  const labels = value.split(".");
+  return (
+    <span class="breakable-hostname">
+      {labels.map((label, index) => (
+        <span key={`${label}-${index}`}>
+          {label}
+          {index < labels.length - 1 && (
+            <>
+              .<wbr />
+            </>
+          )}
+        </span>
+      ))}
+    </span>
   );
 }
 

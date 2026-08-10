@@ -304,9 +304,7 @@ export function SignInPageContent(
             class="container signin-page-container"
             data-signin-page-copy="true"
           >
-            <p class="text-eyebrow">
-              {createMode ? "One account, every app" : copy.eyebrow}
-            </p>
+            {!createMode && <p class="text-eyebrow">{copy.eyebrow}</p>}
             <h1
               class="text-section signin-page-brand-title"
               data-initial-mode={mode}

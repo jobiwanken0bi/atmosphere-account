@@ -76,15 +76,20 @@ Deno.test("direct create mode is create-only and uses the requested account copy
   const html = renderToString(h(SignInForm, {
     mode: "create",
     rich: true,
-    returnTo: "/apps/tangled?review=compose",
-    action: "review",
-    capabilities: ["review"],
-    targetName: "Tangled",
+    returnTo:
+      "/hosts/dns-claim-preview.atmosphereaccount.com/claim?publish=1&from=detected",
+    action: "host_claim",
+    capabilities: ["host", "media"],
+    targetName: "DNS Claim Preview",
     createAccountHosts: [directHost],
     createAccountHostsEndpoint: "/api/login/account-hosts",
   }));
 
   assertStringIncludes(html, "Your host is where your account lives");
+  assertEquals(
+    (html.match(/class="signin-create-explainer-heading"/g) ?? []).length,
+    2,
+  );
   assertStringIncludes(html, 'href="/apps"');
   assertStringIncludes(html, "Your account is yours");
   assertStringIncludes(html, "<strong>you.com</strong>");
@@ -93,6 +98,29 @@ Deno.test("direct create mode is create-only and uses the requested account copy
   assertEquals(html.includes('role="tab"'), false);
   assertEquals(html.includes("Atmosphere never receives"), false);
   assertStringIncludes(html, "Open signup");
+
+  const existingAccountHref = html.match(
+    /class="signin-existing-account-link">[\s\S]*?<a href="([^"]+)"/,
+  )?.[1]?.replaceAll("&amp;", "&");
+  const existingAccountUrl = new URL(
+    existingAccountHref ?? "",
+    "https://atmosphereaccount.com",
+  );
+  assertEquals(existingAccountUrl.pathname, "/signin");
+  assertEquals(existingAccountUrl.searchParams.get("choose"), "another");
+  assertEquals(
+    existingAccountUrl.searchParams.get("next"),
+    "/hosts/dns-claim-preview.atmosphereaccount.com/claim?publish=1&from=detected",
+  );
+  assertEquals(existingAccountUrl.searchParams.get("action"), "host_claim");
+  assertEquals(
+    existingAccountUrl.searchParams.get("name"),
+    "DNS Claim Preview",
+  );
+  assertEquals(existingAccountUrl.searchParams.getAll("capability"), [
+    "host",
+    "media",
+  ]);
 });
 
 Deno.test("invite-required hosts are not described as direct signup", () => {

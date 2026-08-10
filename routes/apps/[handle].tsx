@@ -14,7 +14,9 @@ import { FreshAppCard } from "../../components/explore/AppDirectoryShowcase.tsx"
 import AppLikeButton, {
   appLikeReauthHref,
 } from "../../islands/AppLikeButton.tsx";
-import AppReviewList from "../../islands/AppReviewList.tsx";
+import AppReviewList, {
+  showAppReviewHeaderSummary,
+} from "../../islands/AppReviewList.tsx";
 import ProfileReviewComposer from "../../islands/ProfileReviewComposer.tsx";
 import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import ShareButton from "../../islands/ShareButton.tsx";
@@ -81,6 +83,10 @@ import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { oauthSigninUrl } from "../../lib/oauth-action.ts";
 import { favoriteResumeReturnPath } from "../../lib/favorite-resume.ts";
+import {
+  type AppDetailBackNavigation,
+  appDetailBackNavigation,
+} from "../../lib/host-directory-navigation.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -96,6 +102,9 @@ export const handler = define.handlers({
     const user = ctx.state.user;
     const appReviewSort = readAppReviewSort(
       ctx.url.searchParams.get("reviews"),
+    );
+    const backNavigation = appDetailBackNavigation(
+      ctx.url.searchParams.get("from"),
     );
     /** Pull the profile being viewed and (in parallel) the signed-in
      *  user's own registry entry so the AccountMenu can deep-link to
@@ -316,6 +325,7 @@ export const handler = define.handlers({
           : null}
         locale={ctx.state.locale}
         shareUrl={shareUrl}
+        backNavigation={backNavigation}
       />,
       { status: profile || appListing ? 200 : 404 },
     );
@@ -345,6 +355,7 @@ interface DetailProps {
   /** Absolute URL of this project page; passed to the Share button so
    *  copy-to-clipboard / Web Share API both get the canonical link. */
   shareUrl: string;
+  backNavigation: AppDetailBackNavigation;
 }
 
 function ProfileDetailPage(
@@ -369,6 +380,7 @@ function ProfileDetailPage(
     microblogViewerClientId,
     locale,
     shareUrl,
+    backNavigation,
   }: DetailProps,
 ) {
   const messages = getMessages(locale);
@@ -390,6 +402,7 @@ function ProfileDetailPage(
         account={account}
         microblogViewerClientId={microblogViewerClientId}
         shareUrl={shareUrl}
+        backNavigation={backNavigation}
       />
     );
   }
@@ -411,6 +424,7 @@ function ProfileDetailPage(
           account={account}
           microblogViewerClientId={microblogViewerClientId}
           shareUrl={shareUrl}
+          backNavigation={backNavigation}
         />
       );
     }
@@ -439,8 +453,10 @@ function ProfileDetailPage(
         <main class="explore-profile-detail" id="main-content">
           <div class="container" style={{ maxWidth: "880px" }}>
             <div class="project-page-toolbar">
-              <a href="/apps" class="text-link-button">
-                ← {t.detail.backToExplore}
+              <a href={backNavigation.href} class="text-link-button">
+                ← {backNavigation.label === "Back to host"
+                  ? backNavigation.label
+                  : t.detail.backToExplore}
               </a>
               <ShareButton
                 url={shareUrl}
@@ -519,7 +535,6 @@ function ProfileDetailPage(
                     copy={{
                       heading: messages.reviews.composer.heading,
                       modalBody: messages.reviews.composer.modalBody,
-                      signedOut: messages.reviews.composer.signedOut,
                       ownerNote: messages.reviews.composer.ownerNote,
                       ratingLabel: messages.reviews.composer.ratingLabel,
                       bodyLabel: messages.reviews.composer.bodyLabel,
@@ -531,7 +546,6 @@ function ProfileDetailPage(
                       update: messages.reviews.composer.update,
                       submitting: messages.reviews.composer.submitting,
                       delete: messages.reviews.composer.delete,
-                      signIn: messages.reviews.composer.signIn,
                       cancel: messages.reviews.composer.cancel,
                       saved: messages.reviews.composer.saved,
                       deleted: messages.reviews.composer.deleted,
@@ -637,6 +651,7 @@ interface AppListingDetailProps {
   account: ReturnType<typeof buildAccountMenuProps>;
   microblogViewerClientId: string | null;
   shareUrl: string;
+  backNavigation: AppDetailBackNavigation;
 }
 
 function AppListingDetailPage(
@@ -655,6 +670,7 @@ function AppListingDetailPage(
     account,
     microblogViewerClientId,
     shareUrl,
+    backNavigation,
   }: AppListingDetailProps,
 ) {
   const shareTitle = `${app.name} on Atmosphere Apps`;
@@ -682,8 +698,8 @@ function AppListingDetailPage(
         >
           <div class="container" style={{ maxWidth: "980px" }}>
             <div class="project-page-toolbar">
-              <a href="/apps" class="text-link-button">
-                ← Back to apps
+              <a href={backNavigation.href} class="text-link-button">
+                ← {backNavigation.label}
               </a>
               <ShareButton
                 url={shareUrl}
@@ -847,20 +863,16 @@ function AppListingHero(
                 >
                   {hasDestinationLinks && (
                     <div class="app-detail-primary-actions app-detail-destination-actions">
+                      {destinationLinks.map(renderAppAction)}
                       {hostHref && (
                         <DirectoryIdentityLink
                           href={hostHref}
                           destination="host"
-                          label={resolvedHostLink?.relationship ===
-                              "same_operator"
-                            ? `${resolvedHostLink.name} host`
-                            : "Host"}
                           accessibleLabel={resolvedHostLink
                             ? `View the ${resolvedHostLink.name} host profile`
                             : undefined}
                         />
                       )}
-                      {destinationLinks.map(renderAppAction)}
                     </div>
                   )}
                   {storeLinks.length > 0 && (
@@ -1031,7 +1043,11 @@ function AppReviewsSection(
           <h2 class="profile-card-section-title">
             {messages.reviews.list.heading}
           </h2>
-          <p class="app-detail-review-summary">{reviewSummary}</p>
+          {showAppReviewHeaderSummary(
+            app.reviewCount,
+            app.averageRating,
+            !!app.atstoreListingUri,
+          ) && <p class="app-detail-review-summary">{reviewSummary}</p>}
           {isOwner && app.favoriteCount > 0 && (
             <p class="app-detail-review-meta">
               {messages.reviews.app.likeCount(app.favoriteCount)}
@@ -1079,7 +1095,6 @@ function AppReviewsSection(
               copy={{
                 heading: messages.reviews.composer.heading,
                 modalBody: messages.reviews.composer.modalBody,
-                signedOut: messages.reviews.composer.signedOut,
                 ownerNote: messages.reviews.composer.ownerNote,
                 ratingLabel: messages.reviews.composer.ratingLabel,
                 bodyLabel: messages.reviews.composer.bodyLabel,
@@ -1090,7 +1105,6 @@ function AppReviewsSection(
                 update: messages.reviews.composer.update,
                 submitting: messages.reviews.composer.submitting,
                 delete: messages.reviews.composer.delete,
-                signIn: messages.reviews.composer.signIn,
                 cancel: messages.reviews.composer.cancel,
                 saved: messages.reviews.composer.saved,
                 deleted: messages.reviews.composer.deleted,

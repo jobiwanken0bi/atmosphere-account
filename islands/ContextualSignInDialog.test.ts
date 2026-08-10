@@ -75,6 +75,28 @@ Deno.test("contextual dialog preserves task-specific permission copy", () => {
   );
 });
 
+Deno.test("review login explains the action while keeping the shared product heading", () => {
+  const html = renderToString(h(ContextualSignInDialogCard, {
+    fallbackHref: "/signin",
+    returnTo: "/apps/tangled?review=compose",
+    targetName: "Tangled",
+    action: "review",
+    capabilities: ["review"],
+    onClose: () => {},
+  }));
+
+  assertStringIncludes(html, "Login with Atmosphere");
+  assertStringIncludes(
+    html,
+    "Login to write a review of Tangled",
+  );
+  assertEquals(html.includes("Choose the account that will publish it"), false);
+  assertStringIncludes(
+    html,
+    '<button type="submit" class="signin-form-submit">Continue</button>',
+  );
+});
+
 Deno.test("contextual dialog reuses the 44px branded close treatment", async () => {
   const css = await Deno.readTextFile(
     new URL("../static/styles.css", import.meta.url),

@@ -44,8 +44,8 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Write a review",
-        title: `Sign in to review ${name}`,
-        signInBody: "Choose the account that will publish your review.",
+        title: `Login to write a review of ${name}`,
+        signInBody: `Login to write a review of ${name}`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to publish your review of ${name}.`,
       };
@@ -54,7 +54,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Your review",
-        title: "Sign in to manage your review",
+        title: "Login to manage your review",
         signInBody: `Choose the account that owns your review of ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to manage your review of ${name}.`,
@@ -64,8 +64,8 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Write a review",
-        title: `Sign in to review ${name}`,
-        signInBody: "Choose the account that will publish your review.",
+        title: `Login to write a review of ${name}`,
+        signInBody: `Login to write a review of ${name}`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to publish your review of ${name}.`,
       };
@@ -74,7 +74,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Your review",
-        title: "Sign in to manage your review",
+        title: "Login to manage your review",
         signInBody: `Choose the account that owns your review of ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to manage your review of ${name}.`,
@@ -84,7 +84,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Review response",
-        title: "Sign in to respond",
+        title: "Login to respond",
         signInBody: `Continue with the account that manages ${name}.`,
         upgradeBody: (handle) =>
           `Continue as @${handle} to respond for ${name}.`,
@@ -94,7 +94,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Report a review",
-        title: "Sign in to report this review",
+        title: "Login to report this review",
         signInBody:
           `Choose the account you want to use to report a review of ${name}.`,
         upgradeBody: (handle) => `Confirm @${handle} to report this review.`,
@@ -104,7 +104,7 @@ export function authActionCopy(
       const name = targetName || "this app";
       return {
         eyebrow: "Like an app",
-        title: `Sign in to like ${name}`,
+        title: `Login to like ${name}`,
         signInBody: "Choose the account you want to use.",
         upgradeBody: (handle) => `Continue as @${handle} to like ${name}.`,
       };
@@ -124,7 +124,7 @@ export function authActionCopy(
       const name = targetName || "this account host";
       return {
         eyebrow: "Claim an account host",
-        title: `Sign in to claim ${name}`,
+        title: `Login to claim ${name}`,
         signInBody:
           `Choose the account that will claim and manage ${name}, including its public profile and images. Granting this access does not claim the host; DNS verification separately proves control of its domain.`,
         upgradeBody: (handle) =>

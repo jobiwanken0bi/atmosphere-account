@@ -18,6 +18,7 @@ import {
   createAppReviewRkey,
   isAppReviewRkey,
 } from "../lib/app-review-write.ts";
+import ContentVisualIcon from "../components/icons/ContentVisualIcon.tsx";
 
 type ReviewAuthorizationAction = Extract<
   OAuthAction,
@@ -43,7 +44,6 @@ interface Props {
   copy: {
     heading: string;
     modalBody: string;
-    signedOut: string;
     ownerNote: string;
     ratingLabel: string;
     bodyLabel: string;
@@ -53,7 +53,6 @@ interface Props {
     update: string;
     submitting: string;
     delete: string;
-    signIn: string;
     cancel: string;
     saved: string;
     deleted: string;
@@ -395,22 +394,23 @@ export default function ProfileReviewComposer(
       <div class="profile-review-action-row">
         {!signedIn
           ? (
-            <>
-              <span class="profile-review-action-hint">{copy.signedOut}</span>
-              <a
-                class="explore-cta-primary"
-                href={loginHref}
-                aria-haspopup="dialog"
-                aria-expanded={authOpen.value ? "true" : "false"}
-                onClick={(event) => {
-                  if (!isPlainLinkActivation(event)) return;
-                  event.preventDefault();
-                  authOpen.value = true;
-                }}
-              >
-                {copy.signIn}
-              </a>
-            </>
+            <a
+              class="explore-cta-primary profile-review-write-button"
+              href={loginHref}
+              aria-haspopup="dialog"
+              aria-expanded={authOpen.value ? "true" : "false"}
+              onClick={(event) => {
+                if (!isPlainLinkActivation(event)) return;
+                event.preventDefault();
+                authOpen.value = true;
+              }}
+            >
+              <ContentVisualIcon
+                name="pen"
+                class="profile-review-write-icon"
+              />
+              {copy.heading}
+            </a>
           )
           : isOwner
           ? <p class="text-body profile-review-owner-note">{copy.ownerNote}</p>
@@ -425,9 +425,10 @@ export default function ProfileReviewComposer(
               }}
             >
               {!ownReview && (
-                <span class="profile-review-write-icon" aria-hidden="true">
-                  ✎
-                </span>
+                <ContentVisualIcon
+                  name="pen"
+                  class="profile-review-write-icon"
+                />
               )}
               {ownReview ? copy.update : copy.heading}
             </button>

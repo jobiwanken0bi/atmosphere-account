@@ -22,6 +22,8 @@ Deno.test("OAuth client metadata publishes the maximum, not a per-flow request",
   const body = await response.json() as {
     client_id: string;
     client_uri: string;
+    tos_uri: string;
+    policy_uri: string;
     scope?: string;
   };
 
@@ -32,6 +34,8 @@ Deno.test("OAuth client metadata publishes the maximum, not a per-flow request",
   assertEquals(body.scope, OAUTH_CLIENT_METADATA_SCOPE);
   assertNotEquals(body.scope, DEFAULT_OAUTH_SCOPE);
   assertNotEquals(body.scope, scopeForCapabilities(["review"]));
+  assertEquals(body.tos_uri, "https://atmosphereaccount.com/terms");
+  assertEquals(body.policy_uri, "https://atmosphereaccount.com/privacy");
   assertEquals(scopeTokens(body.scope).includes("blob:image/*"), true);
   assertEquals(
     scopeTokens(body.scope).includes(

@@ -40,6 +40,25 @@ Deno.test("app like count copy crosses the island boundary as strings", () => {
   assertEquals(appLikeCountLabel(2, copy), "2 likes");
 });
 
+Deno.test("app like count stays plain text inside the like control", async () => {
+  const css = await Deno.readTextFile(
+    new URL("../static/styles.css", import.meta.url),
+  );
+  const countRule = css.match(/\.app-like-count\s*\{([^}]+)\}/)?.[1] ?? "";
+  const darkCountRule = css.match(
+    /\.dark-phase \.app-like-count\s*\{([^}]+)\}/,
+  )?.[1] ?? "";
+
+  for (const rule of [countRule, darkCountRule]) {
+    assertEquals(/\bbackground(?:-color)?\s*:/.test(rule), false);
+  }
+  for (const property of ["border-radius", "min-width", "padding"]) {
+    assertEquals(countRule.includes(`${property}:`), false);
+  }
+  assertEquals(countRule.includes("color:"), true);
+  assertEquals(darkCountRule.includes("color:"), true);
+});
+
 Deno.test("favorite resume URLs preserve absolute save/remove intent", () => {
   assertEquals(
     favoriteResumeReturnPath("feed/reader", "save"),

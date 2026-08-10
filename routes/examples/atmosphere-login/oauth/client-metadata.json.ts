@@ -4,6 +4,7 @@ import {
   exampleAtprotoOAuthCallbackUri,
   exampleAtprotoOAuthClientId,
 } from "../../../../lib/example-atproto-oauth.ts";
+import { siteOrigin } from "../../../../lib/env.ts";
 
 export const handler = define.handlers({
   GET(ctx): Response {
@@ -15,8 +16,8 @@ export const handler = define.handlers({
       client_name: "Login with Atmosphere reference app",
       client_uri: new URL("/examples/atmosphere-login/app", origin).toString(),
       logo_uri: new URL("/app-icon.svg", origin).toString(),
-      tos_uri: origin,
-      policy_uri: origin,
+      tos_uri: `${siteOrigin()}/terms`,
+      policy_uri: `${siteOrigin()}/privacy`,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       redirect_uris: [exampleAtprotoOAuthCallbackUri(origin)],

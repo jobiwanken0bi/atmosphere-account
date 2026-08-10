@@ -684,11 +684,13 @@ function HostClaimPage(props: ClaimPageProps) {
                 : "/hosts"}
               class="text-link-button"
             >
-              {detectedLookup && linkContext
+              ← {detectedLookup && linkContext
                 ? "Back to app hosting"
                 : detectedLookup
                 ? "Back to PDS lookup"
-                : "Back to host"}
+                : host
+                ? "Back to host"
+                : "Back to hosts"}
             </a>
             <div class="glass signin-page-card host-claim-card">
               {host

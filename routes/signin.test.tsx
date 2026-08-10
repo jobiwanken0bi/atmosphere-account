@@ -199,7 +199,8 @@ Deno.test("media permission gets explicit image-upload context", () => {
 
 Deno.test("review and Like copy retain the requested target", () => {
   const review = authActionCopy("review", "Grain");
-  assertStringIncludes(review.title, "review Grain");
+  assertEquals(review.title, "Login to write a review of Grain");
+  assertEquals(review.signInBody, "Login to write a review of Grain");
 
   const reviewManage = authActionCopy("review_manage", "Grain");
   assertStringIncludes(reviewManage.signInBody, "review of Grain");
@@ -287,6 +288,7 @@ Deno.test("create mode does not reuse or auto-continue the signed-in account", (
   }));
 
   assertStringIncludes(html, "Create an Atmosphere account");
+  assertEquals(html.includes("One account, every app"), false);
   assertStringIncludes(html, 'data-initial-mode="create"');
   assertStringIncludes(html, 'data-signin-page-copy="true"');
   assertStringIncludes(html, "Choose an account host");

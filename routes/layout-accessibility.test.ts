@@ -38,6 +38,13 @@ Deno.test("shared docs layout exposes the primary content landmark", async () =>
   assertStringIncludes(source, '<main id="main-content"', "DocsLayout.tsx");
 });
 
+Deno.test("shared legal layout exposes the primary content landmark", async () => {
+  const source = await Deno.readTextFile(
+    new URL("../components/LegalPage.tsx", import.meta.url),
+  );
+  assertStringIncludes(source, '<main id="main-content"', "LegalPage.tsx");
+});
+
 Deno.test("admin pages expose the primary content landmark", async () => {
   for (
     const path of [

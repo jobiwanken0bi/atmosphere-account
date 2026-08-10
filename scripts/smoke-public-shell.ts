@@ -412,7 +412,10 @@ async function smokeReadiness(
   return { shellRelease, appviewRelease };
 }
 
-async function smokeOauthMetadata(origin: string): Promise<void> {
+async function smokeOauthMetadata(
+  origin: string,
+  legalOrigin: string,
+): Promise<void> {
   const url = new URL("/oauth/client-metadata.json", origin);
   const { response, body } = await fetchJson(url);
   assertStatus(response, url);
@@ -441,6 +444,16 @@ async function smokeOauthMetadata(origin: string): Promise<void> {
     body.jwks_uri,
     new URL("/oauth/jwks.json", origin).toString(),
     `${url} jwks_uri`,
+  );
+  assertEquals(
+    body.tos_uri,
+    new URL("/terms", legalOrigin).toString(),
+    `${url} tos_uri`,
+  );
+  assertEquals(
+    body.policy_uri,
+    new URL("/privacy", legalOrigin).toString(),
+    `${url} policy_uri`,
   );
   console.log(`[smoke:public-shell] ok oauth metadata ${url}`);
 }
@@ -583,6 +596,14 @@ export async function main(): Promise<void> {
     "/docs/atmosphere-login",
     { expectedText: "Login with Atmosphere" },
   );
+  await smokeHtml(options.siteOrigin, "/terms", {
+    expectedText: ["Terms of Service", "Login with Atmosphere"],
+    canonicalPath: "/terms",
+  });
+  await smokeHtml(options.siteOrigin, "/privacy", {
+    expectedText: ["Privacy Policy", "Cookies and browser storage"],
+    canonicalPath: "/privacy",
+  });
   await smokeHtml(options.siteOrigin, "/examples/atmosphere-login/app", {
     expectedText: [
       "Reference app",
@@ -593,7 +614,7 @@ export async function main(): Promise<void> {
   });
 
   for (const origin of [options.siteOrigin, options.loginOrigin]) {
-    await smokeOauthMetadata(origin);
+    await smokeOauthMetadata(origin, options.siteOrigin);
     await smokeJwks(origin);
     await smokeSdkAsset(origin);
   }

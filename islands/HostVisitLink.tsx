@@ -7,14 +7,22 @@ interface HostVisitLinkProps {
   /** Which glyph to show. `website` (globe) for Explore, `signup`
    * (person-plus) for Create account / Request invite. */
   icon?: "website" | "signup";
+  primary?: boolean;
 }
 
 export default function HostVisitLink(
-  { href, label = "Visit host", icon = "website" }: HostVisitLinkProps,
+  {
+    href,
+    label = "Visit host",
+    icon = "website",
+    primary = false,
+  }: HostVisitLinkProps,
 ) {
   return (
     <a
-      class="profile-hero-action"
+      class={`profile-hero-action${
+        primary ? " profile-hero-action--primary" : ""
+      }`}
       href={href}
       target="_blank"
       rel="noopener noreferrer"

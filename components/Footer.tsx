@@ -46,6 +46,8 @@ export default function Footer({ variant = "default" }: FooterProps = {}) {
           {!compact && <a href="/hosts">{t.footer.links.exploreHosts}</a>}
           {!compact && <a href="/apps">{t.footer.links.exploreApps}</a>}
           <a href="/docs">Docs</a>
+          <a href="/terms">{t.footer.links.terms}</a>
+          <a href="/privacy">{t.footer.links.privacy}</a>
         </div>
         {!compact && <p class="footer-quote">{t.footer.quote()}</p>}
         <a href="#page-top" class="back-to-top mt-4">

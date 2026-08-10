@@ -27,6 +27,37 @@ Deno.test("host detail puts the operator action before Advanced", async () => {
   );
 });
 
+Deno.test("host detail orders primary actions before related profiles", async () => {
+  const [hostSource, appSource, styles] = await Promise.all([
+    Deno.readTextFile(new URL("./[host].tsx", import.meta.url)),
+    Deno.readTextFile(new URL("../apps/[handle].tsx", import.meta.url)),
+    Deno.readTextFile(new URL("../../static/styles.css", import.meta.url)),
+  ]);
+
+  const signup = hostSource.indexOf("{canOfferSignup && (");
+  const explore = hostSource.indexOf("{host.homepageUrl && (");
+  const relatedApp = hostSource.indexOf("{linkedApps.map((app) => (");
+  assert(signup >= 0);
+  assert(explore > signup);
+  assert(relatedApp > explore);
+  assertStringIncludes(hostSource, "primary\n                  />");
+  assertStringIncludes(
+    styles,
+    ".host-detail-hero .profile-hero-action--primary",
+  );
+  assertStringIncludes(
+    hostSource,
+    'label={linkedApps.length > 1 ? `${app.name} app` : "App"}',
+  );
+
+  const destinations = appSource.indexOf(
+    "{destinationLinks.map(renderAppAction)}",
+  );
+  const relatedHost = appSource.indexOf("{hostHref && (");
+  assert(destinations >= 0);
+  assert(relatedHost > destinations);
+});
+
 Deno.test("host management uses site-specific copy and labelled controls", async () => {
   const [manageSource, relationshipsSource] = await Promise.all([
     Deno.readTextFile(new URL("./[host]/manage.tsx", import.meta.url)),
@@ -60,6 +91,19 @@ Deno.test("host claim puts the current state before relay details", async () => 
     "This host already has a verified managing account.",
   );
   assertStringIncludes(source, "Manage host");
+  assertStringIncludes(source, "← {detectedLookup && linkContext");
+  assertStringIncludes(source, '? "Back to host"');
+});
+
+Deno.test("a success notice does not replace an available host backlink", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./[host]/manage.tsx", import.meta.url),
+  );
+  assertStringIncludes(
+    source,
+    "const publicHostPageIsReady = !!host && isAccountHostPubliclyListable(host);",
+  );
+  assertEquals(source.includes("!!host && !notice"), false);
 });
 
 Deno.test("host and owner controls retain phone-sized targets and padding", async () => {
@@ -83,4 +127,23 @@ Deno.test("host and owner controls retain phone-sized targets and padding", asyn
   ) {
     assertStringIncludes(styles, fragment);
   }
+});
+
+Deno.test("host summary cards contain long domains", async () => {
+  const styles = await Deno.readTextFile(
+    new URL("../../static/styles.css", import.meta.url),
+  );
+  const contentRule = styles.match(
+    /\.host-detail-choice-card > div\s*\{([^}]+)\}/,
+  )?.[1] ?? "";
+  const headingRule = styles.match(
+    /\.host-detail-choice-card h2\s*\{([^}]+)\}/,
+  )?.[1] ?? "";
+  const bodyRule = styles.match(
+    /\.host-detail-choice-card p:not\(\.text-eyebrow\)\s*\{([^}]+)\}/,
+  )?.[1] ?? "";
+
+  assertStringIncludes(contentRule, "min-width: 0");
+  assertStringIncludes(headingRule, "overflow-wrap: anywhere");
+  assertStringIncludes(bodyRule, "overflow-wrap: anywhere");
 });

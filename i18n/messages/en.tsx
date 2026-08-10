@@ -352,6 +352,8 @@ const en = {
       exploreApps: "Apps",
       exploreAppsTitle: "Coming soon",
       developerResources: "Developer resources",
+      terms: "Terms",
+      privacy: "Privacy",
     },
     quote: (): VNode => (
       <>
@@ -1063,7 +1065,6 @@ const en = {
     composer: {
       heading: "Write a review",
       modalBody: "Rate this app and add a short note for other people.",
-      signedOut: "Use Login with Atmosphere to rate and review this app.",
       ownerNote: "You can’t review your own app.",
       ratingLabel: "Rating",
       bodyLabel: "Review (optional)",
@@ -1074,10 +1075,6 @@ const en = {
       update: "Update review",
       submitting: "Saving…",
       delete: "Delete review",
-      signIn: "Login",
-      signInTitle: "Login with Atmosphere",
-      signInBody:
-        "Choose the Atmosphere account that will own your review. We’ll only request the records needed to publish it.",
       cancel: "Cancel",
       saved: "Review saved.",
       deleted: "Review deleted.",

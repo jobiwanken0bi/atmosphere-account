@@ -755,8 +755,7 @@ function HostManagePage(props: HostManagePageProps) {
   const { host, claim, state, account, values, validation, error, notice } =
     props;
   const dashboard = buildHostDashboardState({ host });
-  const publicHostPageIsReady = !!host && !notice &&
-    isAccountHostPubliclyListable(host);
+  const publicHostPageIsReady = !!host && isAccountHostPubliclyListable(host);
   return (
     <div id="page-top">
       <div class="content-layer">

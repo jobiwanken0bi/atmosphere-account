@@ -67,10 +67,6 @@ Deno.test("account navigation uses the Apps and hosts information architecture",
 Deno.test("contextual account actions use the universal login product name", () => {
   const messages = getMessages("en");
   assert(
-    messages.reviews.composer.signInTitle === "Login with Atmosphere",
-    "review login title drifted from the product name",
-  );
-  assert(
     messages.reviews.app.like.signInTitle === "Login with Atmosphere",
     "favorite login title drifted from the product name",
   );
@@ -83,9 +79,8 @@ Deno.test("contextual account actions use the universal login product name", () 
     "the handle field should be labelled as a field, not a competing action",
   );
   assert(
-    messages.reviews.composer.signIn === "Login" &&
-      messages.reviews.app.like.signIn ===
-        "Login with Atmosphere to like this app",
+    messages.reviews.app.like.signIn ===
+      "Login with Atmosphere to like this app",
     "contextual login triggers drifted back to Sign in",
   );
 });

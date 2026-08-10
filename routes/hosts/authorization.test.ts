@@ -14,8 +14,39 @@ import {
 import { detectedHostClaimAuthorizationHref } from "./claim.tsx";
 import { hostRegistrationAuthorizationHref } from "./register.tsx";
 import { hostProfileResumePath } from "../../lib/host-profile-resume.ts";
+import { hostClaimActionAvailable } from "./[host].tsx";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
+
+Deno.test("only hosts without verified ownership offer a claim action", () => {
+  assertEquals(
+    hostClaimActionAvailable({ verificationStatus: "observed" }, null),
+    true,
+  );
+  assertEquals(
+    hostClaimActionAvailable({ verificationStatus: "claimed" }, null),
+    false,
+  );
+  assertEquals(
+    hostClaimActionAvailable({ verificationStatus: "verified" }, null),
+    false,
+  );
+  assertEquals(
+    hostClaimActionAvailable(
+      { verificationStatus: "observed" },
+      {
+        host: HOST.host,
+        claimantDid: "did:plc:owner",
+        claimantHandle: "owner.example",
+        method: "dns_txt",
+        claimedAt: 1,
+        verifiedAt: 1,
+        updatedAt: 1,
+      },
+    ),
+    false,
+  );
+});
 
 Deno.test("host claim intro copy follows the current ownership state", () => {
   assertEquals(

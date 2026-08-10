@@ -31,6 +31,8 @@ Deno.test("login domain still redirects ordinary app pages", () => {
   assertEquals(isAllowedLoginHostPathForTest("/apps"), false);
   assertEquals(isAllowedLoginHostPathForTest("/account"), false);
   assertEquals(isAllowedLoginHostPathForTest("/hosts/bsky.network"), false);
+  assertEquals(isAllowedLoginHostPathForTest("/terms"), false);
+  assertEquals(isAllowedLoginHostPathForTest("/privacy"), false);
 });
 
 Deno.test("single-origin deployments do not enforce login-host routing", () => {

@@ -101,6 +101,15 @@ export default function SignInForm(
     targetName,
     continuation: loginSelectionContinuation,
   });
+  const existingAccountHref = signinFallbackHref({
+    returnTo,
+    intent,
+    capabilities,
+    action,
+    targetName,
+    continuation: loginSelectionContinuation,
+    chooseAnotherAccount: true,
+  });
   const createAccountHref = canCreateAccount
     ? accountCreationFallbackHref(loginHref)
     : null;
@@ -139,10 +148,12 @@ export default function SignInForm(
           aria-label="About your account"
         >
           <article class="signin-create-explainer-card">
-            <span class="signin-create-explainer-icon" aria-hidden="true">
-              ⌂
-            </span>
-            <h2>Your host</h2>
+            <div class="signin-create-explainer-heading">
+              <span class="signin-create-explainer-icon" aria-hidden="true">
+                ⌂
+              </span>
+              <h2>Your host</h2>
+            </div>
             <p>
               Your host is where your account lives. Create an account with a
               host and you’ll return here when it’s ready. You can use the same
@@ -150,10 +161,12 @@ export default function SignInForm(
             </p>
           </article>
           <article class="signin-create-explainer-card">
-            <span class="signin-create-explainer-icon" aria-hidden="true">
-              ↗
-            </span>
-            <h2>Your account</h2>
+            <div class="signin-create-explainer-heading">
+              <span class="signin-create-explainer-icon" aria-hidden="true">
+                ↗
+              </span>
+              <h2>Your account</h2>
+            </div>
             <p>
               Your account is yours: you can move it to another host later, and
               if you own a domain, you can use it as your handle - for example,
@@ -183,7 +196,8 @@ export default function SignInForm(
           onAuthorizationStart={onAuthorizationStart}
         />
         <p class="signin-existing-account-link">
-          Already have an account? <a href={loginHref}>Login with Atmosphere</a>
+          Already have an account?{" "}
+          <a href={existingAccountHref}>Login with Atmosphere</a>
         </p>
       </div>
     );

@@ -292,6 +292,8 @@ Deno.test("early appview proxy leaves static, docs, and health routes on the Den
       "/",
       "/docs",
       "/docs/atmosphere-login",
+      "/terms",
+      "/privacy",
       "/signin",
       "/account/products",
       "/api/health/ready",
