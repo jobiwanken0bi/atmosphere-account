@@ -12672,7 +12672,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .account-dashboard-hero-main {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1.05rem;
   width: 100%;
   min-width: 0;
@@ -12687,6 +12687,13 @@ form[data-submit-once-pending="true"] button:disabled {
   min-height: 5.15rem;
   min-width: 0;
   max-width: 100%;
+}
+
+.account-dashboard-identity-summary {
+  display: grid;
+  align-content: space-between;
+  gap: 0.12rem;
+  min-height: 5.15rem;
 }
 
 .account-dashboard-identity .text-eyebrow {
@@ -12712,7 +12719,7 @@ form[data-submit-once-pending="true"] button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
-  margin-top: 0.75rem;
+  margin-top: 0.35rem;
 }
 
 .account-dashboard-hero-side {
@@ -13015,6 +13022,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .account-dashboard-button--primary:hover,
 .account-dashboard-button--primary:focus-visible {
   background: #0f326d;
+  color: #fff;
   box-shadow: 0 14px 28px rgba(23, 63, 130, 0.2);
 }
 
@@ -14402,6 +14410,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .account-home-avatar.account-dashboard-avatar {
   width: 5.15rem;
   height: 5.15rem;
+  margin-top: 1.1rem;
 }
 
 .account-home-profile h2,
@@ -16103,6 +16112,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .dark-phase .account-dashboard-button--primary:hover,
 .dark-phase .account-dashboard-button--primary:focus-visible {
   background: #f0f4ff;
+  color: #0e1428;
 }
 
 .dark-phase .account-dashboard-button--secondary:hover,
@@ -16439,9 +16449,14 @@ form[data-submit-once-pending="true"] button:disabled {
   .account-home-avatar.account-dashboard-avatar {
     width: 4.7rem;
     height: 4.7rem;
+    margin-top: 0;
   }
 
   .account-dashboard-identity {
+    min-height: 0;
+  }
+
+  .account-dashboard-identity-summary {
     min-height: 0;
   }
 

@@ -197,18 +197,37 @@ export async function updateAppUserBskyClient(
 ): Promise<void> {
   const client = getBskyClient(bskyClientId);
   await withDb(async (c) => {
-    await c.execute({
-      sql: `
-        UPDATE app_user SET
-          bsky_client_id = ?,
-          bsky_button_visible = ?,
-          updated_at = ?
-        WHERE did = ? AND account_type = 'user'
-      `,
-      args: [client.id, visible ? 1 : 0, Date.now(), did],
-    });
+    await c.execute(
+      appUserBskyClientUpdateStatement(
+        did,
+        client.id,
+        visible,
+        Date.now(),
+      ),
+    );
   });
 }
+
+function appUserBskyClientUpdateStatement(
+  did: string,
+  bskyClientId: string,
+  visible: boolean,
+  updatedAt: number,
+): { sql: string; args: Array<string | number> } {
+  return {
+    sql: `
+      UPDATE app_user SET
+        bsky_client_id = ?,
+        bsky_button_visible = ?,
+        updated_at = ?
+      WHERE did = ?
+    `,
+    args: [bskyClientId, visible ? 1 : 0, updatedAt, did],
+  };
+}
+
+export const appUserBskyClientUpdateStatementForTest =
+  appUserBskyClientUpdateStatement;
 
 /** Resolve the local account role, falling back to a published profile type. */
 export async function getEffectiveAccountType(

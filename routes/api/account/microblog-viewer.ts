@@ -2,7 +2,6 @@ import { define } from "../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import {
   getAppUser,
-  getEffectiveAccountType,
   updateAppUserBskyClient,
 } from "../../../lib/account-types.ts";
 import { isProfileMicroblogViewerId } from "../../../lib/bsky-clients.ts";
@@ -26,13 +25,6 @@ export const handler = define.handlers({
 
     const user = ctx.state.user;
     if (!user) return new Response("not authenticated", { status: 401 });
-
-    const accountType = await getEffectiveAccountType(user.did).catch(() =>
-      null
-    );
-    if (accountType !== "user") {
-      return new Response("user account required", { status: 403 });
-    }
 
     let body: { bskyClientId?: unknown; visible?: unknown } | null;
     try {

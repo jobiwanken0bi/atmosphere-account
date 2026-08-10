@@ -169,4 +169,44 @@ Deno.test("account controls keep visible danger treatment and 44px targets", asy
   gap: 0.46rem;
   min-height: 2.75rem;`,
   );
+  assertStringIncludes(
+    styles,
+    `.account-dashboard-button--primary:hover,
+.account-dashboard-button--primary:focus-visible {
+  background: #0f326d;
+  color: #fff;`,
+  );
+  assertStringIncludes(
+    styles,
+    `.dark-phase .account-dashboard-button--primary:hover,
+.dark-phase .account-dashboard-button--primary:focus-visible {
+  background: #f0f4ff;
+  color: #0e1428;`,
+  );
+});
+
+Deno.test("account identity avatar aligns with the full identity summary", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./index.tsx", import.meta.url),
+  );
+  const styles = await Deno.readTextFile(
+    new URL("../../static/styles.css", import.meta.url),
+  );
+
+  assertStringIncludes(source, 'class="account-dashboard-identity-summary"');
+  assertStringIncludes(
+    styles,
+    `.account-dashboard-identity-summary {
+  display: grid;
+  align-content: space-between;
+  gap: 0.12rem;
+  min-height: 5.15rem;`,
+  );
+  assertStringIncludes(
+    styles,
+    `.account-home-avatar.account-dashboard-avatar {
+  width: 5.15rem;
+  height: 5.15rem;
+  margin-top: 1.1rem;`,
+  );
 });

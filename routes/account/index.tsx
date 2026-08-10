@@ -260,12 +260,14 @@ async function AccountPage(
                 </div>
                 <div class="account-dashboard-identity">
                   <p class="text-eyebrow">Bluesky identity</p>
-                  <h2>{displayName}</h2>
-                  <p class="account-home-handle">
-                    <AtmosphereHandle handle={user.handle} />
-                  </p>
-                  <div class="account-dashboard-identity-tags">
-                    <span class="account-home-pill">{hostStatusLabel}</span>
+                  <div class="account-dashboard-identity-summary">
+                    <h2>{displayName}</h2>
+                    <p class="account-home-handle">
+                      <AtmosphereHandle handle={user.handle} />
+                    </p>
+                    <div class="account-dashboard-identity-tags">
+                      <span class="account-home-pill">{hostStatusLabel}</span>
+                    </div>
                   </div>
                   <MicroblogProfileLink
                     selectedClientId={appUser?.bskyClientId ?? null}
