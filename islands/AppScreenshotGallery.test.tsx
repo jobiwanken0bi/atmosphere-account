@@ -6,6 +6,8 @@ import AppScreenshotGallery from "./AppScreenshotGallery.tsx";
 function screenshots(count: number) {
   return Array.from({ length: count }, (_, index) => ({
     src: `https://cdn.example/screenshot-${index + 1}.png`,
+    fullSrc: `https://cdn.example/full-${index + 1}.png`,
+    fallbackSrc: `https://origin.example/screenshot-${index + 1}.png`,
     alt: `Example screenshot ${index + 1}`,
   }));
 }
@@ -21,6 +23,10 @@ Deno.test("AppScreenshotGallery keeps the ATStore maximum in one four-column gal
   assertStringIncludes(html, "profile-screenshot-grid--4");
   assertEquals(html.match(/aria-haspopup="dialog"/g)?.length, 4);
   assertEquals(html.includes("screenshot-5.png"), false);
+  assertStringIncludes(
+    html,
+    'data-fallback-src="https://origin.example/screenshot-1.png"',
+  );
 });
 
 Deno.test("AppScreenshotGallery exposes mobile carousel controls and viewer triggers", () => {

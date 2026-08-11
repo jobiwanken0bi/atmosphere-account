@@ -6,6 +6,8 @@ import { useDialog } from "../lib/use-dialog.ts";
 export interface AppScreenshot {
   src: string;
   alt: string;
+  fullSrc?: string;
+  fallbackSrc?: string;
 }
 
 interface Props {
@@ -79,7 +81,17 @@ function ScreenshotViewer(
           </button>
         )}
         <figure class="screenshot-viewer-figure">
-          <img src={screenshot.src} alt={screenshot.alt} />
+          <img
+            src={screenshot.fullSrc ?? screenshot.src}
+            data-fallback-src={screenshot.src}
+            alt={screenshot.alt}
+            onError={(event) => {
+              const image = event.currentTarget;
+              if (image.dataset.fallbackApplied === "true") return;
+              image.dataset.fallbackApplied = "true";
+              image.src = screenshot.src;
+            }}
+          />
           <figcaption>
             Screenshot {index + 1} of {screenshots.length}
           </figcaption>
@@ -155,6 +167,7 @@ export default function AppScreenshotGallery(
             >
               <img
                 src={screenshot.src}
+                data-fallback-src={screenshot.fallbackSrc}
                 alt={screenshot.alt}
                 loading="lazy"
                 decoding="async"

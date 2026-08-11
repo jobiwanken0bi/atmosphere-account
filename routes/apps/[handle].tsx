@@ -740,10 +740,15 @@ function AppListingDetailPage(
               <AppScreenshotGallery
                 appName={app.name}
                 screenshots={app.screenshotUrls.slice(0, 4).map(
-                  (url, index) => ({
-                    src: appImageUrl(url, "media", 800) ?? url,
-                    alt: `${app.name} screenshot ${index + 1}`,
-                  }),
+                  (url, index) => {
+                    const thumbnailSrc = appImageUrl(url, "media", 800) ?? url;
+                    return {
+                      src: thumbnailSrc,
+                      fullSrc: url,
+                      fallbackSrc: thumbnailSrc === url ? undefined : url,
+                      alt: `${app.name} screenshot ${index + 1}`,
+                    };
+                  },
                 )}
               />
             )}
