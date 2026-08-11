@@ -97,13 +97,21 @@ export default function UserReviewRow(p: Props) {
   return (
     <article class="user-review-row glass">
       <div class="user-review-row-header">
-        <div>
-          <h2>{p.targetName}</h2>
-          <p>
-            <a href={`/apps/${encodeURIComponent(p.targetHandle)}`}>
-              <AtmosphereHandle handle={p.targetHandle} />
-            </a>
-          </p>
+        <div class="user-review-row-app">
+          <div class="user-review-row-app-copy">
+            <h2>{p.targetName}</h2>
+            <p>
+              <a href={`/apps/${encodeURIComponent(p.targetHandle)}`}>
+                <AtmosphereHandle handle={p.targetHandle} />
+              </a>
+            </p>
+          </div>
+          <a
+            class="profile-form-button-secondary user-review-row-view-app"
+            href={`/apps/${encodeURIComponent(p.targetHandle)}`}
+          >
+            {p.copy.viewProject}
+          </a>
         </div>
         <p class="profile-review-stars" aria-label={`${p.rating} stars`}>
           {"★".repeat(p.rating)}
@@ -113,12 +121,6 @@ export default function UserReviewRow(p: Props) {
       {p.body && <p class="user-review-row-body">{p.body}</p>}
       <div class="user-review-row-actions">
         <span>{new Date(p.updatedAt).toISOString().slice(0, 10)}</span>
-        <a
-          class="profile-form-button-secondary"
-          href={`/apps/${encodeURIComponent(p.targetHandle)}`}
-        >
-          {p.copy.viewProject}
-        </a>
         <button
           type="button"
           class="profile-form-button-danger"

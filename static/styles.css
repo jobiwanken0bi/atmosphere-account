@@ -7530,24 +7530,6 @@ body {
   margin-top: 1rem;
 }
 
-.app-detail-screenshot-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  align-items: start;
-  gap: 0.8rem;
-  margin-top: 0.9rem;
-}
-
-.app-detail-screenshot-grid img {
-  display: block;
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.52);
-}
-
 .app-detail-alias-list {
   display: grid;
   gap: 0.35rem;
@@ -7732,11 +7714,6 @@ body {
 .app-detail-technical dd {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.82rem;
-}
-
-.dark-phase .app-detail-screenshot-grid img {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .dark-phase .app-detail-review-summary {
@@ -7959,26 +7936,31 @@ body {
   position: relative;
   width: 100%;
   min-width: 0;
+  margin-top: 0.9rem;
 }
-.profile-screenshots-carousel {
-  display: flex;
-  gap: 1rem;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scrollbar-gutter: stable;
-  padding: 0.1rem 0 1rem;
-  -webkit-overflow-scrolling: touch;
+.profile-screenshot-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   width: 100%;
   min-width: 0;
+}
+.profile-screenshot-grid--1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+.profile-screenshot-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.profile-screenshot-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .profile-screenshots-arrow {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.68);
@@ -7991,6 +7973,7 @@ body {
   justify-content: center;
   box-shadow: 0 10px 26px rgba(20, 34, 70, 0.1);
   transition: background 0.15s ease, transform 0.15s ease;
+  display: none;
 }
 .profile-screenshots-arrow--prev {
   left: 0.65rem;
@@ -8011,22 +7994,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  scroll-snap-align: start;
   overflow: hidden;
-  height: clamp(320px, 58vh, 620px);
-  max-width: 100%;
-  border-radius: 20px;
+  min-width: 0;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow: 0 16px 40px rgba(20, 34, 70, 0.12);
+  cursor: zoom-in;
 }
 .profile-screenshot-img {
-  height: 100%;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
   display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   transition: transform 0.2s ease;
 }
 .profile-screenshot-card:hover .profile-screenshot-img {
@@ -8044,19 +8027,111 @@ body {
 .dark-phase .profile-screenshots-arrow:hover {
   background: rgba(255, 255, 255, 0.16);
 }
+.profile-screenshot-position {
+  display: none;
+}
+
+.screenshot-viewer-backdrop {
+  z-index: 260;
+  padding: clamp(0.5rem, 2vw, 1.5rem);
+}
+.screenshot-viewer {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr) 3.25rem;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(1200px, 100%);
+  max-height: calc(100vh - 2rem);
+  padding: 3.5rem 0.75rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 1.25rem;
+  background: rgba(8, 14, 31, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+.screenshot-viewer .screenshot-viewer-close {
+  color: rgba(255, 255, 255, 0.78);
+}
+.screenshot-viewer .screenshot-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.screenshot-viewer-figure {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  max-height: calc(100vh - 6.5rem);
+  margin: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+.screenshot-viewer-figure img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100vh - 8.5rem);
+  object-fit: contain;
+  border-radius: 0.8rem;
+}
+.screenshot-viewer-figure figcaption {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.82rem;
+}
+.screenshot-viewer-arrow {
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.screenshot-viewer-arrow:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+.screenshot-viewer-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
 @media (max-width: 720px) {
-  .profile-screenshots-shell {
-    grid-template-columns: 1fr;
+  .profile-screenshot-grid {
+    display: block;
   }
   .profile-screenshots-arrow {
-    display: none;
+    display: inline-flex;
   }
   .profile-screenshot-card {
-    height: clamp(300px, 62vh, 560px);
-    max-width: 82vw;
+    display: none;
+    aspect-ratio: 4 / 3;
   }
-  .profile-screenshot-img {
-    max-width: 82vw;
+  .profile-screenshot-card.is-active {
+    display: flex;
+  }
+  .profile-screenshot-position {
+    display: block;
+    margin: 0.55rem 0 0;
+    color: rgba(18, 26, 47, 0.6);
+    font-size: 0.78rem;
+    text-align: center;
+  }
+  .dark-phase .profile-screenshot-position {
+    color: rgba(255, 255, 255, 0.64);
+  }
+  .screenshot-viewer {
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+    gap: 0.35rem;
+    padding-inline: 0.35rem;
+  }
+  .screenshot-viewer-arrow {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -19212,6 +19287,16 @@ form[data-submit-once-pending="true"] button:disabled {
 .user-review-row-body {
   margin: 0;
 }
+.user-review-row-app {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.user-review-row-app-copy {
+  min-width: 0;
+}
 .user-review-row-header h2 {
   font-size: 1rem;
 }
@@ -19222,6 +19307,11 @@ form[data-submit-once-pending="true"] button:disabled {
 .user-review-row-body {
   margin-top: 0.8rem;
   white-space: pre-wrap;
+}
+.user-review-row-view-app {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.8rem;
+  text-decoration: none;
 }
 .user-review-row-actions {
   align-items: center;

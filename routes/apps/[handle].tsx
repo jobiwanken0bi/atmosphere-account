@@ -20,6 +20,7 @@ import AppReviewList, {
 import ProfileReviewComposer from "../../islands/ProfileReviewComposer.tsx";
 import ReportProfileButton from "../../islands/ReportProfileButton.tsx";
 import ShareButton from "../../islands/ShareButton.tsx";
+import AppScreenshotGallery from "../../islands/AppScreenshotGallery.tsx";
 import WebsiteIcon from "../../components/icons/WebsiteIcon.tsx";
 import BskyIcon from "../../components/icons/BskyIcon.tsx";
 import TangledIcon from "../../components/icons/TangledIcon.tsx";
@@ -736,20 +737,15 @@ function AppListingDetailPage(
             />
 
             {app.screenshotUrls.length > 0 && (
-              <section class="app-detail-screenshots glass">
-                <h2 class="profile-card-section-title">Media</h2>
-                <div class="app-detail-screenshot-grid">
-                  {app.screenshotUrls.slice(0, 6).map((url, index) => (
-                    <img
-                      src={appImageUrl(url, "media", 800) ?? url}
-                      alt={`${app.name} screenshot ${index + 1}`}
-                      loading="lazy"
-                      decoding="async"
-                      key={url}
-                    />
-                  ))}
-                </div>
-              </section>
+              <AppScreenshotGallery
+                appName={app.name}
+                screenshots={app.screenshotUrls.slice(0, 4).map(
+                  (url, index) => ({
+                    src: appImageUrl(url, "media", 800) ?? url,
+                    alt: `${app.name} screenshot ${index + 1}`,
+                  }),
+                )}
+              />
             )}
 
             <AppReviewsSection
