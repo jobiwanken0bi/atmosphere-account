@@ -140,6 +140,15 @@ document.addEventListener("submit", async (event) => {
   );
   try {
     const params = urlEncodedForm(form);
+    if (
+      form.dataset.loginHandoffNextCurrent === "true" &&
+      !params.has("next")
+    ) {
+      params.set(
+        "next",
+        `${globalThis.location.pathname}${globalThis.location.search}`,
+      );
+    }
     for (const [name, value] of params) action.searchParams.append(name, value);
     const response = await fetch(action, {
       method: "POST",
@@ -152,9 +161,23 @@ document.addEventListener("submit", async (event) => {
       signal: controller.signal,
     });
     const body = await response.json().catch(() => null);
-    const destination = body
-      ? safeNavigationDestination(body.redirectUrl)
-      : null;
+    let destination = body ? safeNavigationDestination(body.redirectUrl) : null;
+    if (
+      destination && form.dataset.loginHandoffNextCurrent === "true" &&
+      globalThis.location.hash
+    ) {
+      const destinationUrl = new URL(destination);
+      const currentUrl = new URL(globalThis.location.href);
+      if (
+        destinationUrl.origin === currentUrl.origin &&
+        destinationUrl.pathname === currentUrl.pathname &&
+        destinationUrl.search === currentUrl.search &&
+        !destinationUrl.hash
+      ) {
+        destinationUrl.hash = currentUrl.hash;
+        destination = destinationUrl.toString();
+      }
+    }
     if (!response.ok || !destination) {
       throw new Error(
         body && typeof body.error === "string"
@@ -162,7 +185,15 @@ document.addEventListener("submit", async (event) => {
           : "Could not continue with this account.",
       );
     }
-    globalThis.location.assign(destination);
+    if (form.dataset.loginHandoffReplace === "true") {
+      if (destination === globalThis.location.href) {
+        globalThis.location.reload();
+      } else {
+        globalThis.location.replace(destination);
+      }
+    } else {
+      globalThis.location.assign(destination);
+    }
   } catch (error) {
     const message = error instanceof DOMException && error.name === "AbortError"
       ? "This is taking too long. Please try again."

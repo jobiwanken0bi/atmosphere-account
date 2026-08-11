@@ -20,6 +20,14 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
     throw new Error("Expected a bodyless same-origin POST handoff");
   }
   if (
+    !source.includes('form.dataset.loginHandoffNextCurrent === "true"') ||
+    !source.includes("globalThis.location.pathname") ||
+    !source.includes("globalThis.location.search") ||
+    !source.includes("destinationUrl.hash = currentUrl.hash")
+  ) {
+    throw new Error("Expected account switches to retain the current page");
+  }
+  if (
     !source.includes('form.getAttribute("action")') ||
     source.includes("new URL(form.action")
   ) {
@@ -37,6 +45,16 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
   ) {
     throw new Error(
       "Expected server destinations to be validated before navigation",
+    );
+  }
+  if (
+    !source.includes('form.dataset.loginHandoffReplace === "true"') ||
+    !source.includes("destination === globalThis.location.href") ||
+    !source.includes("globalThis.location.reload()") ||
+    !source.includes("globalThis.location.replace(destination)")
+  ) {
+    throw new Error(
+      "Expected account switches to reload in place or replace stale history",
     );
   }
   for (const blocked of ["target.username", 'target.protocol === "https:"']) {

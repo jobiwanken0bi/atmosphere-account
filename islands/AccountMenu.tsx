@@ -131,6 +131,8 @@ function SignedOutMenu(
               method="POST"
               action="/oauth/switch"
               class="account-menu-quick-form"
+              data-login-handoff-next-current="true"
+              data-login-handoff-replace="true"
             >
               <input type="hidden" name="did" value={primaryAccount.did} />
               <button
@@ -459,6 +461,8 @@ function SwitchRow(
         method="POST"
         action="/oauth/switch"
         class="account-menu-switch-form"
+        data-login-handoff-next-current="true"
+        data-login-handoff-replace="true"
       >
         <input type="hidden" name="did" value={account.did} />
         <button

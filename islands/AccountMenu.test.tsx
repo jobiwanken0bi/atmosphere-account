@@ -41,6 +41,8 @@ Deno.test("one remembered account offers one-click continuation and separate opt
 
   assertStringIncludes(html, 'method="POST" action="/oauth/switch"');
   assertStringIncludes(html, 'name="did" value="did:plc:alice"');
+  assertStringIncludes(html, 'data-login-handoff-next-current="true"');
+  assertStringIncludes(html, 'data-login-handoff-replace="true"');
   assertStringIncludes(html, "Continue as @alice.example");
   assertStringIncludes(html, 'aria-label="Account options"');
   assertStringIncludes(html, 'aria-expanded="false"');
@@ -82,6 +84,14 @@ Deno.test("remembered account chooser labels continuation and another-account pa
   assertStringIncludes(html, "bob.example");
   assertStringIncludes(html, 'aria-label="Continue as @alice.example"');
   assertStringIncludes(html, 'aria-label="Continue as @bob.example"');
+  assertEquals(
+    html.match(/data-login-handoff-next-current="true"/g)?.length,
+    2,
+  );
+  assertEquals(
+    html.match(/data-login-handoff-replace="true"/g)?.length,
+    2,
+  );
   assertEquals(html.match(/>Continue<\/span>/g)?.length, 2);
   assertStringIncludes(html, 'href="/oauth/add-account"');
   assertStringIncludes(html, "Use another account");
