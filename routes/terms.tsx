@@ -59,6 +59,10 @@ export function TermsPage(
             settings that you are authorized to control;
           </li>
           <li>
+            use a host’s published contact mailbox for verification only when
+            you are authorized to manage that host;
+          </li>
+          <li>
             review the permissions shown by your account host before approving
             an OAuth request; and
           </li>

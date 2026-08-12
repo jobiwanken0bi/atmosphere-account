@@ -98,6 +98,11 @@ export const OAUTH_PRIVATE_JWK = safeGet("OAUTH_PRIVATE_JWK");
 export const OAUTH_PUBLIC_JWK = safeGet("OAUTH_PUBLIC_JWK");
 export const OAUTH_KID = safeGet("OAUTH_KID");
 
+/** Transactional delivery used by host contact-email verification. */
+export const COMAIL_API_KEY = safeGet("COMAIL_API_KEY");
+export const COMAIL_SENDER_DID = safeGet("COMAIL_SENDER_DID");
+export const HOST_CLAIM_EMAIL_FROM = safeGet("HOST_CLAIM_EMAIL_FROM");
+
 function hostedSecret(key: string, devFallback: string): string {
   const value = safeGet(key);
   if (value) {
@@ -167,6 +172,53 @@ export function isCanonicalSiteOriginForTest(value: string): boolean {
 
 export function sessionSecret(): string {
   return hostedSecret("SESSION_SECRET", "dev-only-not-secret");
+}
+
+/** Stable HMAC key for durable host contact-email evidence. Keep this
+ * independent from session-cookie rotation in production. */
+export function hostClaimEvidenceSecret(): string {
+  return hostClaimEvidenceSecretForRuntime(
+    safeGet("HOST_CLAIM_EVIDENCE_SECRET"),
+    IS_HOSTED_RUNTIME || EXPLICIT_PRODUCTION,
+    sessionSecret(),
+  );
+}
+
+export function hostClaimEvidenceSecretIsConfigured(): boolean {
+  try {
+    hostClaimEvidenceSecret();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hostClaimEvidenceSecretForRuntime(
+  value: string | undefined,
+  production: boolean,
+  devFallback: string,
+): string {
+  if (value) {
+    return validateSecretStrength(
+      "HOST_CLAIM_EVIDENCE_SECRET",
+      value,
+      production,
+    );
+  }
+  if (production) {
+    throw new Error(
+      "HOST_CLAIM_EVIDENCE_SECRET is required in hosted/production environments.",
+    );
+  }
+  return devFallback;
+}
+
+export function hostClaimEvidenceSecretForTest(
+  value: string | undefined,
+  production: boolean,
+  devFallback: string,
+): string {
+  return hostClaimEvidenceSecretForRuntime(value, production, devFallback);
 }
 
 export const ATMOSPHERE_DID = safeGet("ATMOSPHERE_DID");

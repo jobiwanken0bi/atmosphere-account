@@ -89,13 +89,15 @@ metadata, and host capabilities.
 Host records are self-asserted. They should not automatically make a host
 "verified" in this directory.
 
-For new production claims, this site derives operator authority from one of two
-domain proofs: a live AT Protocol identity whose bidirectionally verified handle
-and PDS endpoint both exactly equal the directory host, or a short-lived,
-one-time TXT challenge placed at the exact host domain. Service reachability,
-email, unrelated or subdomain social handles, host records, curated profile
-mappings, conformance checks, and local moderation can inform directory
-metadata, but they do not grant host management.
+For new production claims, this site derives operator authority from one of
+three proofs: a live AT Protocol identity whose bidirectionally verified handle
+exactly equals the directory host; a short-lived, single-use TXT challenge
+placed at the exact host domain; or a short-lived, single-use link delivered to
+the contact email freshly published by the exact PDS. The email path proves
+access to the PDS-declared operator mailbox and is available only for an
+unclaimed host. Service reachability, unrelated or subdomain social handles,
+host records, curated profile mappings, conformance checks, and local moderation
+can inform directory metadata, but they do not grant host management.
 
 This means a host card can show the publishing account, while "verified" remains
 a site-local or conformance-test result. A self-published record alone does not
@@ -106,32 +108,46 @@ prove that the author controls every hostname it names.
 This site accepts these claim paths:
 
 - Production exact identity: the active account's handle resolves
-  bidirectionally to that account DID, the handle exactly equals `<host>`, and
-  the DID document's AT Protocol PDS service endpoint also uses exactly
-  `<host>`. A handle such as `alice.<host>` or an exact handle hosted by another
-  PDS does not qualify. This proof is resolved live immediately before the
-  ownership write.
+  bidirectionally to that account DID and the handle exactly equals `<host>`. A
+  handle such as `alice.<host>` does not qualify. The account's current PDS
+  service may use another origin. This proof is resolved live immediately before
+  the ownership write.
 - Production: a short-lived, single-use TXT value at
   `_atmosphere-account.<host>`. The challenge is bound to the exact directory
   host and signed-in account DID, then consumed in the same transaction that
   records ownership.
+- Production initial claim: a short-lived, single-use link sent to the contact
+  mailbox in the exact host's live `com.atproto.server.describeServer` response.
+  The request is bound to the host and signed-in account DID. The clean link
+  landing page is read-only; an explicit confirmation rechecks the exact PDS DID
+  and contact fingerprint, then consumes the proof atomically with the ownership
+  write. The raw mailbox and token are not stored as claim evidence.
 - Development only: explicit local `.test` fixtures for visual testing.
 
-Contact-email claims completed before the DNS-only policy remain operational so
-existing managers are not silently locked out. New email claims and email-based
-manager changes are not accepted.
+Email cannot change or repair an existing managing account. Manager changes use
+DNS, and an existing email-derived owner can be recovered only after a new
+account proves current DNS control and waits through the 48-hour review period.
+The email-derived owner remains in control during that period and is notified at
+the PDS contact mailbox only when its keyed fingerprint still matches the
+original claim evidence. Email ownership alone cannot veto DNS recovery, but the
+current owner can supersede a pending recovery by completing fresh DNS
+verification for the same managing account. Recovery completion requires a
+second DNS proof created after the review period.
 
 An operator claims a production host by finding the exact PDS domain in the
-detected-host flow, signing in with the account that should manage the listing,
-and requesting a DNS challenge. They publish the displayed TXT value at
-`_atmosphere-account.<host>` and ask the site to check it before the challenge
-expires. The TXT value can be removed after the claim succeeds.
+detected-host flow and signing in with the account that should manage the
+listing. Exact AT Protocol identity proof is checked automatically. Otherwise,
+DNS is always available and the contact-email option is shown only when the
+exact PDS currently publishes a usable address. DNS claimants publish the
+displayed TXT value at `_atmosphere-account.<host>` and ask the site to check it
+before the challenge expires. The TXT value can be removed after the claim
+succeeds.
 
-This site does not accept an email address, unrelated social handle, host
-record, or product-specific HTTPS well-known file as ownership proof. Those
-values can remain useful profile metadata. Manager changes always use a new DNS
-challenge; exact AT Protocol identity proof is limited to an initial claim by
-the matching PDS operator identity.
+This site never accepts a user-entered email address, unrelated social handle,
+host record, or product-specific HTTPS well-known file as ownership proof. The
+email option is sourced only from the exact PDS's live public response. Manager
+changes always use a new DNS challenge; exact AT Protocol identity proof and
+contact-email proof are limited to initial claims.
 
 ## Hosts Page Read Model
 
@@ -227,10 +243,11 @@ blob:image/*
 
 The host-claim entry point requests this same complete bundle before ownership
 verification. The OAuth grant allows that DID to publish host records and
-images; permission alone does not prove ownership. Ownership requires either the
-exact live AT Protocol identity proof described above or successful DNS
-verification. Reusing the same bundle after verification avoids a second
-predictable authorization prompt when management opens.
+images; permission alone does not prove ownership. Ownership requires the exact
+live AT Protocol identity proof, successful DNS verification, or a verified
+initial-claim link sent to the exact PDS's live contact mailbox as described
+above. Reusing the same bundle after verification avoids a second predictable
+authorization prompt when management opens.
 
 Normal account sign-in should not imply this site can manage PDS grants,
 devices, passwords, or recovery material. Those controls remain host-owned even

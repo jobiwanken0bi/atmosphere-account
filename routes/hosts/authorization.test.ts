@@ -1,6 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   hostClaimAuthorizationHref,
+  hostClaimDnsRequestAllowed,
   hostClaimExpiredLinkContinuationPathForTest,
   hostClaimIntroCopy,
   hostClaimManageLocation,
@@ -14,7 +15,10 @@ import {
 import { detectedHostClaimAuthorizationHref } from "./claim.tsx";
 import { hostRegistrationAuthorizationHref } from "./register.tsx";
 import { hostProfileResumePath } from "../../lib/host-profile-resume.ts";
-import { hostClaimActionAvailable } from "./[host].tsx";
+import {
+  hostClaimActionAvailable,
+  hostDnsRecoveryActionAvailable,
+} from "./[host].tsx";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
 
@@ -48,6 +52,128 @@ Deno.test("only hosts without verified ownership offer a claim action", () => {
   );
 });
 
+Deno.test("email-derived ownership exposes DNS recovery to a different account", () => {
+  const emailClaim = {
+    host: HOST.host,
+    claimantDid: "did:plc:emailowner",
+    claimantHandle: "email-owner.example",
+    method: "pds_contact_email" as const,
+    claimedAt: 1,
+    verifiedAt: 1,
+    updatedAt: 1,
+  };
+  assertEquals(
+    hostDnsRecoveryActionAvailable(
+      emailClaim,
+      emailClaim.claimantDid,
+      "did:plc:newdnsowner",
+    ),
+    true,
+  );
+  assertEquals(
+    hostDnsRecoveryActionAvailable(
+      emailClaim,
+      emailClaim.claimantDid,
+      emailClaim.claimantDid,
+    ),
+    false,
+  );
+  assertEquals(
+    hostDnsRecoveryActionAvailable(
+      { ...emailClaim, method: "dns_txt" },
+      emailClaim.claimantDid,
+      "did:plc:newdnsowner",
+    ),
+    false,
+  );
+});
+
+Deno.test("email-derived owners can strengthen or recover ownership with DNS", () => {
+  const emailClaim = {
+    host: HOST.host,
+    claimantDid: "did:plc:emailowner",
+    claimantHandle: "email-owner.example",
+    method: "pds_contact_email" as const,
+    claimedAt: 1,
+    verifiedAt: 1,
+    updatedAt: 1,
+  };
+  assertEquals(
+    hostClaimDnsRequestAllowed({
+      claim: emailClaim,
+      verifiedOwnerDid: emailClaim.claimantDid,
+      currentDid: emailClaim.claimantDid,
+      transferPreviousOwnerDid: null,
+      pendingRecoveryRequesterDid: "did:plc:newdnsowner",
+    }),
+    true,
+  );
+  assertEquals(
+    hostClaimDnsRequestAllowed({
+      claim: emailClaim,
+      verifiedOwnerDid: emailClaim.claimantDid,
+      currentDid: "did:plc:newdnsowner",
+      transferPreviousOwnerDid: null,
+      pendingRecoveryRequesterDid: null,
+    }),
+    true,
+  );
+  assertEquals(
+    hostClaimDnsRequestAllowed({
+      claim: emailClaim,
+      verifiedOwnerDid: emailClaim.claimantDid,
+      currentDid: "did:plc:competingowner",
+      transferPreviousOwnerDid: null,
+      pendingRecoveryRequesterDid: "did:plc:newdnsowner",
+      pendingRecoveryEligibleAt: 200,
+      now: 200,
+    }),
+    false,
+  );
+  assertEquals(
+    hostClaimDnsRequestAllowed({
+      claim: emailClaim,
+      verifiedOwnerDid: emailClaim.claimantDid,
+      currentDid: "did:plc:newdnsowner",
+      transferPreviousOwnerDid: null,
+      pendingRecoveryRequesterDid: "did:plc:newdnsowner",
+      pendingRecoveryEligibleAt: 200,
+      now: 199,
+    }),
+    false,
+  );
+  assertEquals(
+    hostClaimDnsRequestAllowed({
+      claim: emailClaim,
+      verifiedOwnerDid: emailClaim.claimantDid,
+      currentDid: "did:plc:newdnsowner",
+      transferPreviousOwnerDid: null,
+      pendingRecoveryRequesterDid: "did:plc:newdnsowner",
+      pendingRecoveryEligibleAt: 200,
+      now: 200,
+    }),
+    true,
+  );
+  assertEquals(
+    hostClaimDnsRequestAllowed({
+      claim: { ...emailClaim, method: "dns_txt" },
+      verifiedOwnerDid: emailClaim.claimantDid,
+      currentDid: emailClaim.claimantDid,
+      transferPreviousOwnerDid: null,
+    }),
+    false,
+  );
+  assertEquals(
+    hostClaimDnsRequestAllowed({
+      claim: { ...emailClaim, method: "oauth_atproto_account" },
+      verifiedOwnerDid: null,
+      currentDid: emailClaim.claimantDid,
+      transferPreviousOwnerDid: null,
+    }),
+    true,
+  );
+});
+
 Deno.test("host claim intro copy follows the current ownership state", () => {
   assertEquals(
     hostClaimIntroCopy({ state: "ready" }),
@@ -57,8 +183,9 @@ Deno.test("host claim intro copy follows the current ownership state", () => {
     hostClaimIntroCopy({
       state: "ready",
       claimProofMethod: "atproto_handle",
+      host: HOST.host,
     }),
-    "This account’s verified AT Protocol identity already proves control of the host domain.",
+    "Your verified handle exactly matches pds.example.social, so no additional verification is needed.",
   );
   assertEquals(
     hostClaimIntroCopy({ state: "claimed-by-other" }),
@@ -173,6 +300,13 @@ Deno.test("identity-proved claims do not show DNS completion copy", () => {
   assertEquals(
     hostClaimManageLocation(HOST.host, false, false, false),
     "/hosts/pds.example.social/manage?claimed=1",
+  );
+});
+
+Deno.test("email-derived claims get a DNS-strengthening completion state", () => {
+  assertEquals(
+    hostClaimManageLocation(HOST.host, false, false, true, true),
+    "/hosts/pds.example.social/manage?strengthened=1&dns=1",
   );
 });
 

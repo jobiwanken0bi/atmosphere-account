@@ -10,8 +10,10 @@ import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
 import {
   type AccountHost,
   type AccountHostClaim,
+  type AccountHostClaimRecovery,
   getAccountHost,
   getAccountHostClaim,
+  getPendingAccountHostClaimRecovery,
   type HostSignupStatus,
   isAccountHostPubliclyListable,
   updateAccountHostDashboardSettings,
@@ -118,6 +120,7 @@ interface HostManagePageProps {
   validation: HostDashboardFetchResult | null;
   error: string | null;
   notice?: string | null;
+  recovery?: AccountHostClaimRecovery | null;
 }
 
 export const handler = define.handlers({
@@ -145,7 +148,10 @@ export const handler = define.handlers({
       );
     }
     if (!ctx.state.user) return redirectToSignin(host, ctx.url);
-    const claim = await getAccountHostClaim(host.host).catch(() => null);
+    const [claim, recovery] = await Promise.all([
+      getAccountHostClaim(host.host).catch(() => null),
+      getPendingAccountHostClaimRecovery(host.host).catch(() => null),
+    ]);
     const ownerDid = await verifiedAccountHostOwnerDid(host, claim).catch(() =>
       null
     );
@@ -179,15 +185,20 @@ export const handler = define.handlers({
         account={account}
         values={valuesFromHost(host)}
         validation={null}
+        recovery={recovery}
         error={manageStateError(state) ??
           (ctx.url.searchParams.get("linkError") === "1"
             ? "The app connection could not be completed. Ask the app owner to start a new connection from app hosting."
             : null)}
         notice={ctx.url.searchParams.get("transferred") === "1"
           ? "Managing account changed. You can remove the temporary DNS record now. Review the profile and app connections before republishing."
+          : ctx.url.searchParams.get("strengthened") === "1"
+          ? "Ownership strengthened with DNS. You can remove the temporary DNS record now."
           : ctx.url.searchParams.get("linked") === "1"
           ? ctx.url.searchParams.get("dns") === "1"
             ? "Host claimed and connected. You can remove the temporary DNS record now."
+            : ctx.url.searchParams.get("claimed") === "1"
+            ? "Host claimed and connected successfully."
             : "Host connected to the app successfully."
           : ctx.url.searchParams.get("claimed") === "1"
           ? ctx.url.searchParams.get("dns") === "1"
@@ -751,9 +762,29 @@ function isoFromMs(value: number): string {
     : date.toISOString();
 }
 
+function formatRecoveryTime(value: number): string {
+  return new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(value));
+}
+
 function HostManagePage(props: HostManagePageProps) {
-  const { host, claim, state, account, values, validation, error, notice } =
-    props;
+  const {
+    host,
+    claim,
+    state,
+    account,
+    values,
+    validation,
+    error,
+    notice,
+    recovery,
+  } = props;
   const dashboard = buildHostDashboardState({ host });
   const publicHostPageIsReady = !!host && isAccountHostPubliclyListable(host);
   return (
@@ -803,6 +834,7 @@ function HostManagePage(props: HostManagePageProps) {
                       validation={validation}
                       error={error}
                       notice={notice ?? null}
+                      recovery={recovery ?? null}
                       dashboard={dashboard}
                       activeDid={account.user?.did ?? ""}
                       activeHandle={account.user?.handle ?? ""}
@@ -837,6 +869,7 @@ function ManageBody(
     validation,
     error,
     notice,
+    recovery,
     dashboard,
     activeDid,
     activeHandle,
@@ -849,6 +882,7 @@ function ManageBody(
     validation: HostDashboardFetchResult | null;
     error: string | null;
     notice: string | null;
+    recovery: AccountHostClaimRecovery | null;
     dashboard: ReturnType<typeof buildHostDashboardState>;
     activeDid: string;
     activeHandle: string;
@@ -929,6 +963,11 @@ function ManageBody(
     ? "Request invite"
     : "Create account";
   const accountRouteUrl = dashboard?.accountManagementUrl ?? null;
+  const dnsUpgradeHref = `/hosts/${
+    encodeURIComponent(host.host)
+  }/claim?${new URLSearchParams({
+    publish: host.operatorListingOptIn === false ? "0" : "1",
+  })}`;
 
   return (
     <>
@@ -937,6 +976,41 @@ function ManageBody(
       )}
       {error && (
         <p class="profile-form-status profile-form-status--error">{error}</p>
+      )}
+      {claim?.method === "pds_contact_email" &&
+        recovery?.status === "pending" &&
+        recovery.currentOwnerDid === activeDid && (
+        <section
+          class="host-claim-panel host-claim-recovery-warning"
+          aria-labelledby="host-recovery-warning-title"
+        >
+          <p
+            id="host-recovery-warning-title"
+            class="host-claim-panel-title"
+          >
+            DNS recovery in progress
+          </p>
+          <p class="text-body">
+            <AtmosphereHandle handle={recovery.requesterHandle} />{" "}
+            verified current DNS control of{" "}
+            {host.host}. DNS is authoritative, while this account remains the
+            manager during the 48-hour review period. Starting{" "}
+            <strong>{formatRecoveryTime(recovery.eligibleAt)}</strong>, the
+            requester can generate and verify a fresh DNS record to finish
+            recovery.
+          </p>
+          <p class="text-body">
+            Completing a fresh DNS verification for this account supersedes the
+            pending recovery. If you did not expect this, review the domain’s
+            DNS or contact{" "}
+            <a href="mailto:contact@atmosphereaccount.com">
+              contact@atmosphereaccount.com
+            </a>.
+          </p>
+          <a class="directory-register-button" href={dnsUpgradeHref}>
+            Strengthen ownership with DNS
+          </a>
+        </section>
       )}
       <section class="host-manage-current host-manage-listing-section">
         <div class="host-detail-dashboard-head">
@@ -1110,21 +1184,28 @@ function ManageBody(
                 Managed by <AtmosphereHandle handle={claim?.claimantHandle} />
               </h2>
               <p class="text-body">
-                One account manages this host. To change it, choose the new
-                account and prove control again with DNS. This account stays in
-                control until verification succeeds.
+                {claim?.method === "pds_contact_email"
+                  ? "Ownership currently uses the contact email published by this PDS. Verify DNS to strengthen its proof. To change the manager, choose the new account and prove control with DNS."
+                  : "One account manages this host. To change it, choose the new account and prove control again with DNS. This account stays in control until verification succeeds."}
               </p>
             </div>
-            <form method="POST">
-              <input
-                type="hidden"
-                name="action"
-                value="start_owner_transfer"
-              />
-              <button type="submit" class="directory-register-button">
-                Change managing account
-              </button>
-            </form>
+            <div class="host-manage-actions">
+              {claim?.method === "pds_contact_email" && (
+                <a class="directory-register-button" href={dnsUpgradeHref}>
+                  Strengthen ownership with DNS
+                </a>
+              )}
+              <form method="POST">
+                <input
+                  type="hidden"
+                  name="action"
+                  value="start_owner_transfer"
+                />
+                <button type="submit" class="directory-register-button">
+                  Change managing account
+                </button>
+              </form>
+            </div>
           </section>
         )}
       <section class="host-manage-current host-manage-profile-section">

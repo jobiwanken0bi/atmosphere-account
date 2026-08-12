@@ -10,11 +10,11 @@ Deno.test("app authorization copy describes the complete records and images job"
   assertStringIncludes(copy.upgradeBody("alice.example"), "including images");
 });
 
-Deno.test("host claim copy separates repository permission from DNS ownership proof", () => {
+Deno.test("host claim copy separates repository permission from ownership proof", () => {
   const copy = authActionCopy("host_claim", "Example Host");
   assertStringIncludes(copy.signInBody, "public profile and images");
   assertStringIncludes(copy.signInBody, "does not claim the host");
-  assertStringIncludes(copy.signInBody, "DNS verification separately proves");
+  assertStringIncludes(copy.signInBody, "ownership is verified separately");
 });
 
 Deno.test("host transfer copy names the new manager and separate DNS proof", () => {

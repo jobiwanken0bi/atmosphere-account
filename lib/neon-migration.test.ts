@@ -1,4 +1,7 @@
-import { NEON_APP_TABLES } from "./neon-migration.ts";
+import {
+  NEON_APP_TABLES,
+  NEON_TABLES_WITH_FOREIGN_KEYS,
+} from "./neon-migration.ts";
 
 Deno.test("NEON_APP_TABLES tracks app tables from the Postgres baseline schema", async () => {
   const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
@@ -175,6 +178,114 @@ Deno.test("Postgres baseline adds explicit operator directory visibility", async
       throw new Error(
         `Expected the account_host ${column} migration to be additive`,
       );
+    }
+  }
+});
+
+Deno.test("host claim challenges add separate method binding and delivery evidence", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  if (
+    !postgres.includes(
+      "ADD COLUMN IF NOT EXISTS method_binding text",
+    )
+  ) {
+    throw new Error("Expected additive Postgres method_binding migration");
+  }
+  if (
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_challenge ADD COLUMN method_binding TEXT",
+    )
+  ) {
+    throw new Error("Expected additive SQLite method_binding migration");
+  }
+  if (!postgres.includes("ADD COLUMN IF NOT EXISTS delivery_id text")) {
+    throw new Error("Expected additive Postgres delivery_id migration");
+  }
+  if (
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_challenge ADD COLUMN delivery_id TEXT",
+    )
+  ) {
+    throw new Error("Expected additive SQLite delivery_id migration");
+  }
+});
+
+Deno.test("host email recovery stores only an additive final DNS proof hash", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  if (
+    !postgres.includes(
+      "ADD COLUMN IF NOT EXISTS finalization_proof_token_hash text",
+    )
+  ) {
+    throw new Error("Expected additive Postgres final DNS proof migration");
+  }
+  if (
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_recovery ADD COLUMN finalization_proof_token_hash TEXT",
+    )
+  ) {
+    throw new Error("Expected additive SQLite final DNS proof migration");
+  }
+  if (
+    !postgres.includes(
+      "ALTER TABLE account_host_claim_recovery_audit\n  ADD COLUMN IF NOT EXISTS proof_token_hash text",
+    ) ||
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_recovery_audit ADD COLUMN proof_token_hash TEXT",
+    )
+  ) {
+    throw new Error("Expected final DNS proof hash in durable recovery audit");
+  }
+  for (const schema of [postgres, sqlite]) {
+    if (!schema.includes("finalization_proof_token_hash")) {
+      throw new Error("Expected recovery to retain the final proof hash");
+    }
+    if (/finalization_proof_token\s/i.test(schema)) {
+      throw new Error("Recovery must never persist a plaintext DNS token");
+    }
+  }
+});
+
+Deno.test("host email evidence and recovery audit survive host deletion", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  for (
+    const table of [
+      "account_host_claim_evidence",
+      "account_host_claim_recovery_audit",
+    ]
+  ) {
+    const body = schema.match(
+      new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table}\\s*\\(([\\s\\S]*?)\\);`,
+        "i",
+      ),
+    )?.[1] ?? "";
+    if (!body || /REFERENCES|ON DELETE/i.test(body)) {
+      throw new Error(`${table} must be durable and independent of host rows`);
+    }
+    if (
+      NEON_TABLES_WITH_FOREIGN_KEYS.some((candidate) => candidate === table)
+    ) {
+      throw new Error(`${table} must not be migrated as a foreign-key table`);
+    }
+  }
+});
+
+Deno.test("host email recovery has bounded terminal states and append-only audit", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  for (const schema of [postgres, sqlite]) {
+    for (const status of ["pending", "completed", "expired", "invalidated"]) {
+      if (!schema.includes(`'${status}'`)) {
+        throw new Error(`Expected recovery status ${status}`);
+      }
+    }
+    for (const event of ["requested", "finalized", "expired", "invalidated"]) {
+      if (!schema.includes(`'${event}'`)) {
+        throw new Error(`Expected recovery audit event ${event}`);
+      }
     }
   }
 });

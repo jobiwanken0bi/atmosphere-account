@@ -28,6 +28,9 @@ Deno.test("host claim lab exposes the complete deterministic scenario set", () =
       "already-owner",
       "claimed-other",
       "dns-preview",
+      "email-available",
+      "email-unavailable",
+      "email-recovery",
       "transfer-preview",
       "signed-out-create",
     ]
@@ -61,6 +64,18 @@ Deno.test("host claim lab destinations enter real claim and manage routes", asyn
   assertStringIncludes(
     await scenarioDestination("dns-preview"),
     "/hosts/claim?domain=dns-claim-preview.atmosphereaccount.com",
+  );
+  assertEquals(
+    await scenarioDestination("email-available"),
+    "/hosts/email-claim-preview.atmosphereaccount.com/claim?publish=1",
+  );
+  assertEquals(
+    await scenarioDestination("email-unavailable"),
+    "/hosts/email-unavailable-preview.atmosphereaccount.com/claim?publish=1",
+  );
+  assertEquals(
+    await scenarioDestination("email-recovery"),
+    "/hosts/email-recovery-preview.atmosphereaccount.com/claim?publish=1",
   );
   assertEquals(
     await scenarioDestination("transfer-preview"),

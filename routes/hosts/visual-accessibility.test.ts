@@ -110,6 +110,24 @@ Deno.test("host claim puts the current state before relay details", async () => 
   assertStringIncludes(source, "then verify it");
   assertStringIncludes(source, 'ariaLabel="Copy DNS record name"');
   assertStringIncludes(source, 'ariaLabel="Copy DNS record value"');
+  assertStringIncludes(source, '<fieldset class="host-claim-methods">');
+  assertStringIncludes(source, "Choose how to verify that you operate");
+  assertStringIncludes(source, ">Show DNS record</span>");
+  assertStringIncludes(source, ">Send verification email</span>");
+  assertStringIncludes(source, 'value="request_contact_email"');
+  assertStringIncludes(source, 'value="confirm_contact_email"');
+  assertStringIncludes(source, 'value="finalize_recovery"');
+  assertStringIncludes(source, "Generate fresh DNS record");
+  assertStringIncludes(source, "Verify DNS and finish recovery");
+  assertStringIncludes(source, 'dnsFailure === "record_not_found"');
+  assertStringIncludes(source, 'dnsFailure === "dns_unavailable"');
+  assertStringIncludes(
+    source,
+    'dnsFailure === "account_mismatch" ? dnsToken : null',
+  );
+  assertStringIncludes(source, 'role="status"');
+  assertStringIncludes(source, "This PDS doesn’t publish a contact email");
+  assertStringIncludes(source, "Strengthen ownership with DNS");
   const dnsFields = source.slice(
     source.indexOf('<dl class="host-claim-detected-summary">'),
     source.indexOf(
@@ -123,6 +141,89 @@ Deno.test("host claim puts the current state before relay details", async () => 
   assert(
     dnsFields.indexOf("<dt>Name</dt>") < dnsFields.indexOf("<dt>Value</dt>"),
   );
+});
+
+Deno.test("email claim links are scanner-safe and require explicit confirmation", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./[host]/claim.tsx", import.meta.url),
+  );
+
+  for (
+    const fragment of [
+      'url.searchParams.has("email_token")',
+      'clean.searchParams.delete("email_token")',
+      '"HttpOnly"',
+      '"SameSite=Lax"',
+      '"referrer-policy": "no-referrer"',
+      '"x-robots-tag": "noindex, nofollow"',
+      'name="action" value="confirm_contact_email"',
+      'data-pending-label="Verifying email…"',
+      "Verify and claim host",
+    ]
+  ) {
+    assertStringIncludes(source, fragment);
+  }
+});
+
+Deno.test("DNS recovery reserves one notification sender before delivery", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./[host]/claim.tsx", import.meta.url),
+  );
+  const branch = source.slice(
+    source.indexOf('result.reason === "recovery_pending"'),
+  );
+  const reserve = branch.indexOf(
+    "reserveAccountHostClaimRecoveryNotification(",
+  );
+  const send = branch.indexOf("notifyHostContactEmailOfDnsRecovery(");
+  assert(reserve >= 0);
+  assert(send > reserve);
+  assertStringIncludes(branch, "if (notificationReservation)");
+  assertStringIncludes(
+    branch,
+    "notificationReservation.expectedEmailFingerprint",
+  );
+  assertStringIncludes(branch, 'reason: "contact_changed"');
+  assertStringIncludes(branch, "attemptedAt: notificationAttemptedAt");
+});
+
+Deno.test("email-derived managers see pending DNS recovery", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./[host]/manage.tsx", import.meta.url),
+  );
+
+  for (
+    const fragment of [
+      "getPendingAccountHostClaimRecovery(host.host)",
+      'claim?.method === "pds_contact_email"',
+      "DNS recovery in progress",
+      "DNS is authoritative",
+      "48-hour review",
+      'href="mailto:contact@atmosphereaccount.com"',
+      "supersedes",
+      "pending recovery",
+      "Strengthen ownership with DNS",
+    ]
+  ) {
+    assertStringIncludes(source, fragment);
+  }
+});
+
+Deno.test("host claim methods and recovery keep dark-phase contrast", async () => {
+  const styles = await Deno.readTextFile(
+    new URL("../../static/styles.css", import.meta.url),
+  );
+  for (
+    const selector of [
+      ".dark-phase .host-claim-method {",
+      ".dark-phase .host-claim-method--recommended {",
+      ".dark-phase .host-claim-method-title,",
+      ".dark-phase .host-claim-recovery-warning {",
+      ".dark-phase .host-detail-claim-copy p:not(.text-eyebrow) {",
+    ]
+  ) {
+    assertStringIncludes(styles, selector);
+  }
 });
 
 Deno.test("a success notice does not replace an available host backlink", async () => {

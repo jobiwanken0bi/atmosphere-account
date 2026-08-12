@@ -1,4 +1,5 @@
 import {
+  hostClaimEvidenceSecretForTest,
   isCanonicalSiteOriginForTest,
   validatedPublicOriginForTest,
   validateSecretStrengthForTest,
@@ -27,6 +28,23 @@ Deno.test("production session secrets require at least 32 bytes", () => {
     "x".repeat(32),
   );
   assertEquals(validateSecretStrengthForTest("dev", false), "dev");
+});
+
+Deno.test("durable host-claim evidence requires an independent production key", () => {
+  assertThrows(() =>
+    hostClaimEvidenceSecretForTest(undefined, true, "session-fallback")
+  );
+  assertThrows(() =>
+    hostClaimEvidenceSecretForTest("too-short", true, "session-fallback")
+  );
+  assertEquals(
+    hostClaimEvidenceSecretForTest("e".repeat(32), true, "session-fallback"),
+    "e".repeat(32),
+  );
+  assertEquals(
+    hostClaimEvidenceSecretForTest(undefined, false, "session-fallback"),
+    "session-fallback",
+  );
 });
 
 Deno.test("public origins reject active schemes and ambiguous authority", () => {

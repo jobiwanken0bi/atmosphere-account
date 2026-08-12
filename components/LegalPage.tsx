@@ -24,7 +24,7 @@ export default function LegalPage(
               <h1 class="text-section">{title}</h1>
               <p class="legal-page-summary">{summary}</p>
               <p class="legal-page-effective">
-                Effective <time dateTime="2026-08-09">August 9, 2026</time>
+                Effective <time dateTime="2026-08-12">August 12, 2026</time>
               </p>
             </header>
             <article class="legal-document">

@@ -101,7 +101,7 @@ Deno.test("host claim and transfer copy match their actual account choice", () =
   const hostClaim = authActionCopy("host_claim", "Example Host");
   assertEquals(
     hostClaim.signInBody,
-    "Choose the account that will claim and manage Example Host, including its public profile and images. Granting this access does not claim the host; DNS verification separately proves control of its domain.",
+    "Choose the account that will claim and manage Example Host, including its public profile and images. Granting this access does not claim the host; ownership is verified separately after login.",
   );
   assertEquals(hostClaim.signInBody.includes("hosted there"), false);
 

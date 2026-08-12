@@ -190,6 +190,52 @@ export async function resolveHandle(handle: string): Promise<string> {
     throw new Error(`unsafe handle host: ${handle}`);
   }
 
+  const authoritative = await resolveHandleFromAuthority(lower);
+  if (authoritative) return authoritative;
+
+  // 3. Public Bluesky resolver (com.atproto.identity.resolveHandle)
+  const r = await fetch(
+    `${PUBLIC_RESOLVER}/xrpc/com.atproto.identity.resolveHandle?handle=${
+      encodeURIComponent(lower)
+    }`,
+    {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(4000),
+    },
+  );
+  if (!r.ok) throw new Error(`could not resolve handle: ${handle}`);
+  const json = await readBoundedJson(r, MAX_IDENTITY_JSON_BYTES) as {
+    did: string;
+  };
+  if (!isDid(json.did)) {
+    throw new Error(`resolver returned invalid DID for ${handle}`);
+  }
+  return json.did;
+}
+
+/**
+ * Resolve only from the handle domain's own AT Protocol authorities. Unlike
+ * `resolveHandle`, this never falls back to a third-party public resolver, so
+ * it is suitable when the handle itself is being used as current domain proof.
+ */
+export async function resolveHandleAuthority(handle: string): Promise<string> {
+  const lower = handle.toLowerCase();
+  if (!isHandle(lower)) throw new Error(`invalid handle: ${handle}`);
+  if (!IS_DEV && isReservedHandle(lower)) {
+    throw new Error(`reserved handle host: ${handle}`);
+  }
+  if (!IS_DEV && isPrivateOrLocalHostname(lower)) {
+    throw new Error(`unsafe handle host: ${handle}`);
+  }
+  const did = await resolveHandleFromAuthority(lower);
+  if (!did) throw new Error(`handle domain did not resolve: ${handle}`);
+  return did;
+}
+
+async function resolveHandleFromAuthority(
+  lower: string,
+): Promise<string | null> {
   // 1. DNS-over-HTTPS TXT record at _atproto.<handle>
   let conflictingDnsClaims = false;
   try {
@@ -221,7 +267,7 @@ export async function resolveHandle(handle: string): Promise<string> {
     // fall through
   }
   if (conflictingDnsClaims) {
-    throw new Error(`conflicting DNS handle claims for ${handle}`);
+    throw new Error(`conflicting DNS handle claims for ${lower}`);
   }
 
   // 2. Well-known HTTPS endpoint on the handle's domain
@@ -244,25 +290,7 @@ export async function resolveHandle(handle: string): Promise<string> {
     // fall through
   }
 
-  // 3. Public Bluesky resolver (com.atproto.identity.resolveHandle)
-  const r = await fetch(
-    `${PUBLIC_RESOLVER}/xrpc/com.atproto.identity.resolveHandle?handle=${
-      encodeURIComponent(lower)
-    }`,
-    {
-      headers: { accept: "application/json" },
-      redirect: "manual",
-      signal: AbortSignal.timeout(4000),
-    },
-  );
-  if (!r.ok) throw new Error(`could not resolve handle: ${handle}`);
-  const json = await readBoundedJson(r, MAX_IDENTITY_JSON_BYTES) as {
-    did: string;
-  };
-  if (!isDid(json.did)) {
-    throw new Error(`resolver returned invalid DID for ${handle}`);
-  }
-  return json.did;
+  return null;
 }
 
 function didWebDocumentUrl(

@@ -75,6 +75,16 @@ export function PrivacyPage(
           key is needed, the service stores a salted hash rather than the raw IP
           address.
         </p>
+        <p>
+          When you choose contact-email verification for an account host, we
+          read the contact address and server DID published by that host’s PDS.
+          The address is used to deliver the short-lived verification message;
+          the service stores a keyed fingerprint and verification evidence,
+          rather than the address or verification token, with the resulting host
+          claim. A DNS recovery attempt can trigger a security notice only when
+          the PDS still publishes the contact address recorded, as a keyed
+          fingerprint, for the original email claim.
+        </p>
       </section>
 
       <section>
@@ -119,8 +129,9 @@ export function PrivacyPage(
           </li>
           <li>
             <strong>Infrastructure providers.</strong>{" "}
-            Hosting, database, content-delivery, and security providers process
-            information on our behalf to operate the service.
+            Hosting, database, content-delivery, transactional-email, and
+            security providers process information on our behalf to operate the
+            service.
           </li>
           <li>
             <strong>Safety and legal requests.</strong>{" "}

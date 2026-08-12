@@ -5,6 +5,7 @@ import {
   accountHostDashboardSettingsUpdateQueryForTest,
   DEFAULT_ACCOUNT_HOST_SORT,
   fetchHostProfileForTest,
+  finalizeEmailClaimRecoveryTransactionForTest,
   isAccountHostPubliclyListable,
   isCompletedDnsClaimReplayForTest,
   listSeededAccountHostFallback,
@@ -14,11 +15,15 @@ import {
   normalizeAccountHostPublicServiceEndpoint,
   pinnedSeededAccountHostClaimHandle,
   profileHandleCandidatesForHost,
+  recordHostClaimRecoveryNotificationTransactionForTest,
+  reserveHostClaimRecoveryNotificationTransactionForTest,
   resolveAccountHostClaimAuthority,
   sortAccountHostsForDirectory,
+  startEmailClaimRecoveryTransactionForTest,
   upsertAccountHostClaimForOwnerForTest,
   validateAccountHostRegistrationInput,
   verifiedAccountHostOwnerDid,
+  writeContactEmailClaimTransactionForTest,
   writeDnsClaimTransactionForTest,
 } from "./account-hosts.ts";
 import { convertQuestionParameters } from "./neon.ts";
@@ -407,6 +412,859 @@ Deno.test("host claims write an explicit directory preference on Postgres", () =
   ]);
 });
 
+Deno.test("contact email completion consumes proof, creates ownership, and stores opaque evidence atomically", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const statement = typeof query === "string"
+        ? { sql: query, args: [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      statements.push(statement);
+      if (
+        statement.sql.includes("SELECT 1 FROM account_host_claim_challenge")
+      ) {
+        return Promise.resolve({ rows: [{ 1: 1 }], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const ts = 1_800_000_000_000;
+  await writeContactEmailClaimTransactionForTest(client, {
+    proof: {
+      ok: true,
+      tokenHash: "T".repeat(43),
+      host: "pds.example",
+      claimantDid: "did:plc:operator",
+      endpointOrigin: "https://pds.example",
+      pdsDid: "did:web:pds.example",
+      emailFingerprint: "E".repeat(43),
+      methodBinding: `pds-contact-email-v2.${"B".repeat(43)}`,
+      requestedAt: ts - 1_000,
+      expiresAt: ts + 1_000,
+      deliveryId: null,
+    },
+    claim: {
+      host: "pds.example",
+      claimantDid: "did:plc:operator",
+      claimantHandle: "operator.example",
+      method: "pds_contact_email",
+      claimedAt: ts,
+      verifiedAt: ts,
+      updatedAt: ts,
+    },
+    claimHandle: "operator.example",
+    claimDid: "did:plc:operator",
+    timestamp: ts,
+  });
+
+  assertEquals(statements.length, 5);
+  assert(statements[0].sql.includes("account_host_claim_challenge"));
+  assert(
+    statements[0].sql.includes("method_binding LIKE 'pds-contact-email-v2.%'"),
+  );
+  assert(statements[1].sql.includes("account_host_claim_challenge"));
+  assert(statements[2].sql.includes("ON CONFLICT(host) DO NOTHING"));
+  assert(statements[3].sql.includes("account_host_claim_evidence"));
+  assert(statements[4].sql.includes("UPDATE account_host"));
+  const serialized = JSON.stringify(statements);
+  assert(!serialized.includes("operator@example.com"));
+  assert(serialized.includes("https://pds.example"));
+  assert(serialized.includes("did:web:pds.example"));
+});
+
+Deno.test("contact email claim conflicts stop before evidence or host writes", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("SELECT 1 FROM account_host_claim_challenge")) {
+        return Promise.resolve({ rows: [{ 1: 1 }], rowsAffected: 0 });
+      }
+      return Promise.resolve({
+        rows: [],
+        rowsAffected: sql.includes("INSERT INTO account_host_claim (") ? 0 : 1,
+      });
+    },
+  };
+  let rejected = false;
+  try {
+    await writeContactEmailClaimTransactionForTest(client, {
+      proof: {
+        ok: true,
+        tokenHash: "T".repeat(43),
+        host: "pds.example",
+        claimantDid: "did:plc:operator",
+        endpointOrigin: "https://pds.example",
+        pdsDid: "did:web:pds.example",
+        emailFingerprint: "E".repeat(43),
+        methodBinding: `pds-contact-email-v2.${"B".repeat(43)}`,
+        requestedAt: 1,
+        expiresAt: 3,
+        deliveryId: null,
+      },
+      claim: {
+        host: "pds.example",
+        claimantDid: "did:plc:operator",
+        claimantHandle: "operator.example",
+        method: "pds_contact_email",
+        claimedAt: 2,
+        verifiedAt: 2,
+        updatedAt: 2,
+      },
+      claimHandle: "operator.example",
+      claimDid: "did:plc:operator",
+      timestamp: 2,
+    });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+  assertEquals(statements.length, 3);
+  assert(!statements.some((sql) => sql.includes("claim_evidence")));
+});
+
+Deno.test("contact email ownership rejects a differently classified challenge", async () => {
+  const statements: string[] = [];
+  let rejected = false;
+  try {
+    await writeContactEmailClaimTransactionForTest({
+      execute(query) {
+        const sql = typeof query === "string" ? query : query.sql;
+        statements.push(sql);
+        return Promise.resolve({ rows: [], rowsAffected: 0 });
+      },
+    }, {
+      proof: {
+        ok: true,
+        tokenHash: "D".repeat(43),
+        host: "pds.example",
+        claimantDid: "did:plc:operator",
+        endpointOrigin: "https://pds.example",
+        pdsDid: "did:web:pds.example",
+        emailFingerprint: "E".repeat(43),
+        methodBinding: `pds-contact-email-v2.${"B".repeat(43)}`,
+        requestedAt: 1,
+        expiresAt: 3,
+        deliveryId: null,
+      },
+      claim: {
+        host: "pds.example",
+        claimantDid: "did:plc:operator",
+        claimantHandle: "operator.example",
+        method: "pds_contact_email",
+        claimedAt: 2,
+        verifiedAt: 2,
+        updatedAt: 2,
+      },
+      claimHandle: "operator.example",
+      claimDid: "did:plc:operator",
+      timestamp: 2,
+    });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+  assertEquals(statements.length, 1);
+  assert(!statements.some((sql) => sql.includes("SET consumed_at")));
+  assert(
+    !statements.some((sql) => sql.includes("INSERT INTO account_host_claim (")),
+  );
+});
+
+function emailOwnerRow(updatedAt = 1_800_000_000_000) {
+  return {
+    claimant_did: "did:plc:old-owner",
+    claimant_handle: "old.example",
+    method: "pds_contact_email",
+    claimed_at: updatedAt - 10,
+    verified_at: updatedAt - 10,
+    updated_at: updatedAt,
+  };
+}
+
+function pendingRecoveryRow(overrides: Record<string, unknown> = {}) {
+  const requestedAt = 1_800_000_000_000;
+  return {
+    id: "dns-recovery:proof-hash",
+    host: "pds.example",
+    previous_owner_did: "did:plc:old-owner",
+    previous_owner_handle: "old.example",
+    previous_owner_updated_at: requestedAt,
+    requester_did: "did:plc:new-owner",
+    requester_handle: "new.example",
+    proof_method: "dns_txt",
+    proof_token_hash: "proof-hash",
+    requested_at: requestedAt,
+    eligible_at: requestedAt + 48 * 60 * 60 * 1000,
+    expires_at: requestedAt + 9 * 24 * 60 * 60 * 1000,
+    status: "pending",
+    notification_status: "pending",
+    notification_attempted_at: null,
+    finalization_proof_token_hash: null,
+    completed_at: null,
+    ...overrides,
+  };
+}
+
+function freshFinalDnsProof(overrides: Record<string, unknown> = {}) {
+  const createdAt = 1_800_000_000_000 + 49 * 60 * 60 * 1000;
+  return {
+    ok: true as const,
+    tokenHash: "final-proof-hash",
+    host: "pds.example",
+    claimantDid: "did:plc:new-owner",
+    methodFingerprint: "dns-v1:final-proof",
+    createdAt,
+    expiresAt: createdAt + 24 * 60 * 60 * 1000,
+    ...overrides,
+  };
+}
+
+Deno.test("DNS recovery consumes proof only after reserving an empty pending slot", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const recovery = await startEmailClaimRecoveryTransactionForTest(client, {
+    tokenHash: "proof-hash",
+    host: "pds.example",
+    previousClaim: {
+      host: "pds.example",
+      claimantDid: "did:plc:old-owner",
+      claimantHandle: "old.example",
+      method: "pds_contact_email",
+      claimedAt: 1_799_999_999_990,
+      verifiedAt: 1_799_999_999_990,
+      updatedAt: 1_800_000_000_000,
+    },
+    requester: { did: "did:plc:new-owner", handle: "new.example" },
+    requestedAt: 1_800_000_000_100,
+  });
+
+  const consumeIndex = statements.findIndex((sql) =>
+    sql.includes("account_host_claim_challenge")
+  );
+  const pendingCheckIndex = statements.findIndex((sql) =>
+    sql.includes("SELECT id FROM account_host_claim_recovery") &&
+    sql.includes("LIMIT 1")
+  );
+  const insertIndex = statements.findIndex((sql) =>
+    sql.includes("INSERT INTO account_host_claim_recovery (")
+  );
+  assert(pendingCheckIndex >= 0 && consumeIndex > pendingCheckIndex);
+  assert(insertIndex > consumeIndex);
+  assertEquals(recovery.status, "pending");
+  assertEquals(recovery.currentOwnerDid, "did:plc:old-owner");
+  assert(
+    !statements.some((sql) => sql.includes("UPDATE account_host_claim SET")),
+  );
+});
+
+Deno.test("competing DNS recovery leaves the second proof unconsumed", async () => {
+  const statements: string[] = [];
+  let pendingReads = 0;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      if (
+        sql.includes("FROM account_host_claim_recovery") &&
+        sql.includes("status = 'pending'")
+      ) {
+        pendingReads++;
+        return Promise.resolve({
+          rows: pendingReads === 1 ? [] : [pendingRecoveryRow()],
+          rowsAffected: 0,
+        });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  let rejected = false;
+  try {
+    await startEmailClaimRecoveryTransactionForTest(client, {
+      tokenHash: "second-proof-hash",
+      host: "pds.example",
+      previousClaim: {
+        host: "pds.example",
+        claimantDid: "did:plc:old-owner",
+        claimantHandle: "old.example",
+        method: "pds_contact_email",
+        claimedAt: 1,
+        verifiedAt: 1,
+        updatedAt: 1_800_000_000_000,
+      },
+      requester: { did: "did:plc:competitor", handle: "competitor.example" },
+      requestedAt: 1_800_000_000_100,
+    });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+  assert(
+    !statements.some((sql) => sql.includes("account_host_claim_challenge")),
+  );
+});
+
+Deno.test("cooled DNS recovery finalization uses owner and pending CAS then resets approvals", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const requestedAt = 1_800_000_000_000;
+  const at = requestedAt + 49 * 60 * 60 * 1000;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const statement = typeof query === "string"
+        ? { sql: query, args: [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      statements.push(statement);
+      if (
+        statement.sql.includes("FROM account_host_claim_recovery") &&
+        statement.sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({
+            notification_attempted_at: 1_800_000_000_100,
+          })],
+          rowsAffected: 0,
+        });
+      }
+      if (statement.sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      if (statement.sql.includes("FROM account_host_claim_challenge")) {
+        return Promise.resolve({ rows: [{ 1: 1 }], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const finalized = await finalizeEmailClaimRecoveryTransactionForTest(
+    client,
+    "pds.example",
+    { did: "did:plc:new-owner", handle: "new.example" },
+    freshFinalDnsProof(),
+    at,
+  );
+  assert(finalized.ok);
+  if (!finalized.ok) return;
+  const ownerCas = statements.find((statement) =>
+    statement.sql.includes("UPDATE account_host_claim SET")
+  );
+  assert(ownerCas?.sql.includes("method = 'pds_contact_email'"));
+  assertEquals(ownerCas?.args.slice(-3), [
+    "pds.example",
+    "did:plc:old-owner",
+    requestedAt,
+  ]);
+  const pendingCas = statements.find((statement) =>
+    statement.sql.includes("status = 'completed'")
+  );
+  assert(pendingCas?.sql.includes("requester_did = ?"));
+  assert(
+    statements.some((statement) => statement.sql.includes("avatar_url = NULL")),
+  );
+  assert(
+    statements.some((statement) =>
+      statement.sql.includes("host_approved_at = NULL")
+    ),
+  );
+  assert(
+    statements.some((statement) =>
+      statement.sql.includes("event") && statement.args.includes("finalized") &&
+      statement.args.includes("final-proof-hash")
+    ),
+  );
+  assertEquals(finalized.claim.method, "dns_txt");
+  assertEquals(finalized.recovery.status, "completed");
+});
+
+Deno.test("completed DNS recovery finalization is one-shot idempotent", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("FROM account_host_claim_recovery")) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({
+            status: "completed",
+            finalization_proof_token_hash: "final-proof-hash",
+            completed_at: 99,
+          })],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({
+          rows: [{
+            host: "pds.example",
+            claimant_did: "did:plc:new-owner",
+            claimant_handle: "new.example",
+            method: "dns_txt",
+            claimed_at: 99,
+            verified_at: 99,
+            updated_at: 99,
+          }],
+          rowsAffected: 0,
+        });
+      }
+      throw new Error(`unexpected write: ${sql}`);
+    },
+  };
+  const result = await finalizeEmailClaimRecoveryTransactionForTest(
+    client,
+    "pds.example",
+    { did: "did:plc:new-owner", handle: "new.example" },
+    freshFinalDnsProof(),
+    100,
+  );
+  assert(result.ok);
+  assertEquals(statements.length, 2);
+});
+
+Deno.test("initiating or expired DNS proof cannot finalize a cooled recovery", async () => {
+  for (
+    const [proof, expectedReason] of [
+      [
+        freshFinalDnsProof({ createdAt: 1_800_000_000_100 }),
+        "fresh_dns_required",
+      ],
+      [
+        freshFinalDnsProof({
+          expiresAt: 1_800_000_000_000 + 49 * 60 * 60 * 1000 - 1,
+        }),
+        "fresh_dns_required",
+      ],
+    ] as const
+  ) {
+    const statements: string[] = [];
+    const client = {
+      execute(query: string | { sql: string; args?: unknown[] }) {
+        const sql = typeof query === "string" ? query : query.sql;
+        statements.push(sql);
+        if (sql.includes("FROM account_host_claim_recovery")) {
+          return Promise.resolve({
+            rows: [pendingRecoveryRow()],
+            rowsAffected: 0,
+          });
+        }
+        if (sql.includes("FROM account_host_claim WHERE")) {
+          return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+        }
+        return Promise.resolve({ rows: [], rowsAffected: 1 });
+      },
+    };
+    const result = await finalizeEmailClaimRecoveryTransactionForTest(
+      client,
+      "pds.example",
+      { did: "did:plc:new-owner", handle: "new.example" },
+      proof,
+      1_800_000_000_000 + 49 * 60 * 60 * 1000,
+    );
+    assert(!result.ok && result.reason === expectedReason);
+    assert(
+      !statements.some((sql) =>
+        sql.includes("UPDATE account_host_claim_challenge SET consumed_at")
+      ),
+    );
+    assert(
+      !statements.some((sql) => sql.includes("UPDATE account_host_claim SET")),
+    );
+  }
+});
+
+Deno.test("owner race cannot consume the fresh recovery proof", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("FROM account_host_claim_recovery")) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow()],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({
+          rows: [{
+            host: "pds.example",
+            claimant_did: "did:plc:defending-owner",
+            claimant_handle: "defender.example",
+            method: "dns_txt",
+            claimed_at: 1,
+            verified_at: 1,
+            updated_at: 2,
+          }],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("SELECT id FROM account_host_claim_recovery")) {
+        return Promise.resolve({
+          rows: [{ id: "dns-recovery:proof-hash" }],
+          rowsAffected: 0,
+        });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const result = await finalizeEmailClaimRecoveryTransactionForTest(
+    client,
+    "pds.example",
+    { did: "did:plc:new-owner", handle: "new.example" },
+    freshFinalDnsProof(),
+    1_800_000_000_000 + 49 * 60 * 60 * 1000,
+  );
+  assert(!result.ok && result.reason === "owner_changed");
+  assert(
+    !statements.some((sql) =>
+      sql.includes("UPDATE account_host_claim_challenge SET consumed_at")
+    ),
+  );
+});
+
+Deno.test("owner changes invalidate pending email recovery before finalization", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (
+        sql.includes("FROM account_host_claim_recovery") &&
+        sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow()],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({
+          rows: [{
+            host: "pds.example",
+            claimant_did: "did:plc:current-owner",
+            claimant_handle: "current.example",
+            method: "dns_txt",
+            claimed_at: 1,
+            verified_at: 1,
+            updated_at: 2,
+          }],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("SELECT id FROM account_host_claim_recovery")) {
+        return Promise.resolve({
+          rows: [{ id: "dns-recovery:proof-hash" }],
+          rowsAffected: 0,
+        });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const result = await finalizeEmailClaimRecoveryTransactionForTest(
+    client,
+    "pds.example",
+    { did: "did:plc:new-owner", handle: "new.example" },
+    freshFinalDnsProof(),
+    1_800_000_000_000 + 49 * 60 * 60 * 1000,
+  );
+  assert(!result.ok && result.reason === "owner_changed");
+  assert(statements.some((sql) => sql.includes("status = 'invalidated'")));
+  assert(
+    !statements.some((sql) =>
+      sql.includes("claimant_did = ?, claimant_handle")
+    ),
+  );
+});
+
+Deno.test("expired recovery transitions durably and releases the pending slot", async () => {
+  const statements: string[] = [];
+  const expiredAt = 1_800_000_000_000;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (
+        sql.includes("FROM account_host_claim_recovery") &&
+        sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({ expires_at: expiredAt })],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      if (sql.includes("SELECT id FROM account_host_claim_recovery")) {
+        return Promise.resolve({
+          rows: [{ id: "dns-recovery:proof-hash" }],
+          rowsAffected: 0,
+        });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const result = await finalizeEmailClaimRecoveryTransactionForTest(
+    client,
+    "pds.example",
+    { did: "did:plc:new-owner", handle: "new.example" },
+    freshFinalDnsProof(),
+    expiredAt,
+  );
+  assert(!result.ok && result.reason === "expired");
+  assert(statements.some((sql) => sql.includes("status = 'expired'")));
+  assert(
+    statements.some((sql) => sql.includes("account_host_claim_recovery_audit")),
+  );
+});
+
+Deno.test("recovery notification evidence is claimant-bound and audit-only", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const attemptedAt = 1_800_000_000_100;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const statement = typeof query === "string"
+        ? { sql: query, args: [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      statements.push(statement);
+      if (
+        statement.sql.includes("FROM account_host_claim_recovery") &&
+        !statement.sql.includes("expires_at <=")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({
+            notification_attempted_at: attemptedAt,
+          })],
+          rowsAffected: 0,
+        });
+      }
+      if (statement.sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const recorded = await recordHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    {
+      status: "sent",
+      deliveryId: "provider-message-id",
+      emailFingerprint: "E".repeat(43),
+      attemptedAt,
+    },
+  );
+  assertEquals(recorded?.notificationStatus, "sent");
+  assertEquals(recorded?.notificationAttemptedAt, attemptedAt);
+  assertEquals("deliveryId" in (recorded ?? {}), false);
+  const update = statements.find((statement) =>
+    statement.sql.includes("notification_status = ?")
+  );
+  assert(update?.sql.includes("requester_did = ?"));
+  assert(update?.sql.includes("status = 'pending'"));
+  assert(update?.sql.includes("notification_attempted_at = ?"));
+  assert(update?.args.includes("provider-message-id"));
+  const audit = statements.find((statement) =>
+    statement.sql.includes("account_host_claim_recovery_audit")
+  );
+  assert(audit?.args.includes("notification_sent"));
+  assert(audit?.args.includes("E".repeat(43)));
+});
+
+Deno.test("a stale recovery notification sender cannot complete a newer lease", async () => {
+  const leaseA = 1_800_000_000_100;
+  const leaseB = leaseA + 300_001;
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (
+        sql.includes("FROM account_host_claim_recovery") &&
+        sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({ notification_attempted_at: leaseB })],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const stale = await recordHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    {
+      status: "sent",
+      deliveryId: "stale-delivery",
+      emailFingerprint: "E".repeat(43),
+      attemptedAt: leaseA,
+    },
+  );
+  assertEquals(stale?.notificationStatus, "pending");
+  assertEquals(stale?.notificationAttemptedAt, leaseB);
+  assert(!statements.some((sql) => sql.includes("notification_status = ?")));
+  assert(!statements.some((sql) => sql.includes("recovery_audit")));
+});
+
+Deno.test("recovery notification reservation is a claimant-bound crash-retry lease", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const at = 1_800_000_000_100;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const statement = typeof query === "string"
+        ? { sql: query, args: [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      statements.push(statement);
+      if (
+        statement.sql.includes("FROM account_host_claim_recovery") &&
+        statement.sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({ notification_attempted_at: at })],
+          rowsAffected: 0,
+        });
+      }
+      if (statement.sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const reserved = await reserveHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    at,
+    5 * 60 * 1000,
+  );
+  assertEquals(reserved?.recovery.notificationAttemptedAt, at);
+  assertEquals(reserved?.expectedEmailFingerprint, null);
+  const update = statements.find((statement) =>
+    statement.sql.includes("SET notification_attempted_at = ?")
+  );
+  assert(update?.sql.includes("requester_did = ?"));
+  assert(update?.sql.includes("notification_status = 'pending'"));
+  assert(update?.sql.includes("notification_attempted_at IS NULL"));
+  assertEquals(update?.args, [
+    at,
+    "pds.example",
+    "did:plc:new-owner",
+    Math.max(0, at - 5 * 60 * 1000),
+  ]);
+});
+
+Deno.test("recovery warning recipient binds to the exact original claim evidence", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const fingerprint = "E".repeat(43);
+  const at = 1_800_000_000_100;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const statement = typeof query === "string"
+        ? { sql: query, args: [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      statements.push(statement);
+      if (
+        statement.sql.includes("FROM account_host_claim_recovery") &&
+        statement.sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({ notification_attempted_at: at })],
+          rowsAffected: 0,
+        });
+      }
+      if (statement.sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      if (statement.sql.includes("FROM account_host_claim_evidence")) {
+        return Promise.resolve({
+          rows: [{ email_fingerprint: fingerprint }],
+          rowsAffected: 0,
+        });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const reserved = await reserveHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    at,
+    300_000,
+  );
+  assertEquals(reserved?.expectedEmailFingerprint, fingerprint);
+  const evidence = statements.find((statement) =>
+    statement.sql.includes("FROM account_host_claim_evidence")
+  );
+  assert(evidence?.sql.includes("method = 'pds_contact_email'"));
+  assert(evidence?.sql.includes("claim_updated_at = ?"));
+  assertEquals(evidence?.args, [
+    "pds.example",
+    "did:plc:old-owner",
+    1_800_000_000_000,
+  ]);
+});
+
+Deno.test("only the winner of a recovery notification CAS may send", async () => {
+  let reservations = 0;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      if (sql.includes("SET notification_attempted_at = ?")) {
+        reservations++;
+        return Promise.resolve({
+          rows: [],
+          rowsAffected: reservations === 1 ? 1 : 0,
+        });
+      }
+      if (
+        sql.includes("FROM account_host_claim_recovery") &&
+        sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow()],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const first = await reserveHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    1_800_000_000_100,
+    300_000,
+  );
+  const second = await reserveHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    1_800_000_000_101,
+    300_000,
+  );
+  assert(first);
+  assertEquals(second, null);
+});
+
 Deno.test("DNS completion consumes proof and writes ownership atomically", async () => {
   const statements: string[] = [];
   const client = {
@@ -441,11 +1299,13 @@ Deno.test("DNS completion consumes proof and writes ownership atomically", async
         ? "consume"
         : sql.includes("INSERT INTO account_host_claim")
         ? "claim"
+        : sql.includes("account_host_claim_recovery")
+        ? "recovery-check"
         : sql.includes("UPDATE account_host")
         ? "host"
         : "unexpected"
     ),
-    ["consume", "claim", "host"],
+    ["consume", "claim", "recovery-check", "host"],
   );
 });
 
@@ -482,6 +1342,52 @@ Deno.test("DNS completion replay succeeds only for the current DNS owner", () =>
   );
 });
 
+Deno.test("current-manager DNS repair invalidates a cooling email recovery", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const statement = typeof query === "string"
+        ? { sql: query, args: [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      statements.push(statement);
+      if (
+        statement.sql.includes("SELECT id FROM account_host_claim_recovery")
+      ) {
+        return Promise.resolve({
+          rows: [{ id: "dns-recovery:proof-hash" }],
+          rowsAffected: 0,
+        });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  await writeDnsClaimTransactionForTest(client, {
+    tokenHash: "repair-token-hash",
+    claim: {
+      host: "pds.example",
+      claimantDid: "did:plc:old-owner",
+      claimantHandle: "old.example",
+      method: "dns_txt",
+      claimedAt: 1,
+      verifiedAt: 2,
+      updatedAt: 2,
+    },
+    claimHandle: "old.example",
+    claimDid: "did:plc:old-owner",
+    timestamp: 2,
+  });
+  assert(
+    statements.some((statement) =>
+      statement.sql.includes("status = 'invalidated'")
+    ),
+  );
+  const audit = statements.find((statement) =>
+    statement.sql.includes("account_host_claim_recovery_audit")
+  );
+  assert(audit?.args.includes("invalidated"));
+  assert(audit?.args.includes("did:plc:old-owner"));
+});
+
 Deno.test("DNS manager transfer swaps exactly one owner and invalidates old host approvals", async () => {
   const statements: Array<{ sql: string; args: unknown[] }> = [];
   const client = {
@@ -513,7 +1419,7 @@ Deno.test("DNS manager transfer swaps exactly one owner and invalidates old host
     timestamp: 1_800_000_000_000,
   });
 
-  assertEquals(statements.length, 6);
+  assertEquals(statements.length, 7);
   assert(statements[1].sql.includes("WHERE host = ? AND claimant_did = ?"));
   assertEquals(
     statements[1].args.slice(-3),
@@ -521,14 +1427,14 @@ Deno.test("DNS manager transfer swaps exactly one owner and invalidates old host
   );
   assert(statements[2].sql.includes("account_host_owner_transfer"));
   assert(
-    !statements[3].sql.includes("operator_listing_opt_in"),
+    !statements[4].sql.includes("operator_listing_opt_in"),
     "a manager change must preserve directory visibility",
   );
-  assert(statements[4].sql.includes("avatar_url = NULL"));
-  assert(statements[4].sql.includes("service_record_uri = NULL"));
-  assert(statements[5].sql.includes("status = 'pending'"));
-  assert(statements[5].sql.includes("host_approved_at = NULL"));
-  assert(!statements[5].sql.includes("app_approved_at ="));
+  assert(statements[5].sql.includes("avatar_url = NULL"));
+  assert(statements[5].sql.includes("service_record_uri = NULL"));
+  assert(statements[6].sql.includes("status = 'pending'"));
+  assert(statements[6].sql.includes("host_approved_at = NULL"));
+  assert(!statements[6].sql.includes("app_approved_at ="));
 });
 
 Deno.test("failed DNS manager transfer CAS stops before audit and cleanup", async () => {

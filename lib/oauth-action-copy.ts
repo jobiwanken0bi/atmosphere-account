@@ -126,9 +126,9 @@ export function authActionCopy(
         eyebrow: "Claim an account host",
         title: `Login to claim ${name}`,
         signInBody:
-          `Choose the account that will claim and manage ${name}, including its public profile and images. Granting this access does not claim the host; DNS verification separately proves control of its domain.`,
+          `Choose the account that will claim and manage ${name}, including its public profile and images. Granting this access does not claim the host; ownership is verified separately after login.`,
         upgradeBody: (handle) =>
-          `Approve access for @${handle} to manage the host’s public profile and images. This does not claim the host; DNS verification separately proves control of its domain.`,
+          `Approve access for @${handle} to manage the host’s public profile and images. This does not claim the host; ownership is verified separately after login.`,
       };
     }
     case "host_manage": {

@@ -78,6 +78,33 @@ export const DEV_HOST_CLAIM_SCENARIOS = [
     outcome: "Preview through DNS check",
   },
   {
+    id: "email-available",
+    account: "regular",
+    eyebrow: "Published PDS contact",
+    title: "Contact email verification",
+    description:
+      "Choose the contact email published by the exact PDS, open the local verification link, and confirm the first claim.",
+    outcome: "Completes locally",
+  },
+  {
+    id: "email-unavailable",
+    account: "regular",
+    eyebrow: "No published contact",
+    title: "Email unavailable",
+    description:
+      "See the contact-email method disabled when the exact PDS does not publish a contact address. DNS remains available.",
+    outcome: "View unavailable state",
+  },
+  {
+    id: "email-recovery",
+    account: "regular",
+    eyebrow: "Existing email claim",
+    title: "Recover with DNS",
+    description:
+      "Start a DNS recovery for a host managed through an earlier contact-email claim. The current owner remains active during review.",
+    outcome: "Preview through DNS check",
+  },
+  {
     id: "transfer-preview",
     account: "host",
     eyebrow: "Existing host manager",
@@ -338,6 +365,12 @@ export async function scenarioDestination(
       return `/hosts/claim?${new URLSearchParams({
         domain: DEV_HOST_CLAIM_HOSTS.detectedDns.host,
       })}`;
+    case "email-available":
+      return claimPath(DEV_HOST_CLAIM_HOSTS.emailAvailable.host);
+    case "email-unavailable":
+      return claimPath(DEV_HOST_CLAIM_HOSTS.emailUnavailable.host);
+    case "email-recovery":
+      return claimPath(DEV_HOST_CLAIM_HOSTS.emailRecovery.host);
     case "transfer-preview":
       return `/hosts/${
         encodeURIComponent(DEV_HOST_CLAIM_HOSTS.transferClaimed.host)

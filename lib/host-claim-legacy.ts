@@ -14,7 +14,7 @@ export function rejectLegacyHostClaimAction(
 ): Response | null {
   if (action !== "request_email" && action !== "verify_email") return null;
   return new Response(
-    "Email verification is no longer accepted. Verify control with DNS instead.",
+    "This retired email verification request is no longer accepted. Start a new host claim instead.",
     {
       status: 410,
       headers: {
@@ -41,9 +41,10 @@ export function stripLegacyHostClaimToken(url: URL): Response | null {
   });
 }
 
-/** Enforce the DNS-only rollout before a host-claim request can cross the
- * edge proxy. Retired links and already-open email forms therefore stay
- * disabled while the AppView service is being upgraded. */
+/** Reject only the retired, pre-v2 email link and form contract before a host
+ * claim can cross the edge proxy. New contact-email claims use the versioned
+ * `email_token`, `request_contact_email`, and `confirm_contact_email` contract,
+ * while already-open legacy forms remain safely disabled during rollouts. */
 export async function legacyHostClaimEdgeResponse(
   url: URL,
   request: Request,

@@ -461,6 +461,8 @@ const SCHEMA_STATEMENTS: string[] = [
     claimant_did TEXT NOT NULL,
     claimant_handle TEXT NOT NULL,
     email_fingerprint TEXT NOT NULL,
+    method_binding TEXT,
+    delivery_id TEXT,
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL,
     consumed_at INTEGER,
@@ -474,6 +476,59 @@ const SCHEMA_STATEMENTS: string[] = [
     proof_method TEXT NOT NULL,
     initiated_at INTEGER NOT NULL,
     completed_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS account_host_claim_evidence (
+    id TEXT PRIMARY KEY,
+    host TEXT NOT NULL,
+    claimant_did TEXT NOT NULL,
+    method TEXT NOT NULL CHECK (method = 'pds_contact_email'),
+    endpoint_origin TEXT NOT NULL,
+    pds_did TEXT NOT NULL,
+    email_fingerprint TEXT NOT NULL,
+    challenge_token_hash TEXT NOT NULL UNIQUE,
+    requested_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    completed_at INTEGER NOT NULL,
+    claim_updated_at INTEGER NOT NULL,
+    delivery_id TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS account_host_claim_recovery (
+    id TEXT PRIMARY KEY,
+    host TEXT NOT NULL,
+    previous_owner_did TEXT NOT NULL,
+    previous_owner_handle TEXT NOT NULL,
+    previous_owner_updated_at INTEGER NOT NULL,
+    requester_did TEXT NOT NULL,
+    requester_handle TEXT NOT NULL,
+    proof_method TEXT NOT NULL CHECK (proof_method = 'dns_txt'),
+    proof_token_hash TEXT NOT NULL UNIQUE,
+    requested_at INTEGER NOT NULL,
+    eligible_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'expired', 'invalidated')),
+    notification_status TEXT NOT NULL DEFAULT 'pending'
+      CHECK (notification_status IN ('pending', 'sent', 'failed', 'unavailable')),
+    notification_delivery_id TEXT,
+    notification_email_fingerprint TEXT,
+    notification_attempted_at INTEGER,
+    finalization_proof_token_hash TEXT,
+    completed_at INTEGER,
+    FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS account_host_claim_recovery_audit (
+    id TEXT PRIMARY KEY,
+    recovery_id TEXT NOT NULL,
+    host TEXT NOT NULL,
+    event TEXT NOT NULL,
+    actor_did TEXT,
+    proof_token_hash TEXT,
+    delivery_id TEXT,
+    email_fingerprint TEXT,
+    occurred_at INTEGER NOT NULL,
+    CHECK (event IN (
+      'requested', 'notification_sent', 'notification_failed',
+      'notification_unavailable', 'finalized', 'expired', 'invalidated'
+    ))
   )`,
   `CREATE TABLE IF NOT EXISTS host_conformance (
     host TEXT PRIMARY KEY,
@@ -881,6 +936,12 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_did ON account_host_claim_challenge(claimant_did, created_at)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_expires ON account_host_claim_challenge(expires_at)`,
   `CREATE INDEX IF NOT EXISTS account_host_owner_transfer_host ON account_host_owner_transfer(host, completed_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_evidence_host ON account_host_claim_evidence(host, completed_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_evidence_claimant ON account_host_claim_evidence(claimant_did, completed_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_recovery_host ON account_host_claim_recovery(host, status, requested_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_recovery_requester ON account_host_claim_recovery(requester_did, status, requested_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS account_host_claim_recovery_pending_host ON account_host_claim_recovery(host) WHERE status = 'pending'`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_recovery_audit_recovery ON account_host_claim_recovery_audit(recovery_id, occurred_at)`,
   `CREATE INDEX IF NOT EXISTS host_conformance_status ON host_conformance(status, expires_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at)`,
@@ -1364,6 +1425,30 @@ async function applyAdditiveMigrations(
         table: "account_host",
         column: "claim_did",
         ddl: "ALTER TABLE account_host ADD COLUMN claim_did TEXT",
+      },
+      {
+        table: "account_host_claim_challenge",
+        column: "method_binding",
+        ddl:
+          "ALTER TABLE account_host_claim_challenge ADD COLUMN method_binding TEXT",
+      },
+      {
+        table: "account_host_claim_challenge",
+        column: "delivery_id",
+        ddl:
+          "ALTER TABLE account_host_claim_challenge ADD COLUMN delivery_id TEXT",
+      },
+      {
+        table: "account_host_claim_recovery",
+        column: "finalization_proof_token_hash",
+        ddl:
+          "ALTER TABLE account_host_claim_recovery ADD COLUMN finalization_proof_token_hash TEXT",
+      },
+      {
+        table: "account_host_claim_recovery_audit",
+        column: "proof_token_hash",
+        ddl:
+          "ALTER TABLE account_host_claim_recovery_audit ADD COLUMN proof_token_hash TEXT",
       },
       {
         table: "login_app",
