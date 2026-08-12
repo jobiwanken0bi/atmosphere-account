@@ -548,9 +548,11 @@ Hosted environments must set:
 - `SESSION_SECRET`
 - OAuth keys when sign-in/write flows are enabled
 
-Production host claims use a temporary, account-bound DNS TXT challenge. They do
-not require an outbound email provider. Explicit local `.test` fixtures keep
-their development-only bypass for visual and integration testing.
+Production host claims use either a live, bidirectionally verified AT Protocol
+identity whose handle and PDS endpoint both exactly match the host, or a
+temporary, account-bound DNS TXT challenge. They do not require an outbound
+email provider. Manager changes always use DNS. Explicit local `.test` fixtures
+keep their development-only bypass for visual and integration testing.
 
 The app intentionally refuses local DB and weak session-secret fallbacks in
 hosted runtimes.

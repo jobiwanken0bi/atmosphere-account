@@ -33,6 +33,7 @@ const SESSION_COOKIE = "atmo_sid";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_SELF_CONTAINED_HOST_CLAIM_METHODS = [
   "dns_txt",
+  "atproto_handle",
   "pds_contact_email",
 ] as const;
 const SESSION_ORDINARY_HOST_SOURCES = ["manual", "observed"] as const;
@@ -73,9 +74,10 @@ function sqlStringList(values: readonly string[]): string {
 
 /**
  * Keep the global account menu's host-management hint conservative and cheap.
- * DNS and grandfathered email claims are self-contained proof. Ordinary
- * legacy OAuth claims remain usable, but curated seeded hosts need a live DID
- * re-resolution and are therefore left to exact account/management pages.
+ * DNS, exact AT Protocol host-identity, and grandfathered email claims are
+ * self-contained proof. Ordinary legacy OAuth claims remain usable, but
+ * curated seeded hosts need a live DID re-resolution and are therefore left
+ * to exact account/management pages.
  * Local fixture claims are valid only for `.test` hosts in a real dev process.
  */
 export function sessionManagedHostOwnershipSql(isDev = IS_DEV): string {

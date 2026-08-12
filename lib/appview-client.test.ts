@@ -13,6 +13,7 @@ import {
   rewriteAppviewUrlForTest,
   seededHostDetailFallback,
   shouldBufferAppviewRequestBodyForTest,
+  shouldProxyActiveSessionDocument,
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
@@ -89,6 +90,85 @@ Deno.test("public directory shell pages render on the Deno edge", () => {
   ) {
     assertEquals(shouldProxyAppviewBeforeSession(path), false);
   }
+});
+
+Deno.test("active-session documents use the authoritative appview session", () => {
+  for (const path of ["/", "/apps", "/hosts", "/docs", "/terms"]) {
+    const request = new Request(`https://atmosphereaccount.com${path}`, {
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        cookie: "atmo_accounts=remembered; atmo_sid=session.signature",
+        "sec-fetch-dest": "document",
+      },
+    });
+    assertEquals(shouldProxyActiveSessionDocument(path, request, true), true);
+  }
+});
+
+Deno.test("anonymous and non-document shell requests remain on the edge", () => {
+  const anonymous = new Request("https://atmosphereaccount.com/apps", {
+    headers: {
+      accept: "text/html",
+      cookie: "atmo_accounts=remembered",
+    },
+  });
+  const json = new Request("https://atmosphereaccount.com/apps", {
+    headers: {
+      accept: "application/json",
+      cookie: "atmo_sid=session.signature",
+    },
+  });
+  const empty = new Request("https://atmosphereaccount.com/apps", {
+    headers: {
+      accept: "text/html",
+      cookie: "atmo_sid=; atmo_accounts=remembered",
+    },
+  });
+  assertEquals(
+    shouldProxyActiveSessionDocument("/apps", anonymous, true),
+    false,
+  );
+  assertEquals(shouldProxyActiveSessionDocument("/apps", json, true), false);
+  assertEquals(shouldProxyActiveSessionDocument("/apps", empty, true), false);
+  assertEquals(
+    shouldProxyActiveSessionDocument(
+      "/apps",
+      new Request("https://atmosphereaccount.com/apps", {
+        headers: { accept: "text/html", cookie: "atmo_sid=session.signature" },
+      }),
+      false,
+    ),
+    false,
+  );
+});
+
+Deno.test("active-session proxy excludes public OAuth documents and unsafe methods", () => {
+  const documentHeaders = {
+    accept: "text/html",
+    cookie: "atmo_sid=session.signature",
+    "sec-fetch-dest": "document",
+  };
+  assertEquals(
+    shouldProxyActiveSessionDocument(
+      "/oauth/client-metadata.json",
+      new Request("https://atmosphereaccount.com/oauth/client-metadata.json", {
+        headers: documentHeaders,
+      }),
+      true,
+    ),
+    false,
+  );
+  assertEquals(
+    shouldProxyActiveSessionDocument(
+      "/apps",
+      new Request("https://atmosphereaccount.com/apps", {
+        method: "POST",
+        headers: documentHeaders,
+      }),
+      true,
+    ),
+    false,
+  );
 });
 
 Deno.test("legacy host arrays are normalized for paginated rolling deploys", () => {

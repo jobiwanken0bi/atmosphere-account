@@ -89,15 +89,13 @@ metadata, and host capabilities.
 Host records are self-asserted. They should not automatically make a host
 "verified" in this directory.
 
-For new production claims, this site derives operator authority from one proof:
-a short-lived, one-time TXT challenge placed at the exact host domain. Service
-reachability, email, social handles, host records, curated profile mappings,
-conformance checks, and local moderation can inform directory metadata, but they
-do not grant host management.
-
-A future standardized, bidirectional PDS operator declaration may add another
-claim proof after the declaration exists in a PDS specification and reference
-implementation. It is not part of the current claim flow.
+For new production claims, this site derives operator authority from one of two
+domain proofs: a live AT Protocol identity whose bidirectionally verified handle
+and PDS endpoint both exactly equal the directory host, or a short-lived,
+one-time TXT challenge placed at the exact host domain. Service reachability,
+email, unrelated or subdomain social handles, host records, curated profile
+mappings, conformance checks, and local moderation can inform directory
+metadata, but they do not grant host management.
 
 This means a host card can show the publishing account, while "verified" remains
 a site-local or conformance-test result. A self-published record alone does not
@@ -107,6 +105,12 @@ prove that the author controls every hostname it names.
 
 This site accepts these claim paths:
 
+- Production exact identity: the active account's handle resolves
+  bidirectionally to that account DID, the handle exactly equals `<host>`, and
+  the DID document's AT Protocol PDS service endpoint also uses exactly
+  `<host>`. A handle such as `alice.<host>` or an exact handle hosted by another
+  PDS does not qualify. This proof is resolved live immediately before the
+  ownership write.
 - Production: a short-lived, single-use TXT value at
   `_atmosphere-account.<host>`. The challenge is bound to the exact directory
   host and signed-in account DID, then consumed in the same transaction that
@@ -123,10 +127,11 @@ and requesting a DNS challenge. They publish the displayed TXT value at
 `_atmosphere-account.<host>` and ask the site to check it before the challenge
 expires. The TXT value can be removed after the claim succeeds.
 
-This site does not accept an email address, social handle, host record, or
-product-specific HTTPS well-known file as ownership proof. Those values can
-remain useful profile metadata, but only the DNS challenge establishes a new
-production claim or completes a manager change.
+This site does not accept an email address, unrelated social handle, host
+record, or product-specific HTTPS well-known file as ownership proof. Those
+values can remain useful profile metadata. Manager changes always use a new DNS
+challenge; exact AT Protocol identity proof is limited to an initial claim by
+the matching PDS operator identity.
 
 ## Hosts Page Read Model
 
@@ -220,11 +225,12 @@ repo:account.atmosphere.host.service
 blob:image/*
 ```
 
-The host-claim entry point requests this same complete bundle before the DNS
-challenge. The OAuth grant allows that DID to publish host records and images;
-it does not prove ownership or make the claim effective. Only successful DNS
-verification does that. Reusing the same bundle after verification avoids a
-second predictable authorization prompt when management opens.
+The host-claim entry point requests this same complete bundle before ownership
+verification. The OAuth grant allows that DID to publish host records and
+images; permission alone does not prove ownership. Ownership requires either the
+exact live AT Protocol identity proof described above or successful DNS
+verification. Reusing the same bundle after verification avoids a second
+predictable authorization prompt when management opens.
 
 Normal account sign-in should not imply this site can manage PDS grants,
 devices, passwords, or recovery material. Those controls remain host-owned even

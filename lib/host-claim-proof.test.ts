@@ -1,5 +1,6 @@
 import {
   hostSelfServiceClaimPolicy,
+  verifyAtprotoHostClaimDomainProof,
   verifyHostClaimDomainProof,
 } from "./host-claim-proof.ts";
 
@@ -27,6 +28,94 @@ Deno.test("production claims reject handle-domain and curated-handle shortcuts",
     ),
     { ok: false, reason: "missing_domain_proof" },
   );
+});
+
+Deno.test("exact bidirectional handle and PDS identity can prove a host", async () => {
+  let identifier = "";
+  const result = await verifyAtprotoHostClaimDomainProof(
+    { host: "pds.example.com" },
+    { did: "did:plc:operator", handle: "pds.example.com" },
+    {
+      resolveIdentity(value) {
+        identifier = value;
+        return Promise.resolve({
+          did: "did:plc:operator",
+          handle: "pds.example.com",
+          pdsUrl: "https://pds.example.com",
+          doc: { id: "did:plc:operator" },
+        });
+      },
+    },
+  );
+  assertEquals(identifier, "pds.example.com");
+  assertEquals(result, {
+    ok: true,
+    method: "atproto_handle",
+    did: "did:plc:operator",
+    handle: "pds.example.com",
+    pdsUrl: "https://pds.example.com",
+  });
+});
+
+Deno.test("AT Protocol host proof fails closed on every partial match", async () => {
+  const cases = [
+    {
+      did: "did:plc:different",
+      handle: "pds.example.com",
+      pdsUrl: "https://pds.example.com",
+    },
+    {
+      did: "did:plc:operator",
+      handle: "alice.pds.example.com",
+      pdsUrl: "https://pds.example.com",
+    },
+    {
+      did: "did:plc:operator",
+      handle: "pds.example.com",
+      pdsUrl: "https://unrelated.example.com",
+    },
+  ];
+  for (const identity of cases) {
+    assertEquals(
+      await verifyAtprotoHostClaimDomainProof(
+        { host: "pds.example.com" },
+        { did: "did:plc:operator", handle: "pds.example.com" },
+        {
+          resolveIdentity() {
+            return Promise.resolve({
+              ...identity,
+              doc: { id: identity.did },
+            });
+          },
+        },
+      ),
+      { ok: false, reason: "missing_domain_proof" },
+    );
+  }
+  assertEquals(
+    await verifyAtprotoHostClaimDomainProof(
+      { host: "pds.example.com" },
+      { did: "did:plc:operator", handle: "pds.example.com" },
+      { resolveIdentity: () => Promise.reject(new Error("resolver down")) },
+    ),
+    { ok: false, reason: "missing_domain_proof" },
+  );
+
+  let resolvedMismatchedHandle = false;
+  assertEquals(
+    await verifyAtprotoHostClaimDomainProof(
+      { host: "pds.example.com" },
+      { did: "did:plc:operator", handle: "social.example.com" },
+      {
+        resolveIdentity() {
+          resolvedMismatchedHandle = true;
+          throw new Error("must not resolve");
+        },
+      },
+    ),
+    { ok: false, reason: "missing_domain_proof" },
+  );
+  assertEquals(resolvedMismatchedHandle, false);
 });
 
 Deno.test("only explicit local .test fixtures bypass DNS claims", () => {

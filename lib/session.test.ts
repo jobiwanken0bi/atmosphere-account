@@ -58,7 +58,7 @@ Deno.test("session lookup carries indexed app and operational host ownership", (
       "claim.claimant_did = s.did",
       "claim.verified_at IS NOT NULL",
       "INNER JOIN account_host host ON host.host = claim.host",
-      "claim.method IN ('dns_txt', 'pds_contact_email')",
+      "claim.method IN ('dns_txt', 'atproto_handle', 'pds_contact_email')",
       "claim.method = 'oauth_atproto_account'",
       "host.source IN ('manual', 'observed')",
       "lower(host.host) NOT IN (",
@@ -90,7 +90,13 @@ Deno.test("session ownership booleans normalize across database drivers", () => 
 });
 
 Deno.test("session host menu policy preserves self-contained ownership", () => {
-  for (const method of ["dns_txt", "pds_contact_email"]) {
+  for (
+    const method of [
+      "dns_txt",
+      "atproto_handle",
+      "pds_contact_email",
+    ]
+  ) {
     assertEquals(
       sessionHostClaimCanSetMenuFlag({
         host: "bsky.network",

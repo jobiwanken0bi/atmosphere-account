@@ -54,6 +54,13 @@ Deno.test("host claim intro copy follows the current ownership state", () => {
     "This local .test fixture uses the development claim path. Once claimed, this Atmosphere account can manage its public profile and images.",
   );
   assertEquals(
+    hostClaimIntroCopy({
+      state: "ready",
+      claimProofMethod: "atproto_handle",
+    }),
+    "This account’s verified AT Protocol identity already proves control of the host domain.",
+  );
+  assertEquals(
     hostClaimIntroCopy({ state: "claimed-by-other" }),
     "This host already has a verified managing account.",
   );
@@ -159,6 +166,13 @@ Deno.test("an expired app link never outlives or blocks DNS host ownership", () 
   assertEquals(
     hostClaimManageLocation(HOST.host, false, true),
     "/hosts/pds.example.social/manage?claimed=1&dns=1&linkError=1",
+  );
+});
+
+Deno.test("identity-proved claims do not show DNS completion copy", () => {
+  assertEquals(
+    hostClaimManageLocation(HOST.host, false, false, false),
+    "/hosts/pds.example.social/manage?claimed=1",
   );
 });
 

@@ -597,6 +597,13 @@ Deno.test("claim ownership upserts are idempotent only for the same DID", async 
   assertEquals(captured.args[0], claim.host);
   assertEquals(captured.args[1], claim.claimantDid);
 
+  const acceptedIdentity = await upsertAccountHostClaimForOwnerForTest({
+    execute() {
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  }, { ...claim, method: "atproto_handle" });
+  assertEquals(acceptedIdentity, true);
+
   const rejected = await upsertAccountHostClaimForOwnerForTest({
     execute() {
       return Promise.resolve({ rows: [], rowsAffected: 0 });

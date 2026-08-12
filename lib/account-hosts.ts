@@ -11,6 +11,7 @@ import { compiledAccountHostServiceEndpoint } from "./account-host-endpoints.ts"
 import {
   hostClaimProofMessage,
   hostSelfServiceClaimPolicy,
+  verifyAtprotoHostClaimDomainProof,
   verifyHostClaimDomainProof,
 } from "./host-claim-proof.ts";
 import {
@@ -190,6 +191,7 @@ export interface AccountHostClaim {
   /** Legacy methods remain readable so deployed managers are not locked out. */
   method:
     | "dns_txt"
+    | "atproto_handle"
     | "local_dev_fixture"
     | "oauth_atproto_account"
     | "pds_contact_email";
@@ -1115,6 +1117,8 @@ function parseHostClaimRow(row: Record<string, unknown>): AccountHostClaim {
     ? "pds_contact_email"
     : row.method === "dns_txt"
     ? "dns_txt"
+    : row.method === "atproto_handle"
+    ? "atproto_handle"
     : row.method === "local_dev_fixture"
     ? "local_dev_fixture"
     : "oauth_atproto_account";
@@ -1550,7 +1554,10 @@ export async function verifiedAccountHostClaimOwnerDid(
     !claim.claimantDid.trim()
   ) return null;
   // Historical contact-email rows remain operational, but cannot be created.
-  if (claim.method === "pds_contact_email" || claim.method === "dns_txt") {
+  if (
+    claim.method === "pds_contact_email" || claim.method === "dns_txt" ||
+    claim.method === "atproto_handle"
+  ) {
     return claim.claimantDid.trim();
   }
   if (claim.method === "local_dev_fixture") {
@@ -1645,7 +1652,10 @@ async function upsertAccountHostClaimForOwner(
   claim: AccountHostClaim,
 ): Promise<boolean> {
   // Legacy methods remain readable but cannot be minted or refreshed here.
-  if (claim.method !== "dns_txt" && claim.method !== "local_dev_fixture") {
+  if (
+    claim.method !== "dns_txt" && claim.method !== "atproto_handle" &&
+    claim.method !== "local_dev_fixture"
+  ) {
     return false;
   }
   const result = await c.execute({
@@ -1877,6 +1887,87 @@ export async function claimAccountHost(
   }
   const updatedHost = await getAccountHost(row.host) ?? row;
   return { ok: true, host: updatedHost, claim };
+}
+
+/**
+ * Claim a host without an additional Atmosphere TXT record when the active
+ * AT Protocol identity already proves the exact host domain and uses that
+ * domain as its PDS endpoint. The proof is resolved live immediately before
+ * the ownership transaction and fails closed on any lookup mismatch.
+ */
+export async function claimAccountHostWithAtprotoIdentity(
+  host: string,
+  user: { did: string; handle: string },
+  options: AccountHostClaimOptions = {},
+): Promise<AccountHostClaimResult> {
+  const row = await getAccountHost(host);
+  if (!row) return { ok: false, reason: "host_not_found" };
+  const authority = await resolveAccountHostClaimAuthority(row).catch(() =>
+    null
+  );
+  const existingClaim = await getAccountHostClaim(row.host);
+  if (existingClaim && existingClaim.claimantDid !== user.did) {
+    return {
+      ok: false,
+      reason: "already_claimed",
+      host: row,
+      authority,
+      claim: existingClaim,
+    };
+  }
+
+  const proof = await verifyAtprotoHostClaimDomainProof(row, user);
+  if (!proof.ok) {
+    return {
+      ok: false,
+      reason: "dns_required",
+      host: row,
+      authority,
+      claim: existingClaim,
+    };
+  }
+
+  const ts = now();
+  const claim: AccountHostClaim = {
+    host: row.host,
+    claimantDid: user.did,
+    claimantHandle: proof.handle,
+    method: "atproto_handle",
+    claimedAt: existingClaim?.claimedAt ?? ts,
+    verifiedAt: ts,
+    updatedAt: ts,
+  };
+  const saved = await withDbTransaction(async (c) => {
+    if (!await upsertAccountHostClaimForOwner(c, claim)) return false;
+    const hostWrite = await c.execute(accountHostClaimUpdateQuery({
+      host: row.host,
+      claimHandle: authority?.did ? authority.handle : proof.handle,
+      claimDid: authority?.did ? authority.did : proof.did,
+      operatorListingOptIn: options.operatorListingOptIn,
+      timestamp: ts,
+    }));
+    if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
+      throw new Error("claimed account host disappeared during registration");
+    }
+    return true;
+  });
+  if (!saved) {
+    const conflictingClaim = await getAccountHostClaim(row.host);
+    return {
+      ok: false,
+      reason: conflictingClaim?.claimantDid === user.did
+        ? "not_authorized"
+        : "already_claimed",
+      host: row,
+      authority,
+      claim: conflictingClaim,
+    };
+  }
+  return {
+    ok: true,
+    host: await getAccountHost(row.host) ?? row,
+    claim,
+  };
 }
 
 /** Complete an account-bound DNS TXT challenge atomically with ownership. */

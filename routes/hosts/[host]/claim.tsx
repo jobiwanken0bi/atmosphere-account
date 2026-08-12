@@ -11,6 +11,7 @@ import {
   type AccountHostClaim,
   type AccountHostClaimAuthority,
   claimAccountHost,
+  claimAccountHostWithAtprotoIdentity,
   claimAccountHostWithDns,
   getAccountHost,
   getAccountHostClaim,
@@ -18,7 +19,9 @@ import {
   verifiedAccountHostOwnerDid,
 } from "../../../lib/account-hosts.ts";
 import {
+  type HostClaimProofMethod,
   hostSelfServiceClaimPolicy,
+  verifyAtprotoHostClaimDomainProof,
   verifyHostClaimDomainProof,
 } from "../../../lib/host-claim-proof.ts";
 import {
@@ -94,6 +97,7 @@ interface ClaimPageProps {
   transferContext: ResolvedHostOwnerTransferContext | null;
   repairingClaim: boolean;
   linkError: boolean;
+  claimProofMethod: HostClaimProofMethod | null;
 }
 
 interface HostClaimLinkContext {
@@ -142,6 +146,7 @@ export const handler = define.handlers({
           transferContext={null}
           repairingClaim={false}
           linkError={false}
+          claimProofMethod={null}
         />,
         { status: 404 },
       );
@@ -414,7 +419,12 @@ export const handler = define.handlers({
       ctx.url.searchParams.get("dns_token")?.trim() || "";
     const isLocalDevClaim = action === "claim" &&
       hostSelfServiceClaimPolicy(host.host) === "local-dev";
-    if (action !== "verify_dns" && !isLocalDevClaim) {
+    const isAtprotoIdentityClaim = action === "claim_identity" &&
+      !transferContext;
+    if (
+      action !== "verify_dns" && !isLocalDevClaim &&
+      !isAtprotoIdentityClaim
+    ) {
       return new Response("Invalid host claim action.", {
         status: 400,
         headers: {
@@ -434,6 +444,14 @@ export const handler = define.handlers({
             : { operatorListingOptIn: listingSelection }),
           ...(transferContext ? { transfer: transferContext } : {}),
         },
+      )
+      : isAtprotoIdentityClaim
+      ? await claimAccountHostWithAtprotoIdentity(
+        host.host,
+        ctx.state.user,
+        listingSelection == null
+          ? {}
+          : { operatorListingOptIn: listingSelection },
       )
       : await claimAccountHost(
         host.host,
@@ -457,6 +475,7 @@ export const handler = define.handlers({
             result.host.host,
             !!transferContext,
             linkError,
+            action === "verify_dns",
           ),
         },
       });
@@ -499,11 +518,12 @@ export function hostClaimManageLocation(
   host: string,
   transferred: boolean,
   linkError: boolean,
+  usedDns = true,
 ): string {
   const search = new URLSearchParams({
     [transferred ? "transferred" : "claimed"]: "1",
-    dns: "1",
   });
+  if (usedDns) search.set("dns", "1");
   if (linkError) search.set("linkError", "1");
   return `/hosts/${encodeURIComponent(host)}/manage?${search}`;
 }
@@ -568,6 +588,7 @@ async function buildClaimPageProps(
   let dnsChallenge:
     | Extract<InspectedHostDnsChallengeResult, { ok: true }>
     | null = null;
+  let claimProofMethod: HostClaimProofMethod | null = null;
   if (dnsToken && !dnsFailure) {
     const inspected = await inspectHostDnsChallenge(
       { host: host.host },
@@ -592,9 +613,20 @@ async function buildClaimPageProps(
     state = "not-authorized";
   } else if (hostSelfServiceClaimPolicy(host.host) === "local-dev") {
     const proof = verifyHostClaimDomainProof(host, user);
-    state = proof.ok ? "ready" : "not-claimable";
+    if (proof.ok) {
+      state = "ready";
+      claimProofMethod = proof.method;
+    } else {
+      state = "not-claimable";
+    }
   } else {
-    state = dnsChallenge ? "dns" : "verification";
+    const identityProof = await verifyAtprotoHostClaimDomainProof(host, user);
+    if (identityProof.ok) {
+      state = "ready";
+      claimProofMethod = identityProof.method;
+    } else {
+      state = dnsChallenge ? "dns" : "verification";
+    }
   }
   return {
     host,
@@ -616,6 +648,7 @@ async function buildClaimPageProps(
     transferContext,
     repairingClaim,
     linkError: feedback.linkError ?? false,
+    claimProofMethod,
   };
 }
 
@@ -667,6 +700,7 @@ function HostClaimPage(props: ClaimPageProps) {
     transferContext,
     repairingClaim,
     linkError,
+    claimProofMethod,
   } = props;
   return (
     <div id="page-top">
@@ -714,6 +748,7 @@ function HostClaimPage(props: ClaimPageProps) {
                         state,
                         linkAppName: linkContext?.app.name ?? null,
                         transferring: !!transferContext,
+                        claimProofMethod,
                       })}
                     </p>
                     <ClaimBody
@@ -732,6 +767,7 @@ function HostClaimPage(props: ClaimPageProps) {
                       transferContext={transferContext}
                       repairingClaim={repairingClaim}
                       linkError={linkError}
+                      claimProofMethod={claimProofMethod}
                     />
                     <DetectedHostSummary host={host} />
                   </>
@@ -771,6 +807,7 @@ function ClaimBody(
     transferContext,
     repairingClaim,
     linkError,
+    claimProofMethod,
   }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
@@ -787,6 +824,7 @@ function ClaimBody(
     transferContext: ResolvedHostOwnerTransferContext | null;
     repairingClaim: boolean;
     linkError: boolean;
+    claimProofMethod: HostClaimProofMethod | null;
   },
 ) {
   if (state === "claimed-by-you") {
@@ -859,7 +897,13 @@ function ClaimBody(
         class="host-claim-form"
         data-submit-once="true"
       >
-        <input type="hidden" name="action" value="claim" />
+        <input
+          type="hidden"
+          name="action"
+          value={claimProofMethod === "atproto_handle"
+            ? "claim_identity"
+            : "claim"}
+        />
         {error && (
           <p class="profile-form-status profile-form-status--error">{error}</p>
         )}
@@ -867,10 +911,21 @@ function ClaimBody(
           <p class="host-claim-panel-title">
             Signed in as <AtmosphereHandle handle={activeHandle} />
           </p>
-          <p class="text-body">
-            This explicit local <code>.test</code>{" "}
-            fixture can be claimed without a public DNS lookup.
-          </p>
+          {claimProofMethod === "atproto_handle"
+            ? (
+              <p class="text-body">
+                This account’s verified handle and PDS endpoint both exactly
+                match{" "}
+                <strong>{host.host}</strong>, so no additional DNS record is
+                needed.
+              </p>
+            )
+            : (
+              <p class="text-body">
+                This explicit local <code>.test</code>{" "}
+                fixture can be claimed without a public DNS lookup.
+              </p>
+            )}
         </div>
         <DirectoryListingChoice checked={directoryListing} />
         <button
@@ -1121,6 +1176,7 @@ export function hostClaimIntroCopy(
     state: ClaimState;
     linkAppName?: string | null;
     transferring?: boolean;
+    claimProofMethod?: HostClaimProofMethod | null;
   },
 ): string {
   if (input.state === "claimed-by-you") {
@@ -1138,6 +1194,11 @@ export function hostClaimIntroCopy(
     return "The new managing account must prove control of this host with DNS before anything changes.";
   }
   if (input.state === "ready") {
+    if (input.claimProofMethod === "atproto_handle") {
+      return input.linkAppName
+        ? `This account’s verified AT Protocol identity matches the host and can claim it before connecting to ${input.linkAppName}.`
+        : "This account’s verified AT Protocol identity already proves control of the host domain.";
+    }
     return input.linkAppName
       ? `This local .test fixture uses the development claim path and then connects it to ${input.linkAppName}.`
       : "This local .test fixture uses the development claim path. Once claimed, this Atmosphere account can manage its public profile and images.";

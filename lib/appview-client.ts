@@ -28,6 +28,7 @@ import {
 import { legacyHostClaimEdgeResponse } from "./host-claim-legacy.ts";
 import { isJsonMediaType, readResponseTextWithLimit } from "./security.ts";
 import { safeBrowserNavigationUrl } from "./browser-navigation.ts";
+import { isBrowserDocumentRequest } from "./canonical-origin.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -89,7 +90,14 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
   const retiredHostClaim = await legacyHostClaimEdgeResponse(ctx.url, ctx.req);
   if (retiredHostClaim) return retiredHostClaim;
 
-  if (!shouldProxyAppviewBeforeSession(ctx.url.pathname)) {
+  const activeSessionDocument = shouldProxyActiveSessionDocument(
+    ctx.url.pathname,
+    ctx.req,
+  );
+  if (
+    !shouldProxyAppviewBeforeSession(ctx.url.pathname) &&
+    !activeSessionDocument
+  ) {
     return await ctx.next();
   }
 
@@ -112,6 +120,9 @@ export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
   });
   if (proxied) {
     proxied.headers.set("x-atmosphere-appview-early-proxy", "1");
+    if (activeSessionDocument) {
+      proxied.headers.set("cache-control", "private, no-store");
+    }
     return proxied;
   }
   return await ctx.next();
@@ -140,6 +151,35 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/atproto/blob" ||
     pathname === "/api/identity/preview" ||
     pathname === "/api/me/avatar";
+}
+
+/**
+ * Public directory and shell pages normally render on the Deno edge. An
+ * active account session, however, is minted and stored by the AppView. Send
+ * only those personalized document requests to the authoritative runtime so
+ * the global account control cannot appear signed out immediately after a
+ * successful account switch. Anonymous pages remain edge-rendered.
+ */
+export function shouldProxyActiveSessionDocument(
+  pathname: string,
+  request: Request,
+  appviewConfigured = appviewBaseUrl() !== null,
+): boolean {
+  if (!appviewConfigured || isEdgeOwnedOauthDocument(pathname)) return false;
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return false;
+  if (!isBrowserDocumentRequest(request)) return false;
+  return requestHasNonEmptyCookie(request.headers, "atmo_sid");
+}
+
+function requestHasNonEmptyCookie(headers: Headers, name: string): boolean {
+  const raw = headers.get("cookie");
+  if (!raw) return false;
+  return raw.split(";").some((part) => {
+    const cookie = part.trim();
+    if (!cookie.startsWith(`${name}=`)) return false;
+    return cookie.slice(name.length + 1).trim().length > 0;
+  });
 }
 
 function shouldProxyAppviewAsset(

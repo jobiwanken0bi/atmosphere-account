@@ -1,4 +1,5 @@
 import { IS_DEV } from "./env.ts";
+import { resolveIdentity } from "./identity.ts";
 
 export interface HostClaimProofHost {
   host: string;
@@ -9,7 +10,7 @@ export interface HostClaimProofUser {
   handle: string;
 }
 
-export type HostClaimProofMethod = "local-dev";
+export type HostClaimProofMethod = "local-dev" | "atproto_handle";
 
 export type HostClaimProofResult =
   | { ok: true; method: HostClaimProofMethod }
@@ -19,6 +20,20 @@ export interface HostClaimProofOptions {
   /** Test seam only. Mutating production callers always use the runtime flag. */
   isDev?: boolean;
 }
+
+export interface AtprotoHostClaimProofOptions {
+  resolveIdentity?: typeof resolveIdentity;
+}
+
+export type AtprotoHostClaimProofResult =
+  | {
+    ok: true;
+    method: "atproto_handle";
+    did: string;
+    handle: string;
+    pdsUrl: string;
+  }
+  | { ok: false; reason: "missing_domain_proof" };
 
 function normalizeHost(value: unknown): string | null {
   const raw = typeof value === "string"
@@ -68,6 +83,50 @@ export function verifyHostClaimDomainProof(
   return { ok: false, reason: "missing_domain_proof" };
 }
 
+/**
+ * Verify that the active AT Protocol identity itself proves control of the
+ * exact account-host domain. The resolver performs AT Protocol's required
+ * bidirectional handle/DID check; we additionally require the DID document's
+ * PDS endpoint to use that same hostname. A subdomain handle or an account
+ * hosted by another PDS never qualifies.
+ */
+export async function verifyAtprotoHostClaimDomainProof(
+  host: HostClaimProofHost,
+  user: HostClaimProofUser,
+  options: AtprotoHostClaimProofOptions = {},
+): Promise<AtprotoHostClaimProofResult> {
+  const normalizedHost = normalizeHost(host.host);
+  if (
+    !normalizedHost || !user.did.trim() ||
+    normalizeHost(user.handle) !== normalizedHost
+  ) {
+    return { ok: false, reason: "missing_domain_proof" };
+  }
+
+  try {
+    const identity = await (options.resolveIdentity ?? resolveIdentity)(
+      normalizedHost,
+    );
+    const endpoint = new URL(identity.pdsUrl);
+    if (
+      identity.did !== user.did.trim() ||
+      normalizeHost(identity.handle) !== normalizedHost ||
+      endpoint.hostname.toLowerCase().replace(/\.$/, "") !== normalizedHost
+    ) {
+      return { ok: false, reason: "missing_domain_proof" };
+    }
+    return {
+      ok: true,
+      method: "atproto_handle",
+      did: identity.did,
+      handle: normalizedHost,
+      pdsUrl: endpoint.origin,
+    };
+  } catch {
+    return { ok: false, reason: "missing_domain_proof" };
+  }
+}
+
 export function hostClaimProofMessage(): string {
-  return "Verify the host with a temporary DNS record. Social handles, email addresses, and host records do not prove operator ownership.";
+  return "Verify the host with a temporary DNS record. The only identity shortcut is a live, bidirectionally verified AT Protocol handle and PDS endpoint that both exactly match the host domain.";
 }

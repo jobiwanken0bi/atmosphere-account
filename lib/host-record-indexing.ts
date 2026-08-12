@@ -754,17 +754,21 @@ async function seededProjectionAuthorization(
   );
   if (!authority) return { seeded: false, allowed: true };
 
-  // A DNS claim or grandfathered contact-email claim is operational authority,
-  // when a curated host's social/profile DID is intentionally different. Once
-  // that stronger proof exists, the compiled social DID must not keep writing
-  // operational service metadata over the verified operator's changes.
+  // A DNS, exact AT Protocol host-identity, or grandfathered contact-email
+  // claim is operational authority when a curated host's social/profile DID is
+  // intentionally different. Once that stronger proof exists, the compiled
+  // social DID must not keep writing operational service metadata over the
+  // verified operator's changes.
   const claimResult = await c.execute({
     sql: `SELECT claimant_did, method FROM account_host_claim
       WHERE host = ? LIMIT 1`,
     args: [host],
   });
   const claim = claimResult.rows[0];
-  if (claim?.method === "pds_contact_email" || claim?.method === "dns_txt") {
+  if (
+    claim?.method === "pds_contact_email" || claim?.method === "dns_txt" ||
+    claim?.method === "atproto_handle"
+  ) {
     return {
       seeded: true,
       allowed: String(claim.claimant_did ?? "").trim() === repoDid,

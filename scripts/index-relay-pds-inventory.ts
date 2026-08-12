@@ -13,6 +13,8 @@ import {
   finishPdsInventoryScan,
   startPdsInventoryScan,
 } from "../lib/pds-inventory-health.ts";
+import { withDb } from "../lib/db.ts";
+import { closePostgresExecuteClient } from "../lib/postgres.ts";
 
 function usage(exitCode = 0): never {
   const write = exitCode === 0 ? console.log : console.error;
@@ -114,13 +116,15 @@ const allowLargeDrop = args.includes("--allow-large-drop");
 const skipEnrichment = args.includes("--skip-enrichment");
 const observedAt = Date.now();
 const scanId = crypto.randomUUID();
-
-if (!dryRun) {
-  await loadDotEnvIfPresent();
-  await startPdsInventoryScan(scanId, observedAt);
-}
+let databaseOpened = false;
 
 try {
+  if (!dryRun) {
+    await loadDotEnvIfPresent();
+    databaseOpened = true;
+    await startPdsInventoryScan(scanId, observedAt);
+  }
+
   const fetched = await fetchRelayPdsInventory({ pageSize, maxPages });
   const summary = summarizeRelayPdsInventory(fetched.instances);
 
@@ -179,4 +183,10 @@ try {
     });
   }
   throw err;
+} finally {
+  // Railway cron executions must release persistent Postgres pool handles or
+  // the process stays Active and every later scheduled run is skipped.
+  if (databaseOpened) {
+    await withDb(closePostgresExecuteClient);
+  }
 }
