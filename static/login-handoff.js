@@ -5,7 +5,11 @@ if (target instanceof HTMLAnchorElement) {
   if (destination) globalThis.location.replace(destination);
 }
 
-const HANDOFF_PATHS = new Set(["/login/select", "/oauth/switch"]);
+const HANDOFF_PATHS = new Set([
+  "/login/select",
+  "/oauth/login",
+  "/oauth/switch",
+]);
 const HANDOFF_TIMEOUT_MS = 12_000;
 
 function isLoopbackNavigationHost(hostname) {

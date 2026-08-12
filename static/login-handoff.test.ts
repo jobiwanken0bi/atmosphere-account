@@ -11,7 +11,7 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
   ) {
     throw new Error("Expected validated history-replacing browser navigation");
   }
-  for (const path of ["/login/select", "/oauth/switch"]) {
+  for (const path of ["/login/select", "/oauth/login", "/oauth/switch"]) {
     if (!source.includes(`"${path}"`)) {
       throw new Error(`Expected enhanced handoff support for ${path}`);
     }
