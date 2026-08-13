@@ -120,7 +120,10 @@ export const canonicalOriginMiddleware = define.middleware(async (ctx) => {
     verifiedProxyOrigin: await verifiedForwardedPublicOrigin(ctx.req),
   });
   if (response) {
-    console.warn(
+    // This is the expected safety boundary for browser-shaped requests that
+    // reach a raw provider hostname. Keep it observable without classifying
+    // routine canonicalization probes as production errors.
+    console.info(
       `[security] canonicalized browser request ${ctx.req.method} ${ctx.url.pathname}`,
     );
     return response;

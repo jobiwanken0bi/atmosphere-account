@@ -242,6 +242,22 @@ incomplete rollout. This avoids paying to download every HTML and generated
 asset every hour while retaining a full daily regression check. Manual dispatch
 accepts `expected_release_sha` as an explicit release override.
 
+The dedicated `PDS Inventory Watchdog` workflow makes one additional request per
+day at 08:30 UTC, about five minutes after the Railway inventory run's 08:25:15
+deadline and hard-exit boundary. It does not accept the general 42-hour
+freshness flag as proof of today's run. The latest attempt must have started in
+the target 08:17 UTC run window, succeeded completely, and match the
+authoritative complete-scan timestamp and metadata. The workflow uses its GitHub
+Actions creation time so a queued job or rerun remains attached to the same UTC
+run across date boundaries. Missing, running, failed, partial, and inconsistent
+attempts open or update the `PDS inventory daily run is failing` issue with
+outcome-specific action. Only matching completion evidence closes that alert.
+Operators can recheck a date explicitly:
+
+```sh
+deno task pds-inventory:watchdog -- --target-date-utc=2026-08-13
+```
+
 Railway source builds use service-specific config-as-code files. In production,
 set `web` to `/railway.web.json`, `indexer` to `/railway.indexer.json`, and
 `pds-inventory` to `/railway.inventory.json` under each service's Settings →
@@ -426,6 +442,12 @@ web service receives the bucket credentials; Deno receives only the exact public
 virtual-host origin in `DERIVED_MEDIA_REDIRECT_ORIGINS`. Never copy bucket
 credentials to Deno.
 
+In-page profile banners are verified against their AT Protocol CID and resized
+to a bounded 1600px WebP before storage. If image processing is unavailable, the
+verified canonical banner is served from the request path but is not written to
+the derived cache. Full-resolution PDS originals must not be mirrored under
+derived keys.
+
 1. Configure the web service with the six `DERIVED_MEDIA_S3_*` values in
    `.env.example`. Keep the bucket private.
 2. Configure Deno with the bucket's exact public HTTPS origin, for example
@@ -574,6 +596,11 @@ boundary is unavailable. A missing/stale indexer lease or complete PDS inventory
 sets `degraded: true` while retaining HTTP success, so a background feed outage
 cannot block or roll back a web repair deploy. The hourly `smoke:readiness`
 verifier fails on any degradation and opens the operational alert.
+
+The daily inventory watchdog independently checks the specific scheduled run;
+this closes the gap where yesterday's complete scan is still fresh even though
+today's cron never started or failed before completion.
+
 `GET /api/health` remains the cheapest process liveness endpoint.
 
 ## Worker Coordination
