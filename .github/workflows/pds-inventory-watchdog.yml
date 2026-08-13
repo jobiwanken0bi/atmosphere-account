@@ -1,0 +1,197 @@
+name: PDS Inventory Watchdog
+
+on:
+  schedule:
+    # Railway starts the inventory at 08:17 UTC. Its 8-minute deadline and
+    # 15-second hard-exit guard end by 08:25:15, leaving about five minutes
+    # before this one cheap daily check.
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+    inputs:
+      target_date_utc:
+        description: "Optional inventory schedule date to recheck (YYYY-MM-DD UTC)"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: pds-inventory-watchdog
+  cancel-in-progress: false
+
+env:
+  DENO_VERSION: 2.8.3
+
+jobs:
+  watchdog:
+    name: Verify the daily inventory run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_DATE_UTC: ${{ github.event.inputs.target_date_utc || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+
+      - name: Check the run-specific inventory heartbeat
+        id: inventory
+        continue-on-error: true
+        run: |
+          # The Actions run creation time stays stable when a runner is queued
+          # across midnight or this workflow is rerun later. Fail closed if
+          # GitHub cannot return that binding; using the current time could
+          # silently select a different daily run after a long queue delay.
+          reference_time="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --jq .created_at 2>/dev/null || true)"
+
+          set +e
+          if [ -z "$reference_time" ]; then
+            report='{"ok":false,"outcome":"readiness_unavailable","targetScheduledAt":null,"message":"GitHub run creation time was unavailable; target selection failed closed."}'
+            status=1
+          elif [ -n "$TARGET_DATE_UTC" ]; then
+            report="$(deno task pds-inventory:watchdog -- \
+              --reference-time="$reference_time" \
+              --target-date-utc="$TARGET_DATE_UTC")"
+            status=$?
+          else
+            report="$(deno task pds-inventory:watchdog -- \
+              --reference-time="$reference_time")"
+            status=$?
+          fi
+          set -e
+
+          if ! echo "$report" | jq -e \
+            'type == "object" and (.ok | type == "boolean") and (.outcome | type == "string")' \
+            >/dev/null; then
+            report='{"ok":false,"outcome":"readiness_unavailable","targetScheduledAt":null,"message":"The watchdog command did not return a valid report."}'
+            status=1
+          fi
+          echo "$report" | jq .
+          {
+            echo "report<<INVENTORY_REPORT"
+            echo "$report"
+            echo "INVENTORY_REPORT"
+          } >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Open or update the inventory alert
+        if: steps.inventory.outcome == 'failure'
+        env:
+          ALERT_TITLE: "PDS inventory daily run is failing"
+          REPORT: ${{ steps.inventory.outputs.report }}
+        run: |
+          issue_number="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "\"$ALERT_TITLE\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
+            | head -n 1)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          target="$(echo "$REPORT" | jq -r '.targetScheduledAt // "unknown"')"
+          outcome="$(echo "$REPORT" | jq -r '.outcome // "watchdog_failed"')"
+          message="$(echo "$REPORT" | jq -r '.message // "The watchdog did not produce a report."')"
+          case "$outcome" in
+            target_run_missing)
+              guidance="No attempt started in the 08:17 run window. Check the Railway cron deployment and schedule."
+              ;;
+            target_run_running)
+              guidance="The attempt exceeded its deadline. Inspect its last event and hard-exit telemetry."
+              ;;
+            target_run_failed)
+              guidance="Inspect pds_inventory_failed and the stored latest-attempt status for the failure class."
+              ;;
+            target_run_partial)
+              guidance="The relay scan did not reach its final page. Inspect pagination, deadline, and upstream errors."
+              ;;
+            *)
+              guidance="Inspect the readiness payload and pds-inventory deployment logs for inconsistent or unavailable evidence."
+              ;;
+          esac
+          body="Target Railway run: ${target}
+          Result: ${outcome} — ${message}
+          Action: ${guidance}
+
+          Correct the fault before the next 08:17 UTC run, then dispatch this watchdog for that run's UTC date to close the alert with matching completion evidence.
+
+          Watchdog: ${run_url}
+          <!-- pds-inventory-target: ${target} -->"
+          if [ -n "$issue_number" ]; then
+            active_target="$(gh issue view "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json body \
+              --jq .body \
+              | sed -n 's/.*<!-- pds-inventory-target: \([^ ]*\) -->.*/\1/p' \
+              | tail -n 1)"
+            if deno eval \
+              'import { inventoryAlertMayAdvance } from "./scripts/check-pds-inventory-run.ts"; if (!inventoryAlertMayAdvance(Deno.args[0], Deno.args[1])) Deno.exit(1)' \
+              "$active_target" "$target"; then
+              gh issue edit "$issue_number" \
+                --repo "$GITHUB_REPOSITORY" \
+                --body "$body"
+            else
+              body="${body}
+
+              This stale result did not replace the newer active failure for ${active_target}."
+            fi
+            gh issue comment "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "$body"
+          else
+            gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$ALERT_TITLE" \
+              --body "$body"
+          fi
+
+      - name: Close the recovered inventory alert
+        if: steps.inventory.outcome == 'success'
+        env:
+          ALERT_TITLE: "PDS inventory daily run is failing"
+          REPORT: ${{ steps.inventory.outputs.report }}
+        run: |
+          issue_number="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "\"$ALERT_TITLE\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
+            | head -n 1)"
+          if [ -n "$issue_number" ]; then
+            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            target="$(echo "$REPORT" | jq -r '.targetScheduledAt')"
+            active_target="$(gh issue view "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json body \
+              --jq .body \
+              | sed -n 's/.*<!-- pds-inventory-target: \([^ ]*\) -->.*/\1/p' \
+              | tail -n 1)"
+            if deno eval \
+              'import { inventoryAlertMayClose } from "./scripts/check-pds-inventory-run.ts"; if (!inventoryAlertMayClose(Deno.args[0], Deno.args[1])) Deno.exit(1)' \
+              "$active_target" "$target"; then
+              gh issue comment "$issue_number" \
+                --repo "$GITHUB_REPOSITORY" \
+                --body "The ${target} inventory run is now proven complete: ${run_url}"
+              gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY"
+            else
+              echo "Successful ${target} run cannot close newer active failure ${active_target}."
+            fi
+          fi
+
+      - name: Fail when the target run is not proven complete
+        if: steps.inventory.outcome == 'failure'
+        run: exit 1

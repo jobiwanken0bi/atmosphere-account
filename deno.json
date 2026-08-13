@@ -35,6 +35,7 @@
     "railway:seed-secrets": "deno run -A scripts/seed-railway-secrets.ts",
     "indexer": "deno run --cached-only --frozen --no-prompt --allow-read=. --allow-write=./local.db,./local.db-wal,./local.db-shm,./local.db-journal --allow-net --allow-env --allow-sys --allow-ffi=./node_modules worker/indexer.ts",
     "pds:index": "deno run -A scripts/index-relay-pds-inventory.ts",
+    "pds-inventory:watchdog": "deno run --allow-env --allow-net scripts/check-pds-inventory-run.ts",
     "backfill:atstore": "deno run -A scripts/backfill-atstore.ts",
     "backfill:hosts": "deno run -A scripts/backfill-host-records.ts",
     "backfill:og-jpegs": "deno run -A scripts/backfill-og-jpegs.ts",

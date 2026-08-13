@@ -1021,7 +1021,10 @@ async function main(): Promise<void> {
       } catch (err) {
         if (shuttingDown) break;
         if (err instanceof LeaseUnavailableError) {
-          console.warn("[indexer] %s; retrying soon", err.message);
+          // A short overlap is normal during a rolling deployment while the
+          // previous replica's renewable lease expires. It is useful rollout
+          // telemetry, but not an operational warning by itself.
+          console.info("[indexer] %s; retrying soon", err.message);
           consecutiveFailures = 0;
         } else if (err instanceof JetstreamDisconnectError) {
           consecutiveFailures = nextReconnectFailureCount({

@@ -220,6 +220,13 @@ Health checks:
   matching its tracked upstream unless you pass an explicit emergency override.
 - PDS inventory health: readiness requires a successful complete relay scan no
   older than 42 hours. Partial and failed scans never refresh the heartbeat.
+  Railway starts the daily scan at 08:17 UTC; GitHub's separate inventory
+  watchdog runs once at 08:30 UTC, after the eight-minute deadline and 15-second
+  hard-exit guard. It binds to the Actions run creation time and requires the
+  latest attempt for that 08:17 window to be the authoritative successful
+  complete scan. A previous still-fresh scan cannot satisfy it. Failure opens or
+  updates `PDS inventory daily run is failing`; the issue is closed only after a
+  targeted scheduled run has matching completion evidence.
 
 ## Worker Cutover
 
