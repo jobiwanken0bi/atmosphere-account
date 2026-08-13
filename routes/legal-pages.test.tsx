@@ -24,7 +24,7 @@ Deno.test("legal pages are public, navigable, and cross-linked", () => {
 
   for (const [name, html] of [["terms", terms], ["privacy", privacy]]) {
     assertStringIncludes(html, '<main id="main-content"');
-    assertStringIncludes(html, '<time datetime="2026-08-09"');
+    assertStringIncludes(html, '<time datetime="2026-08-12"');
     assertStringIncludes(
       html,
       'href="mailto:contact@atmosphereaccount.com"',
@@ -39,4 +39,7 @@ Deno.test("legal pages are public, navigable, and cross-linked", () => {
   assertStringIncludes(terms, "Login with Atmosphere");
   assertStringIncludes(privacy, "Privacy Policy");
   assertStringIncludes(privacy, "Cookies and browser storage");
+  assertStringIncludes(privacy, "contact-email verification");
+  assertStringIncludes(privacy, "transactional-email");
+  assertStringIncludes(terms, "published contact mailbox");
 });

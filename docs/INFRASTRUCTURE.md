@@ -548,10 +548,27 @@ Hosted environments must set:
 - `SESSION_SECRET`
 - OAuth keys when sign-in/write flows are enabled
 
+To offer initial host verification through the contact mailbox published by an
+exact PDS host, set all three optional delivery values plus a stable evidence
+key:
+
+- `COMAIL_API_KEY`
+- `COMAIL_SENDER_DID`
+- `HOST_CLAIM_EMAIL_FROM`
+- `HOST_CLAIM_EVIDENCE_SECRET` (a required, separate, stable HMAC key so
+  session-key rotation does not invalidate evidence matching)
+
+If any value is absent, DNS verification remains available and the email method
+is shown as temporarily unavailable. Never reuse a user-supplied or
+directory-configured service endpoint for this check: contact discovery is
+restricted to `https://<exact-host>/xrpc/com.atproto.server.describeServer`.
+
 Production host claims use either a live, bidirectionally verified AT Protocol
-identity whose handle and PDS endpoint both exactly match the host, or a
-temporary, account-bound DNS TXT challenge. They do not require an outbound
-email provider. Manager changes always use DNS. Explicit local `.test` fixtures
+identity whose bidirectionally verified handle exactly matches the host, or a
+temporary, account-bound DNS TXT challenge. An unclaimed host may also use a
+short-lived link sent through the optional provider to the contact mailbox
+freshly published by that exact PDS. Manager changes and recovery always use
+DNS; email cannot overwrite an existing claim. Explicit local `.test` fixtures
 keep their development-only bypass for visual and integration testing.
 
 The app intentionally refuses local DB and weak session-secret fallbacks in

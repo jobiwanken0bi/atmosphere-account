@@ -16,10 +16,19 @@ import {
 } from "./host-claim-proof.ts";
 import {
   consumeHostDnsChallenge,
+  hashHostDnsChallengeToken,
   type HostDnsChallengeVerificationFailureReason,
   inspectHostDnsChallenge,
+  type PreparedHostDnsChallengeResult,
   prepareHostDnsChallenge,
 } from "./host-claim-dns.ts";
+import {
+  consumeHostContactEmailChallenge,
+  hashHostContactEmailToken,
+  type HostContactEmailVerificationFailureReason,
+  type PreparedHostContactEmailVerificationResult,
+  prepareHostContactEmailChallenge,
+} from "./host-claim-email.ts";
 import type { ResolvedHostOwnerTransferContext } from "./host-owner-transfer-intent.ts";
 import {
   isDid,
@@ -31,6 +40,7 @@ import {
   isPrivateNetworkUrl,
   readResponseTextWithLimit,
 } from "./security.ts";
+import { sha256B64u } from "./jose.ts";
 
 export type HostSignupStatus =
   | "open"
@@ -205,6 +215,33 @@ export interface AccountHostClaimAuthority {
   did: string | null;
 }
 
+export const ACCOUNT_HOST_EMAIL_CLAIM_RECOVERY_COOLDOWN_MS = 48 * 60 * 60 *
+  1000;
+export const ACCOUNT_HOST_EMAIL_CLAIM_RECOVERY_FINALIZE_WINDOW_MS = 7 * 24 *
+  60 * 60 * 1000;
+
+export type AccountHostClaimRecoveryNotificationStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  | "unavailable";
+
+export interface AccountHostClaimRecovery {
+  id: string;
+  host: string;
+  currentOwnerDid: string;
+  currentOwnerHandle: string;
+  requesterDid: string;
+  requesterHandle: string;
+  createdAt: number;
+  eligibleAt: number;
+  expiresAt: number;
+  status: "pending" | "completed" | "expired" | "invalidated";
+  notificationStatus: AccountHostClaimRecoveryNotificationStatus;
+  notificationAttemptedAt: number | null;
+  completedAt: number | null;
+}
+
 export interface AccountHostDashboardSettingsInput {
   serviceEndpoint?: string | null;
   accountManagementUrl?: string | null;
@@ -264,10 +301,13 @@ export type AccountHostClaimResult =
       | "not_authorized"
       | "dns_required"
       | "already_claimed"
+      | "recovery_pending"
+      | HostContactEmailVerificationFailureReason
       | HostDnsChallengeVerificationFailureReason;
     host?: AccountHost;
     authority?: AccountHostClaimAuthority | null;
     claim?: AccountHostClaim | null;
+    recovery?: AccountHostClaimRecovery;
   };
 
 export interface AccountHostClaimOptions {
@@ -278,6 +318,53 @@ export interface DnsAccountHostClaimOptions extends AccountHostClaimOptions {
   transfer?: ResolvedHostOwnerTransferContext;
 }
 
+export interface ContactEmailAccountHostClaimOptions
+  extends AccountHostClaimOptions {
+  now?: number;
+}
+
+export type FinalizeAccountHostEmailClaimRecoveryResult =
+  | {
+    ok: true;
+    host: AccountHost;
+    claim: AccountHostClaim;
+    recovery: AccountHostClaimRecovery;
+  }
+  | {
+    ok: false;
+    reason:
+      | "not_found"
+      | "not_requester"
+      | "not_ready"
+      | "expired"
+      | "owner_changed"
+      | "fresh_dns_required"
+      | HostDnsChallengeVerificationFailureReason;
+    recovery?: AccountHostClaimRecovery;
+  };
+
+export interface AccountHostClaimRecoveryNotificationInput {
+  status: Exclude<
+    AccountHostClaimRecoveryNotificationStatus,
+    "pending"
+  >;
+  deliveryId?: string | null;
+  emailFingerprint?: string | null;
+  attemptedAt?: number;
+}
+
+export interface AccountHostClaimRecoveryNotificationReservationOptions {
+  now?: number;
+  /** A crashed sender may be retried after this lease; defaults to 5 minutes. */
+  retryAfterMs?: number;
+}
+
+export interface AccountHostClaimRecoveryNotificationReservation {
+  recovery: AccountHostClaimRecovery;
+  /** Opaque HMAC from the exact email-claim evidence being recovered. */
+  expectedEmailFingerprint: string | null;
+}
+
 class DnsClaimCompletionError extends Error {
   constructor(
     readonly reason:
@@ -286,6 +373,24 @@ class DnsClaimCompletionError extends Error {
   ) {
     super(reason);
     this.name = "DnsClaimCompletionError";
+  }
+}
+
+class ContactEmailClaimCompletionError extends Error {
+  constructor(
+    readonly reason:
+      | HostContactEmailVerificationFailureReason
+      | "claim_conflict",
+  ) {
+    super(reason);
+    this.name = "ContactEmailClaimCompletionError";
+  }
+}
+
+class HostClaimRecoveryCompletionError extends Error {
+  constructor(readonly reason: "owner_changed" | "recovery_changed") {
+    super(reason);
+    this.name = "HostClaimRecoveryCompletionError";
   }
 }
 
@@ -1133,6 +1238,99 @@ function parseHostClaimRow(row: Record<string, unknown>): AccountHostClaim {
   };
 }
 
+function normalizedTimestamp(value?: number): number {
+  return value != null && Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : now();
+}
+
+function contactEmailEvidenceId(tokenHash: string): string {
+  return `email:${tokenHash}`;
+}
+
+function dnsRecoveryId(tokenHash: string): string {
+  return `dns-recovery:${tokenHash}`;
+}
+
+function parseAccountHostClaimRecovery(
+  row: Record<string, unknown>,
+): AccountHostClaimRecovery {
+  const status = row.status === "completed"
+    ? "completed"
+    : row.status === "expired"
+    ? "expired"
+    : row.status === "invalidated"
+    ? "invalidated"
+    : "pending";
+  const notificationStatus = row.notification_status === "sent"
+    ? "sent"
+    : row.notification_status === "failed"
+    ? "failed"
+    : row.notification_status === "unavailable"
+    ? "unavailable"
+    : "pending";
+  return {
+    id: String(row.id ?? ""),
+    host: String(row.host ?? ""),
+    currentOwnerDid: String(row.previous_owner_did ?? ""),
+    currentOwnerHandle: String(row.previous_owner_handle ?? ""),
+    requesterDid: String(row.requester_did ?? ""),
+    requesterHandle: String(row.requester_handle ?? ""),
+    createdAt: Number(row.requested_at ?? 0),
+    eligibleAt: Number(row.eligible_at ?? 0),
+    expiresAt: Number(row.expires_at ?? 0),
+    status,
+    notificationStatus,
+    notificationAttemptedAt: row.notification_attempted_at == null
+      ? null
+      : Number(row.notification_attempted_at),
+    completedAt: row.completed_at == null ? null : Number(row.completed_at),
+  };
+}
+
+type AccountHostClaimRecoveryAuditEvent =
+  | "requested"
+  | "notification_sent"
+  | "notification_failed"
+  | "notification_unavailable"
+  | "finalized"
+  | "expired"
+  | "invalidated";
+
+async function insertHostClaimRecoveryAudit(
+  c: DbClient,
+  input: {
+    id: string;
+    recoveryId: string;
+    host: string;
+    event: AccountHostClaimRecoveryAuditEvent;
+    actorDid: string | null;
+    occurredAt: number;
+    proofTokenHash?: string | null;
+    deliveryId?: string | null;
+    emailFingerprint?: string | null;
+  },
+): Promise<void> {
+  await c.execute({
+    sql: `INSERT INTO account_host_claim_recovery_audit (
+        id, recovery_id, host, event, actor_did, proof_token_hash,
+        delivery_id, email_fingerprint, occurred_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO NOTHING`,
+    args: [
+      input.id,
+      input.recoveryId,
+      input.host,
+      input.event,
+      input.actorDid,
+      input.proofTokenHash ?? null,
+      input.deliveryId ?? null,
+      input.emailFingerprint ?? null,
+      input.occurredAt,
+    ],
+  });
+}
+
 async function fetchHostProfileRefreshes(
   hosts: AccountHost[],
 ): Promise<{
@@ -1423,6 +1621,59 @@ export async function getAccountHostClaim(
   });
 }
 
+/** Return the current DNS recovery state without exposing proof hashes,
+ * delivery identifiers, or mailbox fingerprints to management surfaces. */
+export async function getPendingAccountHostClaimRecovery(
+  host: string,
+  options: { now?: number } = {},
+): Promise<AccountHostClaimRecovery | null> {
+  const normalized = normalizeHandle(host);
+  if (!normalized) return null;
+  const at = normalizedTimestamp(options.now);
+  return await withDbTransaction(async (c) => {
+    await reconcilePendingHostClaimRecovery(c, normalized, at);
+    const result = await c.execute({
+      sql: `SELECT * FROM account_host_claim_recovery
+        WHERE host = ? AND status = 'pending'
+        ORDER BY requested_at DESC LIMIT 1`,
+      args: [normalized],
+    });
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? parseAccountHostClaimRecovery(row) : null;
+  });
+}
+
+export async function listPendingAccountHostClaimRecoveriesForDid(
+  did: string,
+  options: { now?: number } = {},
+): Promise<AccountHostClaimRecovery[]> {
+  const normalizedDid = did.trim();
+  if (!normalizedDid) return [];
+  const at = normalizedTimestamp(options.now);
+  return await withDbTransaction(async (c) => {
+    const hosts = await c.execute({
+      sql: `SELECT DISTINCT host FROM account_host_claim_recovery
+        WHERE (requester_did = ? OR previous_owner_did = ?)
+          AND status = 'pending'`,
+      args: [normalizedDid, normalizedDid],
+    });
+    for (const row of hosts.rows as Record<string, unknown>[]) {
+      const host = String(row.host ?? "");
+      if (host) await reconcilePendingHostClaimRecovery(c, host, at);
+    }
+    const result = await c.execute({
+      sql: `SELECT * FROM account_host_claim_recovery
+        WHERE (requester_did = ? OR previous_owner_did = ?)
+          AND status = 'pending'
+        ORDER BY requested_at DESC`,
+      args: [normalizedDid, normalizedDid],
+    });
+    return (result.rows as Record<string, unknown>[]).map(
+      parseAccountHostClaimRecovery,
+    );
+  });
+}
+
 export async function hasManagedAccountHost(did: string): Promise<boolean> {
   const normalized = did.trim();
   if (!normalized) return false;
@@ -1553,7 +1804,9 @@ export async function verifiedAccountHostClaimOwnerDid(
     !normalizedHost || normalizeHandle(claim.host) !== normalizedHost ||
     !claim.claimantDid.trim()
   ) return null;
-  // Historical contact-email rows remain operational, but cannot be created.
+  // Contact-email ownership remains operational until a stronger DNS recovery
+  // is explicitly finalized. Creation is restricted to the atomic email-proof
+  // path below and is never accepted by generic owner refreshes or transfers.
   if (
     claim.method === "pds_contact_email" || claim.method === "dns_txt" ||
     claim.method === "atproto_handle"
@@ -1743,6 +1996,16 @@ async function writeDnsClaimTransaction(
   } else if (!await upsertAccountHostClaimForOwner(c, input.claim)) {
     throw new DnsClaimCompletionError("claim_conflict");
   }
+  // A current manager may legitimately upgrade/repair an email-derived claim,
+  // or complete an explicit transfer, while a recovery is cooling down. The
+  // newly installed DNS claim wins and atomically releases the stale pending
+  // request instead of leaving it visible or able to finalize later.
+  await invalidatePendingHostClaimRecovery(
+    c,
+    input.claim.host,
+    input.timestamp,
+    input.claim.claimantDid,
+  );
   const hostWrite = await c.execute(accountHostClaimUpdateQuery({
     host: input.claim.host,
     claimHandle: input.claimHandle,
@@ -1779,6 +2042,348 @@ async function writeDnsClaimTransaction(
 
 export const writeDnsClaimTransactionForTest = writeDnsClaimTransaction;
 
+type PreparedHostContactEmailProof = Extract<
+  PreparedHostContactEmailVerificationResult,
+  { ok: true }
+>;
+
+interface ContactEmailClaimWriteInput {
+  proof: PreparedHostContactEmailProof;
+  claim: AccountHostClaim;
+  claimHandle: string;
+  claimDid: string;
+  operatorListingOptIn?: boolean;
+  timestamp: number;
+}
+
+/** The email proof and ownership row are committed together. This deliberately
+ * uses INSERT-only claim semantics: contact email can establish an unclaimed
+ * host but can never refresh, repair, transfer, or replace ownership. */
+async function writeContactEmailClaimTransaction(
+  c: DbClient,
+  input: ContactEmailClaimWriteInput,
+): Promise<void> {
+  if (input.claim.method !== "pds_contact_email") {
+    throw new ContactEmailClaimCompletionError("claim_conflict");
+  }
+  // Do not trust a caller-constructed "prepared" object to classify the
+  // generic challenge. Re-bind its opaque evidence to the persisted
+  // email-specific row inside the ownership transaction; in particular, a DNS
+  // challenge has a NULL method_binding and can never enter this path.
+  const bound = await c.execute({
+    sql: `SELECT 1 FROM account_host_claim_challenge
+      WHERE token_hash = ? AND host = ? AND claimant_did = ?
+        AND email_fingerprint = ?
+        AND method_binding = ? AND method_binding LIKE 'pds-contact-email-v2.%'
+        AND created_at = ? AND expires_at = ?
+      LIMIT 1`,
+    args: [
+      input.proof.tokenHash,
+      input.claim.host,
+      input.claim.claimantDid,
+      input.proof.emailFingerprint,
+      input.proof.methodBinding,
+      input.proof.requestedAt,
+      input.proof.expiresAt,
+    ],
+  });
+  if (bound.rows.length !== 1) {
+    throw new ContactEmailClaimCompletionError("invalid");
+  }
+  const consumed = await consumeHostContactEmailChallenge(c, {
+    tokenHash: input.proof.tokenHash,
+    host: input.claim.host,
+    claimantDid: input.claim.claimantDid,
+    consumedAt: input.timestamp,
+  });
+  if (!consumed.ok) {
+    throw new ContactEmailClaimCompletionError(consumed.reason);
+  }
+
+  const claimWrite = await c.execute({
+    sql: `INSERT INTO account_host_claim (
+        host, claimant_did, claimant_handle, method,
+        claimed_at, verified_at, updated_at
+      ) VALUES (?, ?, ?, 'pds_contact_email', ?, ?, ?)
+      ON CONFLICT(host) DO NOTHING`,
+    args: [
+      input.claim.host,
+      input.claim.claimantDid,
+      input.claim.claimantHandle,
+      input.claim.claimedAt,
+      input.claim.verifiedAt,
+      input.claim.updatedAt,
+    ],
+  });
+  if (Number(claimWrite.rowsAffected ?? 0) !== 1) {
+    throw new ContactEmailClaimCompletionError("claim_conflict");
+  }
+
+  await c.execute({
+    sql: `INSERT INTO account_host_claim_evidence (
+        id, host, claimant_did, method, endpoint_origin, pds_did,
+        email_fingerprint, challenge_token_hash, requested_at, expires_at,
+        completed_at, claim_updated_at, delivery_id
+      ) VALUES (?, ?, ?, 'pds_contact_email', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      contactEmailEvidenceId(input.proof.tokenHash),
+      input.claim.host,
+      input.claim.claimantDid,
+      input.proof.endpointOrigin,
+      input.proof.pdsDid,
+      input.proof.emailFingerprint,
+      input.proof.tokenHash,
+      input.proof.requestedAt,
+      input.proof.expiresAt,
+      input.timestamp,
+      input.claim.updatedAt,
+      input.proof.deliveryId,
+    ],
+  });
+
+  const hostWrite = await c.execute(accountHostClaimUpdateQuery({
+    host: input.claim.host,
+    claimHandle: input.claimHandle,
+    claimDid: input.claimDid,
+    operatorListingOptIn: input.operatorListingOptIn,
+    timestamp: input.timestamp,
+  }));
+  if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
+    throw new Error(
+      "claimed account host disappeared during email verification",
+    );
+  }
+}
+
+export const writeContactEmailClaimTransactionForTest =
+  writeContactEmailClaimTransaction;
+
+interface StartEmailClaimRecoveryInput {
+  tokenHash: string;
+  host: string;
+  previousClaim: AccountHostClaim;
+  requester: { did: string; handle: string };
+  requestedAt: number;
+}
+
+async function startEmailClaimRecoveryTransaction(
+  c: DbClient,
+  input: StartEmailClaimRecoveryInput,
+): Promise<AccountHostClaimRecovery> {
+  if (
+    input.previousClaim.method !== "pds_contact_email" ||
+    input.previousClaim.claimantDid === input.requester.did
+  ) {
+    throw new HostClaimRecoveryCompletionError("owner_changed");
+  }
+  const currentResult = await c.execute({
+    sql: `SELECT claimant_did, claimant_handle, method, claimed_at,
+        verified_at, updated_at
+      FROM account_host_claim WHERE host = ? LIMIT 1`,
+    args: [input.host],
+  });
+  const currentRow = currentResult.rows[0] as
+    | Record<string, unknown>
+    | undefined;
+  const current = currentRow
+    ? parseHostClaimRow({ ...currentRow, host: input.host })
+    : null;
+  if (
+    !current || current.method !== "pds_contact_email" ||
+    current.claimantDid !== input.previousClaim.claimantDid ||
+    current.updatedAt !== input.previousClaim.updatedAt
+  ) {
+    throw new HostClaimRecoveryCompletionError("owner_changed");
+  }
+
+  await reconcilePendingHostClaimRecovery(c, input.host, input.requestedAt);
+  const pending = await c.execute({
+    sql: `SELECT id FROM account_host_claim_recovery
+      WHERE host = ? AND status = 'pending' LIMIT 1`,
+    args: [input.host],
+  });
+  if (pending.rows.length > 0) {
+    throw new HostClaimRecoveryCompletionError("recovery_changed");
+  }
+  // Lock and compare the email-derived owner before consuming the DNS proof.
+  // A plain SELECT is not enough under Postgres READ COMMITTED: the current
+  // owner could strengthen or transfer the claim after our read and before we
+  // insert the recovery. This guarded no-op UPDATE is portable to libSQL and
+  // makes that owner change serialize with this recovery transaction.
+  const ownerReservation = await c.execute({
+    sql: `UPDATE account_host_claim SET updated_at = updated_at
+      WHERE host = ? AND claimant_did = ? AND method = 'pds_contact_email'
+        AND updated_at = ?`,
+    args: [input.host, current.claimantDid, current.updatedAt],
+  });
+  if (Number(ownerReservation.rowsAffected ?? 0) !== 1) {
+    throw new HostClaimRecoveryCompletionError("owner_changed");
+  }
+  // Consume only after reserving both the owner snapshot and pending slot. A
+  // race on the partial unique index still rolls this update back with the
+  // transaction.
+  const consumed = await consumeHostDnsChallenge(c, {
+    tokenHash: input.tokenHash,
+    host: input.host,
+    claimantDid: input.requester.did,
+    consumedAt: input.requestedAt,
+  });
+  if (!consumed.ok) throw new DnsClaimCompletionError(consumed.reason);
+
+  const recoveryId = dnsRecoveryId(input.tokenHash);
+  const eligibleAt = input.requestedAt +
+    ACCOUNT_HOST_EMAIL_CLAIM_RECOVERY_COOLDOWN_MS;
+  const expiresAt = eligibleAt +
+    ACCOUNT_HOST_EMAIL_CLAIM_RECOVERY_FINALIZE_WINDOW_MS;
+  await c.execute({
+    sql: `INSERT INTO account_host_claim_recovery (
+        id, host, previous_owner_did, previous_owner_handle,
+        previous_owner_updated_at, requester_did, requester_handle,
+        proof_method, proof_token_hash, requested_at, eligible_at, expires_at,
+        status, notification_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'dns_txt', ?, ?, ?, ?, 'pending', 'pending')`,
+    args: [
+      recoveryId,
+      input.host,
+      current.claimantDid,
+      current.claimantHandle,
+      current.updatedAt,
+      input.requester.did,
+      input.requester.handle,
+      input.tokenHash,
+      input.requestedAt,
+      eligibleAt,
+      expiresAt,
+    ],
+  });
+  await insertHostClaimRecoveryAudit(c, {
+    id: `${recoveryId}:requested`,
+    recoveryId,
+    host: input.host,
+    event: "requested",
+    actorDid: input.requester.did,
+    proofTokenHash: input.tokenHash,
+    occurredAt: input.requestedAt,
+  });
+  return {
+    id: recoveryId,
+    host: input.host,
+    currentOwnerDid: current.claimantDid,
+    currentOwnerHandle: current.claimantHandle,
+    requesterDid: input.requester.did,
+    requesterHandle: input.requester.handle,
+    createdAt: input.requestedAt,
+    eligibleAt,
+    expiresAt,
+    status: "pending",
+    notificationStatus: "pending",
+    notificationAttemptedAt: null,
+    completedAt: null,
+  };
+}
+
+export const startEmailClaimRecoveryTransactionForTest =
+  startEmailClaimRecoveryTransaction;
+
+async function expireStaleHostClaimRecovery(
+  c: DbClient,
+  host: string,
+  at: number,
+): Promise<void> {
+  const result = await c.execute({
+    sql: `SELECT id FROM account_host_claim_recovery
+      WHERE host = ? AND status = 'pending' AND expires_at <= ?`,
+    args: [host, at],
+  });
+  for (const row of result.rows as Record<string, unknown>[]) {
+    const recoveryId = String(row.id ?? "");
+    if (!recoveryId) continue;
+    const expired = await c.execute({
+      sql: `UPDATE account_host_claim_recovery SET status = 'expired',
+          completed_at = ?
+        WHERE id = ? AND status = 'pending' AND expires_at <= ?`,
+      args: [at, recoveryId, at],
+    });
+    if (Number(expired.rowsAffected ?? 0) !== 1) continue;
+    await insertHostClaimRecoveryAudit(c, {
+      id: `${recoveryId}:expired`,
+      recoveryId,
+      host,
+      event: "expired",
+      actorDid: null,
+      occurredAt: at,
+    });
+  }
+}
+
+async function invalidatePendingHostClaimRecovery(
+  c: DbClient,
+  host: string,
+  at: number,
+  actorDid: string | null,
+): Promise<void> {
+  const result = await c.execute({
+    sql: `SELECT id FROM account_host_claim_recovery
+      WHERE host = ? AND status = 'pending'`,
+    args: [host],
+  });
+  for (const row of result.rows as Record<string, unknown>[]) {
+    const recoveryId = String(row.id ?? "");
+    if (!recoveryId) continue;
+    const invalidated = await c.execute({
+      sql: `UPDATE account_host_claim_recovery SET status = 'invalidated',
+          completed_at = ?
+        WHERE id = ? AND status = 'pending'`,
+      args: [at, recoveryId],
+    });
+    if (Number(invalidated.rowsAffected ?? 0) !== 1) continue;
+    await insertHostClaimRecoveryAudit(c, {
+      id: `${recoveryId}:invalidated`,
+      recoveryId,
+      host,
+      event: "invalidated",
+      actorDid,
+      occurredAt: at,
+    });
+  }
+}
+
+/** Expire old requests and invalidate any request whose snapshotted email
+ * owner is no longer the active ownership row. Both transitions release the
+ * partial unique index so a fresh DNS proof can start a new recovery. */
+async function reconcilePendingHostClaimRecovery(
+  c: DbClient,
+  host: string,
+  at: number,
+): Promise<void> {
+  await expireStaleHostClaimRecovery(c, host, at);
+  const pending = await c.execute({
+    sql: `SELECT * FROM account_host_claim_recovery
+      WHERE host = ? AND status = 'pending'
+      ORDER BY requested_at DESC LIMIT 1`,
+    args: [host],
+  });
+  const row = pending.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return;
+  const claimResult = await c.execute({
+    sql: `SELECT * FROM account_host_claim WHERE host = ? LIMIT 1`,
+    args: [host],
+  });
+  const claimRow = claimResult.rows[0] as Record<string, unknown> | undefined;
+  const claim = claimRow ? parseHostClaimRow(claimRow) : null;
+  if (
+    claim?.method === "pds_contact_email" &&
+    claim.claimantDid === String(row.previous_owner_did ?? "") &&
+    claim.updatedAt === Number(row.previous_owner_updated_at ?? 0)
+  ) return;
+  await invalidatePendingHostClaimRecovery(
+    c,
+    host,
+    at,
+    claim?.claimantDid ?? null,
+  );
+}
+
 function isCompletedDnsClaimReplay(
   claim: AccountHostClaim | null,
   verifiedOwnerDid: string | null,
@@ -1804,6 +2409,189 @@ async function completedDnsClaimReplay(
     host: await getAccountHost(host.host) ?? host,
     claim,
   };
+}
+
+async function getAccountHostClaimRecoveryByProof(
+  host: string,
+  tokenHash: string,
+): Promise<AccountHostClaimRecovery | null> {
+  return await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `SELECT * FROM account_host_claim_recovery
+        WHERE host = ? AND proof_token_hash = ?
+        ORDER BY requested_at DESC LIMIT 1`,
+      args: [host, tokenHash],
+    });
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? parseAccountHostClaimRecovery(row) : null;
+  });
+}
+
+async function completedEmailRecoveryReplay(
+  host: AccountHost,
+  userDid: string,
+  tokenHash: string,
+): Promise<AccountHostClaimResult | null> {
+  const recovery = await getAccountHostClaimRecoveryByProof(
+    host.host,
+    tokenHash,
+  );
+  if (!recovery || recovery.requesterDid !== userDid) return null;
+  if (recovery.status === "pending") {
+    return {
+      ok: false,
+      reason: "recovery_pending",
+      host,
+      claim: await getAccountHostClaim(host.host),
+      recovery,
+    };
+  }
+  if (recovery.status !== "completed") return null;
+  const claim = await getAccountHostClaim(host.host);
+  if (claim?.method !== "dns_txt" || claim.claimantDid !== userDid) {
+    return null;
+  }
+  return {
+    ok: true,
+    host: await getAccountHost(host.host) ?? host,
+    claim,
+  };
+}
+
+async function beginAccountHostEmailClaimRecoveryWithDns(
+  row: AccountHost,
+  existingClaim: AccountHostClaim,
+  user: { did: string; handle: string },
+  token: string,
+): Promise<AccountHostClaimResult> {
+  const tokenHash = await sha256B64u(token);
+  // Reconcile expiry or a current-owner repair before treating a consumed
+  // proof as an idempotent pending recovery.
+  const active = await getPendingAccountHostClaimRecovery(row.host);
+  if (active) {
+    return active.requesterDid === user.did
+      ? {
+        ok: false,
+        reason: "recovery_pending",
+        host: row,
+        claim: existingClaim,
+        recovery: active,
+      }
+      : {
+        ok: false,
+        reason: "already_claimed",
+        host: row,
+        claim: existingClaim,
+      };
+  }
+  const proofReplay = await completedEmailRecoveryReplay(
+    row,
+    user.did,
+    tokenHash,
+  );
+  if (proofReplay) return proofReplay;
+
+  const verified = await prepareHostDnsChallenge(
+    { host: row.host },
+    user,
+    token,
+  );
+  if (!verified.ok) {
+    if (verified.reason === "already_used") {
+      const replay = await completedEmailRecoveryReplay(
+        row,
+        user.did,
+        tokenHash,
+      );
+      if (replay) return replay;
+    }
+    return {
+      ok: false,
+      reason: verified.reason,
+      host: row,
+      claim: existingClaim,
+    };
+  }
+
+  try {
+    const recovery = await withDbTransaction((c) =>
+      startEmailClaimRecoveryTransaction(c, {
+        tokenHash: verified.tokenHash,
+        host: row.host,
+        previousClaim: existingClaim,
+        requester: user,
+        requestedAt: normalizedTimestamp(),
+      })
+    );
+    return {
+      ok: false,
+      reason: "recovery_pending",
+      host: row,
+      claim: existingClaim,
+      recovery,
+    };
+  } catch (error) {
+    if (error instanceof DnsClaimCompletionError) {
+      if (error.reason === "already_used") {
+        const replay = await completedEmailRecoveryReplay(
+          row,
+          user.did,
+          tokenHash,
+        );
+        if (replay) return replay;
+      }
+      if (error.reason !== "claim_conflict") {
+        return {
+          ok: false,
+          reason: error.reason,
+          host: row,
+          claim: existingClaim,
+        };
+      }
+    }
+    if (error instanceof HostClaimRecoveryCompletionError) {
+      if (error.reason === "recovery_changed") {
+        const winner = await getPendingAccountHostClaimRecovery(row.host);
+        if (winner?.requesterDid === user.did) {
+          return {
+            ok: false,
+            reason: "recovery_pending",
+            host: row,
+            claim: await getAccountHostClaim(row.host),
+            recovery: winner,
+          };
+        }
+      }
+      return {
+        ok: false,
+        reason: "already_claimed",
+        host: row,
+        claim: await getAccountHostClaim(row.host),
+      };
+    }
+    // A concurrent recovery may win the partial unique index after our
+    // read. Its transaction owns the request; ours rolls back the DNS token
+    // consumption. Return the winner only to that same requester.
+    const concurrent = await getPendingAccountHostClaimRecovery(row.host);
+    if (concurrent) {
+      if (concurrent.requesterDid === user.did) {
+        return {
+          ok: false,
+          reason: "recovery_pending",
+          host: row,
+          claim: await getAccountHostClaim(row.host),
+          recovery: concurrent,
+        };
+      }
+      return {
+        ok: false,
+        reason: "already_claimed",
+        host: row,
+        claim: await getAccountHostClaim(row.host),
+      };
+    }
+    throw error;
+  }
 }
 
 export async function claimAccountHost(
@@ -1891,9 +2679,10 @@ export async function claimAccountHost(
 
 /**
  * Claim a host without an additional Atmosphere TXT record when the active
- * AT Protocol identity already proves the exact host domain and uses that
- * domain as its PDS endpoint. The proof is resolved live immediately before
- * the ownership transaction and fails closed on any lookup mismatch.
+ * AT Protocol identity already proves the exact host domain. The domain's own
+ * handle authority and the DID document are resolved live immediately before
+ * the ownership transaction and fail closed on any lookup mismatch. The
+ * account may legitimately use a different PDS service origin.
  */
 export async function claimAccountHostWithAtprotoIdentity(
   host: string,
@@ -1970,6 +2759,214 @@ export async function claimAccountHostWithAtprotoIdentity(
   };
 }
 
+/** Establish initial ownership from a freshly prepared, exact-origin PDS
+ * contact-email proof. This path is intentionally creation-only. */
+export async function claimAccountHostWithContactEmailEvidence(
+  host: string,
+  user: { did: string; handle: string },
+  proofOrToken: PreparedHostContactEmailProof | string,
+  options: ContactEmailAccountHostClaimOptions = {},
+): Promise<AccountHostClaimResult> {
+  const row = await getAccountHost(host);
+  if (!row) return { ok: false, reason: "host_not_found" };
+  const authority = await resolveAccountHostClaimAuthority(row).catch(() =>
+    null
+  );
+  const existingClaim = await getAccountHostClaim(row.host);
+  if (existingClaim) {
+    const tokenHash = typeof proofOrToken === "string"
+      ? await hashHostContactEmailToken(proofOrToken)
+      : proofOrToken.tokenHash;
+    const replay = tokenHash
+      ? await completedContactEmailClaimReplay(
+        row,
+        existingClaim,
+        user.did,
+        tokenHash,
+      )
+      : null;
+    if (replay) return replay;
+    return {
+      ok: false,
+      reason: "already_claimed",
+      host: row,
+      authority,
+      claim: existingClaim,
+    };
+  }
+
+  const prepared = typeof proofOrToken === "string"
+    ? await prepareHostContactEmailChallenge(
+      {
+        host: row.host,
+        displayName: row.displayName,
+        serviceEndpoint: row.serviceEndpoint,
+      },
+      user,
+      proofOrToken,
+    )
+    : proofOrToken;
+  if (!prepared.ok) {
+    if (
+      prepared.reason === "already_used" && typeof proofOrToken === "string"
+    ) {
+      const tokenHash = await hashHostContactEmailToken(proofOrToken);
+      const current = tokenHash ? await getAccountHostClaim(row.host) : null;
+      const replay = tokenHash && current
+        ? await completedContactEmailClaimReplay(
+          row,
+          current,
+          user.did,
+          tokenHash,
+        )
+        : null;
+      if (replay) return replay;
+    }
+    return {
+      ok: false,
+      reason: prepared.reason,
+      host: row,
+      authority,
+      claim: null,
+    };
+  }
+  if (
+    prepared.host !== row.host || prepared.claimantDid !== user.did ||
+    prepared.requestedAt > prepared.expiresAt
+  ) {
+    return {
+      ok: false,
+      reason: "invalid",
+      host: row,
+      authority,
+      claim: null,
+    };
+  }
+
+  const ts = normalizedTimestamp(options.now);
+  if (prepared.expiresAt < ts) {
+    return {
+      ok: false,
+      reason: "expired",
+      host: row,
+      authority,
+      claim: null,
+    };
+  }
+  const claim: AccountHostClaim = {
+    host: row.host,
+    claimantDid: user.did,
+    claimantHandle: user.handle,
+    method: "pds_contact_email",
+    claimedAt: ts,
+    verifiedAt: ts,
+    updatedAt: ts,
+  };
+  try {
+    await withDbTransaction((c) =>
+      writeContactEmailClaimTransaction(c, {
+        proof: prepared,
+        claim,
+        claimHandle: authority?.did ? authority.handle : user.handle,
+        claimDid: authority?.did ? authority.did : user.did,
+        operatorListingOptIn: options.operatorListingOptIn,
+        timestamp: ts,
+      })
+    );
+  } catch (error) {
+    if (
+      error instanceof ContactEmailClaimCompletionError &&
+      error.reason === "already_used"
+    ) {
+      const current = await getAccountHostClaim(row.host);
+      const replay = current
+        ? await completedContactEmailClaimReplay(
+          row,
+          current,
+          user.did,
+          prepared.tokenHash,
+        )
+        : null;
+      if (replay) return replay;
+    }
+    if (
+      error instanceof ContactEmailClaimCompletionError &&
+      error.reason !== "claim_conflict"
+    ) {
+      return {
+        ok: false,
+        reason: error.reason,
+        host: row,
+        authority,
+        claim: null,
+      };
+    }
+    if (
+      !(error instanceof ContactEmailClaimCompletionError) ||
+      error.reason !== "claim_conflict"
+    ) throw error;
+    const conflictingClaim = await getAccountHostClaim(row.host);
+    return {
+      ok: false,
+      reason: "already_claimed",
+      host: row,
+      authority,
+      claim: conflictingClaim,
+    };
+  }
+  return {
+    ok: true,
+    host: await getAccountHost(row.host) ?? row,
+    claim,
+  };
+}
+
+async function hasCompletedContactEmailClaimEvidence(
+  c: DbClient,
+  host: string,
+  claimantDid: string,
+  tokenHash: string,
+  claimUpdatedAt: number,
+): Promise<boolean> {
+  const evidence = await c.execute({
+    sql: `SELECT 1 FROM account_host_claim_evidence
+      WHERE host = ? AND claimant_did = ? AND method = 'pds_contact_email'
+        AND challenge_token_hash = ? AND claim_updated_at = ?
+      LIMIT 1`,
+    args: [host, claimantDid, tokenHash, claimUpdatedAt],
+  });
+  return evidence.rows.length === 1;
+}
+
+export const hasCompletedContactEmailClaimEvidenceForTest =
+  hasCompletedContactEmailClaimEvidence;
+
+async function completedContactEmailClaimReplay(
+  host: AccountHost,
+  claim: AccountHostClaim,
+  userDid: string,
+  tokenHash: string,
+): Promise<Extract<AccountHostClaimResult, { ok: true }> | null> {
+  if (
+    claim.method !== "pds_contact_email" || claim.claimantDid !== userDid
+  ) return null;
+  const hasEvidence = await withDb((c) =>
+    hasCompletedContactEmailClaimEvidence(
+      c,
+      host.host,
+      userDid,
+      tokenHash,
+      claim.updatedAt,
+    )
+  );
+  if (!hasEvidence) return null;
+  return {
+    ok: true,
+    host: await getAccountHost(host.host) ?? host,
+    claim,
+  };
+}
+
 /** Complete an account-bound DNS TXT challenge atomically with ownership. */
 export async function claimAccountHostWithDns(
   host: string,
@@ -2024,6 +3021,17 @@ export async function claimAccountHostWithDns(
       authority,
       claim: existingClaim,
     };
+  }
+  if (
+    !transfer && existingClaim?.method === "pds_contact_email" &&
+    existingClaim.claimantDid !== user.did
+  ) {
+    return await beginAccountHostEmailClaimRecoveryWithDns(
+      row,
+      existingClaim,
+      user,
+      token,
+    );
   }
   if (
     existingClaim && existingClaim.claimantDid !== user.did &&
@@ -2124,6 +3132,665 @@ export async function claimAccountHostWithDns(
   }
   const updatedHost = await getAccountHost(row.host) ?? row;
   return { ok: true, host: updatedHost, claim };
+}
+
+type FinalizeEmailRecoveryTransactionResult =
+  | {
+    ok: true;
+    claim: AccountHostClaim;
+    recovery: AccountHostClaimRecovery;
+  }
+  | {
+    ok: false;
+    reason:
+      | "not_found"
+      | "not_requester"
+      | "not_ready"
+      | "expired"
+      | "owner_changed"
+      | "fresh_dns_required"
+      | HostDnsChallengeVerificationFailureReason;
+    recovery?: AccountHostClaimRecovery;
+  };
+
+type PreparedHostDnsProof = Extract<
+  PreparedHostDnsChallengeResult,
+  { ok: true }
+>;
+
+/** A duplicate finalization can prepare the still-unused proof just before a
+ * competing identical transaction commits. Once its guarded consume resumes,
+ * the token is already used even though the requested ownership transition
+ * succeeded. Re-read the exact durable outcome on the same transaction client
+ * so that race is idempotent without accepting a token consumed elsewhere. */
+async function completedEmailRecoveryFinalizationTransactionReplay(
+  c: DbClient,
+  host: string,
+  requesterDid: string,
+  tokenHash: string,
+  recoveryId: string,
+): Promise<
+  Extract<FinalizeEmailRecoveryTransactionResult, { ok: true }> | null
+> {
+  const recoveryResult = await c.execute({
+    sql: `SELECT * FROM account_host_claim_recovery
+      WHERE id = ? AND host = ? AND requester_did = ?
+        AND status = 'completed' AND finalization_proof_token_hash = ?
+      LIMIT 1`,
+    args: [recoveryId, host, requesterDid, tokenHash],
+  });
+  const recoveryRow = recoveryResult.rows[0] as
+    | Record<string, unknown>
+    | undefined;
+  if (!recoveryRow) return null;
+  const claimResult = await c.execute({
+    sql: `SELECT * FROM account_host_claim WHERE host = ? LIMIT 1`,
+    args: [host],
+  });
+  const claimRow = claimResult.rows[0] as Record<string, unknown> | undefined;
+  const claim = claimRow ? parseHostClaimRow(claimRow) : null;
+  if (claim?.method !== "dns_txt" || claim.claimantDid !== requesterDid) {
+    return null;
+  }
+  return {
+    ok: true,
+    claim,
+    recovery: parseAccountHostClaimRecovery(recoveryRow),
+  };
+}
+
+async function finalizeEmailClaimRecoveryTransaction(
+  c: DbClient,
+  host: string,
+  user: { did: string; handle: string },
+  proof: PreparedHostDnsProof,
+  at: number,
+): Promise<FinalizeEmailRecoveryTransactionResult> {
+  const result = await c.execute({
+    sql: `SELECT * FROM account_host_claim_recovery
+      WHERE host = ? ORDER BY requested_at DESC LIMIT 1`,
+    args: [host],
+  });
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return { ok: false, reason: "not_found" };
+  let recovery = parseAccountHostClaimRecovery(row);
+  if (recovery.requesterDid !== user.did) {
+    return { ok: false, reason: "not_requester", recovery };
+  }
+
+  const currentResult = await c.execute({
+    sql: `SELECT * FROM account_host_claim WHERE host = ? LIMIT 1`,
+    args: [host],
+  });
+  const currentRow = currentResult.rows[0] as
+    | Record<string, unknown>
+    | undefined;
+  const current = currentRow ? parseHostClaimRow(currentRow) : null;
+  if (recovery.status === "completed") {
+    return current?.method === "dns_txt" && current.claimantDid === user.did &&
+        String(row.finalization_proof_token_hash ?? "") === proof.tokenHash
+      ? { ok: true, claim: current, recovery }
+      : { ok: false, reason: "owner_changed", recovery };
+  }
+  if (recovery.status === "expired") {
+    return { ok: false, reason: "expired", recovery };
+  }
+  if (recovery.status === "invalidated") {
+    return { ok: false, reason: "owner_changed", recovery };
+  }
+  if (recovery.expiresAt <= at) {
+    await expireStaleHostClaimRecovery(c, host, at);
+    recovery = { ...recovery, status: "expired", completedAt: at };
+    return { ok: false, reason: "expired", recovery };
+  }
+  if (at < recovery.eligibleAt) {
+    return { ok: false, reason: "not_ready", recovery };
+  }
+  if (
+    current?.method !== "pds_contact_email" ||
+    current.claimantDid !== recovery.currentOwnerDid ||
+    current.updatedAt !== Number(row.previous_owner_updated_at ?? 0)
+  ) {
+    await invalidatePendingHostClaimRecovery(
+      c,
+      host,
+      at,
+      current?.claimantDid ?? null,
+    );
+    recovery = { ...recovery, status: "invalidated", completedAt: at };
+    return { ok: false, reason: "owner_changed", recovery };
+  }
+
+  // The initiating proof establishes the recovery request, not continuing
+  // DNS control. Require a second account-bound challenge issued only after
+  // the review period and before this recovery expires. Re-bind its persisted
+  // DNS classification inside the ownership transaction before consuming it.
+  if (
+    proof.host !== host || proof.claimantDid !== user.did ||
+    proof.createdAt < recovery.eligibleAt ||
+    proof.createdAt > at || proof.createdAt >= recovery.expiresAt ||
+    proof.expiresAt < at
+  ) {
+    return { ok: false, reason: "fresh_dns_required", recovery };
+  }
+  const boundProof = await c.execute({
+    sql: `SELECT 1 FROM account_host_claim_challenge
+      WHERE token_hash = ? AND host = ? AND claimant_did = ?
+        AND email_fingerprint = ? AND email_fingerprint LIKE 'dns-v1:%'
+        AND method_binding IS NULL
+        AND created_at = ? AND expires_at = ?
+      LIMIT 1`,
+    args: [
+      proof.tokenHash,
+      host,
+      user.did,
+      proof.methodFingerprint,
+      proof.createdAt,
+      proof.expiresAt,
+    ],
+  });
+  if (boundProof.rows.length !== 1) {
+    return { ok: false, reason: "invalid", recovery };
+  }
+  const consumed = await consumeHostDnsChallenge(c, {
+    tokenHash: proof.tokenHash,
+    host,
+    claimantDid: user.did,
+    consumedAt: at,
+  });
+  if (!consumed.ok) {
+    if (consumed.reason === "already_used") {
+      const replay = await completedEmailRecoveryFinalizationTransactionReplay(
+        c,
+        host,
+        user.did,
+        proof.tokenHash,
+        recovery.id,
+      );
+      if (replay) return replay;
+    }
+    return { ok: false, reason: consumed.reason, recovery };
+  }
+
+  const effectiveAt = Math.max(at, current.updatedAt + 1);
+  const claim: AccountHostClaim = {
+    host,
+    claimantDid: user.did,
+    claimantHandle: user.handle,
+    method: "dns_txt",
+    claimedAt: effectiveAt,
+    verifiedAt: effectiveAt,
+    updatedAt: effectiveAt,
+  };
+  const ownerWrite = await c.execute({
+    sql: `UPDATE account_host_claim SET
+        claimant_did = ?, claimant_handle = ?, method = 'dns_txt',
+        claimed_at = ?, verified_at = ?, updated_at = ?
+      WHERE host = ? AND claimant_did = ? AND method = 'pds_contact_email'
+        AND updated_at = ?`,
+    args: [
+      claim.claimantDid,
+      claim.claimantHandle,
+      claim.claimedAt,
+      claim.verifiedAt,
+      claim.updatedAt,
+      host,
+      recovery.currentOwnerDid,
+      Number(row.previous_owner_updated_at ?? 0),
+    ],
+  });
+  if (Number(ownerWrite.rowsAffected ?? 0) !== 1) {
+    throw new HostClaimRecoveryCompletionError("owner_changed");
+  }
+  const recoveryWrite = await c.execute({
+    sql: `UPDATE account_host_claim_recovery SET
+        status = 'completed', finalization_proof_token_hash = ?,
+        completed_at = ?
+      WHERE id = ? AND host = ? AND requester_did = ? AND status = 'pending'
+        AND previous_owner_did = ? AND previous_owner_updated_at = ?`,
+    args: [
+      proof.tokenHash,
+      effectiveAt,
+      recovery.id,
+      host,
+      user.did,
+      recovery.currentOwnerDid,
+      Number(row.previous_owner_updated_at ?? 0),
+    ],
+  });
+  if (Number(recoveryWrite.rowsAffected ?? 0) !== 1) {
+    throw new HostClaimRecoveryCompletionError("recovery_changed");
+  }
+
+  const hostWrite = await c.execute(accountHostClaimUpdateQuery({
+    host,
+    claimHandle: user.handle,
+    claimDid: user.did,
+    timestamp: effectiveAt,
+  }));
+  if (Number(hostWrite.rowsAffected ?? 0) !== 1) {
+    throw new Error("recovered account host disappeared during finalization");
+  }
+  await c.execute({
+    sql: `UPDATE account_host SET
+        profile_handle = ?, profile_did = ?, avatar_url = NULL,
+        service_record_uri = NULL, service_record_cid = NULL,
+        service_observed_at = NULL, updated_at = ?
+      WHERE host = ?`,
+    args: [user.handle, user.did, effectiveAt, host],
+  });
+  await c.execute({
+    sql: `UPDATE directory_entity_link SET
+        status = 'pending', host_owner_did = ?, host_approved_at = NULL,
+        updated_at = ?
+      WHERE host = ? AND source = 'claimed'`,
+    args: [user.did, effectiveAt, host],
+  });
+  await insertHostClaimRecoveryAudit(c, {
+    id: `${recovery.id}:finalized`,
+    recoveryId: recovery.id,
+    host,
+    event: "finalized",
+    actorDid: user.did,
+    proofTokenHash: proof.tokenHash,
+    occurredAt: effectiveAt,
+  });
+  return {
+    ok: true,
+    claim,
+    recovery: {
+      ...recovery,
+      status: "completed",
+      completedAt: effectiveAt,
+    },
+  };
+}
+
+export const finalizeEmailClaimRecoveryTransactionForTest =
+  finalizeEmailClaimRecoveryTransaction;
+
+/** Finalize a cooled-down DNS recovery. The requester's DID, prior
+ * email-derived owner snapshot, and pending row are all compared again in the
+ * same transaction, so a current-manager repair or stronger claim always wins
+ * a race. */
+export async function finalizeAccountHostEmailClaimRecovery(
+  host: string,
+  user: { did: string; handle: string },
+  dnsToken: string,
+  options: { now?: number } = {},
+): Promise<FinalizeAccountHostEmailClaimRecoveryResult> {
+  const normalizedHost = normalizeHandle(host);
+  const did = user.did.trim();
+  const handle = normalizeHandle(user.handle);
+  const tokenHash = await hashHostDnsChallengeToken(dnsToken);
+  if (!normalizedHost || !did || !handle || !tokenHash) {
+    return { ok: false, reason: "invalid" };
+  }
+  const at = normalizedTimestamp(options.now);
+  const latest = await getLatestAccountHostClaimRecovery(normalizedHost, did);
+  if (!latest) {
+    return { ok: false, reason: "not_found" };
+  }
+  if (latest.status === "completed") {
+    return await completedEmailRecoveryFinalizationReplay(
+      normalizedHost,
+      did,
+      tokenHash,
+      latest,
+    ) ?? { ok: false, reason: "owner_changed", recovery: latest };
+  }
+  if (latest.status === "expired" || latest.expiresAt <= at) {
+    // The transaction performs the durable expiry transition. Do not inspect
+    // or consume a newly supplied token once the finalize window has closed.
+    const afterExpiry = await withDbTransaction(async (c) => {
+      await expireStaleHostClaimRecovery(c, normalizedHost, at);
+      const result = await c.execute({
+        sql: `SELECT * FROM account_host_claim_recovery
+          WHERE host = ? AND requester_did = ?
+          ORDER BY requested_at DESC LIMIT 1`,
+        args: [normalizedHost, did],
+      });
+      const row = result.rows[0] as Record<string, unknown> | undefined;
+      return row ? parseAccountHostClaimRecovery(row) : null;
+    });
+    if (afterExpiry?.status === "completed") {
+      const replay = await completedEmailRecoveryFinalizationReplay(
+        normalizedHost,
+        did,
+        tokenHash,
+        afterExpiry,
+      );
+      if (replay) return replay;
+      return { ok: false, reason: "owner_changed", recovery: afterExpiry };
+    }
+    return {
+      ok: false,
+      reason: afterExpiry?.status === "invalidated"
+        ? "owner_changed"
+        : "expired",
+      recovery: afterExpiry ?? latest,
+    };
+  }
+  if (latest.status === "invalidated") {
+    return { ok: false, reason: "owner_changed", recovery: latest };
+  }
+  if (at < latest.eligibleAt) {
+    return { ok: false, reason: "not_ready", recovery: latest };
+  }
+  const prepared = await prepareHostDnsChallenge(
+    { host: normalizedHost },
+    { did, handle },
+    dnsToken,
+    { now: at },
+  );
+  if (!prepared.ok) {
+    if (prepared.reason === "already_used") {
+      const completed = await completedEmailRecoveryFinalizationReplay(
+        normalizedHost,
+        did,
+        tokenHash,
+      );
+      if (completed) return completed;
+    }
+    return { ok: false, reason: prepared.reason, recovery: latest };
+  }
+  // Live DNS I/O can span either the recovery deadline or challenge expiry.
+  // The transaction must use a fresh completion time rather than the preflight
+  // timestamp so both lifetimes are enforced at the ownership write boundary.
+  const completionAt = options.now == null ? normalizedTimestamp() : at;
+  let result: FinalizeEmailRecoveryTransactionResult;
+  try {
+    result = await withDbTransaction((c) =>
+      finalizeEmailClaimRecoveryTransaction(
+        c,
+        normalizedHost,
+        { did, handle },
+        prepared,
+        completionAt,
+      )
+    );
+  } catch (error) {
+    if (!(error instanceof HostClaimRecoveryCompletionError)) throw error;
+    const recovery = await getLatestAccountHostClaimRecovery(
+      normalizedHost,
+      did,
+    );
+    const replay = await completedEmailRecoveryFinalizationReplay(
+      normalizedHost,
+      did,
+      tokenHash,
+      recovery ?? undefined,
+    );
+    if (replay) return replay;
+    return {
+      ok: false,
+      reason: "owner_changed",
+      recovery: recovery ?? undefined,
+    };
+  }
+  if (!result.ok) return result;
+  const row = await getAccountHost(normalizedHost);
+  if (!row) return { ok: false, reason: "not_found" };
+  return {
+    ok: true,
+    host: row,
+    claim: result.claim,
+    recovery: result.recovery,
+  };
+}
+
+async function completedEmailRecoveryFinalizationReplay(
+  host: string,
+  requesterDid: string,
+  tokenHash: string,
+  recovery?: AccountHostClaimRecovery,
+): Promise<
+  Extract<FinalizeAccountHostEmailClaimRecoveryResult, { ok: true }> | null
+> {
+  const latest = recovery ??
+    await getLatestAccountHostClaimRecovery(host, requesterDid);
+  if (latest?.status !== "completed") return null;
+  const evidence = await withDb((c) =>
+    c.execute({
+      sql: `SELECT 1 FROM account_host_claim_recovery
+        WHERE id = ? AND host = ? AND requester_did = ?
+          AND status = 'completed' AND finalization_proof_token_hash = ?
+        LIMIT 1`,
+      args: [latest.id, host, requesterDid, tokenHash],
+    })
+  );
+  if (evidence.rows.length !== 1) return null;
+  const claim = await getAccountHostClaim(host);
+  const row = await getAccountHost(host);
+  if (
+    !row || claim?.method !== "dns_txt" || claim.claimantDid !== requesterDid
+  ) {
+    return null;
+  }
+  return { ok: true, host: row, claim, recovery: latest };
+}
+
+async function getLatestAccountHostClaimRecovery(
+  host: string,
+  requesterDid?: string,
+): Promise<AccountHostClaimRecovery | null> {
+  return await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `SELECT * FROM account_host_claim_recovery WHERE host = ?
+        ${requesterDid ? "AND requester_did = ?" : ""}
+        ORDER BY requested_at DESC LIMIT 1`,
+      args: requesterDid ? [host, requesterDid] : [host],
+    });
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? parseAccountHostClaimRecovery(row) : null;
+  });
+}
+
+function opaqueNotificationValue(
+  value: string | null | undefined,
+  options: { fingerprint?: boolean } = {},
+): string | null {
+  const normalized = value?.trim() ?? "";
+  if (
+    !normalized || normalized.length > 512 ||
+    [...normalized].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    })
+  ) {
+    return null;
+  }
+  if (
+    options.fingerprint &&
+    (!/^[A-Za-z0-9._-]+$/.test(normalized) || normalized.includes("@"))
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+const ACCOUNT_HOST_RECOVERY_NOTIFICATION_LEASE_MS = 5 * 60 * 1000;
+
+async function reserveHostClaimRecoveryNotificationTransaction(
+  c: DbClient,
+  host: string,
+  requesterDid: string,
+  at: number,
+  retryAfterMs: number,
+): Promise<AccountHostClaimRecoveryNotificationReservation | null> {
+  await reconcilePendingHostClaimRecovery(c, host, at);
+  const staleBefore = Math.max(0, at - retryAfterMs);
+  const reserved = await c.execute({
+    sql: `UPDATE account_host_claim_recovery SET notification_attempted_at = ?
+      WHERE host = ? AND requester_did = ? AND status = 'pending'
+        AND notification_status IN ('pending', 'failed')
+        AND (notification_attempted_at IS NULL OR notification_attempted_at <= ?)`,
+    args: [at, host, requesterDid, staleBefore],
+  });
+  if (Number(reserved.rowsAffected ?? 0) !== 1) return null;
+  const result = await c.execute({
+    sql: `SELECT * FROM account_host_claim_recovery
+      WHERE host = ? AND requester_did = ? AND status = 'pending'
+      ORDER BY requested_at DESC LIMIT 1`,
+    args: [host, requesterDid],
+  });
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  const recovery = parseAccountHostClaimRecovery(row);
+  const evidence = await c.execute({
+    sql: `SELECT email_fingerprint FROM account_host_claim_evidence
+      WHERE host = ? AND claimant_did = ? AND method = 'pds_contact_email'
+        AND claim_updated_at = ?
+      ORDER BY completed_at DESC LIMIT 1`,
+    args: [
+      host,
+      String(row.previous_owner_did ?? ""),
+      Number(row.previous_owner_updated_at ?? 0),
+    ],
+  });
+  const fingerprint = evidence.rows[0]?.email_fingerprint;
+  return {
+    recovery,
+    expectedEmailFingerprint: typeof fingerprint === "string" &&
+        /^[A-Za-z0-9_-]{43}$/.test(fingerprint)
+      ? fingerprint
+      : null,
+  };
+}
+
+export const reserveHostClaimRecoveryNotificationTransactionForTest =
+  reserveHostClaimRecoveryNotificationTransaction;
+
+/** Acquire the crash-retry lease before sending a recovery warning. Only one
+ * concurrent request can move notification_attempted_at, so only that caller
+ * may contact the current PDS mailbox. */
+export async function reserveAccountHostClaimRecoveryNotification(
+  host: string,
+  requesterDid: string,
+  options: AccountHostClaimRecoveryNotificationReservationOptions = {},
+): Promise<AccountHostClaimRecoveryNotificationReservation | null> {
+  const normalizedHost = normalizeHandle(host);
+  const normalizedDid = requesterDid.trim();
+  if (!normalizedHost || !normalizedDid) return null;
+  const retryAfterMs = options.retryAfterMs != null &&
+      Number.isFinite(options.retryAfterMs)
+    ? Math.max(1, Math.floor(options.retryAfterMs))
+    : ACCOUNT_HOST_RECOVERY_NOTIFICATION_LEASE_MS;
+  return await withDbTransaction((c) =>
+    reserveHostClaimRecoveryNotificationTransaction(
+      c,
+      normalizedHost,
+      normalizedDid,
+      normalizedTimestamp(options.now),
+      retryAfterMs,
+    )
+  );
+}
+
+/** Persist notification outcome separately from DNS proof. Delivery failure is
+ * intentionally non-authoritative and cannot roll back or cancel recovery. */
+async function recordHostClaimRecoveryNotificationTransaction(
+  c: DbClient,
+  normalizedHost: string,
+  requesterDid: string,
+  input:
+    & Required<
+      Pick<AccountHostClaimRecoveryNotificationInput, "status" | "attemptedAt">
+    >
+    & {
+      deliveryId: string | null;
+      emailFingerprint: string | null;
+    },
+): Promise<AccountHostClaimRecovery | null> {
+  await reconcilePendingHostClaimRecovery(c, normalizedHost, input.attemptedAt);
+  const found = await c.execute({
+    sql: `SELECT * FROM account_host_claim_recovery
+      WHERE host = ? AND requester_did = ? AND status = 'pending'
+      ORDER BY requested_at DESC LIMIT 1`,
+    args: [normalizedHost, requesterDid],
+  });
+  const row = found.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  const current = parseAccountHostClaimRecovery(row);
+  if (current.notificationAttemptedAt !== input.attemptedAt) return current;
+  // A delivered notification is terminal. A transient failure may later be
+  // upgraded to sent; unavailable is terminal. Repeated results are
+  // idempotent.
+  if (
+    current.notificationStatus === "sent" ||
+    current.notificationStatus === input.status
+  ) return current;
+  const write = await c.execute({
+    sql: `UPDATE account_host_claim_recovery SET
+        notification_status = ?, notification_delivery_id = ?,
+        notification_email_fingerprint = ?, notification_attempted_at = ?
+      WHERE id = ? AND host = ? AND requester_did = ? AND status = 'pending'
+        AND notification_status <> 'sent' AND notification_attempted_at = ?`,
+    args: [
+      input.status,
+      input.deliveryId,
+      input.emailFingerprint,
+      input.attemptedAt,
+      current.id,
+      normalizedHost,
+      requesterDid,
+      input.attemptedAt,
+    ],
+  });
+  if (Number(write.rowsAffected ?? 0) !== 1) {
+    const latest = await c.execute({
+      sql: `SELECT * FROM account_host_claim_recovery WHERE id = ? LIMIT 1`,
+      args: [current.id],
+    });
+    const latestRow = latest.rows[0] as Record<string, unknown> | undefined;
+    return latestRow ? parseAccountHostClaimRecovery(latestRow) : null;
+  }
+  await insertHostClaimRecoveryAudit(c, {
+    id: `${current.id}:notification:${input.status}`,
+    recoveryId: current.id,
+    host: normalizedHost,
+    event: `notification_${input.status}`,
+    actorDid: requesterDid,
+    deliveryId: input.deliveryId,
+    emailFingerprint: input.emailFingerprint,
+    occurredAt: input.attemptedAt,
+  });
+  return {
+    ...current,
+    notificationStatus: input.status,
+    notificationAttemptedAt: input.attemptedAt,
+  };
+}
+
+export const recordHostClaimRecoveryNotificationTransactionForTest =
+  recordHostClaimRecoveryNotificationTransaction;
+
+export async function recordAccountHostClaimRecoveryNotification(
+  host: string,
+  requestedByDid: string,
+  input: AccountHostClaimRecoveryNotificationInput,
+): Promise<AccountHostClaimRecovery | null> {
+  const normalizedHost = normalizeHandle(host);
+  const requesterDid = requestedByDid.trim();
+  if (!normalizedHost || !requesterDid) return null;
+  const attemptedAt = normalizedTimestamp(input.attemptedAt);
+  const deliveryId = opaqueNotificationValue(input.deliveryId);
+  const emailFingerprint = opaqueNotificationValue(input.emailFingerprint, {
+    fingerprint: true,
+  });
+  return await withDbTransaction((c) =>
+    recordHostClaimRecoveryNotificationTransaction(
+      c,
+      normalizedHost,
+      requesterDid,
+      {
+        status: input.status,
+        attemptedAt,
+        deliveryId,
+        emailFingerprint,
+      },
+    )
+  );
 }
 
 export function validateAccountHostRegistrationInput(

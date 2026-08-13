@@ -90,6 +90,9 @@ export type PreparedHostDnsChallengeResult =
     tokenHash: string;
     host: string;
     claimantDid: string;
+    methodFingerprint: string;
+    createdAt: number;
+    expiresAt: number;
   }
   | { ok: false; reason: HostDnsChallengeVerificationFailureReason };
 
@@ -169,6 +172,8 @@ export async function requestHostDnsChallenge(
       claimantDid: user.did,
       claimantHandle: user.handle,
       methodFingerprint: proofFingerprint,
+      methodBinding: null,
+      deliveryId: null,
       createdAt: ts,
       expiresAt,
       consumedAt: null,
@@ -241,7 +246,17 @@ export async function prepareHostDnsChallenge(
     tokenHash: checked.tokenHash,
     host: checked.host,
     claimantDid: checked.claimantDid,
+    methodFingerprint: checked.methodFingerprint,
+    createdAt: checked.createdAt,
+    expiresAt: checked.expiresAt,
   };
+}
+
+/** Opaque identifier used only for exact idempotent-completion checks. */
+export async function hashHostDnsChallengeToken(
+  token: string,
+): Promise<string | null> {
+  return TOKEN_PATTERN.test(token) ? await sha256B64u(token) : null;
 }
 
 /** Convenience verifier for callers that do not need an atomic claim write. */
@@ -280,6 +295,8 @@ async function readHostDnsChallenge(
     tokenHash: string;
     host: string;
     claimantDid: string;
+    methodFingerprint: string;
+    createdAt: number;
     expiresAt: number;
   }
   | { ok: false; reason: HostDnsChallengeVerificationFailureReason }
@@ -311,6 +328,8 @@ async function readHostDnsChallenge(
     tokenHash,
     host,
     claimantDid: record.claimantDid,
+    methodFingerprint: record.methodFingerprint,
+    createdAt: record.createdAt,
     expiresAt: record.expiresAt,
   };
 }

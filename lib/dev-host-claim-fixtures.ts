@@ -1,5 +1,6 @@
 import { setAppUserType } from "./account-types.ts";
 import { type DbClient, withDb } from "./db.ts";
+import { DEV_HOST_CLAIM_EMAIL_HOSTS } from "./dev-host-claim-email.ts";
 import { IS_DEV } from "./env.ts";
 import { generateEs256KeyPair } from "./jose.ts";
 import { HOST_SERVICE_NSID } from "./lexicons.ts";
@@ -77,6 +78,31 @@ export const DEV_HOST_CLAIM_HOSTS = {
       "A production-shaped local fixture for viewing the DNS TXT claim steps.",
     accountCount: 42,
   },
+  emailAvailable: {
+    host: DEV_HOST_CLAIM_EMAIL_HOSTS.available,
+    displayName: "Contact Email Preview",
+    description:
+      "A production-shaped local fixture whose exact PDS publishes a contact email.",
+    accountCount: 28,
+  },
+  emailUnavailable: {
+    host: DEV_HOST_CLAIM_EMAIL_HOSTS.unavailable,
+    displayName: "No Contact Email Preview",
+    description:
+      "A production-shaped local fixture whose exact PDS does not publish a contact email.",
+    accountCount: 12,
+  },
+  emailRecovery: {
+    host: DEV_HOST_CLAIM_EMAIL_HOSTS.recovery,
+    displayName: "Email Claim Recovery Preview",
+    description:
+      "A production-shaped host with a legacy contact-email owner for previewing DNS recovery.",
+    accountCount: 31,
+    owner: "host",
+    method: "pds_contact_email",
+    dataLocation: "United States",
+    bskyProfileVisible: false,
+  },
   transferClaimed: {
     host: "transfer-lab.atmosphereaccount.com",
     displayName: "Transfer Lab",
@@ -99,6 +125,9 @@ const RESETTABLE_HOSTS = [
   DEV_HOST_CLAIM_HOSTS.appLinked.host,
   DEV_HOST_CLAIM_HOSTS.localClaimed.host,
   DEV_HOST_CLAIM_HOSTS.detectedDns.host,
+  DEV_HOST_CLAIM_HOSTS.emailAvailable.host,
+  DEV_HOST_CLAIM_HOSTS.emailUnavailable.host,
+  DEV_HOST_CLAIM_HOSTS.emailRecovery.host,
   DEV_HOST_CLAIM_HOSTS.transferClaimed.host,
 ] as const;
 
@@ -133,6 +162,11 @@ export async function prepareDevHostClaimFixtures(): Promise<void> {
     await ensureFixtureClaim(
       client,
       DEV_HOST_CLAIM_HOSTS.transferClaimed,
+      now,
+    );
+    await ensureFixtureClaim(
+      client,
+      DEV_HOST_CLAIM_HOSTS.emailRecovery,
       now,
     );
   });
@@ -175,6 +209,9 @@ export async function resetDevHostClaimFixtures(): Promise<void> {
   await withDb(async (client) => {
     for (
       const table of [
+        "account_host_claim_recovery_audit",
+        "account_host_claim_recovery",
+        "account_host_claim_evidence",
         "account_host_claim_challenge",
         "account_host_owner_transfer",
         "directory_entity_link",
@@ -215,6 +252,8 @@ export async function resetDevHostClaimFixtures(): Promise<void> {
         WHERE bucket_key LIKE 'host-claim:%'
           OR bucket_key LIKE 'host-claim-update:%'
           OR bucket_key LIKE 'host-claim-dns-check:%'
+          OR bucket_key LIKE 'host-claim-email-send:%'
+          OR bucket_key LIKE 'host-claim-email-confirm:%'
           OR bucket_key LIKE 'detected-host-claim-search:%'
           OR bucket_key LIKE 'host-registration:%'`,
       args: [],

@@ -4,6 +4,7 @@ import {
   isPrivateNetworkHostname,
   readResponseTextWithLimit,
 } from "./security.ts";
+import { fetchPinnedPublicHttps } from "./pinned-public-https.ts";
 
 /**
  * atproto identity helpers: resolve handles to DIDs, fetch DID documents,
@@ -46,6 +47,12 @@ export interface ResolvedIdentity {
   handle: string;
   pdsUrl: string;
   doc: DidDocument;
+}
+
+export interface IdentityResolutionOptions {
+  /** Test seam for authoritative HTTPS resources. Production callers omit it
+   * and use IP-pinned, certificate-verified requests. */
+  publicHttpsFetch?: typeof fetch;
 }
 
 const didRe = /^did:[a-z]+:[a-zA-Z0-9._:%-]+$/;
@@ -177,7 +184,10 @@ export function normalizeDnsTxtValueForTest(data: string): string {
  * then falls back to the well-known HTTPS endpoint, then the public Bluesky
  * resolver as a last resort.
  */
-export async function resolveHandle(handle: string): Promise<string> {
+export async function resolveHandle(
+  handle: string,
+  options: IdentityResolutionOptions = {},
+): Promise<string> {
   const lower = handle.toLowerCase();
   if (!isHandle(lower)) throw new Error(`invalid handle: ${handle}`);
   if (lower === ATMOSPHERE_ACCOUNT_HANDLE) {
@@ -190,6 +200,62 @@ export async function resolveHandle(handle: string): Promise<string> {
     throw new Error(`unsafe handle host: ${handle}`);
   }
 
+  const authoritative = await resolveHandleFromAuthority(
+    lower,
+    IS_DEV ? options.publicHttpsFetch : undefined,
+  );
+  if (authoritative) return authoritative;
+
+  // 3. Public Bluesky resolver (com.atproto.identity.resolveHandle)
+  const r = await fetch(
+    `${PUBLIC_RESOLVER}/xrpc/com.atproto.identity.resolveHandle?handle=${
+      encodeURIComponent(lower)
+    }`,
+    {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(4000),
+    },
+  );
+  if (!r.ok) throw new Error(`could not resolve handle: ${handle}`);
+  const json = await readBoundedJson(r, MAX_IDENTITY_JSON_BYTES) as {
+    did: string;
+  };
+  if (!isDid(json.did)) {
+    throw new Error(`resolver returned invalid DID for ${handle}`);
+  }
+  return json.did;
+}
+
+/**
+ * Resolve only from the handle domain's own AT Protocol authorities. Unlike
+ * `resolveHandle`, this never falls back to a third-party public resolver, so
+ * it is suitable when the handle itself is being used as current domain proof.
+ */
+export async function resolveHandleAuthority(
+  handle: string,
+  options: IdentityResolutionOptions = {},
+): Promise<string> {
+  const lower = handle.toLowerCase();
+  if (!isHandle(lower)) throw new Error(`invalid handle: ${handle}`);
+  if (!IS_DEV && isReservedHandle(lower)) {
+    throw new Error(`reserved handle host: ${handle}`);
+  }
+  if (!IS_DEV && isPrivateOrLocalHostname(lower)) {
+    throw new Error(`unsafe handle host: ${handle}`);
+  }
+  const did = await resolveHandleFromAuthority(
+    lower,
+    IS_DEV ? options.publicHttpsFetch : undefined,
+  );
+  if (!did) throw new Error(`handle domain did not resolve: ${handle}`);
+  return did;
+}
+
+async function resolveHandleFromAuthority(
+  lower: string,
+  publicHttpsFetch?: typeof fetch,
+): Promise<string | null> {
   // 1. DNS-over-HTTPS TXT record at _atproto.<handle>
   let conflictingDnsClaims = false;
   try {
@@ -221,13 +287,13 @@ export async function resolveHandle(handle: string): Promise<string> {
     // fall through
   }
   if (conflictingDnsClaims) {
-    throw new Error(`conflicting DNS handle claims for ${handle}`);
+    throw new Error(`conflicting DNS handle claims for ${lower}`);
   }
 
   // 2. Well-known HTTPS endpoint on the handle's domain
   try {
-    if (!IS_DEV) await assertPublicDnsHostname(lower);
-    const r = await fetch(`https://${lower}/.well-known/atproto-did`, {
+    const url = `https://${lower}/.well-known/atproto-did`;
+    const r = await (publicHttpsFetch ?? pinnedIdentityFetch)(url, {
       headers: { accept: "text/plain" },
       redirect: "manual",
       signal: AbortSignal.timeout(4000),
@@ -244,25 +310,7 @@ export async function resolveHandle(handle: string): Promise<string> {
     // fall through
   }
 
-  // 3. Public Bluesky resolver (com.atproto.identity.resolveHandle)
-  const r = await fetch(
-    `${PUBLIC_RESOLVER}/xrpc/com.atproto.identity.resolveHandle?handle=${
-      encodeURIComponent(lower)
-    }`,
-    {
-      headers: { accept: "application/json" },
-      redirect: "manual",
-      signal: AbortSignal.timeout(4000),
-    },
-  );
-  if (!r.ok) throw new Error(`could not resolve handle: ${handle}`);
-  const json = await readBoundedJson(r, MAX_IDENTITY_JSON_BYTES) as {
-    did: string;
-  };
-  if (!isDid(json.did)) {
-    throw new Error(`resolver returned invalid DID for ${handle}`);
-  }
-  return json.did;
+  return null;
 }
 
 function didWebDocumentUrl(
@@ -385,7 +433,10 @@ export async function assertPublicDnsHostnameForTest(
   await assertPublicDnsHostname(hostname, resolve);
 }
 
-export async function resolveDidDocument(did: string): Promise<DidDocument> {
+export async function resolveDidDocument(
+  did: string,
+  options: IdentityResolutionOptions = {},
+): Promise<DidDocument> {
   if (!isDid(did)) throw new Error(`invalid DID: ${did}`);
 
   if (did.startsWith("did:plc:")) {
@@ -404,13 +455,13 @@ export async function resolveDidDocument(did: string): Promise<DidDocument> {
   if (did.startsWith("did:web:")) {
     const url = didWebDocumentUrl(did, IS_DEV);
     const parsed = new URL(url);
-    if (!IS_DEV) {
-      if (isReservedHandle(parsed.hostname)) {
-        throw new Error(`reserved did:web host: ${parsed.hostname}`);
-      }
-      await assertPublicDnsHostname(parsed.hostname);
+    if (!IS_DEV && isReservedHandle(parsed.hostname)) {
+      throw new Error(`reserved did:web host: ${parsed.hostname}`);
     }
-    const r = await fetch(url, {
+    const publicFetch = parsed.protocol === "https:"
+      ? (IS_DEV ? options.publicHttpsFetch : undefined) ?? pinnedIdentityFetch
+      : fetch;
+    const r = await publicFetch(url, {
       headers: { accept: "application/json" },
       redirect: "manual",
       signal: AbortSignal.timeout(6000),
@@ -425,6 +476,16 @@ export async function resolveDidDocument(did: string): Promise<DidDocument> {
   throw new Error(`unsupported DID method: ${did}`);
 }
 
+const pinnedIdentityFetch: typeof fetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) =>
+  fetchPinnedPublicHttps(
+    input instanceof Request ? input.url : input,
+    init,
+    { maxBodyBytes: MAX_IDENTITY_JSON_BYTES },
+  );
+
 export function findPdsEndpoint(doc: DidDocument): string {
   const svc = (doc.service ?? []).find((s) =>
     (s.id === "#atproto_pds" || s.id === `${doc.id}#atproto_pds`) &&
@@ -438,7 +499,12 @@ export function findPdsEndpoint(doc: DidDocument): string {
   return endpoint;
 }
 
-function authoritativeHandleFromDidDocument(doc: DidDocument): string | null {
+/** The AT Protocol DID profile treats the first syntactically valid `at://`
+ * handle URI as authoritative. Later handles must never be selected merely
+ * because they match a desired value. */
+export function authoritativeHandleFromDidDocument(
+  doc: DidDocument,
+): string | null {
   for (const aka of doc.alsoKnownAs ?? []) {
     if (!aka.startsWith("at://")) continue;
     const handle = aka.slice("at://".length).toLowerCase();

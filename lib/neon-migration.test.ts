@@ -1,4 +1,7 @@
-import { NEON_APP_TABLES } from "./neon-migration.ts";
+import {
+  NEON_APP_TABLES,
+  NEON_TABLES_WITH_FOREIGN_KEYS,
+} from "./neon-migration.ts";
 
 Deno.test("NEON_APP_TABLES tracks app tables from the Postgres baseline schema", async () => {
   const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
@@ -176,6 +179,206 @@ Deno.test("Postgres baseline adds explicit operator directory visibility", async
         `Expected the account_host ${column} migration to be additive`,
       );
     }
+  }
+});
+
+Deno.test("host claim challenges add separate method binding and delivery evidence", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  if (
+    !postgres.includes(
+      "ADD COLUMN IF NOT EXISTS method_binding text",
+    )
+  ) {
+    throw new Error("Expected additive Postgres method_binding migration");
+  }
+  if (
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_challenge ADD COLUMN method_binding TEXT",
+    )
+  ) {
+    throw new Error("Expected additive SQLite method_binding migration");
+  }
+  if (!postgres.includes("ADD COLUMN IF NOT EXISTS delivery_id text")) {
+    throw new Error("Expected additive Postgres delivery_id migration");
+  }
+  if (
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_challenge ADD COLUMN delivery_id TEXT",
+    )
+  ) {
+    throw new Error("Expected additive SQLite delivery_id migration");
+  }
+});
+
+Deno.test("host email recovery stores only an additive final DNS proof hash", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  if (
+    !postgres.includes(
+      "ADD COLUMN IF NOT EXISTS finalization_proof_token_hash text",
+    )
+  ) {
+    throw new Error("Expected additive Postgres final DNS proof migration");
+  }
+  if (
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_recovery ADD COLUMN finalization_proof_token_hash TEXT",
+    )
+  ) {
+    throw new Error("Expected additive SQLite final DNS proof migration");
+  }
+  if (
+    !postgres.includes(
+      "ALTER TABLE account_host_claim_recovery_audit\n  ADD COLUMN IF NOT EXISTS proof_token_hash text",
+    ) ||
+    !sqlite.includes(
+      "ALTER TABLE account_host_claim_recovery_audit ADD COLUMN proof_token_hash TEXT",
+    )
+  ) {
+    throw new Error("Expected final DNS proof hash in durable recovery audit");
+  }
+  for (const schema of [postgres, sqlite]) {
+    if (!schema.includes("finalization_proof_token_hash")) {
+      throw new Error("Expected recovery to retain the final proof hash");
+    }
+    if (/finalization_proof_token\s/i.test(schema)) {
+      throw new Error("Recovery must never persist a plaintext DNS token");
+    }
+  }
+});
+
+Deno.test("host email evidence and recovery audit survive host deletion", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  for (
+    const table of [
+      "account_host_claim_evidence",
+      "account_host_claim_recovery_audit",
+    ]
+  ) {
+    const body = schema.match(
+      new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table}\\s*\\(([\\s\\S]*?)\\);`,
+        "i",
+      ),
+    )?.[1] ?? "";
+    if (!body || /REFERENCES|ON DELETE/i.test(body)) {
+      throw new Error(`${table} must be durable and independent of host rows`);
+    }
+    if (
+      NEON_TABLES_WITH_FOREIGN_KEYS.some((candidate) => candidate === table)
+    ) {
+      throw new Error(`${table} must not be migrated as a foreign-key table`);
+    }
+  }
+});
+
+Deno.test("host email recovery has bounded terminal states and append-only audit", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  for (const schema of [postgres, sqlite]) {
+    for (const status of ["pending", "completed", "expired", "invalidated"]) {
+      if (!schema.includes(`'${status}'`)) {
+        throw new Error(`Expected recovery status ${status}`);
+      }
+    }
+    for (const event of ["requested", "finalized", "expired", "invalidated"]) {
+      if (!schema.includes(`'${event}'`)) {
+        throw new Error(`Expected recovery audit event ${event}`);
+      }
+    }
+  }
+});
+
+Deno.test("host ownership is removed with its host on Postgres and upgraded SQLite", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  const postgresClaim = postgres.match(
+    /CREATE TABLE IF NOT EXISTS account_host_claim\s*\(([\s\S]*?)\);/i,
+  )?.[1] ?? "";
+  const sqliteClaim = sqlite.match(
+    /CREATE TABLE IF NOT EXISTS account_host_claim\s*\(([\s\S]*?)\)`/i,
+  )?.[1] ?? "";
+  for (
+    const [backend, definition] of [
+      ["Postgres", postgresClaim],
+      ["SQLite", sqliteClaim],
+    ] as const
+  ) {
+    if (
+      !/REFERENCES account_host\(host\) ON DELETE CASCADE/i.test(definition)
+    ) {
+      throw new Error(`${backend} ownership must cascade with host deletion`);
+    }
+  }
+  if (
+    !sqlite.includes(
+      "DELETE FROM account_host_claim\n    WHERE NOT EXISTS",
+    ) ||
+    !sqlite.includes(
+      "CREATE TRIGGER IF NOT EXISTS account_host_claim_host_delete",
+    ) ||
+    !sqlite.includes("DELETE FROM account_host_claim WHERE host = old.host")
+  ) {
+    throw new Error(
+      "Upgraded SQLite stores must remove legacy orphans and install a deletion trigger because FKs cannot be added in place",
+    );
+  }
+});
+
+Deno.test("host recovery participant lookups have matching indexes on both backends", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  for (const schema of [postgres, sqlite]) {
+    for (
+      const index of [
+        "account_host_claim_recovery_requester",
+        "account_host_claim_recovery_previous_owner",
+      ]
+    ) {
+      if (!schema.includes(index)) {
+        throw new Error(`Expected recovery participant index ${index}`);
+      }
+    }
+  }
+});
+
+Deno.test("rolling deploys cannot downgrade strong host ownership to a weaker method", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  for (const schema of [postgres, sqlite]) {
+    if (!schema.includes("account_host_claim_prevent_assurance_downgrade")) {
+      throw new Error("Expected a durable host-claim downgrade guard");
+    }
+    for (const method of ["dns_txt", "atproto_handle"]) {
+      if (!schema.includes(`'${method}'`)) {
+        throw new Error(`Downgrade guard must protect ${method}`);
+      }
+    }
+    if (!schema.includes("NOT IN ('dns_txt', 'atproto_handle')")) {
+      throw new Error("Downgrade guard must reject every weaker method");
+    }
+  }
+  if (
+    !postgres.includes(
+      "CREATE OR REPLACE FUNCTION prevent_account_host_claim_assurance_downgrade()",
+    ) ||
+    !postgres.includes(
+      "BEFORE UPDATE OF method ON account_host_claim",
+    ) ||
+    !postgres.includes("WHEN duplicate_object THEN NULL")
+  ) {
+    throw new Error(
+      "Postgres must install the rolling-deploy downgrade guard idempotently under concurrent migration attempts",
+    );
+  }
+  if (
+    !sqlite.includes(
+      "CREATE TRIGGER IF NOT EXISTS account_host_claim_prevent_assurance_downgrade",
+    ) ||
+    !sqlite.includes("SELECT RAISE(ABORT, 'host claim assurance downgrade')")
+  ) {
+    throw new Error("SQLite must install the rolling-deploy downgrade guard");
   }
 });
 

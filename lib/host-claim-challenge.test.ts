@@ -23,6 +23,8 @@ const record: HostClaimChallengeRecord = {
   claimantDid: "did:plc:operator",
   claimantHandle: "operator.example",
   methodFingerprint: "dns-v1:fingerprint",
+  methodBinding: null,
+  deliveryId: null,
   createdAt: 5_000,
   expiresAt: 10_000,
   consumedAt: null,
@@ -98,6 +100,57 @@ Deno.test("serialized concurrent reservations cannot overrun the host limit", as
   );
   assertEquals(results.filter(Boolean).length, 5);
   assertEquals(saved.length, 5);
+});
+
+Deno.test("serialized reservations enforce an exact method resend cooldown", async () => {
+  const saved: HostClaimChallengeRecord[] = [];
+  let queue = Promise.resolve();
+  const reserveOne = (index: number) => {
+    const candidate = {
+      ...record,
+      tokenHash: `cooldown-${index}`,
+      methodFingerprint: "mailbox-hmac",
+      methodBinding: `binding-${index}`,
+    };
+    const run = queue.then(() =>
+      reserveHostClaimChallenge(
+        {
+          execute(query) {
+            const sql = typeof query === "string" ? query : query.sql;
+            if (sql.includes("SUM(CASE WHEN host")) {
+              const exact = saved.filter((item) =>
+                item.host === candidate.host &&
+                item.claimantDid === candidate.claimantDid &&
+                item.methodFingerprint === candidate.methodFingerprint &&
+                item.createdAt >= 4_000
+              ).length;
+              return Promise.resolve({
+                rows: [{
+                  host_count: saved.length,
+                  claimant_count: saved.length,
+                  method_count: saved.length,
+                  cooldown_count: exact,
+                }],
+                rowsAffected: 0,
+              });
+            }
+            if (sql.includes("INSERT INTO account_host_claim_challenge")) {
+              saved.push(candidate);
+            }
+            return Promise.resolve({ rows: [], rowsAffected: 1 });
+          },
+        },
+        candidate,
+        { ...limits, cooldownSince: 4_000 },
+        { postgresBackend: true },
+      )
+    );
+    queue = run.then(() => undefined);
+    return run;
+  };
+  const results = await Promise.all([reserveOne(1), reserveOne(2)]);
+  assertEquals(results, [true, false]);
+  assertEquals(saved.length, 1);
 });
 
 Deno.test("guarded consume binds token, host, DID, lifetime, and replay state", async () => {

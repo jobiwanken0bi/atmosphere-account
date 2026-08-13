@@ -2,6 +2,7 @@ import {
   appviewAssetSourceUrlForTest,
   appviewFetchTimeoutMs,
   appviewJsonHeadersForTest,
+  appviewPageFetchTimeoutMs,
   appviewProxyRequestBodyForTest,
   appviewRequestBodyLimitForTest,
   appviewRequestHeadersForTest,
@@ -499,6 +500,25 @@ Deno.test("appview fetch timeout defaults to a short public-shell budget", () =>
   assertEquals(appviewFetchTimeoutMs("not-a-number"), 5000);
   assertEquals(appviewFetchTimeoutMs("250"), 1000);
   assertEquals(appviewFetchTimeoutMs("15000"), 15000);
+});
+
+Deno.test("host claim writes have enough proxy time for bounded delivery", () => {
+  assertEquals(
+    appviewPageFetchTimeoutMs("/hosts/sprk.so/claim", "POST", 5000),
+    20000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/hosts/sprk.so/claim", "GET", 5000),
+    20000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/hosts/sprk.so/manage", "POST", 5000),
+    5000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/hosts/sprk.so/claim", "POST", 20000),
+    20000,
+  );
 });
 
 Deno.test("proxied appview response headers strip transport metadata but keep cookies", () => {

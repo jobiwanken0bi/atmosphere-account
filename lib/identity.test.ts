@@ -1,5 +1,6 @@
 import {
   assertPublicDnsHostnameForTest,
+  authoritativeHandleFromDidDocument,
   didWebDocumentUrlForTest,
   discoverAuthServer,
   findPdsEndpoint,
@@ -9,6 +10,7 @@ import {
   normalizeServiceEndpoint,
   resolveDidDocument,
   resolveHandle,
+  resolveHandleAuthority,
   resolveIdentity,
 } from "./identity.ts";
 
@@ -36,6 +38,34 @@ Deno.test("isHandle enforces ATProto-style DNS handle syntax", () => {
   ];
   for (const handle of rejected) {
     if (isHandle(handle)) throw new Error(`expected invalid handle: ${handle}`);
+  }
+});
+
+Deno.test("DID handle selection uses the first syntactically valid at URI", () => {
+  if (
+    authoritativeHandleFromDidDocument({
+      id: "did:plc:owner",
+      alsoKnownAs: [
+        "https://profile.example",
+        "at://invalid handle",
+        "at://FIRST.EXAMPLE.COM",
+        "at://second.example.com",
+      ],
+    }) !== "first.example.com"
+  ) throw new Error("unexpected authoritative DID handle");
+  for (
+    const invalid of [
+      "at://owner.example.com/path",
+      "at://owner.example.com?query=1",
+      "at://owner.example.com.",
+    ]
+  ) {
+    if (
+      authoritativeHandleFromDidDocument({
+        id: "did:plc:owner",
+        alsoKnownAs: [invalid],
+      }) !== null
+    ) throw new Error(`accepted malformed DID handle URI: ${invalid}`);
   }
 });
 
@@ -160,6 +190,72 @@ Deno.test("resolveHandle prefers DNS and joins split TXT strings", async () => {
     }
     if (seen.length !== 1 || !seen[0].includes("_atproto.example.com")) {
       throw new Error(`DNS lookup was not first and decisive: ${seen}`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("claim authority resolution never falls back to a public resolver", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen: string[] = [];
+  try {
+    globalThis.fetch = ((input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : String(input);
+      seen.push(url);
+      if (url.startsWith("https://cloudflare-dns.com/dns-query")) {
+        return Promise.resolve(Response.json({ Answer: [] }));
+      }
+      if (url === "https://authority.example.com/.well-known/atproto-did") {
+        return Promise.resolve(new Response("Not found", { status: 404 }));
+      }
+      if (url.includes("com.atproto.identity.resolveHandle")) {
+        throw new Error("public resolver must not be consulted");
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    let rejected = false;
+    try {
+      await resolveHandleAuthority("authority.example.com", {
+        publicHttpsFetch: globalThis.fetch,
+      });
+    } catch {
+      rejected = true;
+    }
+    if (!rejected) throw new Error("expected missing direct authority to fail");
+    if (
+      seen.some((url) => url.includes("com.atproto.identity.resolveHandle"))
+    ) {
+      throw new Error("claim authority leaked to the public resolver fallback");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("ordinary identity resolution retains the public fallback", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = ((input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.startsWith("https://cloudflare-dns.com/dns-query")) {
+        return Promise.resolve(Response.json({ Answer: [] }));
+      }
+      if (url === "https://fallback.example.com/.well-known/atproto-did") {
+        return Promise.resolve(new Response("Not found", { status: 404 }));
+      }
+      if (url.includes("com.atproto.identity.resolveHandle")) {
+        return Promise.resolve(Response.json({ did: "did:plc:fallback" }));
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    const did = await resolveHandle("fallback.example.com", {
+      publicHttpsFetch: globalThis.fetch,
+    });
+    if (did !== "did:plc:fallback") {
+      throw new Error(`unexpected public fallback DID: ${did}`);
     }
   } finally {
     globalThis.fetch = originalFetch;

@@ -41,19 +41,29 @@ Deno.test("legacy email claim forms are rejected before AppView proxying", async
   }
 });
 
-Deno.test("DNS claim requests continue through the legacy edge gate", async () => {
+Deno.test("current claim requests continue through the legacy edge gate", async () => {
   const url = new URL(
     "https://atmosphereaccount.com/hosts/pds.example/claim",
   );
-  const response = await legacyHostClaimEdgeResponse(
-    url,
-    new Request(url, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ action: "request_dns" }),
-    }),
-  );
-  assertEquals(response, null);
+  for (
+    const action of [
+      "request_dns",
+      "verify_dns",
+      "request_contact_email",
+      "confirm_contact_email",
+    ]
+  ) {
+    const response = await legacyHostClaimEdgeResponse(
+      url,
+      new Request(url, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ action }),
+      }),
+    );
+    assertEquals(response, null);
+    assertEquals(rejectLegacyHostClaimAction(action), null);
+  }
   assertEquals(rejectLegacyHostClaimAction("verify_dns"), null);
   assertEquals(stripLegacyHostClaimToken(new URL(url)), null);
 });

@@ -51,6 +51,11 @@ function memoryStore(): HostClaimChallengeStore & {
       records.delete(tokenHash);
       return Promise.resolve();
     },
+    recordDelivery(tokenHash, deliveryId) {
+      const record = records.get(tokenHash);
+      if (record) records.set(tokenHash, { ...record, deliveryId });
+      return Promise.resolve();
+    },
     read(tokenHash) {
       const record = records.get(tokenHash);
       return Promise.resolve(record ? { ...record } : null);
@@ -109,6 +114,7 @@ Deno.test("DNS challenge is account-bound and persists only a token hash", async
   const record = store.records.get(tokenHash);
   assert(record);
   assert(record.methodFingerprint.startsWith("dns-v1:"));
+  assertEquals(record.methodBinding, null);
   assertEquals(
     JSON.stringify(record).includes(requested.verificationToken),
     false,

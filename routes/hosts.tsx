@@ -396,7 +396,7 @@ function DirectoryHiddenHostCta(
             capabilities={HOST_MANAGEMENT_CAPABILITIES}
             targetName="your account host"
             title="Login with Atmosphere"
-            body="Choose the account that will claim and manage this host, including its public profile and images. DNS verification separately proves control of the host domain."
+            body="Choose the account that will claim and manage this host, including its public profile and images. Host ownership is verified separately after login."
             label={copy.claimDetectedHost}
             className="directory-register-button"
             trailingArrow

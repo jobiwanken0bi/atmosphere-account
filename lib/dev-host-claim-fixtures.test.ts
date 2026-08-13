@@ -15,6 +15,10 @@ Deno.test("host claim lab has stable, distinct accounts and hosts", () => {
   assert(DEV_HOST_CLAIM_HOSTS.appUnclaimed.host.endsWith(".test"));
   assert(DEV_HOST_CLAIM_HOSTS.appLinked.host.endsWith(".test"));
   assert(!DEV_HOST_CLAIM_HOSTS.detectedDns.host.endsWith(".test"));
+  assert(!DEV_HOST_CLAIM_HOSTS.emailAvailable.host.endsWith(".test"));
+  assert(!DEV_HOST_CLAIM_HOSTS.emailUnavailable.host.endsWith(".test"));
+  assert(!DEV_HOST_CLAIM_HOSTS.emailRecovery.host.endsWith(".test"));
+  assertEquals(DEV_HOST_CLAIM_HOSTS.emailRecovery.method, "pds_contact_email");
   assert(!DEV_HOST_CLAIM_HOSTS.transferClaimed.host.endsWith(".test"));
 });
 

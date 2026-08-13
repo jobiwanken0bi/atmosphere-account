@@ -163,6 +163,11 @@ function HostDetailPage(
         host.signupStatus === "invite_required"),
   );
   const canOfferClaim = hostClaimActionAvailable(host, claim);
+  const canOfferDnsRecovery = hostDnsRecoveryActionAvailable(
+    claim,
+    verifiedOwnerDid,
+    account.user?.did ?? null,
+  );
 
   return (
     <div id="page-top">
@@ -346,7 +351,10 @@ function HostDetailPage(
 
             <div class="glass host-detail-claim-row">
               {managed && (
-                <p class="profile-form-status profile-form-status--ok">
+                <p
+                  class="profile-form-status profile-form-status--ok"
+                  role="status"
+                >
                   Host changes saved.
                 </p>
               )}
@@ -365,6 +373,44 @@ function HostDetailPage(
                     >
                       <span>Manage host</span>
                     </a>
+                  </>
+                )
+                : canOfferDnsRecovery
+                ? (
+                  <>
+                    <div class="host-detail-claim-copy">
+                      <p class="text-eyebrow">Host operator</p>
+                      <p>
+                        Managed by{" "}
+                        <AtmosphereHandle handle={claim?.claimantHandle} />.
+                        {" "}
+                        If you now control this domain, recover management with
+                        DNS verification.
+                      </p>
+                    </div>
+                    {account.user
+                      ? (
+                        <a
+                          class="directory-register-button host-detail-claim-button"
+                          href={claimHostHref(host)}
+                        >
+                          <span>Recover with DNS</span>
+                        </a>
+                      )
+                      : (
+                        <ContextualSignInLink
+                          href={hostClaimSigninHref(host)}
+                          returnTo={claimHostHref(host)}
+                          action="host_claim"
+                          capabilities={HOST_MANAGEMENT_CAPABILITIES}
+                          targetName={host.displayName}
+                          title="Login with Atmosphere"
+                          body={`Login with the account that should manage ${host.displayName}, then verify current DNS control. The existing manager stays in control during a 48-hour review period.`}
+                          label="Recover with DNS"
+                          className="directory-register-button host-detail-claim-button"
+                          rememberedAccounts={account.rememberedAccounts}
+                        />
+                      )}
                   </>
                 )
                 : claim && verifiedOwnerDid
@@ -413,7 +459,7 @@ function HostDetailPage(
                           capabilities={HOST_MANAGEMENT_CAPABILITIES}
                           targetName={host.displayName}
                           title="Login with Atmosphere"
-                          body={`Choose the account that will claim and manage ${host.displayName}, including its public profile and images. DNS verification separately proves control of the host domain.`}
+                          body={`Choose the account that will claim and manage ${host.displayName}, including its public profile and images. Host ownership is verified separately after login.`}
                           label="Claim this host"
                           className="directory-register-button host-detail-claim-button"
                           leadingPlus
@@ -567,6 +613,15 @@ export function hostClaimActionAvailable(
 ): boolean {
   return !claim && host.verificationStatus !== "claimed" &&
     host.verificationStatus !== "verified";
+}
+
+export function hostDnsRecoveryActionAvailable(
+  claim: AccountHostClaim | null,
+  verifiedOwnerDid: string | null,
+  currentDid: string | null,
+): boolean {
+  return claim?.method === "pds_contact_email" && !!verifiedOwnerDid &&
+    verifiedOwnerDid !== currentDid;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

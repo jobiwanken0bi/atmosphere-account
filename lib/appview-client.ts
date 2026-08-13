@@ -36,6 +36,7 @@ const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
 
 const DEFAULT_APPVIEW_FETCH_TIMEOUT_MS = 5000;
 const MIN_APPVIEW_FETCH_TIMEOUT_MS = 1000;
+const HOST_CLAIM_ROUTE_FETCH_TIMEOUT_MS = 20_000;
 const MAX_APPVIEW_HANDOFF_BODY_BYTES = 64 * 1024;
 const DEFAULT_APPVIEW_REQUEST_BODY_BYTES = 256 * 1024;
 const PROFILE_APPVIEW_REQUEST_BODY_BYTES = 36_000_000;
@@ -56,6 +57,25 @@ export function appviewFetchTimeoutMs(
     return DEFAULT_APPVIEW_FETCH_TIMEOUT_MS;
   }
   return Math.max(MIN_APPVIEW_FETCH_TIMEOUT_MS, parsed);
+}
+
+/**
+ * Host-claim pages can perform bounded direct handle/DID/contact lookups; writes
+ * can additionally include an 8s transactional email delivery or DNS lookup.
+ * Keep the ordinary public-shell budget short while allowing the claim route
+ * to finish instead of aborting after work may already have taken effect.
+ */
+export function appviewPageFetchTimeoutMs(
+  pathname: string,
+  method: string,
+  configured = APPVIEW_FETCH_TIMEOUT_MS,
+): number {
+  const normalizedMethod = method.toUpperCase();
+  return (normalizedMethod === "GET" || normalizedMethod === "HEAD" ||
+      normalizedMethod === "POST") &&
+      /^\/hosts\/[^/]+\/claim$/.test(pathname)
+    ? Math.max(configured, HOST_CLAIM_ROUTE_FETCH_TIMEOUT_MS)
+    : configured;
 }
 
 export interface PublicHostDetail {
@@ -439,7 +459,9 @@ export async function proxyAppviewPageResponse(
     ),
     body: requestBody,
     redirect: "manual",
-    signal: AbortSignal.timeout(APPVIEW_FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(
+      appviewPageFetchTimeoutMs(currentUrl.pathname, request.method),
+    ),
   });
   const headers = proxiedHeaders(res.headers, { page: true });
 

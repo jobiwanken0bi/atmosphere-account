@@ -36,13 +36,19 @@ Deno.test("exact bidirectional handle and PDS identity can prove a host", async 
     { host: "pds.example.com" },
     { did: "did:plc:operator", handle: "pds.example.com" },
     {
-      resolveIdentity(value) {
+      resolveHandleAuthority(value) {
         identifier = value;
+        return Promise.resolve("did:plc:operator");
+      },
+      resolveDidDocument() {
         return Promise.resolve({
-          did: "did:plc:operator",
-          handle: "pds.example.com",
-          pdsUrl: "https://pds.example.com",
-          doc: { id: "did:plc:operator" },
+          id: "did:plc:operator",
+          alsoKnownAs: ["at://pds.example.com"],
+          service: [{
+            id: "#atproto_pds",
+            type: "AtprotoPersonalDataServer",
+            serviceEndpoint: "https://shared-pds.example.net",
+          }],
         });
       },
     },
@@ -53,26 +59,26 @@ Deno.test("exact bidirectional handle and PDS identity can prove a host", async 
     method: "atproto_handle",
     did: "did:plc:operator",
     handle: "pds.example.com",
-    pdsUrl: "https://pds.example.com",
+    pdsUrl: "https://shared-pds.example.net",
   });
 });
 
 Deno.test("AT Protocol host proof fails closed on every partial match", async () => {
   const cases = [
     {
-      did: "did:plc:different",
-      handle: "pds.example.com",
-      pdsUrl: "https://pds.example.com",
+      resolvedDid: "did:plc:different",
+      documentDid: "did:plc:different",
+      documentHandle: "pds.example.com",
     },
     {
-      did: "did:plc:operator",
-      handle: "alice.pds.example.com",
-      pdsUrl: "https://pds.example.com",
+      resolvedDid: "did:plc:operator",
+      documentDid: "did:plc:operator",
+      documentHandle: "alice.pds.example.com",
     },
     {
-      did: "did:plc:operator",
-      handle: "pds.example.com",
-      pdsUrl: "https://unrelated.example.com",
+      resolvedDid: "did:plc:operator",
+      documentDid: "did:plc:different",
+      documentHandle: "pds.example.com",
     },
   ];
   for (const identity of cases) {
@@ -81,10 +87,18 @@ Deno.test("AT Protocol host proof fails closed on every partial match", async ()
         { host: "pds.example.com" },
         { did: "did:plc:operator", handle: "pds.example.com" },
         {
-          resolveIdentity() {
+          resolveHandleAuthority() {
+            return Promise.resolve(identity.resolvedDid);
+          },
+          resolveDidDocument() {
             return Promise.resolve({
-              ...identity,
-              doc: { id: identity.did },
+              id: identity.documentDid,
+              alsoKnownAs: [`at://${identity.documentHandle}`],
+              service: [{
+                id: "#atproto_pds",
+                type: "AtprotoPersonalDataServer",
+                serviceEndpoint: "https://shared-pds.example.net",
+              }],
             });
           },
         },
@@ -96,7 +110,10 @@ Deno.test("AT Protocol host proof fails closed on every partial match", async ()
     await verifyAtprotoHostClaimDomainProof(
       { host: "pds.example.com" },
       { did: "did:plc:operator", handle: "pds.example.com" },
-      { resolveIdentity: () => Promise.reject(new Error("resolver down")) },
+      {
+        resolveHandleAuthority: () =>
+          Promise.reject(new Error("resolver down")),
+      },
     ),
     { ok: false, reason: "missing_domain_proof" },
   );
@@ -107,7 +124,7 @@ Deno.test("AT Protocol host proof fails closed on every partial match", async ()
       { host: "pds.example.com" },
       { did: "did:plc:operator", handle: "social.example.com" },
       {
-        resolveIdentity() {
+        resolveHandleAuthority() {
           resolvedMismatchedHandle = true;
           throw new Error("must not resolve");
         },
@@ -116,6 +133,48 @@ Deno.test("AT Protocol host proof fails closed on every partial match", async ()
     { ok: false, reason: "missing_domain_proof" },
   );
   assertEquals(resolvedMismatchedHandle, false);
+});
+
+Deno.test("AT Protocol host proof honors only the first valid DID handle", async () => {
+  const verify = (alsoKnownAs: string[]) =>
+    verifyAtprotoHostClaimDomainProof(
+      { host: "pds.example.com" },
+      { did: "did:plc:operator", handle: "pds.example.com" },
+      {
+        resolveHandleAuthority: () => Promise.resolve("did:plc:operator"),
+        resolveDidDocument: () =>
+          Promise.resolve({
+            id: "did:plc:operator",
+            alsoKnownAs,
+            service: [{
+              id: "#atproto_pds",
+              type: "AtprotoPersonalDataServer",
+              serviceEndpoint: "https://shared-pds.example.net",
+            }],
+          }),
+      },
+    );
+
+  assertEquals(
+    await verify(["at://other.example.com", "at://pds.example.com"]),
+    { ok: false, reason: "missing_domain_proof" },
+  );
+  assertEquals(
+    (await verify(["at://not a handle", "at://PDS.EXAMPLE.COM"])).ok,
+    true,
+  );
+  for (
+    const malformedTarget of [
+      "at://pds.example.com/path",
+      "at://pds.example.com?query=1",
+      "at://pds.example.com.",
+    ]
+  ) {
+    assertEquals(
+      await verify([malformedTarget]),
+      { ok: false, reason: "missing_domain_proof" },
+    );
+  }
 });
 
 Deno.test("only explicit local .test fixtures bypass DNS claims", () => {

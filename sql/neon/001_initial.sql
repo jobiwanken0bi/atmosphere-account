@@ -317,6 +317,44 @@ CREATE TABLE IF NOT EXISTS account_host_claim (
   updated_at bigint NOT NULL
 );
 
+-- An older instance in a rolling deployment can parse a new strong method as
+-- legacy OAuth and run a same-owner refresh/upsert. Keep it from weakening a
+-- DNS/exact-handle claim; current strong-method transitions remain allowed.
+CREATE OR REPLACE FUNCTION prevent_account_host_claim_assurance_downgrade()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.method IN ('dns_txt', 'atproto_handle')
+     AND NEW.method NOT IN ('dns_txt', 'atproto_handle') THEN
+    RAISE EXCEPTION 'host claim assurance downgrade';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname = 'account_host_claim_prevent_assurance_downgrade'
+      AND tgrelid = 'account_host_claim'::regclass
+  ) THEN
+    BEGIN
+      CREATE TRIGGER account_host_claim_prevent_assurance_downgrade
+        BEFORE UPDATE OF method ON account_host_claim
+        FOR EACH ROW
+        EXECUTE FUNCTION prevent_account_host_claim_assurance_downgrade();
+    EXCEPTION
+      -- The Neon runner applies statements independently and does not use the
+      -- Railway advisory lock. Concurrent idempotent migrations may both pass
+      -- the catalog check; the trigger installed by either transaction wins.
+      WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END;
+$$;
+
 CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did);
 
 CREATE TABLE IF NOT EXISTS account_host_claim_challenge (
@@ -325,10 +363,17 @@ CREATE TABLE IF NOT EXISTS account_host_claim_challenge (
   claimant_did text NOT NULL,
   claimant_handle text NOT NULL,
   email_fingerprint text NOT NULL,
+  method_binding text,
+  delivery_id text,
   created_at bigint NOT NULL,
   expires_at bigint NOT NULL,
   consumed_at bigint
 );
+
+ALTER TABLE account_host_claim_challenge
+  ADD COLUMN IF NOT EXISTS method_binding text;
+ALTER TABLE account_host_claim_challenge
+  ADD COLUMN IF NOT EXISTS delivery_id text;
 
 CREATE TABLE IF NOT EXISTS account_host_owner_transfer (
   jti TEXT PRIMARY KEY,
@@ -340,6 +385,67 @@ CREATE TABLE IF NOT EXISTS account_host_owner_transfer (
   completed_at BIGINT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS account_host_claim_evidence (
+  id text PRIMARY KEY,
+  host text NOT NULL,
+  claimant_did text NOT NULL,
+  method text NOT NULL CHECK (method = 'pds_contact_email'),
+  endpoint_origin text NOT NULL,
+  pds_did text NOT NULL,
+  email_fingerprint text NOT NULL,
+  challenge_token_hash text NOT NULL UNIQUE,
+  requested_at bigint NOT NULL,
+  expires_at bigint NOT NULL,
+  completed_at bigint NOT NULL,
+  claim_updated_at bigint NOT NULL,
+  delivery_id text
+);
+
+CREATE TABLE IF NOT EXISTS account_host_claim_recovery (
+  id text PRIMARY KEY,
+  host text NOT NULL REFERENCES account_host(host) ON DELETE CASCADE,
+  previous_owner_did text NOT NULL,
+  previous_owner_handle text NOT NULL,
+  previous_owner_updated_at bigint NOT NULL,
+  requester_did text NOT NULL,
+  requester_handle text NOT NULL,
+  proof_method text NOT NULL CHECK (proof_method = 'dns_txt'),
+  proof_token_hash text NOT NULL UNIQUE,
+  requested_at bigint NOT NULL,
+  eligible_at bigint NOT NULL,
+  expires_at bigint NOT NULL,
+  status text NOT NULL CHECK (status IN ('pending', 'completed', 'expired', 'invalidated')),
+  notification_status text NOT NULL DEFAULT 'pending'
+    CHECK (notification_status IN ('pending', 'sent', 'failed', 'unavailable')),
+  notification_delivery_id text,
+  notification_email_fingerprint text,
+  notification_attempted_at bigint,
+  finalization_proof_token_hash text,
+  completed_at bigint
+);
+
+ALTER TABLE account_host_claim_recovery
+  ADD COLUMN IF NOT EXISTS finalization_proof_token_hash text;
+
+CREATE TABLE IF NOT EXISTS account_host_claim_recovery_audit (
+  id text PRIMARY KEY,
+  recovery_id text NOT NULL,
+  host text NOT NULL,
+  event text NOT NULL,
+  actor_did text,
+  proof_token_hash text,
+  delivery_id text,
+  email_fingerprint text,
+  occurred_at bigint NOT NULL,
+  CHECK (event IN (
+    'requested', 'notification_sent', 'notification_failed',
+    'notification_unavailable', 'finalized', 'expired', 'invalidated'
+  ))
+);
+
+ALTER TABLE account_host_claim_recovery_audit
+  ADD COLUMN IF NOT EXISTS proof_token_hash text;
+
 CREATE INDEX IF NOT EXISTS account_host_claim_challenge_host
   ON account_host_claim_challenge(host, created_at);
 CREATE INDEX IF NOT EXISTS account_host_claim_challenge_did
@@ -348,6 +454,20 @@ CREATE INDEX IF NOT EXISTS account_host_claim_challenge_expires
   ON account_host_claim_challenge(expires_at);
 CREATE INDEX IF NOT EXISTS account_host_owner_transfer_host
   ON account_host_owner_transfer(host, completed_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_evidence_host
+  ON account_host_claim_evidence(host, completed_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_evidence_claimant
+  ON account_host_claim_evidence(claimant_did, completed_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_recovery_host
+  ON account_host_claim_recovery(host, status, requested_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_recovery_requester
+  ON account_host_claim_recovery(requester_did, status, requested_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_recovery_previous_owner
+  ON account_host_claim_recovery(previous_owner_did, status, requested_at);
+CREATE UNIQUE INDEX IF NOT EXISTS account_host_claim_recovery_pending_host
+  ON account_host_claim_recovery(host) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS account_host_claim_recovery_audit_recovery
+  ON account_host_claim_recovery_audit(recovery_id, occurred_at);
 
 CREATE TABLE IF NOT EXISTS host_conformance (
   host text PRIMARY KEY REFERENCES account_host(host) ON DELETE CASCADE,
