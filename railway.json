@@ -1,6 +1,6 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "preDeployCommand": "deno task db:migrate:postgres"
+    "preDeployCommand": "deno task db:prepare:postgres"
   }
 }

@@ -10,7 +10,14 @@ const MAX_SCAN_PAGES = 100;
 const MAX_CURSOR_LENGTH = 2_048;
 const MAX_RELAY_PAGE_BYTES = 2 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
-const UPSERT_CHUNK_SIZE = 50;
+// Keep each write comfortably below SQLite/Postgres bind limits while cutting
+// the number of round trips in half compared with the original 50-row batches.
+const UPSERT_CHUNK_SIZE = 100;
+const MAX_UPSERT_CHUNK_SIZE = 250;
+const DEFAULT_DB_RETRIES = 3;
+const MAX_DB_RETRIES = 5;
+const DB_RETRY_BASE_DELAY_MS = 100;
+const DB_RETRY_MAX_DELAY_MS = 2_000;
 const MIN_COMPLETE_SCAN_RETAINED_FRACTION = 0.95;
 
 export type RelayHostStatus =
@@ -62,6 +69,18 @@ export interface RelayPdsInventoryPersistOptions {
   observedAt?: number;
   scanId?: string;
   allowLargeDrop?: boolean;
+  signal?: AbortSignal;
+  chunkSize?: number;
+  dbRetries?: number;
+  dbRetrySleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
+}
+
+type InventoryDbQuery = Parameters<DbClient["execute"]>[0];
+
+interface InventoryQueryOptions {
+  signal?: AbortSignal;
+  retries: number;
+  sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
 }
 
 interface RelayListHostsPage {
@@ -178,6 +197,7 @@ export async function fetchRelayPdsInventory(
     pageSize?: number;
     maxPages?: number;
     timeoutMs?: number;
+    signal?: AbortSignal;
   } = {},
 ): Promise<RelayPdsInventoryFetchResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -218,13 +238,16 @@ export async function fetchRelayPdsInventory(
   let complete = false;
 
   while (pages < maxPages) {
+    options.signal?.throwIfAborted();
     const url = new URL(LIST_HOSTS_PATH, PDS_RELAY_BASE_URL);
     url.searchParams.set("limit", String(pageSize));
     if (cursor) url.searchParams.set("cursor", cursor);
     const response = await fetchImpl(url, {
       headers: { accept: "application/json" },
       redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
@@ -324,6 +347,7 @@ export async function persistRelayPdsInventoryForClient(
   instances: RelayPdsInstance[],
   options: RelayPdsInventoryPersistOptions = {},
 ): Promise<RelayPdsInventoryPersistResult> {
+  options.signal?.throwIfAborted();
   const requestedObservedAt = options.observedAt ?? Date.now();
   if (!Number.isFinite(requestedObservedAt) || requestedObservedAt < 0) {
     throw new Error("observedAt must be a non-negative finite number");
@@ -332,6 +356,23 @@ export async function persistRelayPdsInventoryForClient(
   const scanId = options.scanId?.trim() ||
     `${observedAt}-${crypto.randomUUID()}`;
   const complete = options.complete ?? true;
+  const chunkSize = positiveBoundedInteger(
+    options.chunkSize,
+    UPSERT_CHUNK_SIZE,
+    MAX_UPSERT_CHUNK_SIZE,
+    "chunkSize",
+  );
+  const dbRetries = nonNegativeBoundedInteger(
+    options.dbRetries,
+    DEFAULT_DB_RETRIES,
+    MAX_DB_RETRIES,
+    "dbRetries",
+  );
+  const queryOptions = {
+    signal: options.signal,
+    retries: dbRetries,
+    sleep: options.dbRetrySleep,
+  };
 
   const uniqueServiceHosts = new Set(
     instances.map((instance) => instance.serviceHost),
@@ -343,12 +384,12 @@ export async function persistRelayPdsInventoryForClient(
     if (instances.length === 0) {
       throw new Error("Refusing to reconcile an empty complete PDS inventory");
     }
-    const previousResult = await c.execute({
+    const previousResult = await executeInventoryQuery(c, {
       sql: `SELECT COUNT(*) AS count
         FROM pds_instance
         WHERE relay_url = ? AND relay_status <> 'not_seen'`,
       args: [PDS_RELAY_BASE_URL],
-    });
+    }, queryOptions);
     const previousActiveInstances = Number(
       previousResult.rows[0]?.count ?? 0,
     );
@@ -373,13 +414,16 @@ export async function persistRelayPdsInventoryForClient(
     }
   }
 
-  for (let offset = 0; offset < instances.length; offset += UPSERT_CHUNK_SIZE) {
-    const chunk = instances.slice(offset, offset + UPSERT_CHUNK_SIZE);
+  for (let offset = 0; offset < instances.length; offset += chunkSize) {
+    options.signal?.throwIfAborted();
+    const chunk = instances.slice(offset, offset + chunkSize);
     await recordRelayStatusTransitions(
       c,
       chunk,
       observedAt,
       scanId,
+      queryOptions,
+      chunkSize,
     );
     const groups = [
       {
@@ -414,7 +458,7 @@ export async function persistRelayPdsInventoryForClient(
           scanId,
         );
       }
-      await c.execute({
+      await executeInventoryQuery(c, {
         sql: `INSERT INTO pds_instance (
             service_host, service_endpoint, account_host, relay_url,
             relay_status, relay_account_count, relay_seq, is_bluesky_host,
@@ -440,19 +484,20 @@ export async function persistRelayPdsInventoryForClient(
             END,
             last_scan_id = excluded.last_scan_id`,
         args,
-      });
+      }, queryOptions);
     }
   }
 
   let staleInstances = 0;
   let publishedHosts = 0;
   if (complete) {
-    const staleRows = await c.execute({
+    options.signal?.throwIfAborted();
+    const staleRows = await executeInventoryQuery(c, {
       sql: `SELECT service_host, account_host, relay_account_count, relay_seq
         FROM pds_instance
         WHERE relay_url = ? AND last_scan_id <> ? AND relay_status <> 'not_seen'`,
       args: [PDS_RELAY_BASE_URL, scanId],
-    });
+    }, queryOptions);
     await insertRelayStatusTransitions(
       c,
       staleRows.rows.map((row) => ({
@@ -466,15 +511,17 @@ export async function persistRelayPdsInventoryForClient(
       })),
       observedAt,
       scanId,
+      queryOptions,
+      chunkSize,
     );
-    const stale = await c.execute({
+    const stale = await executeInventoryQuery(c, {
       sql: `UPDATE pds_instance
         SET relay_status = 'not_seen'
         WHERE relay_url = ? AND last_scan_id <> ? AND relay_status <> 'not_seen'`,
       args: [PDS_RELAY_BASE_URL, scanId],
-    });
+    }, queryOptions);
     staleInstances = Number(stale.rowsAffected ?? 0);
-    const published = await c.execute({
+    const published = await executeInventoryQuery(c, {
       sql: `INSERT INTO account_host (
           host, display_name, description, service_endpoint,
           signup_status, verification_status, source,
@@ -494,9 +541,9 @@ export async function persistRelayPdsInventoryForClient(
         GROUP BY p.account_host
         ON CONFLICT(host) DO NOTHING`,
       args: [observedAt, observedAt],
-    });
+    }, queryOptions);
     publishedHosts = Number(published.rowsAffected ?? 0);
-    await c.execute({
+    await executeInventoryQuery(c, {
       sql: `UPDATE account_host
         SET observed_account_count = COALESCE((
               SELECT SUM(p.relay_account_count)
@@ -530,7 +577,7 @@ export async function persistRelayPdsInventoryForClient(
             SELECT 1 FROM pds_instance p WHERE p.account_host = account_host.host
           )`,
       args: [observedAt, observedAt],
-    });
+    }, queryOptions);
   }
 
   return {
@@ -547,10 +594,12 @@ async function recordRelayStatusTransitions(
   instances: RelayPdsInstance[],
   observedAt: number,
   scanId: string,
+  queryOptions: InventoryQueryOptions,
+  chunkSize: number,
 ): Promise<void> {
   if (instances.length === 0) return;
   const placeholders = instances.map(() => "?").join(", ");
-  const existing = await c.execute({
+  const existing = await executeInventoryQuery(c, {
     sql: `SELECT p.service_host, p.relay_status,
         CASE WHEN EXISTS (
           SELECT 1 FROM pds_instance_status_history h
@@ -559,7 +608,7 @@ async function recordRelayStatusTransitions(
       FROM pds_instance p
       WHERE p.service_host IN (${placeholders})`,
     args: instances.map((instance) => instance.serviceHost),
-  });
+  }, queryOptions);
   const previous = new Map(
     existing.rows.map((row) => [
       String(row.service_host),
@@ -578,6 +627,8 @@ async function recordRelayStatusTransitions(
     transitions,
     observedAt,
     scanId,
+    queryOptions,
+    chunkSize,
   );
 }
 
@@ -586,13 +637,16 @@ async function insertRelayStatusTransitions(
   transitions: RelayStatusTransition[],
   observedAt: number,
   scanId: string,
+  queryOptions: InventoryQueryOptions,
+  chunkSize: number,
 ): Promise<void> {
   for (
     let offset = 0;
     offset < transitions.length;
-    offset += UPSERT_CHUNK_SIZE
+    offset += chunkSize
   ) {
-    const chunk = transitions.slice(offset, offset + UPSERT_CHUNK_SIZE);
+    queryOptions.signal?.throwIfAborted();
+    const chunk = transitions.slice(offset, offset + chunkSize);
     const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?)").join(
       ", ",
     );
@@ -610,13 +664,129 @@ async function insertRelayStatusTransitions(
         scanId,
       );
     }
-    await c.execute({
+    await executeInventoryQuery(c, {
       sql: `INSERT INTO pds_instance_status_history (
           transition_id, service_host, account_host, relay_url,
           relay_status, relay_account_count, relay_seq, observed_at, scan_id
         ) VALUES ${values}
         ON CONFLICT(transition_id) DO NOTHING`,
       args,
-    });
+    }, queryOptions);
   }
+}
+
+function positiveBoundedInteger(
+  value: number | undefined,
+  fallback: number,
+  maximum: number,
+  label: string,
+): number {
+  const resolved = value ?? fallback;
+  if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > maximum) {
+    throw new Error(`${label} must be an integer between 1 and ${maximum}`);
+  }
+  return resolved;
+}
+
+function nonNegativeBoundedInteger(
+  value: number | undefined,
+  fallback: number,
+  maximum: number,
+  label: string,
+): number {
+  const resolved = value ?? fallback;
+  if (!Number.isSafeInteger(resolved) || resolved < 0 || resolved > maximum) {
+    throw new Error(`${label} must be an integer between 0 and ${maximum}`);
+  }
+  return resolved;
+}
+
+export function inventoryDbRetryDelayMs(
+  retryNumber: number,
+  random = Math.random,
+): number {
+  if (!Number.isSafeInteger(retryNumber) || retryNumber < 1) {
+    throw new Error("retryNumber must be a positive integer");
+  }
+  const ceiling = Math.min(
+    DB_RETRY_MAX_DELAY_MS,
+    DB_RETRY_BASE_DELAY_MS * 2 ** (retryNumber - 1),
+  );
+  // Equal jitter avoids synchronized retries while retaining a useful floor.
+  return Math.floor(ceiling / 2 + random() * ceiling / 2);
+}
+
+export function inventoryDbErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null;
+  const raw = (error as { code?: unknown }).code;
+  return typeof raw === "string" && raw.length <= 64 ? raw : null;
+}
+
+export function isRetryableInventoryDbError(error: unknown): boolean {
+  const code = inventoryDbErrorCode(error)?.toUpperCase() ?? "";
+  if (
+    [
+      "40001", // serialization_failure
+      "40P01", // deadlock_detected
+      "55P03", // lock_not_available
+      "57P03", // cannot_connect_now
+      "53300", // too_many_connections
+      "SQLITE_BUSY",
+      "SQLITE_LOCKED",
+    ].includes(code)
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return message.includes("database is locked") ||
+    message.includes("database is busy") ||
+    message.includes("could not serialize access") ||
+    message.includes("deadlock detected") ||
+    message.includes("lock timeout") ||
+    message.includes("too many connections");
+}
+
+async function executeInventoryQuery(
+  client: DbClient,
+  query: InventoryDbQuery,
+  options: InventoryQueryOptions,
+): Promise<Awaited<ReturnType<DbClient["execute"]>>> {
+  const sleep = options.sleep ?? sleepWithSignal;
+  for (let attempt = 0;; attempt++) {
+    options.signal?.throwIfAborted();
+    try {
+      return await client.execute(query);
+    } catch (error) {
+      if (attempt >= options.retries || !isRetryableInventoryDbError(error)) {
+        throw error;
+      }
+      const retryNumber = attempt + 1;
+      const delayMs = inventoryDbRetryDelayMs(retryNumber);
+      console.warn(JSON.stringify({
+        event: "pds_inventory_db_retry",
+        retry: retryNumber,
+        delayMs,
+        errorCode: inventoryDbErrorCode(error) ?? "unknown",
+      }));
+      await sleep(delayMs, options.signal);
+    }
+  }
+}
+
+async function sleepWithSignal(
+  delayMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }

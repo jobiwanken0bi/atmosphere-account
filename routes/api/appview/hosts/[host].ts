@@ -30,18 +30,11 @@ export const handler = define.handlers({
         headers: { "cache-control": "public, max-age=15" },
       });
     }
-    const detail = await hostDetailCache.get(
+    return await hostDetailResponse(
       hostId,
+      hostDetailCache,
       () => getPublicHostDetail(hostId),
     );
-    return json(detail, {
-      status: detail.host ? 200 : 404,
-      headers: {
-        "cache-control": detail.host
-          ? "public, max-age=60, stale-while-revalidate=300"
-          : "public, max-age=15, stale-while-revalidate=60",
-      },
-    });
   }, {
     scope: "appview-host-detail",
     capacity: 120,
@@ -60,6 +53,38 @@ function normalizePublicHostParam(raw: string): string | null {
 
 export function normalizePublicHostParamForTest(raw: string): string | null {
   return normalizePublicHostParam(raw);
+}
+
+async function hostDetailResponse(
+  hostId: string,
+  cache: EdgeStaleCache<PublicHostDetail>,
+  load: () => Promise<PublicHostDetail>,
+): Promise<Response> {
+  try {
+    const detail = await cache.get(hostId, load);
+    return json(detail, {
+      status: detail.host ? 200 : 404,
+      headers: {
+        "cache-control": detail.host
+          ? "public, max-age=60, stale-while-revalidate=300"
+          : "public, max-age=15, stale-while-revalidate=60",
+      },
+    });
+  } catch (err) {
+    console.error("[appview] host detail unavailable:", err);
+    return json({ error: "host_detail_unavailable" }, {
+      status: 503,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+}
+
+export function hostDetailResponseForTest(
+  hostId: string,
+  cache: EdgeStaleCache<PublicHostDetail>,
+  load: () => Promise<PublicHostDetail>,
+): Promise<Response> {
+  return hostDetailResponse(hostId, cache, load);
 }
 
 function json(body: unknown, init: ResponseInit = {}): Response {

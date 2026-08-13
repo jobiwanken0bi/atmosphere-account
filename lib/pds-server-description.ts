@@ -150,6 +150,7 @@ export async function fetchPdsServerDescription(
     timeoutMs?: number;
     cacheTtlMs?: number;
     checkedAt?: number;
+    signal?: AbortSignal;
   } = {},
 ): Promise<PdsServerDescription | null> {
   if (!serviceEndpoint?.trim()) return null;
@@ -183,10 +184,13 @@ export async function fetchPdsServerDescription(
   const fetchImpl = options.fetchImpl ?? fetch;
   let value: PdsServerDescription | null = null;
   try {
+    options.signal?.throwIfAborted();
     const response = await fetchImpl(url, {
       headers: { accept: "application/json" },
       redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
@@ -201,7 +205,8 @@ export async function fetchPdsServerDescription(
         value = parsePdsServerDescription(JSON.parse(text.text), ts);
       }
     }
-  } catch {
+  } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason ?? error;
     value = null;
   }
 

@@ -12,6 +12,11 @@ import {
 } from "../../../lib/atproto-blob-security.ts";
 import { withRateLimit } from "../../../lib/rate-limit.ts";
 import { readResponseBytesWithLimit } from "../../../lib/security.ts";
+import {
+  atprotoDerivedMediaKey,
+  cachedDerivedMediaRedirect,
+  storeDerivedMedia,
+} from "../../../lib/derived-media-cache.ts";
 
 const MAX_PROXY_BLOB_BYTES = 8_000_000;
 const ALLOWED_IMAGE_WIDTHS = new Set([320, 640, 800, 1200]);
@@ -45,10 +50,27 @@ export const handler = define.handlers({
       return errorResponse("invalid fallback blob reference", 400);
     }
     try {
+      const primaryCacheKey = maxWidth
+        ? atprotoDerivedMediaKey({ did, cid, width: maxWidth })
+        : null;
+      if (primaryCacheKey) {
+        const primaryCached = await cachedDerivedMediaRedirect(primaryCacheKey);
+        if (primaryCached) return primaryCached;
+      }
       let upstream = await fetchAtprotoBlob(did, cid);
       let usedFallback = false;
       if ((!upstream?.ok || !upstream.body) && hasFallback) {
         await upstream?.body?.cancel().catch(() => {});
+        if (maxWidth) {
+          const fallbackCached = await cachedDerivedMediaRedirect(
+            atprotoDerivedMediaKey({
+              did: fallbackDid,
+              cid: fallbackCid,
+              width: maxWidth,
+            }),
+          );
+          if (fallbackCached) return fallbackCached;
+        }
         upstream = await fetchAtprotoBlob(fallbackDid, fallbackCid);
         usedFallback = true;
       }
@@ -96,6 +118,7 @@ export const handler = define.handlers({
         : "public, max-age=86400, s-maxage=31536000, immutable";
       let responseBytes = bytes;
       let responseType = contentType;
+      let resized = false;
       if (maxWidth) {
         try {
           const { fitWebp } = await import(
@@ -107,12 +130,27 @@ export const handler = define.handlers({
             RESIZED_IMAGE_QUALITY,
           );
           responseType = "image/webp";
+          resized = true;
         } catch (err) {
           console.warn("[atproto-blob] resize failed; serving original:", err);
         }
       }
       const responseBody = new Uint8Array(responseBytes.byteLength);
       responseBody.set(responseBytes);
+      if (maxWidth && resized) {
+        const storedDid = usedFallback ? fallbackDid : did;
+        const storedCid = usedFallback ? fallbackCid : cid;
+        void storeDerivedMedia({
+          key: atprotoDerivedMediaKey({
+            did: storedDid,
+            cid: storedCid,
+            width: maxWidth,
+          }),
+          bytes: responseBytes,
+          contentType: responseType,
+          filename: `atmosphere-${maxWidth}.webp`,
+        });
+      }
       return new Response(responseBody, {
         status: 200,
         headers: blobResponseHeaders({

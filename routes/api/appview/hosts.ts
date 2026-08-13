@@ -35,23 +35,58 @@ export const handler = define.handlers({
       });
     }
     const input = readDirectoryInput(ctx.url.searchParams);
-    const hosts = await hostDirectoryCache.get(
-      hostDirectoryCacheKey(input),
+    return await hostDirectoryResponse(
+      input,
+      hostDirectoryCache,
       () => listPublicAccountHosts(input),
     );
-    return json(hosts, {
-      headers: {
-        // Page links must not combine totals from independently cached
-        // inventory snapshots.
-        "cache-control": "no-store",
-      },
-    });
   }, {
     scope: "appview-host-directory",
     capacity: 120,
     refillMs: 60_000,
   }),
 });
+
+function hostDirectorySuccessHeaders(): HeadersInit {
+  // The result is public-only and its full filter/page tuple is part of the
+  // cache key. Keep browsers on revalidation while allowing the edge/shared
+  // cache to absorb short bursts and serve stale during a bounded refresh.
+  return {
+    "cache-control":
+      "public, max-age=0, s-maxage=30, stale-while-revalidate=120",
+  };
+}
+
+export function hostDirectorySuccessHeadersForTest(): Headers {
+  return new Headers(hostDirectorySuccessHeaders());
+}
+
+async function hostDirectoryResponse(
+  input: AccountHostDirectoryOptions,
+  cache: EdgeStaleCache<AccountHostDirectoryResult>,
+  load: () => Promise<AccountHostDirectoryResult>,
+): Promise<Response> {
+  try {
+    const hosts = await cache.get(hostDirectoryCacheKey(input), load);
+    return json(hosts, {
+      headers: hostDirectorySuccessHeaders(),
+    });
+  } catch (err) {
+    console.error("[appview] host directory unavailable:", err);
+    return json({ error: "host_directory_unavailable" }, {
+      status: 503,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+}
+
+export function hostDirectoryResponseForTest(
+  input: AccountHostDirectoryOptions,
+  cache: EdgeStaleCache<AccountHostDirectoryResult>,
+  load: () => Promise<AccountHostDirectoryResult>,
+): Promise<Response> {
+  return hostDirectoryResponse(input, cache, load);
+}
 
 function validDirectorySearch(search: URLSearchParams): boolean {
   const queries = search.getAll("q");

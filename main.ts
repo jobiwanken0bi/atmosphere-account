@@ -17,10 +17,15 @@ import {
   appviewAssetProxyMiddleware,
   appviewEarlyProxyMiddleware,
 } from "./lib/appview-client.ts";
+import {
+  edgeCachePolicyMiddleware,
+  responseCompressionMiddleware,
+} from "./lib/edge-response.ts";
 
 export const app = new App<State>();
 
 app.use(securityHeadersMiddleware);
+app.use(responseCompressionMiddleware);
 app.use(canonicalOriginMiddleware);
 app.use(csrfMiddleware);
 app.use(slowRequestLoggingMiddleware);
@@ -32,6 +37,7 @@ app.use(staticFiles());
 app.use(trailingSlashRedirectMiddleware);
 app.use(wellKnownMiddleware);
 app.use(localeMiddleware);
+app.use(edgeCachePolicyMiddleware);
 app.use(appviewEarlyProxyMiddleware);
 app.use(sessionMiddleware);
 

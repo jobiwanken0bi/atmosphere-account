@@ -40,7 +40,7 @@ not store app OAuth tokens, recovery material, private keys, or PDS backups.
 
 ### Prerequisites
 
-- [Deno](https://docs.deno.com/runtime/getting_started/installation) 2.7.12.
+- [Deno](https://docs.deno.com/runtime/getting_started/installation) 2.8.3.
 - Node/npm only for the Chromium browser installation used by the login E2E.
 
 ```sh

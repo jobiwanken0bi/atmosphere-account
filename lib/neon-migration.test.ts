@@ -54,6 +54,33 @@ Deno.test("Postgres baseline adds the verified preferred account host field", as
   }
 });
 
+Deno.test("relay inventory sequence columns are widened on existing Postgres databases", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  for (const table of ["pds_instance", "pds_instance_status_history"]) {
+    if (
+      !postgres.includes(
+        `ALTER TABLE ${table}\n  ALTER COLUMN relay_seq TYPE bigint USING relay_seq::bigint`,
+      )
+    ) {
+      throw new Error(
+        `Expected additive bigint promotion for ${table}.relay_seq`,
+      );
+    }
+    const sqliteTable = sqlite.match(
+      new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table}\\s*\\(([\\s\\S]*?)\\)`,
+        "i",
+      ),
+    )?.[1] ?? "";
+    if (!/relay_seq INTEGER/i.test(sqliteTable)) {
+      throw new Error(
+        `${table}.relay_seq must retain SQLite's signed 64-bit INTEGER type`,
+      );
+    }
+  }
+});
+
 Deno.test("Postgres baseline links login environments to one stable app profile", async () => {
   const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
   for (

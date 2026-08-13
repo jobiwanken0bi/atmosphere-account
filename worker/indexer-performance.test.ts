@@ -1,7 +1,9 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
+  fetchIndexerRecordWithIdentityRefresh,
   indexerFailureLogFields,
   IndexerIdentityCache,
+  IndexerSuccessBatch,
   jetstreamBacklogIsFull,
   jetstreamMaxPendingEvents,
 } from "./indexer.ts";
@@ -43,6 +45,24 @@ Deno.test("indexer failure log fields omit upstream bodies and error messages", 
     indexerFailureLogFields(new PublicRecordFetchError(999, secret)),
     { kind: "public_record_fetch", httpStatus: null },
   );
+});
+
+Deno.test("indexer batches routine successes without record identifiers", () => {
+  let now = 1_000;
+  const batch = new IndexerSuccessBatch(() => now);
+  batch.record("profile_upsert");
+  batch.record("profile_upsert");
+  batch.record("host_delete");
+  now = 61_000;
+
+  assertEquals(batch.drain("interval"), {
+    event: "indexer_success_batch",
+    reason: "interval",
+    intervalMs: 60_000,
+    total: 3,
+    counts: { host_delete: 1, profile_upsert: 2 },
+  });
+  assertEquals(batch.drain("interval"), null);
 });
 
 Deno.test("indexer identity cache reuses one DID resolution", async () => {
@@ -140,4 +160,164 @@ Deno.test("indexer identity cache never serves an expired DID after refresh fail
       }))).pdsUrl,
     "https://new-pds.example",
   );
+});
+
+Deno.test("indexer record fetch refreshes a migrated PDS after a cached miss", async () => {
+  const resolutions: boolean[] = [];
+  const fetches: string[] = [];
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions.push(forceRefresh);
+      return Promise.resolve({
+        pdsUrl: forceRefresh
+          ? "https://new-pds.example"
+          : "https://old-pds.example",
+        handle: "alice.example",
+      });
+    },
+    (pdsUrl) => {
+      fetches.push(pdsUrl);
+      return Promise.resolve(
+        pdsUrl === "https://new-pds.example" ? { cid: "new" } : null,
+      );
+    },
+  );
+
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, [
+    "https://old-pds.example",
+    "https://new-pds.example",
+  ]);
+  assertEquals(result, {
+    identity: {
+      pdsUrl: "https://new-pds.example",
+      handle: "alice.example",
+    },
+    record: { cid: "new" },
+  });
+});
+
+Deno.test("indexer record fetch trusts current data from the freshly resolved migrated PDS", async () => {
+  const resolutions: boolean[] = [];
+  const fetches: string[] = [];
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions.push(forceRefresh);
+      return Promise.resolve({
+        pdsUrl: forceRefresh
+          ? "https://new-pds.example"
+          : "https://old-pds.example",
+        handle: "alice.example",
+      });
+    },
+    (pdsUrl) => {
+      fetches.push(pdsUrl);
+      return Promise.resolve({
+        cid: pdsUrl === "https://new-pds.example"
+          ? "newer-than-event"
+          : "stale",
+      });
+    },
+    (record) => record.cid === "event-cid",
+  );
+
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, [
+    "https://old-pds.example",
+    "https://new-pds.example",
+  ]);
+  assertEquals(result?.record, { cid: "newer-than-event" });
+});
+
+Deno.test("indexer record fetch trusts current data after freshly confirming the same PDS", async () => {
+  const resolutions: boolean[] = [];
+  let fetches = 0;
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions.push(forceRefresh);
+      return Promise.resolve({
+        pdsUrl: "https://pds.example",
+        handle: forceRefresh ? "alice.new.example" : "alice.old.example",
+      });
+    },
+    () => {
+      fetches++;
+      return Promise.resolve({ cid: "newer-than-event" });
+    },
+    (record) => record.cid === "event-cid",
+  );
+
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, 1);
+  assertEquals(result?.identity.handle, "alice.new.example");
+  assertEquals(result?.record, { cid: "newer-than-event" });
+});
+
+Deno.test("indexer record fetch refreshes a migrated PDS after a permanent HTTP miss", async () => {
+  let resolutions = 0;
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions++;
+      return Promise.resolve({
+        pdsUrl: forceRefresh
+          ? "https://new-pds.example"
+          : "https://old-pds.example",
+        handle: null,
+      });
+    },
+    (pdsUrl) => {
+      if (pdsUrl === "https://old-pds.example") {
+        throw new PublicRecordFetchError(400, "repo not found");
+      }
+      return Promise.resolve({ cid: "new" });
+    },
+  );
+
+  assertEquals(resolutions, 2);
+  assertEquals(result?.record, { cid: "new" });
+});
+
+Deno.test("indexer record fetch does not retry transient PDS failures", async () => {
+  const resolutions: boolean[] = [];
+  await assertRejects(
+    () =>
+      fetchIndexerRecordWithIdentityRefresh(
+        (forceRefresh) => {
+          resolutions.push(forceRefresh);
+          return Promise.resolve({
+            pdsUrl: "https://pds.example",
+            handle: null,
+          });
+        },
+        () => {
+          throw new PublicRecordFetchError(429, "rate limited");
+        },
+      ),
+    PublicRecordFetchError,
+  );
+  assertEquals(resolutions, [false]);
+});
+
+Deno.test("indexer record fetch bounds refresh when the PDS is unchanged", async () => {
+  const resolutions: boolean[] = [];
+  let fetches = 0;
+  await assertRejects(
+    () =>
+      fetchIndexerRecordWithIdentityRefresh(
+        (forceRefresh) => {
+          resolutions.push(forceRefresh);
+          return Promise.resolve({
+            pdsUrl: "https://pds.example",
+            handle: null,
+          });
+        },
+        () => {
+          fetches++;
+          throw new PublicRecordFetchError(404, "record not found");
+        },
+      ),
+    PublicRecordFetchError,
+  );
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, 1);
 });

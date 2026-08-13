@@ -3,6 +3,7 @@ import {
   SESSION_LOOKUP_SQL,
   sessionHostClaimCanSetMenuFlag,
   sessionManagedHostOwnershipSql,
+  shouldBypassSessionForPublicMedia,
   shouldHydrateAccountDetails,
 } from "./session.ts";
 
@@ -46,6 +47,37 @@ Deno.test("session details fully hydrate inside the appview origin", () => {
 
 Deno.test("session details keep full hydration for dev-only local helpers", () => {
   assertEquals(shouldHydrateAccountDetails("/dev/account-demo", true), true);
+});
+
+Deno.test("public immutable media bypasses session database hydration", () => {
+  for (
+    const path of [
+      "/api/atproto/blob",
+      "/api/registry/avatar/did%3Aplc%3Aalice",
+      "/api/registry/banner/did%3Aplc%3Aalice",
+      "/api/registry/og-banner/did%3Aplc%3Aalice",
+      "/api/registry/project-og/example.test",
+      "/api/registry/screenshot/did%3Aplc%3Aalice/0",
+      "/api/registry/icons",
+      "/api/registry/icons.zip",
+    ]
+  ) {
+    assertEquals(shouldBypassSessionForPublicMedia("GET", path), true);
+    assertEquals(shouldBypassSessionForPublicMedia("HEAD", path), true);
+    assertEquals(shouldBypassSessionForPublicMedia("POST", path), false);
+  }
+  for (
+    const path of [
+      "/api/me/avatar",
+      "/api/registry/icon/did%3Aplc%3Aalice",
+      "/api/registry/icon-bw/did%3Aplc%3Aalice",
+      "/api/registry/icon-access/request",
+      "/api/admin/backfill-og-jpegs",
+      "/account",
+    ]
+  ) {
+    assertEquals(shouldBypassSessionForPublicMedia("GET", path), false);
+  }
 });
 
 Deno.test("session lookup carries indexed app and operational host ownership", () => {

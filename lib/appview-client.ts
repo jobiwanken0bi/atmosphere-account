@@ -44,6 +44,7 @@ const MAX_APPVIEW_HTML_BYTES = 4 * 1024 * 1024;
 const MAX_APPVIEW_JSON_BYTES = 4 * 1024 * 1024;
 const APPVIEW_ASSET_PROXY_PREFIX = "/_appview/assets/";
 const APPVIEW_ASSET_SOURCE_PREFIX = "/assets/";
+const DERIVED_MEDIA_REDIRECT_ORIGINS_ENV = "DERIVED_MEDIA_REDIRECT_ORIGINS";
 
 const APPVIEW_FETCH_TIMEOUT_MS = appviewFetchTimeoutMs(
   Deno.env.get("APPVIEW_FETCH_TIMEOUT_MS"),
@@ -486,6 +487,10 @@ export async function proxyAppviewPageResponse(
     });
   }
 
+  // Fresh renderers may derive absolute URLs from the AppView request origin.
+  // Keep this bounded rewrite even when releases match: stream-through is not
+  // safe until every proxied renderer consumes the signed public origin when
+  // constructing URLs, forms, metadata, and defaults.
   const bounded = await readResponseTextWithLimit(res, MAX_APPVIEW_HTML_BYTES);
   if (!bounded.ok) throw new Error(`appview HTML ${bounded.error}`);
   const body = rewriteAppviewHtml(bounded.text, remote, currentUrl);
@@ -527,7 +532,7 @@ export async function proxyAppviewApiResponse(
   const location = headers.get("location");
   if (location || isRedirectResponse(res)) {
     const rewritten = location
-      ? rewriteAppviewUrl(location, remote, currentUrl)
+      ? rewriteAppviewApiUrl(location, remote, currentUrl)
       : null;
     if (!rewritten) {
       await res.body?.cancel().catch(() => {});
@@ -660,12 +665,15 @@ export function appviewTargetUrlForTest(
 
 export async function listPublicAccountHosts(
   input: AccountHostDirectoryOptions = {},
+  loadDirectory: (
+    input: AccountHostDirectoryOptions,
+  ) => Promise<AccountHostDirectoryResult> = listAccountHostDirectory,
 ): Promise<AccountHostDirectoryResult> {
   const publicInput = { ...input, publicOnly: true };
-  const result = await listAccountHostDirectory(publicInput).catch((err) => {
-    console.warn("[appview] list account hosts failed:", err);
-    return hostDirectoryResultForHosts(publicInput, []);
-  });
+  // The directory read is authoritative. Let failures reach EdgeStaleCache so
+  // it can retain a last-known-good value; converting an outage to an empty
+  // success would replace both the in-process stale value and the CDN entry.
+  const result = await loadDirectory(publicInput);
   let visibleHosts = result.hosts;
   if (visibleHosts.length > 0) {
     visibleHosts = await hydrateAccountHostProfiles(visibleHosts).catch(
@@ -760,8 +768,13 @@ function positiveDirectoryInteger(
 
 export async function getPublicHostDetail(
   hostId: string,
+  loadHost: (hostId: string) => Promise<AccountHost | null> = getAccountHost,
 ): Promise<PublicHostDetail> {
-  let host = await getAccountHost(hostId).catch(() => null);
+  // A failed primary lookup is not the same as a missing host. Propagate the
+  // failure so stale data remains usable and a cold request returns 503 rather
+  // than caching a false 404. Optional profile/claim enrichment stays
+  // best-effort below.
+  let host = await loadHost(hostId);
   if (host && !isAccountHostPubliclyListable(host)) host = null;
   if (host) {
     host = (await hydrateAccountHostProfiles([host]).catch((err) => {
@@ -872,6 +885,7 @@ const INFRA_RESPONSE_HEADERS = [
   "content-length",
   "etag",
   "server",
+  "x-atmosphere-render-origin",
 ];
 
 const PROVIDER_RESPONSE_HEADER_PREFIXES = [
@@ -936,12 +950,126 @@ function rewriteAppviewUrl(
   }
 }
 
+/**
+ * Media cache hits intentionally leave Atmosphere for a signed object-store
+ * URL. Limit that exceptional API redirect to exact configured origins and
+ * the query shape emitted by the SigV4 cache implementation. Other AppView
+ * redirects retain the existing browser-navigation policy (OAuth handoffs,
+ * account completion, and same-origin redirects).
+ */
+function rewriteAppviewApiUrl(
+  value: string,
+  remote: string,
+  currentUrl: URL,
+  derivedMediaOrigins: ReadonlySet<string> =
+    configuredDerivedMediaRedirectOrigins(),
+): string | null {
+  const rewritten = rewriteAppviewUrl(value, remote, currentUrl);
+  if (!rewritten) return null;
+  let target: URL;
+  try {
+    target = new URL(rewritten, currentUrl);
+  } catch {
+    return null;
+  }
+  if (target.origin === currentUrl.origin) return target.toString();
+  if (!isDerivedMediaApiPath(currentUrl.pathname)) return target.toString();
+  return isAllowedDerivedMediaRedirect(target, derivedMediaOrigins)
+    ? target.toString()
+    : null;
+}
+
+function configuredDerivedMediaRedirectOrigins(): ReadonlySet<string> {
+  let raw = "";
+  try {
+    raw = Deno.env.get(DERIVED_MEDIA_REDIRECT_ORIGINS_ENV)?.trim() ?? "";
+  } catch {
+    return new Set();
+  }
+  const origins = new Set<string>();
+  for (const candidate of raw.split(",").slice(0, 8)) {
+    const value = candidate.trim();
+    if (!value) continue;
+    try {
+      const parsed = new URL(value);
+      if (
+        parsed.protocol === "https:" && !parsed.username &&
+        !parsed.password && !parsed.search && !parsed.hash
+      ) {
+        origins.add(parsed.origin);
+      }
+    } catch {
+      // Invalid entries are ignored; an empty allowlist fails closed.
+    }
+  }
+  return origins;
+}
+
+function isDerivedMediaApiPath(pathname: string): boolean {
+  return pathname === "/api/atproto/blob" ||
+    /^\/api\/registry\/(?:banner|og-banner)\/[^/]+$/.test(pathname) ||
+    /^\/api\/registry\/project-og\/[^/]+$/.test(pathname) ||
+    /^\/api\/registry\/screenshot\/[^/]+\/[0-3]$/.test(pathname);
+}
+
+function isAllowedDerivedMediaRedirect(
+  target: URL,
+  allowedOrigins: ReadonlySet<string>,
+): boolean {
+  if (
+    !allowedOrigins.has(target.origin) || target.protocol !== "https:" ||
+    target.username || target.password || target.hash || target.pathname === "/"
+  ) return false;
+  const expectedKeys = [
+    "X-Amz-Algorithm",
+    "X-Amz-Credential",
+    "X-Amz-Date",
+    "X-Amz-Expires",
+    "X-Amz-Signature",
+    "X-Amz-SignedHeaders",
+  ];
+  const keys = [...target.searchParams.keys()];
+  if (
+    keys.length !== expectedKeys.length ||
+    expectedKeys.some((key) => target.searchParams.getAll(key).length !== 1)
+  ) return false;
+  if (
+    target.searchParams.get("X-Amz-Algorithm") !== "AWS4-HMAC-SHA256" ||
+    target.searchParams.get("X-Amz-SignedHeaders") !== "host" ||
+    !/^\d{8}T\d{6}Z$/.test(
+      target.searchParams.get("X-Amz-Date") ?? "",
+    ) ||
+    !/^[a-f0-9]{64}$/.test(
+      target.searchParams.get("X-Amz-Signature") ?? "",
+    ) ||
+    !/^[^/\s?&#]+\/\d{8}\/[a-z0-9-]{1,63}\/s3\/aws4_request$/.test(
+      target.searchParams.get("X-Amz-Credential") ?? "",
+    )
+  ) return false;
+  const expires = Number(target.searchParams.get("X-Amz-Expires"));
+  return Number.isInteger(expires) && expires >= 1 && expires <= 604_800;
+}
+
 export function rewriteAppviewUrlForTest(
   value: string,
   remote: string,
   currentUrl: URL,
 ): string | null {
   return rewriteAppviewUrl(value, remote, currentUrl);
+}
+
+export function rewriteAppviewApiUrlForTest(
+  value: string,
+  remote: string,
+  currentUrl: URL,
+  derivedMediaOrigins: readonly string[],
+): string | null {
+  return rewriteAppviewApiUrl(
+    value,
+    remote,
+    currentUrl,
+    new Set(derivedMediaOrigins.map((origin) => new URL(origin).origin)),
+  );
 }
 
 function isRedirectResponse(response: Response): boolean {

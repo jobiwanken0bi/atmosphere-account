@@ -8,6 +8,11 @@ import { getProfileByDid } from "../../../../../lib/registry.ts";
 import { withRateLimit } from "../../../../../lib/rate-limit.ts";
 import { fetchScreenshotBlobWithPdsFallback } from "../../../../../lib/screenshot-blob.ts";
 import { secureRasterImageProxyResponse } from "../../../../../lib/raster-image-security.ts";
+import {
+  cachedDerivedMediaRedirect,
+  profileDerivedMediaKey,
+  storeVerifiedMediaResponse,
+} from "../../../../../lib/derived-media-cache.ts";
 
 const NEGATIVE_CACHE_MS = 60_000;
 const NEGATIVE_CACHE_MAX_ENTRIES = 500;
@@ -34,6 +39,14 @@ export const handler = define.handlers({
     }
     try {
       const cid = screenshot.image.ref.$link;
+      const storageKey = profileDerivedMediaKey({
+        kind: "screenshot",
+        did,
+        cid,
+        index,
+      });
+      const cached = await cachedDerivedMediaRedirect(storageKey);
+      if (cached) return cached;
       const fetched = await fetchScreenshotBlobWithPdsFallback({
         storedPdsUrl: profile.pdsUrl,
         did,
@@ -50,7 +63,7 @@ export const handler = define.handlers({
         return negativeResponse();
       }
       negativeCache.delete(cacheKey);
-      return await secureRasterImageProxyResponse(upstream, {
+      const response = await secureRasterImageProxyResponse(upstream, {
         cid,
         declaredMime: screenshot.image.mimeType,
         maxBytes: Math.min(
@@ -63,6 +76,14 @@ export const handler = define.handlers({
         etag: cid,
         filename: `atmosphere-screenshot-${index + 1}`,
       });
+      if (response.ok) {
+        void storeVerifiedMediaResponse(
+          storageKey,
+          response.clone(),
+          `atmosphere-screenshot-${index + 1}`,
+        );
+      }
+      return response;
     } catch (err) {
       rememberNegative(cacheKey);
       console.info(

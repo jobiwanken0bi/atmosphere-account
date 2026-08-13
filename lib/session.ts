@@ -250,6 +250,32 @@ export function shouldHydrateAccountDetails(
   return pathname.startsWith("/dev/");
 }
 
+const PUBLIC_MEDIA_PATH_PREFIXES = [
+  "/api/registry/avatar/",
+  "/api/registry/banner/",
+  "/api/registry/og-banner/",
+  "/api/registry/project-og/",
+  "/api/registry/screenshot/",
+] as const;
+
+/**
+ * Immutable/public media never consumes account state. Owner-preview icon
+ * routes are deliberately excluded because their approval gate reads the
+ * active session. Skipping session and
+ * remembered-account hydration here prevents every signed-in page image from
+ * performing an otherwise unrelated session/ownership database query.
+ */
+export function shouldBypassSessionForPublicMedia(
+  method: string,
+  pathname: string,
+): boolean {
+  if (method !== "GET" && method !== "HEAD") return false;
+  return pathname === "/api/atproto/blob" ||
+    pathname === "/api/registry/icons" ||
+    pathname === "/api/registry/icons.zip" ||
+    PUBLIC_MEDIA_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 function configuredAppviewUrl(): URL | null {
   const raw = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
     Deno.env.get("APPVIEW_BASE_URL")?.trim();
@@ -275,6 +301,15 @@ function isAppviewOrigin(origin: string): boolean {
  * being present.
  */
 export const sessionMiddleware = define.middleware(async (ctx) => {
+  if (
+    shouldBypassSessionForPublicMedia(ctx.req.method, ctx.url.pathname)
+  ) {
+    ctx.state.user = null;
+    ctx.state.rememberedAccounts = [];
+    ctx.state.accountType = null;
+    ctx.state.accountHost = null;
+    return await ctx.next();
+  }
   const rememberedAccountsPromise = readRememberedAccounts(ctx.req).catch(
     (err) => {
       if (IS_DEV) console.warn("remembered accounts read failed:", err);

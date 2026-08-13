@@ -10,6 +10,11 @@ import {
   readRasterImageBytesWithLimit,
   safeRasterImageMime,
 } from "./raster-image-security.ts";
+import {
+  cachedDerivedMediaRedirect,
+  profileDerivedMediaKey,
+  storeDerivedMedia,
+} from "./derived-media-cache.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
@@ -64,8 +69,22 @@ export async function buildOgBannerResponse(
 ): Promise<Response | null> {
   if (!profile.bannerCid) return null;
 
+  const storageKey = profileDerivedMediaKey({
+    kind: "og",
+    did: profile.did,
+    cid: profile.bannerCid,
+  });
+  const stored = await cachedDerivedMediaRedirect(storageKey);
+  if (stored) return stored;
+
   const cached = await getOgJpeg(profile.did).catch(() => null);
   if (cached && cached.byteLength > 0 && looksLikeJpeg(cached)) {
+    void storeDerivedMedia({
+      key: storageKey,
+      bytes: cached,
+      contentType: "image/jpeg",
+      filename: "atmosphere-og.jpg",
+    });
     return jpegResponse(cached, `${profile.bannerCid}-og`);
   }
 
@@ -93,6 +112,12 @@ export async function buildOgBannerResponse(
     // requests should not pay its native startup and resident-memory cost.
     const { coverJpeg } = await import("./image-processing.ts");
     const jpeg = await coverJpeg(buf, OG_W, OG_H, JPEG_QUALITY);
+    void storeDerivedMedia({
+      key: storageKey,
+      bytes: jpeg,
+      contentType: "image/jpeg",
+      filename: "atmosphere-og.jpg",
+    });
     storeOgJpeg(profile.did, jpeg).catch((err) =>
       console.warn("[og-banner] failed to cache og_jpeg:", err)
     );

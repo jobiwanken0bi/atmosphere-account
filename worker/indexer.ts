@@ -118,6 +118,7 @@ const LEASE_NAME = "jetstream-indexer";
 const LEASE_TTL_MS = 45_000;
 const LEASE_RENEW_INTERVAL_MS = 15_000;
 const DEFAULT_MAX_PENDING_EVENTS = 1_000;
+const SUCCESS_TELEMETRY_INTERVAL_MS = 60_000;
 const MAX_PENDING_EVENTS = jetstreamMaxPendingEvents(
   Deno.env.get("JETSTREAM_MAX_PENDING_EVENTS"),
 );
@@ -162,7 +163,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   }
 }
 
-interface IndexerIdentity {
+export interface IndexerIdentity {
   pdsUrl: string;
   handle: string | null;
 }
@@ -217,6 +218,10 @@ export class IndexerIdentityCache {
     return refresh;
   }
 
+  invalidate(did: string): void {
+    this.values.delete(did);
+  }
+
   private set(did: string, value: IndexerIdentity): void {
     const now = this.now();
     for (const [key, entry] of this.values) {
@@ -267,6 +272,81 @@ export interface IndexerFailureLogFields {
   httpStatus: number | null;
 }
 
+export type IndexerSuccessOperation =
+  | "profile_upsert"
+  | "profile_delete"
+  | "review_upsert"
+  | "review_delete"
+  | "featured_replace"
+  | "featured_delete"
+  | "update_upsert"
+  | "update_delete"
+  | "app_listing_upsert"
+  | "app_review_upsert"
+  | "app_favorite_upsert"
+  | "app_community_upsert"
+  | "app_delete"
+  | "host_upsert"
+  | "host_delete";
+
+export interface IndexerSuccessSummary {
+  event: "indexer_success_batch";
+  reason: "interval" | "shutdown";
+  intervalMs: number;
+  total: number;
+  counts: Partial<Record<IndexerSuccessOperation, number>>;
+}
+
+/**
+ * Aggregate routine successes so a busy relay does not turn one indexed record
+ * into one paid log line. Failures and validation warnings remain immediate.
+ */
+export class IndexerSuccessBatch {
+  private readonly counts = new Map<IndexerSuccessOperation, number>();
+  private startedAt: number;
+
+  constructor(private readonly now: () => number = () => Date.now()) {
+    this.startedAt = now();
+  }
+
+  record(operation: IndexerSuccessOperation): void {
+    this.counts.set(operation, (this.counts.get(operation) ?? 0) + 1);
+  }
+
+  drain(
+    reason: IndexerSuccessSummary["reason"],
+  ): IndexerSuccessSummary | null {
+    const drainedAt = this.now();
+    const entries = [...this.counts.entries()].sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+    this.counts.clear();
+    const intervalMs = Math.max(0, drainedAt - this.startedAt);
+    this.startedAt = drainedAt;
+    if (entries.length === 0) return null;
+    return {
+      event: "indexer_success_batch",
+      reason,
+      intervalMs,
+      total: entries.reduce((total, [, count]) => total + count, 0),
+      counts: Object.fromEntries(entries),
+    };
+  }
+}
+
+const successBatch = new IndexerSuccessBatch();
+
+function recordIndexerSuccess(operation: IndexerSuccessOperation): void {
+  successBatch.record(operation);
+}
+
+function flushIndexerSuccesses(
+  reason: IndexerSuccessSummary["reason"],
+): void {
+  const summary = successBatch.drain(reason);
+  if (summary) console.log(JSON.stringify(summary));
+}
+
 export function indexerFailureLogFields(
   error: unknown,
 ): IndexerFailureLogFields {
@@ -290,21 +370,6 @@ function handleFromDidDocument(
   return aka ? aka.slice("at://".length) : null;
 }
 
-async function resolvePdsForDid(
-  did: string,
-): Promise<string> {
-  return (await resolveIndexerIdentity(did)).pdsUrl;
-}
-
-/** Best-effort handle lookup from the DID document's alsoKnownAs. */
-async function resolveHandleFromDoc(did: string): Promise<string> {
-  try {
-    return (await resolveIndexerIdentity(did)).handle ?? did;
-  } catch {
-    return did;
-  }
-}
-
 async function resolveIndexerIdentity(did: string): Promise<{
   pdsUrl: string;
   handle: string | null;
@@ -318,37 +383,100 @@ async function resolveIndexerIdentity(did: string): Promise<{
   });
 }
 
+/**
+ * Fetch a record through a cached DID identity, refreshing the DID document
+ * once when the cached PDS reports a permanent miss or returns a record that
+ * differs from the historical Jetstream CID. Account migrations can leave a
+ * previously cached PDS behind; accepting its result could advance the cursor
+ * without indexing the record from the new PDS.
+ *
+ * A CID mismatch is only an identity-refresh signal, not a fatal integrity
+ * error: the current PDS may legitimately contain a newer revision by the time
+ * this event is processed. Once a fresh DID resolution confirms the endpoint,
+ * its current record is authoritative.
+ */
+export async function fetchIndexerRecordWithIdentityRefresh<T>(
+  resolveIdentity: (forceRefresh: boolean) => Promise<IndexerIdentity>,
+  fetchRecord: (pdsUrl: string) => Promise<T | null>,
+  isExpectedRecord: (record: T) => boolean = () => true,
+): Promise<{ identity: IndexerIdentity; record: T } | null> {
+  const identity = await resolveIdentity(false);
+  let firstRecord: T | null = null;
+  let firstError: unknown;
+  try {
+    firstRecord = await fetchRecord(identity.pdsUrl);
+    if (firstRecord !== null && isExpectedRecord(firstRecord)) {
+      return { identity, record: firstRecord };
+    }
+  } catch (err) {
+    if (!isRefreshableIdentityMiss(err)) throw err;
+    firstError = err;
+  }
+
+  const refreshedIdentity = await resolveIdentity(true);
+  if (refreshedIdentity.pdsUrl === identity.pdsUrl) {
+    if (firstError !== undefined) throw firstError;
+    return firstRecord === null
+      ? null
+      : { identity: refreshedIdentity, record: firstRecord };
+  }
+
+  const record = await fetchRecord(refreshedIdentity.pdsUrl);
+  return record === null ? null : { identity: refreshedIdentity, record };
+}
+
+async function fetchIndexerRecord(
+  did: string,
+  collection: string,
+  rkey: string,
+  expectedCid?: string,
+): Promise<
+  {
+    identity: IndexerIdentity;
+    record: NonNullable<Awaited<ReturnType<typeof getRecordPublic>>>;
+  } | null
+> {
+  return await fetchIndexerRecordWithIdentityRefresh(
+    async (forceRefresh) => {
+      if (forceRefresh) identityCache.invalidate(did);
+      return await resolveIndexerIdentity(did);
+    },
+    (pdsUrl) => getRecordPublic(pdsUrl, did, collection, rkey),
+    (record) => !expectedCid || record.cid === expectedCid,
+  );
+}
+
 async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
   const commit = event.commit;
   if (!commit) return;
 
   if (commit.operation === "delete") {
     await deleteProfile(event.did);
+    recordIndexerSuccess("profile_delete");
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
   // Trust Jetstream's record bytes when present, but fetch from PDS for
   // create/update to make sure we have the canonical value (Jetstream may
   // omit blobs in some configurations).
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     PROFILE_NSID,
     commit.rkey,
+    commit.cid,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const { identity, record: fetched } = result;
 
-  const handle = await resolveHandleFromDoc(event.did);
   const synced = await upsertProfileFromRecord({
     did: event.did,
-    handle,
-    pdsUrl,
+    handle: identity.handle ?? event.did,
+    pdsUrl: identity.pdsUrl,
     record: { ...fetched, rkey: commit.rkey },
     recordRev: commit.rev,
   });
   if (synced) {
-    console.log("[indexer] upsert profile %s (%s)", handle, event.did);
+    recordIndexerSuccess("profile_upsert");
   }
 }
 
@@ -358,17 +486,18 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markReviewRemovedByRkey(event.did, commit.rkey);
+    recordIndexerSuccess("review_delete");
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     REVIEW_NSID,
     commit.rkey,
+    commit.cid,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const fetched = result.record;
 
   const validation = validateReview(fetched.value);
   if (!validation.ok || !validation.value) {
@@ -396,7 +525,7 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log("[indexer] upsert review %s -> %s", event.did, r.subject);
+  recordIndexerSuccess("review_upsert");
 }
 
 async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
@@ -416,17 +545,18 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await replaceFeatured([]);
+    recordIndexerSuccess("featured_delete");
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     FEATURED_NSID,
     "self",
+    commit.cid,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const fetched = result.record;
 
   const validation = validateFeatured(fetched.value);
   if (!validation.ok || !validation.value) {
@@ -440,10 +570,7 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
       position: e.position ?? i,
     })),
   );
-  console.log(
-    "[indexer] replaced featured directory (%d entries)",
-    validation.value.entries.length,
-  );
+  recordIndexerSuccess("featured_replace");
 }
 
 async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
@@ -452,6 +579,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markProfileUpdateRemovedByRkey(event.did, commit.rkey);
+    recordIndexerSuccess("update_delete");
     return;
   }
 
@@ -461,14 +589,14 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     UPDATE_NSID,
     commit.rkey,
+    commit.cid,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const fetched = result.record;
 
   const validation = validateUpdate(fetched.value);
   if (!validation.ok || !validation.value) {
@@ -494,7 +622,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log("[indexer] upsert update %s/%s", event.did, commit.rkey);
+  recordIndexerSuccess("update_upsert");
 }
 
 function recordUri(event: JetstreamEvent): string | null {
@@ -519,17 +647,17 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
       await deleteAppRecord(uri);
     }
     await clearAppRecordFailure(uri);
+    recordIndexerSuccess("app_delete");
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  let fetched: Awaited<ReturnType<typeof getRecordPublic>>;
+  let result: Awaited<ReturnType<typeof fetchIndexerRecord>>;
   try {
-    fetched = await getRecordPublic(
-      pdsUrl,
+    result = await fetchIndexerRecord(
       event.did,
       commit.collection,
       commit.rkey,
+      commit.cid,
     );
   } catch (err) {
     if (err instanceof PublicRecordFetchError && isPermanentFetchMiss(err)) {
@@ -550,7 +678,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     throw err;
   }
-  if (!fetched) {
+  if (!result) {
     await recordAppRecordFailure({
       uri,
       collection: commit.collection,
@@ -561,6 +689,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     });
     return;
   }
+  const fetched = result.record;
 
   if (commit.collection === ATSTORE_LISTING_NSID) {
     const draft = parseAtstoreListing({
@@ -584,7 +713,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log("[indexer] upsert app listing %s", uri);
+    recordIndexerSuccess("app_listing_upsert");
   } else if (commit.collection === ATSTORE_REVIEW_NSID) {
     const draft = parseAtstoreReview({
       uri,
@@ -596,6 +725,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     if (draft) {
       await upsertAppReview(draft);
       await clearAppRecordFailure(uri);
+      recordIndexerSuccess("app_review_upsert");
     } else {
       await recordAppRecordFailure({
         uri,
@@ -617,6 +747,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     if (draft) {
       await upsertAppFavorite(draft);
       await clearAppRecordFailure(uri);
+      recordIndexerSuccess("app_favorite_upsert");
     } else {
       await recordAppRecordFailure({
         uri,
@@ -653,7 +784,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log("[indexer] upsert community app %s", uri);
+    recordIndexerSuccess("app_community_upsert");
   }
 }
 
@@ -665,31 +796,30 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markHostProtocolRecordDeleted(uri);
-    console.log("[indexer] deleted host record %s", uri);
+    recordIndexerSuccess("host_delete");
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     commit.collection,
     commit.rkey,
+    commit.cid,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const { identity, record: fetched } = result;
 
-  const authorHandle = await resolveHandleFromDoc(event.did);
   const parsed = await upsertHostProtocolRecord({
     uri,
     cid: fetched.cid,
     collection: commit.collection,
     repoDid: event.did,
     rkey: commit.rkey,
-    authorHandle,
+    authorHandle: identity.handle ?? event.did,
     value: fetched.value,
   });
   if (parsed) {
-    console.log("[indexer] upsert host %s %s", parsed.kind, uri);
+    recordIndexerSuccess("host_upsert");
   } else {
     console.warn("[indexer] invalid host record %s", uri);
   }
@@ -705,7 +835,14 @@ function appDirectorySourceType(collection: string): string {
 }
 
 function isPermanentFetchMiss(err: PublicRecordFetchError): boolean {
-  return err.status >= 400 && err.status < 500;
+  return isRefreshableIdentityMiss(err);
+}
+
+function isRefreshableIdentityMiss(
+  err: unknown,
+): err is PublicRecordFetchError {
+  return err instanceof PublicRecordFetchError && err.status >= 400 &&
+    err.status < 500 && ![408, 425, 429].includes(err.status);
 }
 
 async function processEvent(event: JetstreamEvent): Promise<void> {
@@ -768,7 +905,7 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   activeSocket = ws;
   let lastPersistedAt = 0;
   let processedCursor = cursor ?? 0;
-  let renewTimer: number | undefined;
+  let renewTimer: ReturnType<typeof setInterval> | undefined;
   let connectedAt: number | null = null;
   let processingQueue = Promise.resolve();
 
@@ -872,54 +1009,63 @@ async function main(): Promise<void> {
   let lastReconnectLoggedAt: number | null = null;
   let lastReconnectLogLevel: ReconnectLogLevel | null = null;
   let suppressedReconnects = 0;
-  while (!shuttingDown) {
-    let retryDelayMs = reconnectDelayMs(Math.max(1, consecutiveFailures));
-    try {
-      await runOnce(consecutiveFailures === 0);
-    } catch (err) {
-      if (shuttingDown) break;
-      if (err instanceof LeaseUnavailableError) {
-        console.warn("[indexer] %s; retrying soon", err.message);
-        consecutiveFailures = 0;
-      } else if (err instanceof JetstreamDisconnectError) {
-        consecutiveFailures = nextReconnectFailureCount({
-          previous: consecutiveFailures,
-          connectedForMs: err.connectedForMs,
-        });
-        retryDelayMs = reconnectDelayMs(consecutiveFailures);
-        const now = Date.now();
-        const decision = reconnectLogDecision({
-          consecutiveFailures,
-          connectedForMs: err.connectedForMs,
-          now,
-          lastLoggedAt: lastReconnectLoggedAt,
-          lastLevel: lastReconnectLogLevel,
-        });
-        if (decision.shouldLog) {
-          const message = `[indexer] Jetstream disconnected reason=${
-            jetstreamDisconnectReason(err.message)
-          } connection_ms=${err.connectedForMs} consecutive_failures=${consecutiveFailures} reconnect_delay_ms=${retryDelayMs} suppressed_reconnects=${suppressedReconnects}`;
-          if (decision.level === "error") console.error("%s", message);
-          else console.info("%s", message);
-          lastReconnectLoggedAt = now;
-          suppressedReconnects = 0;
+  const successTimer = setInterval(
+    () => flushIndexerSuccesses("interval"),
+    SUCCESS_TELEMETRY_INTERVAL_MS,
+  );
+  try {
+    while (!shuttingDown) {
+      let retryDelayMs = reconnectDelayMs(Math.max(1, consecutiveFailures));
+      try {
+        await runOnce(consecutiveFailures === 0);
+      } catch (err) {
+        if (shuttingDown) break;
+        if (err instanceof LeaseUnavailableError) {
+          console.warn("[indexer] %s; retrying soon", err.message);
+          consecutiveFailures = 0;
+        } else if (err instanceof JetstreamDisconnectError) {
+          consecutiveFailures = nextReconnectFailureCount({
+            previous: consecutiveFailures,
+            connectedForMs: err.connectedForMs,
+          });
+          retryDelayMs = reconnectDelayMs(consecutiveFailures);
+          const now = Date.now();
+          const decision = reconnectLogDecision({
+            consecutiveFailures,
+            connectedForMs: err.connectedForMs,
+            now,
+            lastLoggedAt: lastReconnectLoggedAt,
+            lastLevel: lastReconnectLogLevel,
+          });
+          if (decision.shouldLog) {
+            const message = `[indexer] Jetstream disconnected reason=${
+              jetstreamDisconnectReason(err.message)
+            } connection_ms=${err.connectedForMs} consecutive_failures=${consecutiveFailures} reconnect_delay_ms=${retryDelayMs} suppressed_reconnects=${suppressedReconnects}`;
+            if (decision.level === "error") console.error("%s", message);
+            else console.info("%s", message);
+            lastReconnectLoggedAt = now;
+            suppressedReconnects = 0;
+          } else {
+            suppressedReconnects += 1;
+          }
+          lastReconnectLogLevel = decision.level;
         } else {
-          suppressedReconnects += 1;
+          consecutiveFailures = Math.min(11, consecutiveFailures + 1);
+          retryDelayMs = reconnectDelayMs(consecutiveFailures);
+          const failure = indexerFailureLogFields(err);
+          console.error(
+            "[indexer] worker failed error_kind=%s http_status=%s",
+            failure.kind,
+            failure.httpStatus ?? "none",
+          );
         }
-        lastReconnectLogLevel = decision.level;
-      } else {
-        consecutiveFailures = Math.min(11, consecutiveFailures + 1);
-        retryDelayMs = reconnectDelayMs(consecutiveFailures);
-        const failure = indexerFailureLogFields(err);
-        console.error(
-          "[indexer] worker failed error_kind=%s http_status=%s",
-          failure.kind,
-          failure.httpStatus ?? "none",
-        );
       }
+      if (shuttingDown) break;
+      await new Promise((r) => setTimeout(r, retryDelayMs));
     }
-    if (shuttingDown) break;
-    await new Promise((r) => setTimeout(r, retryDelayMs));
+  } finally {
+    clearInterval(successTimer);
+    flushIndexerSuccesses("shutdown");
   }
   await releaseWorkerLease(LEASE_NAME, workerId).catch(() => {});
   console.log("[indexer] stopped");

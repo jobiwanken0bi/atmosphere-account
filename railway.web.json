@@ -1,0 +1,32 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "railway.web.Dockerfile",
+    "watchPatterns": [
+      "/.dockerignore",
+      "/client.ts",
+      "/components/**",
+      "/deno.json",
+      "/deno.lock",
+      "/dev.ts",
+      "/i18n/**",
+      "/islands/**",
+      "/lexicons/**",
+      "/lib/**",
+      "/main.ts",
+      "/railway.web.Dockerfile",
+      "/railway.web.json",
+      "/routes/**",
+      "/scripts/migrate-postgres.ts",
+      "/scripts/prepare-postgres-release.ts",
+      "/sql/**",
+      "/static/**",
+      "/utils.ts",
+      "/vite.config.ts"
+    ]
+  },
+  "deploy": {
+    "preDeployCommand": "deno task db:prepare:postgres"
+  }
+}

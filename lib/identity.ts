@@ -410,7 +410,7 @@ async function resolveWithTimeout(
   hostname: string,
   type: AddressRecordType,
 ): Promise<string[]> {
-  let timeout: number | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       resolve(hostname, type),

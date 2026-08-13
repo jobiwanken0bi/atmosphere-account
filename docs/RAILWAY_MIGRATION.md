@@ -118,12 +118,14 @@ The source-linked Railway services use the root `railway.json`. Before Railway
 starts a new web/appview or indexer deployment, its pre-deploy phase runs:
 
 ```sh
-deno task db:migrate:postgres
+deno task db:prepare:postgres
 ```
 
-Both application images include `scripts/` and `sql/`, and cache the Postgres
-migration entrypoint during their image builds. A migration failure therefore
-blocks the new deployment instead of letting code start against an older schema.
+Both application images include `scripts/` and `sql/`, and cache the release
+preparation entrypoint during their image builds. It migrates first, then safely
+synchronizes curated account-host seeds. Either failure blocks the new
+deployment instead of letting code start against an older schema or stale seed
+catalog.
 
 Web and indexer deployments may begin concurrently. The Postgres-only runner
 adds a transaction-scoped advisory lock immediately after the schema's `BEGIN`.
@@ -160,6 +162,22 @@ Normal deploys are pushed, reviewed commits on `main`; do not use `railway up`
 for routine production releases. Railway's native commit SHA is authoritative
 even if an old manual `ATMOSPHERE_RELEASE_SHA` variable remains configured.
 
+Give each source-linked service its own absolute **Railway Config File Path** in
+the service Settings page:
+
+| Service         | Config file               |
+| --------------- | ------------------------- |
+| `web`           | `/railway.web.json`       |
+| `indexer`       | `/railway.indexer.json`   |
+| `pds-inventory` | `/railway.inventory.json` |
+
+Those files keep web route/static changes from rebuilding the indexer or daily
+inventory image, and keep worker-only changes from rebuilding the web image. The
+root `/railway.json` deliberately contains only the shared release gate; it must
+not contain a combined watch list. The inventory config deliberately omits
+`startCommand` and `cronSchedule`, so retain and read back the existing service
+overrides after selecting `/railway.inventory.json`.
+
 Verify:
 
 ```sh
@@ -177,7 +195,9 @@ Health checks:
   deploys report `RAILWAY_GIT_COMMIT_SHA`; stamp Deno only if it does not expose
   its provider Git SHA.
 - Indexer health: check `GET /api/health/ready` for a fresh worker lease and
-  verify `worker_lease` in Railway Postgres.
+  verify `worker_lease` in Railway Postgres. A stale lease or inventory marks
+  readiness `degraded` without rolling back an otherwise healthy web deploy; the
+  hourly production verifier treats degradation as a failure.
 - Production smoke suite: run `deno task smoke:production` after Deno or Railway
   appview deploys. It checks liveness/readiness, OAuth metadata, JWKS, core
   HTML, standalone SDK assets, release metadata, and the hosted picker asset
@@ -186,6 +206,14 @@ Health checks:
   `SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production`
   after deploys when the release SHA variables are configured; this fails if the
   Deno shell or Railway appview is stale.
+- Cheap readiness: `deno task smoke:readiness` makes one readiness request and
+  requires a healthy database, a fresh indexer lease, a fresh complete PDS
+  inventory, and present, matching Deno/Railway web-artifact SHAs. GitHub runs
+  this hourly. Every run resolves and requires the latest first-parent commit
+  that matches `/railway.web.json`'s rebuild scope. A later worker-only commit
+  therefore still verifies the preceding web artifact without forcing an
+  unrelated web rebuild or masking an incomplete rollout. The full suite runs
+  after deploys and once daily.
 - Exact release helper: source-linked Railway deploys report their commit SHA
   natively. Use `deno task release:stamp -- --write --deno` only if Deno Deploy
   does not provide its Git SHA. The helper requires a clean worktree and HEAD

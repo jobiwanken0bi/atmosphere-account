@@ -18,12 +18,13 @@ WORKDIR /app
 RUN chown deno:deno /app
 
 COPY --chown=deno:deno deno.json deno.lock ./
+USER deno
+RUN deno install --frozen
+
 COPY --chown=deno:deno . .
 
-USER deno
-
-RUN deno task build \
-  && deno cache --node-modules-dir=auto scripts/migrate-postgres.ts
+RUN deno task build:compiled \
+  && deno cache --frozen --node-modules-dir=auto scripts/prepare-postgres-release.ts
 
 ENV DENO_ENV=production
 

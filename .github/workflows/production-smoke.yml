@@ -4,11 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       expected_release_sha:
-        description: "Optional override; defaults to the checked-out SHA that production shell and appview must report"
+        description: "Optional override; defaults to the latest web-artifact SHA at or before the checked-out commit"
         required: false
         type: string
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
   schedule:
+    # One readiness request each hour; the full browser/asset suite runs daily.
     - cron: "17 * * * *"
+    - cron: "41 7 * * *"
 
 permissions:
   contents: read
@@ -18,32 +24,146 @@ concurrency:
   group: production-smoke
   cancel-in-progress: true
 
+env:
+  DENO_VERSION: 2.8.3
+  SOURCE_RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  EXPLICIT_RELEASE_SHA: ${{ github.event.inputs.expected_release_sha || '' }}
+
 jobs:
-  smoke:
-    name: Production smoke suite
+  readiness:
+    name: Cheap production readiness
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    outputs:
+      expected_release_sha: ${{ steps.release_scope.outputs.expected_release_sha }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Worker-only commits still verify the nearest prior web artifact.
+          # Full first-parent history is required to resolve that SHA.
+          fetch-depth: 0
 
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.7.12
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+
+      - name: Determine the expected web artifact release
+        id: release_scope
+        run: |
+          expected="$EXPLICIT_RELEASE_SHA"
+          if [ -z "$expected" ]; then
+            expected="$(deno task release:web-changed -- --sha="$SOURCE_RELEASE_SHA")"
+          fi
+          echo "expected_release_sha=$expected" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for post-deploy parity, or check once on schedule
+        env:
+          SMOKE_EXPECT_RELEASE_SHA: ${{ steps.release_scope.outputs.expected_release_sha }}
+          POST_DEPLOY: ${{ github.event_name == 'workflow_run' && '1' || '0' }}
+        run: |
+          attempts=1
+          # Deno and Railway build/promote independently. Allow up to 15
+          # minutes for exact SHA parity before treating it as release drift.
+          if [ "$POST_DEPLOY" = "1" ]; then attempts=30; fi
+          for attempt in $(seq 1 "$attempts"); do
+            if deno task smoke:readiness; then exit 0; fi
+            if [ "$attempt" -lt "$attempts" ]; then sleep 30; fi
+          done
+          exit 1
+
+  full:
+    name: Full production smoke suite
+    needs: readiness
+    if: >-
+      needs.readiness.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'workflow_run' ||
+       github.event.schedule == '41 7 * * *')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout release
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
 
       - name: Smoke production
         env:
-          SMOKE_EXPECT_RELEASE_SHA: ${{ github.event.inputs.expected_release_sha || github.sha }}
+          SMOKE_EXPECT_RELEASE_SHA: ${{ needs.readiness.outputs.expected_release_sha }}
         run: deno task smoke:production
 
-      - name: Open or update production alert
-        if: failure()
+  alert:
+    name: Reconcile production alert
+    needs: [readiness, full]
+    if: always() && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Open or update readiness alert
+        if: needs.readiness.result == 'failure'
         env:
-          GH_TOKEN: ${{ github.token }}
+          ALERT_TITLE: "Production readiness is failing"
+        run: |
+          issue_number="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "\"$ALERT_TITLE\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
+            | head -n 1)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "Production verification failed again: ${run_url}"
+          else
+            gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$ALERT_TITLE" \
+              --body "Production readiness failed. Investigate exact Deno/Railway release parity, appview/Postgres readiness, the indexer lease, and the complete PDS-inventory heartbeat.\n\nRun: ${run_url}"
+          fi
+
+      - name: Close recovered readiness alert
+        if: needs.readiness.result == 'success'
+        env:
+          ALERT_TITLE: "Production readiness is failing"
+        run: |
+          issue_number="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "\"$ALERT_TITLE\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
+            | head -n 1)"
+          if [ -n "$issue_number" ]; then
+            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            gh issue comment "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "Production recovered and verification is passing again: ${run_url}"
+            gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY"
+          fi
+
+      - name: Open or update full smoke alert
+        if: needs.full.result == 'failure'
+        env:
           ALERT_TITLE: "Production smoke is failing"
         run: |
           issue_number="$(gh issue list \
@@ -57,18 +177,17 @@ jobs:
           if [ -n "$issue_number" ]; then
             gh issue comment "$issue_number" \
               --repo "$GITHUB_REPOSITORY" \
-              --body "The production smoke failed again: ${run_url}"
+              --body "The full production smoke failed again: ${run_url}"
           else
             gh issue create \
               --repo "$GITHUB_REPOSITORY" \
               --title "$ALERT_TITLE" \
-              --body "The hourly production smoke failed. Investigate the Deno shell, Railway appview, indexer lease, Postgres readiness, and the 42-hour complete PDS-inventory heartbeat.\n\nRun: ${run_url}"
+              --body "The full daily/post-deploy production smoke failed after readiness passed. Investigate HTML, OAuth metadata, SDK, picker, and generated asset regressions.\n\nRun: ${run_url}"
           fi
 
-      - name: Close recovered production alert
-        if: success()
+      - name: Close recovered full smoke alert
+        if: needs.full.result == 'success'
         env:
-          GH_TOKEN: ${{ github.token }}
           ALERT_TITLE: "Production smoke is failing"
         run: |
           issue_number="$(gh issue list \
@@ -82,6 +201,6 @@ jobs:
             run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             gh issue comment "$issue_number" \
               --repo "$GITHUB_REPOSITORY" \
-              --body "Production recovered and the smoke suite is passing again: ${run_url}"
+              --body "The full production smoke recovered: ${run_url}"
             gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY"
           fi

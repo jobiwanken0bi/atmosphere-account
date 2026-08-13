@@ -152,13 +152,14 @@ ATMOSPHERE_DB_BACKEND=postgres deno task db:smoke -- --backend=postgres
 ```
 
 Routine source-linked Railway releases do not depend on an operator running the
-first command manually. The root `railway.json` runs it as a blocking pre-deploy
-command for both the web/appview and indexer images. The generic Postgres runner
-acquires a transaction-scoped advisory lock before any DDL, so concurrent
-service deploys serialize safely and either service can migrate first. A failed
-migration prevents the new service deployment from starting. The advisory lock
-is injected only by the Postgres runner; the shared SQL file and Neon migration
-behavior remain unchanged.
+first command manually. The root `railway.json` runs `db:prepare:postgres` as a
+blocking pre-deploy gate for both the web/appview and indexer images. That one
+task applies the schema and then synchronizes curated host seeds. The generic
+Postgres runner acquires a transaction-scoped advisory lock before any DDL, so
+concurrent service deploys serialize safely and either service can migrate
+first. A failed migration or seed sync prevents the new deployment from
+starting. The advisory lock is injected only by the Postgres runner; the shared
+SQL file and Neon migration behavior remain unchanged.
 
 Cutover acceptance checks:
 
@@ -228,19 +229,36 @@ Fresh-generated island chunks may come from the appview bundle proxy. The picker
 smoke checks HTML, CSS, static scripts, and generated `/assets` imports on both
 `login.atmosphereaccount.com` and `atmosphereaccount.com`.
 
-GitHub Actions also runs the `Production Smoke` workflow on a schedule and on
-manual dispatch. It defaults to the checked-out SHA, so scheduled runs fail if
-`main` has moved but the Deno shell or Railway appview is still serving an older
-release. Treat it as an early warning, not as a replacement for running
-`deno task smoke:production` immediately after an intentional deploy or DNS
-change. Manual dispatch accepts `expected_release_sha` only as an override when
-you intentionally need to smoke an older deployed release from GitHub.
+GitHub Actions runs the cheap `smoke:readiness` check hourly and the complete
+`smoke:production` suite after successful `main` CI, daily, and on manual
+dispatch. Readiness always requires Deno and Railway to report non-empty,
+exactly matching web-artifact SHAs, a healthy Postgres connection, a fresh
+indexer lease, and a fresh complete inventory. Each run walks first-parent
+history to the latest commit matching `railway.web.json`'s watch patterns and
+requires both providers to serve that exact artifact within 15 minutes after CI.
+A worker- or inventory-only commit does not invent a new web release, but it
+still verifies the preceding web artifact; it cannot cancel and mask an
+incomplete rollout. This avoids paying to download every HTML and generated
+asset every hour while retaining a full daily regression check. Manual dispatch
+accepts `expected_release_sha` as an explicit release override.
+
+Railway source builds use service-specific config-as-code files. In production,
+set `web` to `/railway.web.json`, `indexer` to `/railway.indexer.json`, and
+`pds-inventory` to `/railway.inventory.json` under each service's Settings →
+Railway Config File Path. Their checked-in watch patterns isolate web-only,
+indexer-only, and daily-inventory deploys. The inventory file intentionally does
+not own its live start command or cron schedule; preserve those service
+overrides and verify them after changing the config file path.
 
 The appview readiness payload includes `pdsInventory`. Only a successful scan
-that reached the relay's final page satisfies freshness. The default 42-hour
-window is monitored by the hourly Production Smoke workflow, which opens or
-updates a GitHub issue on failure. A failed or partial scan remains visible as
-the latest attempt but cannot refresh the heartbeat.
+that reached the relay's final page satisfies freshness. The inventory cron has
+an eight-minute overall deadline, a renewable database lease to suppress
+overlap, bounded retry/backoff for transient write contention, and structured
+completion/failure telemetry. It closes the database pool on every normal exit;
+a final hard-exit guard prevents a stuck handle from occupying the next Railway
+cron slot. After a complete scan it runs bounded seed/profile maintenance and
+public-intent enrichment. A failed or partial scan remains visible as the latest
+attempt but cannot refresh the 42-hour heartbeat.
 
 ## Neon Migration Track
 
@@ -400,6 +418,39 @@ media.
   Atmosphere-owned object storage unless we have a concrete reliability,
   control, or cost reason.
 
+### Derived-media cache rollout
+
+The web service can use a private S3-compatible bucket as a fail-open cache for
+verified derived variants. Canonical AT Protocol media remains on its PDS. The
+web service receives the bucket credentials; Deno receives only the exact public
+virtual-host origin in `DERIVED_MEDIA_REDIRECT_ORIGINS`. Never copy bucket
+credentials to Deno.
+
+1. Configure the web service with the six `DERIVED_MEDIA_S3_*` values in
+   `.env.example`. Keep the bucket private.
+2. Configure Deno with the bucket's exact public HTTPS origin, for example
+   `https://<bucket>.t3.storageapi.dev`, in `DERIVED_MEDIA_REDIRECT_ORIGINS`.
+3. Deploy and confirm miss paths still serve the PDS/DB response, while a
+   subsequent request receives a signed 302 to that exact origin.
+4. Copy existing database OG images without deleting the source:
+
+   ```sh
+   deno task backfill:derived-media
+   ```
+
+5. Inspect the structured totals and sample signed objects. Only then may the
+   database copies be removed:
+
+   ```sh
+   deno task backfill:derived-media --purge-source
+   ```
+
+The purge path downloads and hashes the exact stored object before a guarded
+database update. It exits non-zero on any failed copy. Removing or disabling the
+bucket configuration is a safe rollback: request paths simply use the canonical
+source again. Do not purge before the new code and bucket settings are live and
+verified.
+
 ## Operational Commands
 
 Run schema bootstrap explicitly before deploys and after additive DB changes:
@@ -516,11 +567,14 @@ more expensive in network, database, and execution time.
 
 - `GET /api/health` is a cheap liveness check. It does not touch the DB.
 - `GET /api/health/ready` checks DB connectivity and reports the current
-  Jetstream worker lease heartbeat when available.
+  Jetstream worker lease heartbeat and complete PDS-inventory freshness.
 
-The readiness endpoint should fail deploy/monitoring checks only when the web
-app cannot reach the DB. A missing or stale indexer lease means ingestion is
-behind, not that the web app is unable to serve.
+The readiness endpoint returns a failure status when the database/web serving
+boundary is unavailable. A missing/stale indexer lease or complete PDS inventory
+sets `degraded: true` while retaining HTTP success, so a background feed outage
+cannot block or roll back a web repair deploy. The hourly `smoke:readiness`
+verifier fails on any degradation and opens the operational alert.
+`GET /api/health` remains the cheapest process liveness endpoint.
 
 ## Worker Coordination
 
