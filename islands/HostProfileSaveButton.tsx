@@ -36,6 +36,7 @@ interface Props {
   host: string;
   targetName: string;
   currentHandle: string;
+  initialSaved?: boolean;
   rememberedAccounts?: Array<{ did: string; handle: string }>;
 }
 
@@ -54,11 +55,19 @@ interface HostProfileResponseBody {
  * reauthorization when an older session lacks the complete host grant.
  */
 export default function HostProfileSaveButton(
-  { did, host, targetName, currentHandle, rememberedAccounts = [] }: Props,
+  {
+    did,
+    host,
+    targetName,
+    currentHandle,
+    initialSaved = false,
+    rememberedAccounts = [],
+  }: Props,
 ) {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const submitting = useSignal(false);
   const message = useSignal("");
+  const saved = useSignal(initialSaved);
   const reauthorization = useSignal<ContextualReauthorization | null>(null);
   const pendingKey = hostProfilePendingKey(did, host);
   const resumeProofKey = hostProfileResumeProofKey(pendingKey);
@@ -99,6 +108,7 @@ export default function HostProfileSaveButton(
     if (submitting.value) return;
     submitting.value = true;
     message.value = "";
+    saved.value = false;
     try {
       const response = await fetch(currentRequestPath(), {
         method: "POST",
@@ -124,13 +134,7 @@ export default function HostProfileSaveButton(
       }
 
       await clearPendingBrowserAction(pendingKey).catch(() => {});
-      const redirectUrl = sameOriginPath(responseBody?.redirectUrl) ??
-        (response.redirected ? sameOriginPath(response.url) : null);
-      if (redirectUrl) {
-        globalThis.location.assign(redirectUrl);
-      } else {
-        globalThis.location.reload();
-      }
+      saved.value = true;
     } catch (error) {
       message.value = error instanceof Error
         ? error.message
@@ -143,6 +147,23 @@ export default function HostProfileSaveButton(
   useEffect(() => {
     const form = buttonRef.current?.form;
     if (!form) return;
+
+    const clearSaved = () => {
+      saved.value = false;
+    };
+    form.addEventListener("input", clearSaved);
+
+    if (initialSaved) {
+      const savedUrl = new URL(globalThis.location.href);
+      if (savedUrl.searchParams.has("saved")) {
+        savedUrl.searchParams.delete("saved");
+        globalThis.history.replaceState(
+          null,
+          "",
+          `${savedUrl.pathname}${savedUrl.search}${savedUrl.hash}`,
+        );
+      }
+    }
 
     const onSubmit = (event: SubmitEvent) => {
       if (event.defaultPrevented) return;
@@ -165,7 +186,10 @@ export default function HostProfileSaveButton(
         // Storage restrictions already prevent automatic replay.
       }
       void clearPendingBrowserAction(pendingKey).catch(() => {});
-      return () => form.removeEventListener("submit", onSubmit);
+      return () => {
+        form.removeEventListener("submit", onSubmit);
+        form.removeEventListener("input", clearSaved);
+      };
     }
 
     const url = new URL(globalThis.location.href);
@@ -187,7 +211,10 @@ export default function HostProfileSaveButton(
       // Clear an abandoned draft on a later ordinary visit as well as forged
       // or malformed return markers.
       void clearPendingBrowserAction(pendingKey).catch(() => {});
-      return () => form.removeEventListener("submit", onSubmit);
+      return () => {
+        form.removeEventListener("submit", onSubmit);
+        form.removeEventListener("input", clearSaved);
+      };
     }
     let cancelled = false;
     (async () => {
@@ -211,6 +238,7 @@ export default function HostProfileSaveButton(
     return () => {
       cancelled = true;
       form.removeEventListener("submit", onSubmit);
+      form.removeEventListener("input", clearSaved);
     };
   }, []);
 
@@ -225,9 +253,15 @@ export default function HostProfileSaveButton(
         disabled={submitting.value}
       >
         <span>
-          {submitting.value ? "Saving host profile…" : "Save host profile"}
+          {submitting.value ? "Saving changes…" : "Save changes"}
         </span>
       </button>
+      {saved.value && (
+        <span class="host-manage-saved" role="status">
+          <span aria-hidden="true">✓</span>
+          Saved
+        </span>
+      )}
       {message.value && (
         <p
           class="profile-form-status profile-form-status--error"
@@ -341,17 +375,6 @@ function responseError(
   return response.status === 413
     ? "Host avatars must be under 1 MB."
     : "The host profile could not be saved. Try again.";
-}
-
-function sameOriginPath(value: unknown): string | null {
-  if (typeof value !== "string" || !value) return null;
-  try {
-    const url = new URL(value, globalThis.location.origin);
-    if (url.origin !== globalThis.location.origin) return null;
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return null;
-  }
 }
 
 function restoreFormEntries(

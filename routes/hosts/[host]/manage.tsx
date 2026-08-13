@@ -4,6 +4,7 @@ import Footer from "../../../components/Footer.tsx";
 import AtmosphereHandle from "../../../components/AtmosphereHandle.tsx";
 import HostMark from "../../../components/hosts/HostMark.tsx";
 import HostProfileSaveButton from "../../../islands/HostProfileSaveButton.tsx";
+import HostManageSavedStatus from "../../../islands/HostManageSavedStatus.tsx";
 import { bskyCdnAvatarUrl } from "../../../lib/avatar.ts";
 import { buildAccountMenuProps } from "../../../lib/account-menu-props.ts";
 import { proxyAppviewPageResponse } from "../../../lib/appview-client.ts";
@@ -72,6 +73,13 @@ type ManageState =
   | "authority-unavailable"
   | "error";
 
+type ManageSavedSection =
+  | "directory"
+  | "signup"
+  | "profile"
+  | "account"
+  | "advanced";
+
 const SIGNUP_STATUSES: Array<{ value: HostSignupStatus; label: string }> = [
   { value: "open", label: "Open signup" },
   { value: "invite_required", label: "Invite required" },
@@ -121,6 +129,7 @@ interface HostManagePageProps {
   error: string | null;
   notice?: string | null;
   recovery?: AccountHostClaimRecovery | null;
+  savedSection?: ManageSavedSection | null;
 }
 
 export const handler = define.handlers({
@@ -205,6 +214,7 @@ export const handler = define.handlers({
             ? "Host claimed. You can remove the temporary DNS record now, then review the settings below."
             : "Host claimed successfully. Review its directory visibility and account routes below."
           : null}
+        savedSection={manageSavedSection(ctx.url)}
       />,
       { status: state === "ready" ? 200 : 403 },
     );
@@ -377,13 +387,11 @@ export const handler = define.handlers({
       return new Response(null, {
         status: 303,
         headers: {
-          location: `/hosts/${
-            encodeURIComponent(host.host)
-          }/manage?listing=saved`,
+          location: managedHostSaveLocation(host, "directory"),
         },
       });
     }
-    if (action === "save_profile") {
+    if (action === "save_profile" || action === "save_signup") {
       const publication = await publishManagedHostProfile(
         ctx.state.user,
         session,
@@ -448,9 +456,10 @@ export const handler = define.handlers({
             serviceRecordCid: publication.serviceRecordCid ?? null,
           }, ctx.state.user.did);
         }
-        const redirectUrl = `/hosts/${
-          encodeURIComponent(result.host.host)
-        }?managed=1`;
+        const redirectUrl = managedHostSaveLocation(
+          result.host,
+          action === "save_signup" ? "signup" : "profile",
+        );
         return hostProfileJson
           ? hostProfileJsonResponse(200, { ok: true, redirectUrl })
           : new Response(null, {
@@ -476,6 +485,9 @@ export const handler = define.handlers({
     }
 
     const settingsAction = action === "validate" ? "validate" : "save";
+    const settingsSavedSection: ManageSavedSection = action === "save_advanced"
+      ? "advanced"
+      : "account";
     const fieldIssues: HostDashboardFetchResult["issues"] = [];
     const serviceEndpoint = normalizeServiceEndpointField(
       values.serviceEndpoint,
@@ -558,7 +570,7 @@ export const handler = define.handlers({
           { status: 422 },
         );
       }
-      await updateAccountHostDashboardSettings(host.host, {
+      const updated = await updateAccountHostDashboardSettings(host.host, {
         serviceEndpoint,
         accountManagementUrl,
         dashboardUrl: accountManagementUrl,
@@ -570,10 +582,24 @@ export const handler = define.handlers({
         serviceRecordUri: publication.serviceRecordUri ?? null,
         serviceRecordCid: publication.serviceRecordCid ?? null,
       }, ctx.state.user.did);
+      if (!updated) {
+        return ctx.render(
+          <HostManagePage
+            host={host}
+            claim={claim}
+            state="ready"
+            account={account}
+            values={values}
+            validation={validation}
+            error="Account links could not be saved. Refresh and try again."
+          />,
+          { status: 409 },
+        );
+      }
       return new Response(null, {
         status: 303,
         headers: {
-          location: `/hosts/${encodeURIComponent(host.host)}?managed=1`,
+          location: managedHostSaveLocation(host, settingsSavedSection),
         },
       });
     }
@@ -784,6 +810,7 @@ function HostManagePage(props: HostManagePageProps) {
     error,
     notice,
     recovery,
+    savedSection,
   } = props;
   const dashboard = buildHostDashboardState({ host });
   const publicHostPageIsReady = !!host && isAccountHostPubliclyListable(host);
@@ -835,6 +862,7 @@ function HostManagePage(props: HostManagePageProps) {
                       error={error}
                       notice={notice ?? null}
                       recovery={recovery ?? null}
+                      savedSection={savedSection ?? null}
                       dashboard={dashboard}
                       activeDid={account.user?.did ?? ""}
                       activeHandle={account.user?.handle ?? ""}
@@ -874,6 +902,7 @@ function ManageBody(
     activeDid,
     activeHandle,
     rememberedAccounts,
+    savedSection,
   }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
@@ -887,6 +916,7 @@ function ManageBody(
     activeDid: string;
     activeHandle: string;
     rememberedAccounts: Array<{ did: string; handle: string }>;
+    savedSection: ManageSavedSection | null;
   },
 ) {
   if (state === "not-claimed") {
@@ -983,6 +1013,13 @@ function ManageBody(
   }/claim?${new URLSearchParams({
     publish: host.operatorListingOptIn === false ? "0" : "1",
   })}`;
+  const ownershipProof = claim?.method === "dns_txt"
+    ? "Verified with DNS"
+    : claim?.method === "pds_contact_email"
+    ? "Verified by contact email"
+    : claim?.method === "atproto_handle"
+    ? "Verified by handle"
+    : "Verified managing account";
 
   return (
     <>
@@ -999,6 +1036,15 @@ function ManageBody(
           {error}
         </p>
       )}
+      <div class="host-manage-nav-wrap">
+        <p class="text-eyebrow">Jump to</p>
+        <nav class="host-manage-nav" aria-label="Host management sections">
+          <a href="#public-presence">Public presence</a>
+          <a href="#account-journeys">Account journeys</a>
+          <a href="#connections-ownership">Connections &amp; ownership</a>
+          <a href="#advanced-settings">Advanced</a>
+        </nav>
+      </div>
       {claim?.method === "pds_contact_email" &&
         recovery?.status === "pending" &&
         recovery.currentOwnerDid === activeDid && (
@@ -1034,278 +1080,133 @@ function ManageBody(
           </a>
         </section>
       )}
-      <section class="host-manage-current host-manage-listing-section">
-        <div class="host-detail-dashboard-head">
+      <section
+        class="host-manage-overview"
+        aria-labelledby="host-manage-overview-title"
+      >
+        <div class="host-manage-group-heading">
           <div>
-            <p class="text-eyebrow">Public directory</p>
-            <h2>Show this host in the directory</h2>
-            <p class="text-body">
-              This host is listed because you manage it. Turn visibility off to
-              hide its directory card and public host page.
-            </p>
+            <p class="text-eyebrow">Overview</p>
+            <h2 id="host-manage-overview-title">Host status</h2>
           </div>
+          <a
+            class="text-link-button"
+            href={`/hosts/${encodeURIComponent(host.host)}`}
+          >
+            View public host ↗
+          </a>
         </div>
-        <form method="POST" class="host-manage-form" data-submit-once="true">
-          <label class="profile-form-toggle">
-            <input
-              type="checkbox"
-              name="directory_listing"
-              value="1"
-              checked={host.operatorListingOptIn !== false}
-            />
-            <span class="profile-form-toggle-body">
-              <span class="profile-form-toggle-label">
-                Show this host in the public directory
-              </span>
-              <span class="profile-form-toggle-hint">
-                Turning this off hides the host page and directory card. You can
-                turn it back on at any time.
-              </span>
-            </span>
-          </label>
-          <div class="host-manage-actions">
-            <button
-              class="directory-register-button host-manage-save"
-              type="submit"
-              name="action"
-              value="save_listing"
-              data-pending-label="Saving visibility…"
-            >
-              <span data-submit-once-label>Save directory visibility</span>
-            </button>
-          </div>
-        </form>
+        <div class="host-manage-status-grid">
+          <a href="#directory-visibility" class="host-manage-status-item">
+            <span>Directory</span>
+            <strong>
+              {host.operatorListingOptIn === false ? "Hidden" : "Visible"}
+            </strong>
+          </a>
+          <a href="#signup" class="host-manage-status-item">
+            <span>Sign-up</span>
+            <strong>{signupEligible ? "Available" : "Not listed"}</strong>
+          </a>
+          <a href="#account-links" class="host-manage-status-item">
+            <span>Account link</span>
+            <strong>{accountRouteUrl ? "Connected" : "Needs setup"}</strong>
+          </a>
+          <a href="#managing-account" class="host-manage-status-item">
+            <span>Ownership</span>
+            <strong>{ownershipProof}</strong>
+          </a>
+        </div>
       </section>
-      <section class="host-manage-current host-manage-signup-section">
-        <div class="host-detail-dashboard-head">
+      <section
+        id="public-presence"
+        class="host-manage-group"
+        aria-labelledby="public-presence-title"
+      >
+        <div class="host-manage-group-heading">
           <div>
-            <p class="text-eyebrow">Sign-up</p>
-            <h2>Where people create accounts</h2>
+            <p class="text-eyebrow">Public presence</p>
+            <h2 id="public-presence-title">How this host appears</h2>
             <p class="text-body">
-              Choose whether this host appears as a place to create an account
-              during Login with Atmosphere. Account creation stays on your site;
-              this directory only links people there.
+              Manage the profile people see and whether it is visible in the
+              public directory.
             </p>
           </div>
         </div>
-        <div
-          class={`host-claim-panel ${
-            signupEligible ? "host-claim-panel-ok" : ""
-          }`}
+        <section
+          id="public-profile"
+          class="host-manage-current host-manage-profile-section"
         >
-          <p class="host-claim-panel-title">
-            {signupEligible
-              ? "You appear in the account picker"
-              : "Not shown in the account picker yet"}
-          </p>
-          {signupEligible
-            ? (
-              <>
-                <p class="text-body">
-                  People creating a new account see a row like this:
+          <div class="host-detail-dashboard-head">
+            <div>
+              <p class="text-eyebrow">Public profile</p>
+              <h3>What people see on your listing</h3>
+              <p class="text-body">
+                The friendly name, avatar, description, and profile link shown
+                on host cards and the host detail page.
+              </p>
+            </div>
+          </div>
+          <form
+            method="POST"
+            encType="multipart/form-data"
+            class="host-manage-form"
+          >
+            <div class="profile-form-row host-register-profile-row host-manage-profile-identity">
+              <div class="profile-form-avatar host-manage-profile-avatar">
+                <HostMark host={host} />
+                <label class="profile-form-button-secondary">
+                  Replace avatar
+                  <input
+                    type="file"
+                    name="avatarUpload"
+                    accept="image/png,image/jpeg,image/webp"
+                    class="sr-only"
+                  />
+                </label>
+                <p class="profile-form-hint host-manage-avatar-optional">
+                  Optional. Stored with the managing account.
                 </p>
-                <div class="host-signup-preview" aria-hidden="true">
-                  <HostMark host={host} />
-                  <span class="host-signup-preview-name">
-                    {values.displayName || host.displayName}
+              </div>
+              <div class="profile-form-fields host-manage-profile-primary-fields">
+                <label class="profile-form-field">
+                  <span class="profile-form-label">Host name</span>
+                  <input
+                    class="profile-form-input"
+                    type="text"
+                    name="displayName"
+                    value={values.displayName}
+                    maxLength={80}
+                    required
+                  />
+                </label>
+                <label class="profile-form-field">
+                  <span class="profile-form-label">Website</span>
+                  <input
+                    class="profile-form-input"
+                    type="url"
+                    name="homepageUrl"
+                    value={values.homepageUrl}
+                    placeholder="https://pckt.cafe"
+                  />
+                </label>
+                <label class="profile-form-field">
+                  <span class="profile-form-label">Data location</span>
+                  <input
+                    class="profile-form-input"
+                    type="text"
+                    name="dataLocation"
+                    value={values.dataLocation}
+                    placeholder="Europe"
+                    maxLength={120}
+                  />
+                  <span class="profile-form-hint">
+                    Optional. Where account data is primarily hosted, if the
+                    host publishes that information.
                   </span>
-                  <span class="directory-register-button host-signup-preview-cta">
-                    {signupCtaLabel}
-                  </span>
-                </div>
-              </>
-            )
-            : (
-              <p class="text-body">
-                Choose <strong>Open signup</strong> or{" "}
-                <strong>Invite required</strong>{" "}
-                and add a signup URL to show up.
-              </p>
-            )}
-        </div>
-        <form method="POST" class="host-manage-form" data-submit-once="true">
-          <label class="profile-form-field">
-            <span class="profile-form-label">Signup status</span>
-            <select
-              class="profile-form-input"
-              name="signupStatus"
-              value={values.signupStatus}
-            >
-              {SIGNUP_STATUSES.map((status) => (
-                <option
-                  value={status.value}
-                  selected={values.signupStatus === status.value}
-                >
-                  {status.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label class="profile-form-field">
-            <span class="profile-form-label">Signup URL</span>
-            <input
-              class="profile-form-input"
-              type="url"
-              name="signupUrl"
-              value={values.signupUrl}
-              placeholder="https://pckt.cafe/signup"
-            />
-            <span class="profile-form-hint">
-              The direct create-account or invite-request flow. This can be
-              different from your public website.
-            </span>
-          </label>
-          <div class="host-manage-actions">
-            <button
-              class="directory-register-button host-manage-save"
-              type="submit"
-              name="action"
-              value="save_profile"
-              data-pending-label="Saving sign-up…"
-            >
-              <span data-submit-once-label>Save sign-up</span>
-            </button>
-          </div>
-        </form>
-      </section>
-      <section class="host-manage-current directory-relationship-entry">
-        <div>
-          <p class="text-eyebrow">Apps and host identity</p>
-          <h2>Connect this host to its apps</h2>
-          <p class="text-body">
-            The app and host keep separate public profiles. Verified connections
-            show whether the host provides account services for an app or the
-            two share an operator. Different app accounts must approve the
-            connection too.
-          </p>
-        </div>
-        <a
-          class="directory-register-button"
-          href={`/hosts/${encodeURIComponent(host.host)}/manage/apps`}
-        >
-          Manage app connections
-        </a>
-      </section>
-      {isLocalDevHostClaim(host.host)
-        ? (
-          <section class="host-manage-current directory-relationship-entry">
-            <div>
-              <p class="text-eyebrow">Managing account</p>
-              <h2>Local fixture manager</h2>
-              <p class="text-body">
-                Managing-account changes are unavailable for local{" "}
-                <code>.test</code>{" "}
-                fixtures because they cannot complete public DNS verification.
-              </p>
+                </label>
+              </div>
             </div>
-          </section>
-        )
-        : (
-          <section class="host-manage-current directory-relationship-entry">
-            <div>
-              <p class="text-eyebrow">Managing account</p>
-              <h2>
-                Managed by <AtmosphereHandle handle={claim?.claimantHandle} />
-              </h2>
-              <p class="text-body">
-                {claim?.method === "pds_contact_email"
-                  ? "Ownership currently uses the contact email published by this PDS. Verify DNS to strengthen its proof. To change the manager, choose the new account and prove control with DNS."
-                  : "One account manages this host. To change it, choose the new account and prove control again with DNS. This account stays in control until verification succeeds."}
-              </p>
-            </div>
-            <div class="host-manage-actions">
-              {claim?.method === "pds_contact_email" && (
-                <a class="directory-register-button" href={dnsUpgradeHref}>
-                  Strengthen ownership with DNS
-                </a>
-              )}
-              <form method="POST" data-submit-once="true">
-                <input
-                  type="hidden"
-                  name="action"
-                  value="start_owner_transfer"
-                />
-                <button
-                  type="submit"
-                  class="directory-register-button"
-                  data-pending-label="Preparing account change…"
-                >
-                  <span data-submit-once-label>Change managing account</span>
-                </button>
-              </form>
-            </div>
-          </section>
-        )}
-      <section class="host-manage-current host-manage-profile-section">
-        <div class="host-detail-dashboard-head">
-          <div>
-            <p class="text-eyebrow">Public profile</p>
-            <h2>What people see on your listing</h2>
-            <p class="text-body">
-              The friendly name, avatar, description, and profile link shown on
-              host cards and the host detail page.
-            </p>
-          </div>
-        </div>
-        <form
-          method="POST"
-          encType="multipart/form-data"
-          class="host-manage-form"
-        >
-          <div class="profile-form-row host-register-profile-row">
-            <div class="profile-form-avatar">
-              <HostMark host={host} />
-              <label class="profile-form-button-secondary">
-                Replace avatar
-                <input
-                  type="file"
-                  name="avatarUpload"
-                  accept="image/png,image/jpeg,image/webp"
-                  class="sr-only"
-                />
-              </label>
-              <p class="profile-form-hint host-register-avatar-hint">
-                Optional. Uploaded host avatars are stored with the signed-in
-                managing account.
-              </p>
-            </div>
-            <div class="profile-form-fields">
-              <label class="profile-form-field">
-                <span class="profile-form-label">Host name</span>
-                <input
-                  class="profile-form-input"
-                  type="text"
-                  name="displayName"
-                  value={values.displayName}
-                  maxLength={80}
-                  required
-                />
-              </label>
-              <label class="profile-form-field">
-                <span class="profile-form-label">Website</span>
-                <input
-                  class="profile-form-input"
-                  type="url"
-                  name="homepageUrl"
-                  value={values.homepageUrl}
-                  placeholder="https://pckt.cafe"
-                />
-              </label>
-              <label class="profile-form-field">
-                <span class="profile-form-label">Data location</span>
-                <input
-                  class="profile-form-input"
-                  type="text"
-                  name="dataLocation"
-                  value={values.dataLocation}
-                  placeholder="Europe"
-                  maxLength={120}
-                />
-                <span class="profile-form-hint">
-                  Optional. Where account data is primarily hosted, if the host
-                  publishes that information.
-                </span>
-              </label>
+            <div class="profile-form-fields host-manage-profile-fields">
               <label class="profile-form-field">
                 <span class="profile-form-label">Host account handle</span>
                 <input
@@ -1364,174 +1265,465 @@ function ManageBody(
                 </span>
               </div>
             </div>
+            <div class="host-manage-actions">
+              <HostProfileSaveButton
+                did={activeDid}
+                host={host.host}
+                targetName={host.displayName}
+                currentHandle={activeHandle}
+                initialSaved={savedSection === "profile"}
+                rememberedAccounts={rememberedAccounts}
+              />
+            </div>
+          </form>
+        </section>
+        <section
+          id="directory-visibility"
+          class="host-manage-current host-manage-listing-section"
+        >
+          <div class="host-detail-dashboard-head">
+            <div>
+              <p class="text-eyebrow">Public directory</p>
+              <h3>Show this host in the directory</h3>
+              <p class="text-body">
+                This host is listed because you manage it. Turn visibility off
+                to hide its directory card and public host page.
+              </p>
+            </div>
           </div>
-          <div class="host-manage-actions">
-            <HostProfileSaveButton
-              did={activeDid}
-              host={host.host}
-              targetName={host.displayName}
-              currentHandle={activeHandle}
-              rememberedAccounts={rememberedAccounts}
-            />
-          </div>
-        </form>
+          <form method="POST" class="host-manage-form" data-submit-once="true">
+            <label class="profile-form-toggle">
+              <input
+                type="checkbox"
+                name="directory_listing"
+                value="1"
+                checked={host.operatorListingOptIn !== false}
+              />
+              <span class="profile-form-toggle-body">
+                <span class="profile-form-toggle-label">
+                  Show this host in the public directory
+                </span>
+                <span class="profile-form-toggle-hint">
+                  Turning this off hides the host page and directory card. You
+                  can turn it back on at any time.
+                </span>
+              </span>
+            </label>
+            <div class="host-manage-actions">
+              <button
+                class="directory-register-button host-manage-save"
+                type="submit"
+                name="action"
+                value="save_listing"
+                data-pending-label="Saving visibility…"
+              >
+                <span data-submit-once-label>Save changes</span>
+              </button>
+              <HostManageSavedStatus
+                saved={savedSection === "directory"}
+              />
+            </div>
+          </form>
+        </section>
       </section>
-
-      <section class="host-manage-current">
-        <div class="host-detail-dashboard-head">
+      <section
+        id="account-journeys"
+        class="host-manage-group"
+        aria-labelledby="account-journeys-title"
+      >
+        <div class="host-manage-group-heading">
           <div>
-            <p class="text-eyebrow">Account management</p>
-            <h2>Where people manage their accounts</h2>
+            <p class="text-eyebrow">Account journeys</p>
+            <h2 id="account-journeys-title">Where people go</h2>
             <p class="text-body">
-              This site links people back to the account controls on your host
-              for passwords, sessions, OAuth grants, exports, and migration.
+              Set the destinations for creating an account and returning to
+              manage one.
             </p>
           </div>
         </div>
-        {accountRouteUrl
-          ? (
-            <div class="host-claim-panel host-claim-panel-ok">
-              <p class="host-claim-panel-title">Deep-link target</p>
+        <section
+          id="signup"
+          class="host-manage-current host-manage-signup-section"
+        >
+          <div class="host-detail-dashboard-head">
+            <div>
+              <p class="text-eyebrow">Sign-up</p>
+              <h3>Where people create accounts</h3>
               <p class="text-body">
-                “Manage account at host” sends people to{" "}
-                <a
-                  href={accountRouteUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  class="text-link-button host-manage-route-link"
-                >
-                  {accountRouteUrl} ↗
-                </a>
+                Choose whether this host appears as a place to create an account
+                during Login with Atmosphere. Account creation stays on your
+                site; this directory only links people there.
               </p>
             </div>
-          )
-          : (
-            <div class="host-claim-panel">
-              <p class="host-claim-panel-title">No account page yet</p>
-              <p class="text-body">
-                Add your PDS service endpoint below. This site then routes
-                people to the /account path on that origin unless you set an
-                override.
-              </p>
-            </div>
-          )}
-        <form method="POST" class="host-manage-form" data-submit-once="true">
-          <label class="profile-form-field">
-            <span class="profile-form-label">PDS service endpoint</span>
-            <input
-              class="profile-form-input"
-              type="url"
-              name="service_endpoint"
-              value={values.serviceEndpoint}
-              placeholder="https://pds.example"
-              required
-            />
-            <span class="profile-form-hint">
-              The canonical PDS origin for this host.
-            </span>
-          </label>
-          <label class="profile-form-field">
-            <span class="profile-form-label">
-              Account management URL override
-            </span>
-            <input
-              class="profile-form-input"
-              type="url"
-              name="account_management_url"
-              value={values.accountManagementUrl}
-              placeholder="https://pds.example/account"
-            />
-            <span class="profile-form-hint">
-              Optional. This site uses `/account` on the PDS endpoint by
-              default. Add an override only when this host uses another URL.
-            </span>
-          </label>
-          <details class="host-manage-advanced">
-            <summary class="host-manage-advanced-summary">
-              Advanced: declare a capability manifest
-            </summary>
+          </div>
+          <div
+            class={`host-claim-panel ${
+              signupEligible ? "host-claim-panel-ok" : ""
+            }`}
+          >
+            <p class="host-claim-panel-title">
+              {signupEligible
+                ? "You appear in the account picker"
+                : "Not shown in the account picker yet"}
+            </p>
+            {signupEligible
+              ? (
+                <>
+                  <p class="text-body">
+                    People creating a new account see a row like this:
+                  </p>
+                  <div class="host-signup-preview" aria-hidden="true">
+                    <HostMark host={host} />
+                    <span class="host-signup-preview-name">
+                      {values.displayName || host.displayName}
+                    </span>
+                    <span class="directory-register-button host-signup-preview-cta">
+                      {signupCtaLabel}
+                    </span>
+                  </div>
+                </>
+              )
+              : (
+                <p class="text-body">
+                  Choose <strong>Open signup</strong> or{" "}
+                  <strong>Invite required</strong>{" "}
+                  and add a signup URL to show up.
+                </p>
+              )}
+          </div>
+          <form method="POST" class="host-manage-form" data-submit-once="true">
             <label class="profile-form-field">
-              <span class="profile-form-label">Manifest URL</span>
+              <span class="profile-form-label">Signup status</span>
+              <select
+                class="profile-form-input"
+                name="signupStatus"
+                value={values.signupStatus}
+              >
+                {SIGNUP_STATUSES.map((status) => (
+                  <option
+                    value={status.value}
+                    selected={values.signupStatus === status.value}
+                  >
+                    {status.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label class="profile-form-field">
+              <span class="profile-form-label">Signup URL</span>
               <input
                 class="profile-form-input"
                 type="url"
-                name="manifest_url"
-                value={values.manifestUrl}
-                placeholder={`https://${host.host}/.well-known/atmosphere-host-dashboard.json`}
+                name="signupUrl"
+                value={values.signupUrl}
+                placeholder="https://pckt.cafe/signup"
               />
               <span class="profile-form-hint">
-                Optional. Fills in the capability self-report below for the host
-                directory and conformance checks. It does not change what people
-                signing in experience.
+                The direct create-account or invite-request flow. This can be
+                different from your public website.
               </span>
             </label>
-          </details>
-          <label class="profile-form-field">
-            <span class="profile-form-label">Support URL</span>
-            <input
-              class="profile-form-input"
-              type="url"
-              name="support_url"
-              value={values.supportUrl}
-              placeholder="https://host.example/support"
-            />
-            <span class="profile-form-hint">
-              Optional help, support, terms, or contact page for this host.
-            </span>
-          </label>
-          <div class="host-manage-actions">
-            <button
-              class="profile-form-button-secondary profile-form-button-secondary--lg"
-              type="submit"
-              name="action"
-              value="validate"
-              data-pending-label="Validating manifest…"
-            >
-              <span data-submit-once-label>Validate manifest</span>
-            </button>
-            <button
-              class="directory-register-button host-manage-save"
-              type="submit"
-              name="action"
-              value="save"
-              data-pending-label="Saving host settings…"
-            >
-              <span data-submit-once-label>Save account links</span>
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {validation && <ValidationPanel validation={validation} />}
-
-      {dashboard && (
-        <section class="host-manage-current">
+            <div class="host-manage-actions">
+              <button
+                class="directory-register-button host-manage-save"
+                type="submit"
+                name="action"
+                value="save_signup"
+                data-pending-label="Saving sign-up…"
+              >
+                <span data-submit-once-label>Save changes</span>
+              </button>
+              <HostManageSavedStatus saved={savedSection === "signup"} />
+            </div>
+          </form>
+        </section>
+        <section id="account-links" class="host-manage-current">
           <div class="host-detail-dashboard-head">
             <div>
-              <p class="text-eyebrow">Advanced</p>
-              <h2>Capability self-report</h2>
+              <p class="text-eyebrow">Account management</p>
+              <h3>Where people manage their accounts</h3>
               <p class="text-body">
-                Declared for the host directory and conformance checks. People
-                signing in don’t see this grid, and it doesn’t change your
-                sign-up or account routing.
+                This site links people back to the account controls on your host
+                for passwords, sessions, OAuth grants, exports, and migration.
               </p>
             </div>
           </div>
-          <details class="host-manage-advanced">
-            <summary class="host-manage-advanced-summary">
-              Show declared capabilities
-            </summary>
-            <div class="host-detail-capability-grid">
-              {dashboard.capabilities.map((capability) => (
-                <HostCapabilitySummary
-                  key={capability.key}
-                  capability={capability}
-                />
-              ))}
+          {accountRouteUrl
+            ? (
+              <div class="host-claim-panel host-claim-panel-ok">
+                <p class="host-claim-panel-title">Deep-link target</p>
+                <p class="text-body">
+                  “Manage account at host” sends people to{" "}
+                  <a
+                    href={accountRouteUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    class="text-link-button host-manage-route-link"
+                  >
+                    {accountRouteUrl} ↗
+                  </a>
+                </p>
+              </div>
+            )
+            : (
+              <div class="host-claim-panel">
+                <p class="host-claim-panel-title">No account page yet</p>
+                <p class="text-body">
+                  Add your PDS service endpoint below. This site then routes
+                  people to the /account path on that origin unless you set an
+                  override.
+                </p>
+              </div>
+            )}
+          <form method="POST" class="host-manage-form" data-submit-once="true">
+            <label class="profile-form-field">
+              <span class="profile-form-label">PDS service endpoint</span>
+              <input
+                class="profile-form-input"
+                type="url"
+                name="service_endpoint"
+                value={values.serviceEndpoint}
+                placeholder="https://pds.example"
+                required
+              />
+              <span class="profile-form-hint">
+                The canonical PDS origin for this host.
+              </span>
+            </label>
+            <label class="profile-form-field">
+              <span class="profile-form-label">
+                Account management URL override
+              </span>
+              <input
+                class="profile-form-input"
+                type="url"
+                name="account_management_url"
+                value={values.accountManagementUrl}
+                placeholder="https://pds.example/account"
+              />
+              <span class="profile-form-hint">
+                Optional. This site uses `/account` on the PDS endpoint by
+                default. Add an override only when this host uses another URL.
+              </span>
+            </label>
+            <label class="profile-form-field">
+              <span class="profile-form-label">Support URL</span>
+              <input
+                class="profile-form-input"
+                type="url"
+                name="support_url"
+                value={values.supportUrl}
+                placeholder="https://host.example/support"
+              />
+              <span class="profile-form-hint">
+                Optional help, support, terms, or contact page for this host.
+              </span>
+            </label>
+            <div class="host-manage-actions">
+              <button
+                class="directory-register-button host-manage-save"
+                type="submit"
+                name="action"
+                value="save_account"
+                data-pending-label="Saving account links…"
+              >
+                <span data-submit-once-label>Save changes</span>
+              </button>
+              <HostManageSavedStatus saved={savedSection === "account"} />
             </div>
-          </details>
+          </form>
         </section>
-      )}
+      </section>
+      <section
+        id="connections-ownership"
+        class="host-manage-group"
+        aria-labelledby="connections-ownership-title"
+      >
+        <div class="host-manage-group-heading">
+          <div>
+            <p class="text-eyebrow">Host relationships</p>
+            <h2 id="connections-ownership-title">
+              Connections &amp; ownership
+            </h2>
+            <p class="text-body">
+              Connect related apps and control which Atmosphere account manages
+              this host.
+            </p>
+          </div>
+        </div>
+        <section
+          id="app-connections"
+          class="host-manage-current directory-relationship-entry"
+        >
+          <div>
+            <p class="text-eyebrow">Apps and host identity</p>
+            <h3>Connect this host to its apps</h3>
+            <p class="text-body">
+              The app and host keep separate public profiles. Verified
+              connections show whether the host provides account services for an
+              app or the two share an operator. Different app accounts must
+              approve the connection too.
+            </p>
+          </div>
+          <a
+            class="directory-register-button"
+            href={`/hosts/${encodeURIComponent(host.host)}/manage/apps`}
+          >
+            Manage app connections
+          </a>
+        </section>
+        {isLocalDevHostClaim(host.host)
+          ? (
+            <section
+              id="managing-account"
+              class="host-manage-current directory-relationship-entry"
+            >
+              <div>
+                <p class="text-eyebrow">Managing account</p>
+                <h3>Local fixture manager</h3>
+                <p class="text-body">
+                  Managing-account changes are unavailable for local{" "}
+                  <code>.test</code>{" "}
+                  fixtures because they cannot complete public DNS verification.
+                </p>
+              </div>
+            </section>
+          )
+          : (
+            <section
+              id="managing-account"
+              class="host-manage-current directory-relationship-entry"
+            >
+              <div>
+                <p class="text-eyebrow">Managing account</p>
+                <h3>
+                  Managed by <AtmosphereHandle handle={claim?.claimantHandle} />
+                </h3>
+                <p class="text-body">
+                  {claim?.method === "pds_contact_email"
+                    ? "Ownership currently uses the contact email published by this PDS. Verify DNS to strengthen its proof. To change the manager, choose the new account and prove control with DNS."
+                    : "One account manages this host. To change it, choose the new account and prove control again with DNS. This account stays in control until verification succeeds."}
+                </p>
+              </div>
+              <div class="host-manage-actions">
+                {claim?.method === "pds_contact_email" && (
+                  <a class="directory-register-button" href={dnsUpgradeHref}>
+                    Strengthen ownership with DNS
+                  </a>
+                )}
+                <form method="POST" data-submit-once="true">
+                  <input
+                    type="hidden"
+                    name="action"
+                    value="start_owner_transfer"
+                  />
+                  <button
+                    type="submit"
+                    class="directory-register-button host-manage-owner-transfer"
+                    data-pending-label="Preparing account change…"
+                  >
+                    <span data-submit-once-label>Change managing account</span>
+                  </button>
+                </form>
+              </div>
+            </section>
+          )}
+      </section>
+      <details
+        id="advanced-settings"
+        class="host-manage-group host-manage-advanced-group"
+        open={Boolean(validation) || savedSection === "advanced"}
+      >
+        <summary class="host-manage-group-summary">
+          <span>
+            <span class="text-eyebrow">Advanced</span>
+            <strong>Manifest and capabilities</strong>
+          </span>
+          <span class="host-manage-summary-chevron" aria-hidden="true" />
+        </summary>
+        <div class="host-manage-advanced-content">
+          <section class="host-manage-current">
+            <div class="host-detail-dashboard-head">
+              <div>
+                <p class="text-eyebrow">Capability manifest</p>
+                <h3>Declare standardized host features</h3>
+                <p class="text-body">
+                  Optional. Validate and publish a capability self-report for
+                  the directory and conformance checks. It does not change the
+                  sign-in experience.
+                </p>
+              </div>
+            </div>
+            <form
+              method="POST"
+              class="host-manage-form"
+              data-submit-once="true"
+            >
+              <label class="profile-form-field">
+                <span class="profile-form-label">Manifest URL</span>
+                <input
+                  class="profile-form-input"
+                  type="url"
+                  name="manifest_url"
+                  value={values.manifestUrl}
+                  placeholder={`https://${host.host}/.well-known/atmosphere-host-dashboard.json`}
+                />
+                <span class="profile-form-hint">
+                  The public URL of this host’s Atmosphere capability manifest.
+                </span>
+              </label>
+              <div class="host-manage-actions">
+                <button
+                  class="profile-form-button-secondary profile-form-button-secondary--lg"
+                  type="submit"
+                  name="action"
+                  value="validate"
+                  data-pending-label="Validating manifest…"
+                >
+                  <span data-submit-once-label>Validate manifest</span>
+                </button>
+                <button
+                  class="directory-register-button host-manage-save"
+                  type="submit"
+                  name="action"
+                  value="save_advanced"
+                  data-pending-label="Saving manifest…"
+                >
+                  <span data-submit-once-label>Save changes</span>
+                </button>
+                <HostManageSavedStatus
+                  saved={savedSection === "advanced"}
+                />
+              </div>
+            </form>
+          </section>
+
+          {validation && <ValidationPanel validation={validation} />}
+
+          {dashboard && (
+            <section class="host-manage-current">
+              <div class="host-detail-dashboard-head">
+                <div>
+                  <p class="text-eyebrow">Capability self-report</p>
+                  <h3>Declared capabilities</h3>
+                  <p class="text-body">
+                    People signing in don’t see this grid, and it doesn’t change
+                    sign-up or account routing.
+                  </p>
+                </div>
+              </div>
+              <div class="host-detail-capability-grid">
+                {dashboard.capabilities.map((capability) => (
+                  <HostCapabilitySummary
+                    key={capability.key}
+                    capability={capability}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </details>
     </>
   );
 }
@@ -1716,6 +1908,33 @@ export function managedHostTransferAuthorizationHref(
     capabilities: HOST_MANAGEMENT_CAPABILITIES,
     name: host.displayName,
   });
+}
+
+export function managedHostSaveLocation(
+  host: Pick<AccountHost, "host">,
+  section: ManageSavedSection,
+): string {
+  return `/hosts/${encodeURIComponent(host.host)}/manage?${new URLSearchParams({
+    saved: section,
+  })}#${manageSectionAnchor(section)}`;
+}
+
+function manageSavedSection(url: URL): ManageSavedSection | null {
+  const saved = url.searchParams.get("saved");
+  if (
+    saved === "directory" || saved === "signup" || saved === "profile" ||
+    saved === "account" || saved === "advanced"
+  ) return saved;
+  // Preserve the short-lived URL emitted by the previous directory form.
+  return url.searchParams.get("listing") === "saved" ? "directory" : null;
+}
+
+function manageSectionAnchor(section: ManageSavedSection): string {
+  if (section === "directory") return "directory-visibility";
+  if (section === "signup") return "signup";
+  if (section === "profile") return "public-profile";
+  if (section === "account") return "account-links";
+  return "advanced-settings";
 }
 
 function valuesFromHost(host: AccountHost): ManageFormValues {

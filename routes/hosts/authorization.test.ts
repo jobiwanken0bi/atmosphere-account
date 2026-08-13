@@ -10,6 +10,7 @@ import {
 import { hostAuthorizationHref } from "./[host]/manage/apps.tsx";
 import {
   managedHostAuthorizationHref,
+  managedHostSaveLocation,
   managedHostTransferAuthorizationHref,
   managedHostTransferNextHref,
 } from "./[host]/manage.tsx";
@@ -22,6 +23,29 @@ import {
 } from "./[host].tsx";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
+
+Deno.test("host management saves return to the same settings section", () => {
+  assertEquals(
+    managedHostSaveLocation(HOST, "directory"),
+    "/hosts/pds.example.social/manage?saved=directory#directory-visibility",
+  );
+  assertEquals(
+    managedHostSaveLocation(HOST, "signup"),
+    "/hosts/pds.example.social/manage?saved=signup#signup",
+  );
+  assertEquals(
+    managedHostSaveLocation(HOST, "profile"),
+    "/hosts/pds.example.social/manage?saved=profile#public-profile",
+  );
+  assertEquals(
+    managedHostSaveLocation(HOST, "account"),
+    "/hosts/pds.example.social/manage?saved=account#account-links",
+  );
+  assertEquals(
+    managedHostSaveLocation(HOST, "advanced"),
+    "/hosts/pds.example.social/manage?saved=advanced#advanced-settings",
+  );
+});
 
 Deno.test("host claim failures expose retryable HTTP semantics", () => {
   assertEquals(hostClaimFailureStatus("record_not_found"), 409);
