@@ -996,13 +996,17 @@ type HostProfileResult =
   | { status: "miss" }
   | { status: "error" };
 
-async function fetchHostProfile(handle: string): Promise<HostProfile | null> {
+async function fetchHostProfile(
+  handle: string,
+  signal?: AbortSignal,
+): Promise<HostProfile | null> {
   const url = new URL(BSKY_PROFILE);
   url.searchParams.set("actor", handle);
+  const timeout = AbortSignal.timeout(3500);
   const res = await fetch(url.toString(), {
     headers: { accept: "application/json" },
     redirect: "manual",
-    signal: AbortSignal.timeout(3500),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   if (res.status === 400 || res.status === 404) return null;
   if (!res.ok) throw new Error(`host profile HTTP ${res.status}`);
@@ -1034,8 +1038,9 @@ async function fetchHostProfile(handle: string): Promise<HostProfile | null> {
 
 export async function fetchHostProfileForTest(
   handle: string,
+  signal?: AbortSignal,
 ): Promise<HostProfile | null> {
-  return await fetchHostProfile(handle);
+  return await fetchHostProfile(handle, signal);
 }
 
 function hostNeedsProfileRefresh(host: AccountHost, ts: number): boolean {
@@ -1333,6 +1338,7 @@ async function insertHostClaimRecoveryAudit(
 
 async function fetchHostProfileRefreshes(
   hosts: AccountHost[],
+  signal?: AbortSignal,
 ): Promise<{
   ts: number;
   results: Array<{ host: AccountHost; result: HostProfileResult }>;
@@ -1352,15 +1358,17 @@ async function fetchHostProfileRefreshes(
       let hadError = false;
       try {
         for (const handle of profileHandleCandidatesForHost(host)) {
+          signal?.throwIfAborted();
           try {
-            const profile = await fetchHostProfile(handle);
+            const profile = await fetchHostProfile(handle, signal);
             if (profile) {
               return {
                 host,
                 result: { status: "found", profile } as const,
               };
             }
-          } catch {
+          } catch (error) {
+            if (signal?.aborted) throw signal.reason ?? error;
             hadError = true;
           }
         }
@@ -1370,7 +1378,8 @@ async function fetchHostProfileRefreshes(
             ? ({ status: "error" } as const)
             : ({ status: "miss" } as const),
         };
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw signal.reason ?? error;
         return { host, result: { status: "error" } as const };
       }
     }));
@@ -1473,9 +1482,14 @@ function hostProfileDescription(
   return host.description;
 }
 
-async function ensureSeededHosts(c: DbClient): Promise<void> {
+async function ensureSeededHosts(
+  c: DbClient,
+  options: { force?: boolean } = {},
+): Promise<void> {
   const ts = now();
-  if (ts - seededHostsSyncedAt < SEEDED_HOSTS_SYNC_TTL_MS) return;
+  if (
+    !options.force && ts - seededHostsSyncedAt < SEEDED_HOSTS_SYNC_TTL_MS
+  ) return;
   if (seededHostsSyncPromise) {
     await seededHostsSyncPromise;
     return;
@@ -4544,9 +4558,6 @@ export async function lookupAccountHost(
   if (!host) return null;
   const seed = seedForEndpoint(pdsUrl);
   if (seed) {
-    await withDb(async (c) => {
-      await ensureSeededHosts(c);
-    });
     return {
       host: seed.host,
       displayName: seed.displayName,
@@ -4555,7 +4566,6 @@ export async function lookupAccountHost(
     };
   }
   return await withDb(async (c) => {
-    await ensureSeededHosts(c);
     const r = await c.execute({
       sql: `SELECT * FROM account_host WHERE host = ? LIMIT 1`,
       args: [host],
@@ -4682,7 +4692,6 @@ export async function listAccountHostDirectory(
   opts: AccountHostDirectoryOptions = {},
 ): Promise<AccountHostDirectoryResult> {
   return await withDb(async (c) => {
-    await ensureSeededHosts(c);
     const filters: string[] = [];
     const args: DbValue[] = [];
     const query = opts.query?.trim();
@@ -4950,7 +4959,6 @@ export async function getAccountHost(
   const normalized = host.trim().toLowerCase();
   if (!normalized) return null;
   return await withDb(async (c) => {
-    await ensureSeededHosts(c);
     const r = await c.execute({
       sql: `SELECT account_host.*,
           host_conformance.status AS conformance_status,
@@ -4966,22 +4974,89 @@ export async function getAccountHost(
   });
 }
 
-export async function hydrateAccountHostProfiles(
+export function hydrateAccountHostProfiles(
   hosts: AccountHost[],
 ): Promise<AccountHost[]> {
-  const { ts, results } = await fetchHostProfileRefreshes(hosts);
-  if (results.length === 0) return hosts;
+  // Request-time host reads are intentionally read-only. External profile
+  // refreshes are performed by maintainAccountHostDirectory so a slow social
+  // API cannot add latency or database writes to public list/detail GETs.
+  return Promise.resolve(hosts);
+}
+
+async function refreshAccountHostProfiles(
+  hosts: AccountHost[],
+  signal?: AbortSignal,
+): Promise<{ hosts: AccountHost[]; attempted: number; updated: number }> {
+  signal?.throwIfAborted();
+  const { ts, results } = await fetchHostProfileRefreshes(hosts, signal);
+  if (results.length === 0) return { hosts, attempted: 0, updated: 0 };
+  signal?.throwIfAborted();
   const refreshed = await withDb(async (c) => {
     return await persistHostProfileRefreshes(c, ts, results);
   });
-  return hosts.map((host) => ({
-    ...host,
-    ...(refreshed.get(host.host) ?? {}),
-  }));
+  return {
+    hosts: hosts.map((host) => ({
+      ...host,
+      ...(refreshed.get(host.host) ?? {}),
+    })),
+    attempted: results.length,
+    updated: refreshed.size,
+  };
 }
 
 export async function warmAccountHostProfiles(
   hosts: AccountHost[],
 ): Promise<void> {
-  await hydrateAccountHostProfiles(hosts);
+  await refreshAccountHostProfiles(hosts);
+}
+
+export interface AccountHostDirectoryMaintenanceResult {
+  seededHosts: number;
+  profilesConsidered: number;
+  profilesAttempted: number;
+  profilesUpdated: number;
+}
+
+/** Apply curated seed additions/upgrades outside request handling. Safe to
+ * call from every release because syncSeededHosts preserves claimed fields. */
+export async function syncSeededAccountHosts(): Promise<number> {
+  await withDb(async (c) => {
+    await ensureSeededHosts(c, { force: true });
+  });
+  return SEEDED_HOSTS.length;
+}
+
+/**
+ * Explicit release/background maintenance for curated seed upgrades and slow
+ * external profile hydration. This deliberately stays outside public GETs.
+ */
+export async function maintainAccountHostDirectory(
+  options: { signal?: AbortSignal } = {},
+): Promise<
+  AccountHostDirectoryMaintenanceResult
+> {
+  const signal = options.signal;
+  signal?.throwIfAborted();
+  const seededHosts = await syncSeededAccountHosts();
+  signal?.throwIfAborted();
+  const hosts = await withDb(async (c) => {
+    const result = await c.execute({
+      sql: `SELECT * FROM account_host
+        ORDER BY CASE WHEN profile_checked_at IS NULL THEN 0 ELSE 1 END,
+          profile_checked_at ASC, host ASC
+        LIMIT ?`,
+      args: [MAX_PUBLIC_HOSTS],
+    });
+    return result.rows.map((row) =>
+      parseHostRow(row as Record<string, unknown>)
+    );
+  });
+  signal?.throwIfAborted();
+  const refreshed = await refreshAccountHostProfiles(hosts, signal);
+  return {
+    seededHosts,
+    profilesConsidered: hosts.length,
+    profilesAttempted: refreshed.attempted,
+    profilesUpdated: refreshed.updated,
+  };
 }

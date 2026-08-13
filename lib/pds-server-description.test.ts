@@ -3,6 +3,7 @@ import {
   parsePdsServerDescription,
   pdsServerDescriptionForAccountHost,
 } from "./pds-server-description.ts";
+import { assertRejects } from "jsr:@std/assert@1";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -123,6 +124,26 @@ Deno.test("fetchPdsServerDescription reads describeServer from a normalized PDS 
   assertEquals(result?.availableUserDomains, ["pds.example"]);
   assertEquals(result?.inviteCodeRequired, true);
   assertEquals(redirect, "manual");
+});
+
+Deno.test("fetchPdsServerDescription obeys an overall abort signal", async () => {
+  const controller = new AbortController();
+  controller.abort(new DOMException("inventory deadline", "TimeoutError"));
+  let fetches = 0;
+  await assertRejects(
+    () =>
+      fetchPdsServerDescription("https://pds.example", {
+        signal: controller.signal,
+        cacheTtlMs: 0,
+        fetchImpl: (() => {
+          fetches++;
+          return Promise.resolve(new Response("{}"));
+        }) as typeof fetch,
+      }),
+    DOMException,
+    "inventory deadline",
+  );
+  assertEquals(fetches, 0);
 });
 
 Deno.test("a zero cache TTL forces a live describeServer security check", async () => {

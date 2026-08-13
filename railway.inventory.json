@@ -1,0 +1,26 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "railway.indexer.Dockerfile",
+    "watchPatterns": [
+      "/.dockerignore",
+      "/deno.json",
+      "/deno.lock",
+      "/i18n/**",
+      "/lexicons/**",
+      "/lib/**",
+      "/railway.indexer.Dockerfile",
+      "/railway.inventory.json",
+      "/scripts/index-relay-pds-inventory.ts",
+      "/scripts/migrate-db.ts",
+      "/scripts/migrate-postgres.ts",
+      "/scripts/prepare-postgres-release.ts",
+      "/sql/**",
+      "/utils.ts"
+    ]
+  },
+  "deploy": {
+    "preDeployCommand": "deno task db:prepare:postgres"
+  }
+}

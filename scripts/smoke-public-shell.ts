@@ -212,7 +212,11 @@ function assertMatchingReleaseShas(
   b: SmokeRelease,
   bLabel: string,
 ): void {
-  if (!a.gitSha || !b.gitSha) return;
+  if (!a.gitSha || !b.gitSha) {
+    throw new Error(
+      `${aLabel} and ${bLabel} must both report gitSha for release parity`,
+    );
+  }
   if (a.gitSha !== b.gitSha) {
     throw new Error(
       `${aLabel} gitSha ${a.gitSha} does not match ${bLabel} gitSha ${b.gitSha}`,

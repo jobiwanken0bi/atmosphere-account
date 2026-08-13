@@ -82,19 +82,30 @@ export default function Nav(
             {t.nav.apps}
           </a>
         </div>
-        {hasAccountControl && (
-          <div class="nav-account">
-            <AccountMenu
-              user={accountProps.user}
-              hasManagedProfiles={accountProps.hasManagedProfiles ?? false}
-              accountType={accountProps.accountType ?? null}
-              avatarUrl={accountProps.avatarUrl ?? null}
-              publicProfileHandle={accountProps.publicProfileHandle ?? null}
-              accountHost={accountProps.accountHost ?? null}
-              rememberedAccounts={rememberedAccounts}
-            />
-          </div>
-        )}
+        {
+          /* Stable target for the staged no-store /api/account/nav-state
+           * hydration contract. Keep server-rendering the authoritative menu
+           * until all account-dependent directory CTAs share that boundary;
+           * hydrating only the nav would make neither page variant identical. */
+        }
+        <div
+          id="account-nav-slot"
+          data-account-state-url="/api/account/nav-state"
+        >
+          {hasAccountControl && (
+            <div class="nav-account">
+              <AccountMenu
+                user={accountProps.user}
+                hasManagedProfiles={accountProps.hasManagedProfiles ?? false}
+                accountType={accountProps.accountType ?? null}
+                avatarUrl={accountProps.avatarUrl ?? null}
+                publicProfileHandle={accountProps.publicProfileHandle ?? null}
+                accountHost={accountProps.accountHost ?? null}
+                rememberedAccounts={rememberedAccounts}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </nav>
   );

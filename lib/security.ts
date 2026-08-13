@@ -1,6 +1,7 @@
 import { define } from "../utils.ts";
 import { trustedRequestOrigin } from "./atmosphere-origins.ts";
 import { IS_DEV } from "./env.ts";
+import { runtimeRelease } from "./release.ts";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -402,6 +403,35 @@ function isRenderedAccountHtml(headers: Headers, pathname: string): boolean {
     true;
 }
 
+function isRenderedPrivateApplicationHtml(
+  headers: Headers,
+  pathname: string,
+): boolean {
+  const html = headers.get("content-type")?.toLowerCase().startsWith(
+    "text/html",
+  ) === true;
+  if (!html) return false;
+  return isRenderedAccountHtml(headers, pathname) ||
+    pathname === "/signin" || pathname === "/login" ||
+    pathname.startsWith("/login/") || pathname === "/oauth" ||
+    pathname.startsWith("/oauth/") || pathname === "/admin" ||
+    pathname.startsWith("/admin/") || pathname === "/relationships" ||
+    pathname.startsWith("/relationships/") ||
+    pathname === "/apps/create" || pathname === "/apps/manage" ||
+    pathname.startsWith("/apps/manage/") ||
+    pathname === "/apps/migrate-from-legacy" ||
+    pathname === "/hosts/claim" || pathname === "/hosts/register" ||
+    /^\/hosts\/[^/]+\/(?:claim|manage)(?:\/|$)/.test(pathname);
+}
+
+function forcePrivateCachePolicy(headers: Headers): void {
+  headers.set("cache-control", "private, no-store");
+  headers.set("deno-cdn-cache-control", "private, no-store");
+  headers.delete("deno-cache-id");
+  headers.delete("deno-cache-tag");
+  headers.delete("x-atmosphere-cache-policy");
+}
+
 function applySecurityHeaders(headers: Headers, pathname: string): void {
   setDefault(headers, "x-content-type-options", "nosniff");
   setDefault(headers, "x-frame-options", "DENY");
@@ -428,11 +458,11 @@ function applySecurityHeaders(headers: Headers, pathname: string): void {
       "referrer-policy",
       isHostClaimRoute(pathname) ? "same-origin" : "no-referrer",
     );
-    headers.set("cache-control", "no-store");
+    forcePrivateCachePolicy(headers);
     headers.set("x-robots-tag", "noindex, nofollow");
   }
-  if (isRenderedAccountHtml(headers, pathname)) {
-    headers.set("cache-control", "private, no-store");
+  if (isRenderedPrivateApplicationHtml(headers, pathname)) {
+    forcePrivateCachePolicy(headers);
   }
   if (isPopupCompatibleLoginRoute(pathname)) {
     headers.set("cross-origin-opener-policy", "same-origin-allow-popups");
@@ -449,7 +479,25 @@ function applyPersonalizedHtmlCachePolicy(
   headers: Headers,
   personalizedHtml: boolean,
 ): void {
-  if (personalizedHtml) headers.set("cache-control", "private, no-store");
+  if (personalizedHtml) forcePrivateCachePolicy(headers);
+}
+
+/** Exact cookie-name matching prevents `not_atmo_sid` from disabling public
+ * caching while still treating empty or malformed account cookies as private.
+ * The latter is fail-closed: application parsing must prove anonymity before a
+ * response can become public, never the reverse. */
+export function requestHasAccountStateForTest(headers: Headers): boolean {
+  return requestHasAccountState(headers);
+}
+
+function requestHasAccountState(headers: Headers): boolean {
+  if (headers.has("authorization")) return true;
+  const raw = headers.get("cookie");
+  if (!raw) return false;
+  return raw.split(";").some((part) => {
+    const name = part.trim().split("=", 1)[0]?.trim();
+    return name === "atmo_sid" || name === "atmo_accounts";
+  });
 }
 
 export function applySecurityHeadersForTest(
@@ -471,9 +519,15 @@ export const securityHeadersMiddleware = define.middleware(async (ctx) => {
     applyPersonalizedHtmlCachePolicy(
       response.headers,
       isHtml && Boolean(
-        ctx.state.user || ctx.state.rememberedAccounts?.length,
+        ctx.state.user || ctx.state.rememberedAccounts?.length ||
+          requestHasAccountState(ctx.req.headers) ||
+          response.headers.has("set-cookie"),
       ),
     );
+    const releaseSha = runtimeRelease().gitSha;
+    if (releaseSha) {
+      response.headers.set("x-atmosphere-release-sha", releaseSha);
+    }
     return response;
   } catch {
     return response;

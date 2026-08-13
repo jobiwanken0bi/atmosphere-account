@@ -118,6 +118,7 @@ const LEASE_NAME = "jetstream-indexer";
 const LEASE_TTL_MS = 45_000;
 const LEASE_RENEW_INTERVAL_MS = 15_000;
 const DEFAULT_MAX_PENDING_EVENTS = 1_000;
+const SUCCESS_TELEMETRY_INTERVAL_MS = 60_000;
 const MAX_PENDING_EVENTS = jetstreamMaxPendingEvents(
   Deno.env.get("JETSTREAM_MAX_PENDING_EVENTS"),
 );
@@ -267,6 +268,81 @@ export interface IndexerFailureLogFields {
   httpStatus: number | null;
 }
 
+export type IndexerSuccessOperation =
+  | "profile_upsert"
+  | "profile_delete"
+  | "review_upsert"
+  | "review_delete"
+  | "featured_replace"
+  | "featured_delete"
+  | "update_upsert"
+  | "update_delete"
+  | "app_listing_upsert"
+  | "app_review_upsert"
+  | "app_favorite_upsert"
+  | "app_community_upsert"
+  | "app_delete"
+  | "host_upsert"
+  | "host_delete";
+
+export interface IndexerSuccessSummary {
+  event: "indexer_success_batch";
+  reason: "interval" | "shutdown";
+  intervalMs: number;
+  total: number;
+  counts: Partial<Record<IndexerSuccessOperation, number>>;
+}
+
+/**
+ * Aggregate routine successes so a busy relay does not turn one indexed record
+ * into one paid log line. Failures and validation warnings remain immediate.
+ */
+export class IndexerSuccessBatch {
+  private readonly counts = new Map<IndexerSuccessOperation, number>();
+  private startedAt: number;
+
+  constructor(private readonly now: () => number = () => Date.now()) {
+    this.startedAt = now();
+  }
+
+  record(operation: IndexerSuccessOperation): void {
+    this.counts.set(operation, (this.counts.get(operation) ?? 0) + 1);
+  }
+
+  drain(
+    reason: IndexerSuccessSummary["reason"],
+  ): IndexerSuccessSummary | null {
+    const drainedAt = this.now();
+    const entries = [...this.counts.entries()].sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+    this.counts.clear();
+    const intervalMs = Math.max(0, drainedAt - this.startedAt);
+    this.startedAt = drainedAt;
+    if (entries.length === 0) return null;
+    return {
+      event: "indexer_success_batch",
+      reason,
+      intervalMs,
+      total: entries.reduce((total, [, count]) => total + count, 0),
+      counts: Object.fromEntries(entries),
+    };
+  }
+}
+
+const successBatch = new IndexerSuccessBatch();
+
+function recordIndexerSuccess(operation: IndexerSuccessOperation): void {
+  successBatch.record(operation);
+}
+
+function flushIndexerSuccesses(
+  reason: IndexerSuccessSummary["reason"],
+): void {
+  const summary = successBatch.drain(reason);
+  if (summary) console.log(JSON.stringify(summary));
+}
+
 export function indexerFailureLogFields(
   error: unknown,
 ): IndexerFailureLogFields {
@@ -324,6 +400,7 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await deleteProfile(event.did);
+    recordIndexerSuccess("profile_delete");
     return;
   }
 
@@ -348,7 +425,7 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     recordRev: commit.rev,
   });
   if (synced) {
-    console.log("[indexer] upsert profile %s (%s)", handle, event.did);
+    recordIndexerSuccess("profile_upsert");
   }
 }
 
@@ -358,6 +435,7 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markReviewRemovedByRkey(event.did, commit.rkey);
+    recordIndexerSuccess("review_delete");
     return;
   }
 
@@ -396,7 +474,7 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log("[indexer] upsert review %s -> %s", event.did, r.subject);
+  recordIndexerSuccess("review_upsert");
 }
 
 async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
@@ -416,6 +494,7 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await replaceFeatured([]);
+    recordIndexerSuccess("featured_delete");
     return;
   }
 
@@ -440,10 +519,7 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
       position: e.position ?? i,
     })),
   );
-  console.log(
-    "[indexer] replaced featured directory (%d entries)",
-    validation.value.entries.length,
-  );
+  recordIndexerSuccess("featured_replace");
 }
 
 async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
@@ -452,6 +528,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markProfileUpdateRemovedByRkey(event.did, commit.rkey);
+    recordIndexerSuccess("update_delete");
     return;
   }
 
@@ -494,7 +571,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
-  console.log("[indexer] upsert update %s/%s", event.did, commit.rkey);
+  recordIndexerSuccess("update_upsert");
 }
 
 function recordUri(event: JetstreamEvent): string | null {
@@ -519,6 +596,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
       await deleteAppRecord(uri);
     }
     await clearAppRecordFailure(uri);
+    recordIndexerSuccess("app_delete");
     return;
   }
 
@@ -584,7 +662,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log("[indexer] upsert app listing %s", uri);
+    recordIndexerSuccess("app_listing_upsert");
   } else if (commit.collection === ATSTORE_REVIEW_NSID) {
     const draft = parseAtstoreReview({
       uri,
@@ -596,6 +674,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     if (draft) {
       await upsertAppReview(draft);
       await clearAppRecordFailure(uri);
+      recordIndexerSuccess("app_review_upsert");
     } else {
       await recordAppRecordFailure({
         uri,
@@ -617,6 +696,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     if (draft) {
       await upsertAppFavorite(draft);
       await clearAppRecordFailure(uri);
+      recordIndexerSuccess("app_favorite_upsert");
     } else {
       await recordAppRecordFailure({
         uri,
@@ -653,7 +733,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     await upsertAppRecordFromDraft({ draft, rawRecord: fetched.value });
     await clearAppRecordFailure(uri);
-    console.log("[indexer] upsert community app %s", uri);
+    recordIndexerSuccess("app_community_upsert");
   }
 }
 
@@ -665,7 +745,7 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
 
   if (commit.operation === "delete") {
     await markHostProtocolRecordDeleted(uri);
-    console.log("[indexer] deleted host record %s", uri);
+    recordIndexerSuccess("host_delete");
     return;
   }
 
@@ -689,7 +769,7 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
     value: fetched.value,
   });
   if (parsed) {
-    console.log("[indexer] upsert host %s %s", parsed.kind, uri);
+    recordIndexerSuccess("host_upsert");
   } else {
     console.warn("[indexer] invalid host record %s", uri);
   }
@@ -872,54 +952,63 @@ async function main(): Promise<void> {
   let lastReconnectLoggedAt: number | null = null;
   let lastReconnectLogLevel: ReconnectLogLevel | null = null;
   let suppressedReconnects = 0;
-  while (!shuttingDown) {
-    let retryDelayMs = reconnectDelayMs(Math.max(1, consecutiveFailures));
-    try {
-      await runOnce(consecutiveFailures === 0);
-    } catch (err) {
-      if (shuttingDown) break;
-      if (err instanceof LeaseUnavailableError) {
-        console.warn("[indexer] %s; retrying soon", err.message);
-        consecutiveFailures = 0;
-      } else if (err instanceof JetstreamDisconnectError) {
-        consecutiveFailures = nextReconnectFailureCount({
-          previous: consecutiveFailures,
-          connectedForMs: err.connectedForMs,
-        });
-        retryDelayMs = reconnectDelayMs(consecutiveFailures);
-        const now = Date.now();
-        const decision = reconnectLogDecision({
-          consecutiveFailures,
-          connectedForMs: err.connectedForMs,
-          now,
-          lastLoggedAt: lastReconnectLoggedAt,
-          lastLevel: lastReconnectLogLevel,
-        });
-        if (decision.shouldLog) {
-          const message = `[indexer] Jetstream disconnected reason=${
-            jetstreamDisconnectReason(err.message)
-          } connection_ms=${err.connectedForMs} consecutive_failures=${consecutiveFailures} reconnect_delay_ms=${retryDelayMs} suppressed_reconnects=${suppressedReconnects}`;
-          if (decision.level === "error") console.error("%s", message);
-          else console.info("%s", message);
-          lastReconnectLoggedAt = now;
-          suppressedReconnects = 0;
+  const successTimer = setInterval(
+    () => flushIndexerSuccesses("interval"),
+    SUCCESS_TELEMETRY_INTERVAL_MS,
+  );
+  try {
+    while (!shuttingDown) {
+      let retryDelayMs = reconnectDelayMs(Math.max(1, consecutiveFailures));
+      try {
+        await runOnce(consecutiveFailures === 0);
+      } catch (err) {
+        if (shuttingDown) break;
+        if (err instanceof LeaseUnavailableError) {
+          console.warn("[indexer] %s; retrying soon", err.message);
+          consecutiveFailures = 0;
+        } else if (err instanceof JetstreamDisconnectError) {
+          consecutiveFailures = nextReconnectFailureCount({
+            previous: consecutiveFailures,
+            connectedForMs: err.connectedForMs,
+          });
+          retryDelayMs = reconnectDelayMs(consecutiveFailures);
+          const now = Date.now();
+          const decision = reconnectLogDecision({
+            consecutiveFailures,
+            connectedForMs: err.connectedForMs,
+            now,
+            lastLoggedAt: lastReconnectLoggedAt,
+            lastLevel: lastReconnectLogLevel,
+          });
+          if (decision.shouldLog) {
+            const message = `[indexer] Jetstream disconnected reason=${
+              jetstreamDisconnectReason(err.message)
+            } connection_ms=${err.connectedForMs} consecutive_failures=${consecutiveFailures} reconnect_delay_ms=${retryDelayMs} suppressed_reconnects=${suppressedReconnects}`;
+            if (decision.level === "error") console.error("%s", message);
+            else console.info("%s", message);
+            lastReconnectLoggedAt = now;
+            suppressedReconnects = 0;
+          } else {
+            suppressedReconnects += 1;
+          }
+          lastReconnectLogLevel = decision.level;
         } else {
-          suppressedReconnects += 1;
+          consecutiveFailures = Math.min(11, consecutiveFailures + 1);
+          retryDelayMs = reconnectDelayMs(consecutiveFailures);
+          const failure = indexerFailureLogFields(err);
+          console.error(
+            "[indexer] worker failed error_kind=%s http_status=%s",
+            failure.kind,
+            failure.httpStatus ?? "none",
+          );
         }
-        lastReconnectLogLevel = decision.level;
-      } else {
-        consecutiveFailures = Math.min(11, consecutiveFailures + 1);
-        retryDelayMs = reconnectDelayMs(consecutiveFailures);
-        const failure = indexerFailureLogFields(err);
-        console.error(
-          "[indexer] worker failed error_kind=%s http_status=%s",
-          failure.kind,
-          failure.httpStatus ?? "none",
-        );
       }
+      if (shuttingDown) break;
+      await new Promise((r) => setTimeout(r, retryDelayMs));
     }
-    if (shuttingDown) break;
-    await new Promise((r) => setTimeout(r, retryDelayMs));
+  } finally {
+    clearInterval(successTimer);
+    flushIndexerSuccesses("shutdown");
   }
   await releaseWorkerLease(LEASE_NAME, workerId).catch(() => {});
   console.log("[indexer] stopped");

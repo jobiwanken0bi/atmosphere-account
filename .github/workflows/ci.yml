@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  DENO_VERSION: 2.8.3
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -42,7 +45,8 @@ jobs:
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.7.12
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
 
       - name: Install dependencies
         run: deno install --frozen
@@ -63,7 +67,8 @@ jobs:
         run: deno task host:conformance:smoke
 
       - name: Build
-        run: deno task build
+        # Dependencies were installed once above; avoid repeating that work.
+        run: deno task build:compiled
 
   browser-e2e:
     name: Browser login E2E
@@ -79,7 +84,8 @@ jobs:
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.7.12
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
 
       - name: Install dependencies
         run: deno install --frozen

@@ -536,6 +536,14 @@ CREATE TABLE IF NOT EXISTS pds_instance_status_history (
   scan_id text NOT NULL
 );
 
+-- Existing production databases may still have the original int4 columns.
+-- Re-applying the baseline does not widen those columns, so keep the
+-- promotion as an explicit, idempotent migration.
+ALTER TABLE pds_instance
+  ALTER COLUMN relay_seq TYPE bigint USING relay_seq::bigint;
+ALTER TABLE pds_instance_status_history
+  ALTER COLUMN relay_seq TYPE bigint USING relay_seq::bigint;
+
 CREATE INDEX IF NOT EXISTS pds_instance_status_history_host
   ON pds_instance_status_history(service_host, observed_at);
 CREATE INDEX IF NOT EXISTS pds_instance_status_history_status

@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
   indexerFailureLogFields,
   IndexerIdentityCache,
+  IndexerSuccessBatch,
   jetstreamBacklogIsFull,
   jetstreamMaxPendingEvents,
 } from "./indexer.ts";
@@ -43,6 +44,24 @@ Deno.test("indexer failure log fields omit upstream bodies and error messages", 
     indexerFailureLogFields(new PublicRecordFetchError(999, secret)),
     { kind: "public_record_fetch", httpStatus: null },
   );
+});
+
+Deno.test("indexer batches routine successes without record identifiers", () => {
+  let now = 1_000;
+  const batch = new IndexerSuccessBatch(() => now);
+  batch.record("profile_upsert");
+  batch.record("profile_upsert");
+  batch.record("host_delete");
+  now = 61_000;
+
+  assertEquals(batch.drain("interval"), {
+    event: "indexer_success_batch",
+    reason: "interval",
+    intervalMs: 60_000,
+    total: 3,
+    counts: { host_delete: 1, profile_upsert: 2 },
+  });
+  assertEquals(batch.drain("interval"), null);
 });
 
 Deno.test("indexer identity cache reuses one DID resolution", async () => {

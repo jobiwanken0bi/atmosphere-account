@@ -14,6 +14,11 @@ import { getProfileByDid } from "../../../../lib/registry.ts";
 import { fetchBlobPublic } from "../../../../lib/pds.ts";
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 import { secureRasterImageProxyResponse } from "../../../../lib/raster-image-security.ts";
+import {
+  cachedDerivedMediaRedirect,
+  profileDerivedMediaKey,
+  storeVerifiedMediaResponse,
+} from "../../../../lib/derived-media-cache.ts";
 
 const MAX_BANNER_BYTES = 3_000_000;
 const CACHE_CONTROL =
@@ -26,6 +31,13 @@ export const handler = define.handlers({
     if (!profile?.bannerCid) {
       return new Response("not found", { status: 404 });
     }
+    const cacheKey = profileDerivedMediaKey({
+      kind: "banner",
+      did,
+      cid: profile.bannerCid,
+    });
+    const cached = await cachedDerivedMediaRedirect(cacheKey);
+    if (cached) return cached;
     try {
       const upstream = await fetchBlobPublic(
         profile.pdsUrl,
@@ -35,7 +47,7 @@ export const handler = define.handlers({
       if (!upstream.ok) {
         return new Response("not found", { status: 404 });
       }
-      return await secureRasterImageProxyResponse(upstream, {
+      const response = await secureRasterImageProxyResponse(upstream, {
         cid: profile.bannerCid,
         declaredMime: profile.bannerMime,
         maxBytes: MAX_BANNER_BYTES,
@@ -44,6 +56,14 @@ export const handler = define.handlers({
         filename: "atmosphere-banner",
         crossOrigin: true,
       });
+      if (response.ok) {
+        void storeVerifiedMediaResponse(
+          cacheKey,
+          response.clone(),
+          "atmosphere-banner",
+        );
+      }
+      return response;
     } catch (err) {
       console.warn("[banner] proxy error:", err);
       return new Response("upstream error", { status: 502 });

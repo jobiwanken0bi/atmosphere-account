@@ -1286,7 +1286,55 @@ async function updateAppListingAggregatesForId(
   },
   listingId: string,
 ): Promise<void> {
-  const now = Date.now();
+  await updateAppListingAggregatesForIds(c, [listingId]);
+}
+
+interface AppListingAggregateState {
+  listingId: string;
+  reviewCount: number;
+  averageRating: number | null;
+  favoriteCount: number;
+  mentionCount24h: number;
+  mentionCount7d: number;
+  favoriteRecentCount: number;
+  favoriteBaselineCount: number;
+  favoriteCreatedAts: number[];
+  reviewEvents: Array<{ rating: number; createdAtMs: number }>;
+  mentionCreatedAts: number[];
+}
+
+const APP_AGGREGATE_BATCH_SIZE = 50;
+
+async function updateAppListingAggregatesForIds(
+  c: {
+    execute: (
+      args: { sql: string; args: InValue[] },
+    ) => Promise<{ rows: unknown[] }>;
+  },
+  listingIds: Iterable<string | null | undefined>,
+  at = Date.now(),
+): Promise<void> {
+  const ids = uniqueStrings(listingIds).filter(Boolean);
+  for (let start = 0; start < ids.length; start += APP_AGGREGATE_BATCH_SIZE) {
+    await updateAppListingAggregateBatch(
+      c,
+      ids.slice(start, start + APP_AGGREGATE_BATCH_SIZE),
+      at,
+    );
+  }
+}
+
+async function updateAppListingAggregateBatch(
+  c: {
+    execute: (
+      args: { sql: string; args: InValue[] },
+    ) => Promise<{ rows: unknown[] }>;
+  },
+  listingIds: string[],
+  at: number,
+): Promise<void> {
+  if (listingIds.length === 0) return;
+  const now = at;
   const decaySince = now - daysToMs(trendingDecayWindowDays());
   const recentRatingHalfLife = trendingRatingRecentHalfLifeDays();
   const recentReviewSince = now - daysToMs(recentRatingHalfLife * 2);
@@ -1299,156 +1347,208 @@ async function updateAppListingAggregatesForId(
   const mention24hSince = now - daysToMs(1);
   const mention7dSince = now - daysToMs(7);
 
-  const reviews = await c.execute({
+  const targetValues = listingIds.map(() => "(?)").join(", ");
+  const aggregateRows = await c.execute({
     sql: `
-      SELECT COUNT(*) AS n, AVG(rating) AS avg_rating
-      FROM app_review
-      WHERE listing_id = ? AND deleted_at IS NULL
+      WITH target(listing_id) AS (VALUES ${targetValues}),
+      review_summary AS (
+        SELECT review.listing_id,
+          COUNT(*) AS review_count,
+          AVG(review.rating) AS average_rating
+        FROM app_review review
+        INNER JOIN target ON target.listing_id = review.listing_id
+        WHERE review.deleted_at IS NULL
+        GROUP BY review.listing_id
+      ),
+      favorite_summary AS (
+        SELECT favorite.listing_id,
+          COUNT(*) AS favorite_count,
+          SUM(CASE WHEN favorite.created_at >= ? THEN 1 ELSE 0 END) AS favorite_recent_count,
+          SUM(CASE WHEN favorite.created_at >= ? THEN 1 ELSE 0 END) AS favorite_baseline_count
+        FROM app_favorite favorite
+        INNER JOIN target ON target.listing_id = favorite.listing_id
+        WHERE favorite.deleted_at IS NULL
+        GROUP BY favorite.listing_id
+      ),
+      mention_summary AS (
+        SELECT mention.listing_id,
+          SUM(CASE WHEN mention.post_created_at >= ? THEN 1 ELSE 0 END) AS mention_count_24h,
+          SUM(CASE WHEN mention.post_created_at >= ? THEN 1 ELSE 0 END) AS mention_count_7d
+        FROM app_mention mention
+        INNER JOIN target ON target.listing_id = mention.listing_id
+        WHERE mention.deleted_at IS NULL
+        GROUP BY mention.listing_id
+      )
+      SELECT target.listing_id, 'summary' AS row_kind,
+        COALESCE(review_summary.review_count, 0) AS review_count,
+        review_summary.average_rating,
+        COALESCE(favorite_summary.favorite_count, 0) AS favorite_count,
+        COALESCE(mention_summary.mention_count_24h, 0) AS mention_count_24h,
+        COALESCE(mention_summary.mention_count_7d, 0) AS mention_count_7d,
+        COALESCE(favorite_summary.favorite_recent_count, 0) AS favorite_recent_count,
+        COALESCE(favorite_summary.favorite_baseline_count, 0) AS favorite_baseline_count,
+        CAST(NULL AS TEXT) AS event_kind,
+        CAST(NULL AS BIGINT) AS event_at,
+        CAST(NULL AS INTEGER) AS event_rating
+      FROM target
+      LEFT JOIN review_summary ON review_summary.listing_id = target.listing_id
+      LEFT JOIN favorite_summary ON favorite_summary.listing_id = target.listing_id
+      LEFT JOIN mention_summary ON mention_summary.listing_id = target.listing_id
+      UNION ALL
+      SELECT favorite.listing_id, 'event',
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        'favorite', favorite.created_at, NULL
+      FROM app_favorite favorite
+      INNER JOIN target ON target.listing_id = favorite.listing_id
+      WHERE favorite.deleted_at IS NULL AND favorite.created_at >= ?
+      UNION ALL
+      SELECT review.listing_id, 'event',
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        'review', review.created_at, review.rating
+      FROM app_review review
+      INNER JOIN target ON target.listing_id = review.listing_id
+      WHERE review.deleted_at IS NULL AND review.created_at >= ?
+      UNION ALL
+      SELECT mention.listing_id, 'event',
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        'mention', mention.post_created_at, NULL
+      FROM app_mention mention
+      INNER JOIN target ON target.listing_id = mention.listing_id
+      WHERE mention.deleted_at IS NULL AND mention.post_created_at >= ?
     `,
-    args: [listingId],
+    args: [
+      ...listingIds,
+      favoriteVelocityRecentSince,
+      favoriteVelocityBaselineSince,
+      mention24hSince,
+      mention7dSince,
+      decaySince,
+      recentReviewSince,
+      decaySince,
+    ],
   });
-  const favoriteCountResult = await c.execute({
-    sql: `
-      SELECT COUNT(*) AS n FROM app_favorite
-      WHERE listing_id = ? AND deleted_at IS NULL
-    `,
-    args: [listingId],
-  });
-  const [
-    favoriteRows,
-    reviewRows,
-    mentionRows,
-    mention24hResult,
-    mention7dResult,
-    favoriteRecentResult,
-    favoriteBaselineResult,
-  ] = await Promise.all([
-    c.execute({
-      sql: `
-        SELECT created_at FROM app_favorite
-        WHERE listing_id = ? AND deleted_at IS NULL AND created_at >= ?
-      `,
-      args: [listingId, decaySince],
-    }),
-    c.execute({
-      sql: `
-        SELECT rating, created_at FROM app_review
-        WHERE listing_id = ? AND deleted_at IS NULL AND created_at >= ?
-      `,
-      args: [listingId, recentReviewSince],
-    }),
-    c.execute({
-      sql: `
-        SELECT post_created_at FROM app_mention
-        WHERE listing_id = ? AND deleted_at IS NULL AND post_created_at >= ?
-      `,
-      args: [listingId, decaySince],
-    }),
-    c.execute({
-      sql: `
-        SELECT COUNT(*) AS n FROM app_mention
-        WHERE listing_id = ? AND deleted_at IS NULL AND post_created_at >= ?
-      `,
-      args: [listingId, mention24hSince],
-    }),
-    c.execute({
-      sql: `
-        SELECT COUNT(*) AS n FROM app_mention
-        WHERE listing_id = ? AND deleted_at IS NULL AND post_created_at >= ?
-      `,
-      args: [listingId, mention7dSince],
-    }),
-    c.execute({
-      sql: `
-        SELECT COUNT(*) AS n FROM app_favorite
-        WHERE listing_id = ? AND deleted_at IS NULL AND created_at >= ?
-      `,
-      args: [listingId, favoriteVelocityRecentSince],
-    }),
-    c.execute({
-      sql: `
-        SELECT COUNT(*) AS n FROM app_favorite
-        WHERE listing_id = ? AND deleted_at IS NULL AND created_at >= ?
-      `,
-      args: [listingId, favoriteVelocityBaselineSince],
-    }),
-  ]);
 
-  const reviewRow = reviews.rows[0] as Record<string, unknown> | undefined;
-  const favoriteRow = favoriteCountResult.rows[0] as
-    | Record<string, unknown>
-    | undefined;
-  const reviewCount = Number(reviewRow?.n ?? 0);
-  const averageRating = reviewRow?.avg_rating == null
-    ? null
-    : Number(reviewRow.avg_rating);
-  const favoriteCount = Number(favoriteRow?.n ?? 0);
-  const mentionCount24h = countFromResult(mention24hResult);
-  const mentionCount7d = countFromResult(mention7dResult);
-  const recentRatingMean = reviewRows.rows.length > 0
-    ? decayedBayesianRating(
-      reviewRows.rows.map((row) => ({
-        rating: Number((row as Record<string, unknown>).rating ?? 0),
-        createdAtMs: Number((row as Record<string, unknown>).created_at ?? 0),
-      })),
-      recentRatingHalfLife,
-      now,
-    )
-    : null;
-  const allTimeRating01 = ratingSignalFromAverage(
-    bayesianAverageRating({ reviewCount, averageRating }),
+  const states = new Map<string, AppListingAggregateState>(
+    listingIds.map((listingId) => [listingId, {
+      listingId,
+      reviewCount: 0,
+      averageRating: null,
+      favoriteCount: 0,
+      mentionCount24h: 0,
+      mentionCount7d: 0,
+      favoriteRecentCount: 0,
+      favoriteBaselineCount: 0,
+      favoriteCreatedAts: [],
+      reviewEvents: [],
+      mentionCreatedAts: [],
+    }]),
   );
-  const recentRating01 = recentRatingMean == null
-    ? allTimeRating01
-    : ratingSignalFromAverage(recentRatingMean);
-  const ratingSignal01 = blendRatingSignals(
-    allTimeRating01,
-    recentRating01,
-    trendingRatingRecentBlendWeight(),
-  );
-  const favoriteVelocity01 = favoriteVelocitySignal({
-    recentCount: countFromResult(favoriteRecentResult),
-    baselineCount: countFromResult(favoriteBaselineResult),
-    recentDays: favoriteVelocityRecentDays,
-    baselineDays: favoriteVelocityBaselineDays,
-    prior: trendingFavoriteVelocityPrior(),
-    squashK: trendingFavoriteVelocitySquashK(),
+  for (const rawRow of aggregateRows.rows) {
+    const row = rawRow as Record<string, unknown>;
+    const state = states.get(String(row.listing_id ?? ""));
+    if (!state) continue;
+    if (row.row_kind === "summary") {
+      state.reviewCount = Number(row.review_count ?? 0);
+      state.averageRating = row.average_rating == null
+        ? null
+        : Number(row.average_rating);
+      state.favoriteCount = Number(row.favorite_count ?? 0);
+      state.mentionCount24h = Number(row.mention_count_24h ?? 0);
+      state.mentionCount7d = Number(row.mention_count_7d ?? 0);
+      state.favoriteRecentCount = Number(row.favorite_recent_count ?? 0);
+      state.favoriteBaselineCount = Number(row.favorite_baseline_count ?? 0);
+      continue;
+    }
+    const eventAt = Number(row.event_at ?? 0);
+    if (row.event_kind === "favorite") {
+      state.favoriteCreatedAts.push(eventAt);
+    } else if (row.event_kind === "mention") {
+      state.mentionCreatedAts.push(eventAt);
+    } else if (row.event_kind === "review") {
+      state.reviewEvents.push({
+        rating: Number(row.event_rating ?? 0),
+        createdAtMs: eventAt,
+      });
+    }
+  }
+
+  const updates = [...states.values()].map((state) => {
+    const recentRatingMean = state.reviewEvents.length > 0
+      ? decayedBayesianRating(
+        state.reviewEvents,
+        recentRatingHalfLife,
+        now,
+      )
+      : null;
+    const allTimeRating01 = ratingSignalFromAverage(
+      bayesianAverageRating({
+        reviewCount: state.reviewCount,
+        averageRating: state.averageRating,
+      }),
+    );
+    const recentRating01 = recentRatingMean == null
+      ? allTimeRating01
+      : ratingSignalFromAverage(recentRatingMean);
+    const ratingSignal01 = blendRatingSignals(
+      allTimeRating01,
+      recentRating01,
+      trendingRatingRecentBlendWeight(),
+    );
+    const favoriteVelocity01 = favoriteVelocitySignal({
+      recentCount: state.favoriteRecentCount,
+      baselineCount: state.favoriteBaselineCount,
+      recentDays: favoriteVelocityRecentDays,
+      baselineDays: favoriteVelocityBaselineDays,
+      prior: trendingFavoriteVelocityPrior(),
+      squashK: trendingFavoriteVelocitySquashK(),
+    });
+    return {
+      ...state,
+      trendingScore: combineTrendingScore({
+        decayedFavoriteWeight: sumDecayedWeights(
+          state.favoriteCreatedAts,
+          trendingFavoriteHalfLifeDays(),
+          now,
+        ),
+        ratingSignal01,
+        decayedMentionWeight: sumDecayedWeights(
+          state.mentionCreatedAts,
+          trendingMentionHalfLifeDays(),
+          now,
+        ),
+        mentionVolume01: mentionVolumeSignal(state.mentionCount7d),
+        favoriteVelocity01,
+      }),
+    };
   });
-  const trendingScore = combineTrendingScore({
-    decayedFavoriteWeight: sumDecayedWeights(
-      favoriteRows.rows.map((row) =>
-        Number((row as Record<string, unknown>).created_at ?? 0)
-      ),
-      trendingFavoriteHalfLifeDays(),
-      now,
-    ),
-    ratingSignal01,
-    decayedMentionWeight: sumDecayedWeights(
-      mentionRows.rows.map((row) =>
-        Number((row as Record<string, unknown>).post_created_at ?? 0)
-      ),
-      trendingMentionHalfLifeDays(),
-      now,
-    ),
-    mentionVolume01: mentionVolumeSignal(mentionCount7d),
-    favoriteVelocity01,
-  });
+
+  const updateArgs: InValue[] = [];
+  const assignment = (
+    column: string,
+    value: (state: typeof updates[number]) => InValue,
+  ): string => {
+    const cases = updates.map((state) => {
+      updateArgs.push(state.listingId, value(state));
+      return "WHEN ? THEN ?";
+    }).join(" ");
+    return `${column} = CASE id ${cases} ELSE ${column} END`;
+  };
+  const assignments = [
+    assignment("review_count", (state) => state.reviewCount),
+    assignment("average_rating", (state) => state.averageRating),
+    assignment("favorite_count", (state) => state.favoriteCount),
+    assignment("mention_count_24h", (state) => state.mentionCount24h),
+    assignment("mention_count_7d", (state) => state.mentionCount7d),
+    assignment("trending_score", (state) => state.trendingScore),
+  ];
+  updateArgs.push(...listingIds);
   await c.execute({
     sql: `
       UPDATE app_listing
-      SET review_count = ?, average_rating = ?, favorite_count = ?,
-          mention_count_24h = ?, mention_count_7d = ?, trending_score = ?
-      WHERE id = ?
+      SET ${assignments.join(",\n          ")}
+      WHERE id IN (${listingIds.map(() => "?").join(", ")})
     `,
-    args: [
-      reviewCount,
-      averageRating,
-      favoriteCount,
-      mentionCount24h,
-      mentionCount7d,
-      trendingScore,
-      listingId,
-    ],
+    args: updateArgs,
   });
 }
 
@@ -1460,15 +1560,15 @@ async function updateAffectedListingAggregates(
   },
   listingIds: Array<string | null>,
 ): Promise<void> {
-  for (const id of uniqueStrings(listingIds)) {
-    if (id) await updateAppListingAggregatesForId(c, id);
-  }
+  await updateAppListingAggregatesForIds(c, listingIds);
 }
 
-function countFromResult(result: { rows: unknown[] }): number {
-  return Number(
-    (result.rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
-  );
+export async function updateAppListingAggregatesForIdsForTest(
+  c: DbClient,
+  listingIds: string[],
+  at: number,
+): Promise<void> {
+  await updateAppListingAggregatesForIds(c, listingIds, at);
 }
 
 export async function rescoreAppDirectoryTrending(): Promise<number> {
@@ -1479,12 +1579,12 @@ export async function rescoreAppDirectoryTrending(): Promise<number> {
         WHERE deleted_at IS NULL
         ORDER BY COALESCE(trending_score, -1) ASC, updated_at ASC
       `);
-      for (const row of rows.rows) {
-        const id = (row as Record<string, unknown>).id;
-        if (typeof id === "string" && id.length > 0) {
-          await updateAppListingAggregatesForId(c, id);
-        }
-      }
+      await updateAppListingAggregatesForIds(
+        c,
+        rows.rows.map((row) =>
+          String((row as Record<string, unknown>).id ?? "")
+        ),
+      );
       return rows.rows.length;
     });
   } finally {

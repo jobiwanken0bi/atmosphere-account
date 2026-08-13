@@ -10,6 +10,7 @@ import {
   readResponseTextWithLimit,
   requestBodyTooLarge,
   RequestBodyTooLargeError,
+  requestHasAccountStateForTest,
 } from "./security.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -231,7 +232,11 @@ Deno.test("token-bearing Atmosphere Login pages force private browser headers", 
         ? "same-origin"
         : "no-referrer",
     );
-    assertEquals(headers.get("cache-control"), "no-store");
+    assertEquals(headers.get("cache-control"), "private, no-store");
+    assertEquals(
+      headers.get("deno-cdn-cache-control"),
+      "private, no-store",
+    );
     assertEquals(headers.get("x-robots-tag"), "noindex, nofollow");
   }
 });
@@ -278,7 +283,73 @@ Deno.test("rendered account pages are always private and non-cacheable", () => {
       }),
     );
     assertEquals(headers.get("cache-control"), "private, no-store");
+    assertEquals(
+      headers.get("deno-cdn-cache-control"),
+      "private, no-store",
+    );
   }
+});
+
+Deno.test("all stateful application HTML is private at the outer boundary", () => {
+  for (
+    const pathname of [
+      "/admin",
+      "/admin/reviews",
+      "/apps/create",
+      "/apps/manage",
+      "/apps/manage/host",
+      "/apps/migrate-from-legacy",
+      "/hosts/claim",
+      "/hosts/example.com/claim",
+      "/hosts/example.com/manage",
+      "/hosts/example.com/manage/apps",
+      "/oauth/add-account",
+      "/relationships/confirm",
+    ]
+  ) {
+    const headers = applySecurityHeadersForTest(
+      pathname,
+      new Headers({
+        "content-type": "text/html; charset=utf-8",
+        "deno-cache-id": "unsafe",
+        "deno-cache-tag": "unsafe",
+      }),
+    );
+    assertEquals(headers.get("cache-control"), "private, no-store");
+    assertEquals(
+      headers.get("deno-cdn-cache-control"),
+      "private, no-store",
+    );
+    assertEquals(headers.get("deno-cache-id"), null);
+    assertEquals(headers.get("deno-cache-tag"), null);
+  }
+});
+
+Deno.test("account-state detection is exact and fail-closed", () => {
+  assertEquals(
+    requestHasAccountStateForTest(
+      new Headers({ cookie: "locale=en; atmo_sid=session.signature" }),
+    ),
+    true,
+  );
+  assertEquals(
+    requestHasAccountStateForTest(
+      new Headers({ cookie: "atmo_accounts=; locale=en" }),
+    ),
+    true,
+  );
+  assertEquals(
+    requestHasAccountStateForTest(
+      new Headers({ authorization: "Bearer value" }),
+    ),
+    true,
+  );
+  assertEquals(
+    requestHasAccountStateForTest(
+      new Headers({ cookie: "not_atmo_sid=value; locale=en" }),
+    ),
+    false,
+  );
 });
 
 Deno.test("the legacy account redirect remains cacheable", () => {

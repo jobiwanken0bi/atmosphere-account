@@ -1,9 +1,15 @@
 import { define } from "../../../utils.ts";
 import { appviewBaseUrl } from "../../../lib/appview-client.ts";
 import { checkDbHealth } from "../../../lib/db.ts";
-import { runtimeRelease } from "../../../lib/release.ts";
-import { getWorkerLeaseStatus } from "../../../lib/worker-lease.ts";
-import { getPdsInventoryFreshness } from "../../../lib/pds-inventory-health.ts";
+import { type RuntimeRelease, runtimeRelease } from "../../../lib/release.ts";
+import {
+  getWorkerLeaseStatus,
+  type WorkerLeaseStatus,
+} from "../../../lib/worker-lease.ts";
+import {
+  getPdsInventoryFreshness,
+  type PdsInventoryFreshness,
+} from "../../../lib/pds-inventory-health.ts";
 import { readResponseTextWithLimit } from "../../../lib/security.ts";
 
 const INDEXER_LEASE = "jetstream-indexer";
@@ -13,6 +19,11 @@ const MAX_APPVIEW_READINESS_BYTES = 256 * 1024;
 interface ReadinessResult {
   body: Record<string, unknown>;
   status: number;
+}
+
+interface DatabaseHealth {
+  ok: boolean;
+  [key: string]: unknown;
 }
 
 let cachedReadiness: {
@@ -61,27 +72,54 @@ async function computeReadiness(): Promise<ReadinessResult> {
     getWorkerLeaseStatus(INDEXER_LEASE).catch(() => null),
     getPdsInventoryFreshness().catch(() => null),
   ]);
+  return localReadiness({ database, indexer, pdsInventory });
+}
+
+export function localReadinessForTest(input: {
+  database: DatabaseHealth;
+  indexer: WorkerLeaseStatus | null;
+  pdsInventory: PdsInventoryFreshness | null;
+  release?: RuntimeRelease;
+}): ReadinessResult {
+  return localReadiness(input);
+}
+
+function localReadiness(input: {
+  database: DatabaseHealth;
+  indexer: WorkerLeaseStatus | null;
+  pdsInventory: PdsInventoryFreshness | null;
+  release?: RuntimeRelease;
+}): ReadinessResult {
+  const databaseReady = input.database.ok === true;
+  const indexerReady = input.indexer?.isFresh === true;
+  const inventoryReady = input.pdsInventory?.present === true &&
+    input.pdsInventory.fresh === true;
+  // Railway uses this endpoint as the web deployment healthcheck. A stale
+  // background feed must alert operators, but must not roll back a healthy web
+  // repair deploy. The hourly production verifier enforces every freshness
+  // signal below; HTTP readiness is the web/DB serving boundary.
+  const ready = databaseReady;
   return {
-    status: 200,
+    status: ready ? 200 : 503,
     body: {
-      ok: true,
+      ok: ready,
       service: "atmosphere-account-web",
-      release: runtimeRelease(),
-      database,
-      indexer: indexer
+      release: input.release ?? runtimeRelease(),
+      database: input.database,
+      indexer: input.indexer
         ? {
           present: true,
-          fresh: indexer.isFresh,
-          heartbeatAt: new Date(indexer.heartbeatAt).toISOString(),
-          expiresAt: new Date(indexer.expiresAt).toISOString(),
+          fresh: input.indexer.isFresh,
+          heartbeatAt: new Date(input.indexer.heartbeatAt).toISOString(),
+          expiresAt: new Date(input.indexer.expiresAt).toISOString(),
         }
         : { present: false, fresh: false },
-      pdsInventory: pdsInventory ?? {
+      pdsInventory: input.pdsInventory ?? {
         present: false,
         fresh: false,
         error: "inventory_freshness_unavailable",
       },
-      degraded: !pdsInventory?.fresh,
+      degraded: !ready || !indexerReady || !inventoryReady,
       timestamp: new Date().toISOString(),
     },
   };
@@ -131,8 +169,19 @@ async function appviewReadiness(
   }
   const body = validJsonObject && isRecord(rawBody) ? rawBody : { ok: false };
   const appviewRelease = publicAppviewRelease(body.release);
-  const appviewOk = res.ok && body.ok === true;
+  const database = publicDatabaseHealth(body.database);
+  const indexer = publicIndexerHealth(body.indexer);
+  const pdsInventory = publicPdsInventoryHealth(body.pdsInventory);
+  const appviewOk = res.ok && body.ok === true && database?.ok === true;
+  const dependenciesFresh = indexer?.present === true &&
+    indexer.fresh === true && pdsInventory?.present === true &&
+    pdsInventory.fresh === true;
   const publicBody = publicAppviewReadinessBody(body);
+  // The public serving boundary follows the appview/DB. Preserve background
+  // health as a fail-closed degraded signal for the production verifier.
+  publicBody.ok = appviewOk;
+  publicBody.degraded = !appviewOk || !dependenciesFresh ||
+    body.degraded !== false;
   if (!validJsonObject) {
     publicBody.error = "invalid_appview_readiness_response";
   } else if (!appviewOk) {

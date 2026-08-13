@@ -8,6 +8,7 @@ import {
   fetchHostProfileForTest,
   finalizeEmailClaimRecoveryTransactionForTest,
   hasCompletedContactEmailClaimEvidenceForTest,
+  hydrateAccountHostProfiles,
   isAccountHostPubliclyListable,
   isCompletedDnsClaimReplayForTest,
   listSeededAccountHostFallback,
@@ -104,6 +105,31 @@ Deno.test("fixed Bluesky profile fetch bounds and validates upstream responses",
       description: "Account hosting",
       avatarUrl: null,
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("background host profile refresh composes the job deadline", async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  const reason = new Error("job deadline");
+  controller.abort(reason);
+  let sawAbortedSignal = false;
+  try {
+    globalThis.fetch =
+      ((_input: string | URL | Request, init?: RequestInit) => {
+        sawAbortedSignal = init?.signal?.aborted === true;
+        return Promise.reject(init?.signal?.reason ?? reason);
+      }) as typeof fetch;
+    let rejected: unknown = null;
+    try {
+      await fetchHostProfileForTest("host.example", controller.signal);
+    } catch (error) {
+      rejected = error;
+    }
+    assertEquals(sawAbortedSignal, true);
+    assertEquals(rejected, reason);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -2231,6 +2257,73 @@ Deno.test("host profile refresh checks the host-domain handle before the configu
       profileHandle: "sprk.so",
     }),
     ["sprk.so"],
+  );
+});
+
+Deno.test("request-time host hydration never calls the external profile API", async () => {
+  const [host] = listSeededAccountHostFallback();
+  assert(host, "expected a seeded host fixture");
+  const originalFetch = globalThis.fetch;
+  let fetches = 0;
+  try {
+    globalThis.fetch = (() => {
+      fetches += 1;
+      throw new Error("request-time external fetch");
+    }) as typeof fetch;
+    assertEquals(await hydrateAccountHostProfiles([host]), [host]);
+    assertEquals(fetches, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("host GET helpers stay read-only while explicit maintenance owns seed and profile writes", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./account-hosts.ts", import.meta.url),
+  );
+  const segments = [
+    source.slice(
+      source.indexOf("export async function lookupAccountHost("),
+      source.indexOf("export async function observeAccountHost("),
+    ),
+    source.slice(
+      source.indexOf("export async function listAccountHostDirectory("),
+      source.indexOf("function accountHostOrder("),
+    ),
+    source.slice(
+      source.indexOf("export async function getAccountHost("),
+      source.indexOf("export function hydrateAccountHostProfiles("),
+    ),
+  ];
+  for (const segment of segments) {
+    assert(segment.length > 0, "expected host read helper source");
+    assert(
+      !segment.includes("ensureSeededHosts"),
+      "host reads must not synchronize seed rows",
+    );
+    assert(
+      !/\b(?:INSERT|UPDATE|DELETE)\b/.test(segment),
+      "host reads must not write",
+    );
+  }
+  const maintenance = source.slice(
+    source.indexOf("export async function maintainAccountHostDirectory("),
+  );
+  assert(
+    maintenance.includes("syncSeededAccountHosts()"),
+    "explicit maintenance must upgrade seed rows",
+  );
+  const seedSync = source.slice(
+    source.indexOf("export async function syncSeededAccountHosts("),
+    source.indexOf("export async function maintainAccountHostDirectory("),
+  );
+  assert(
+    seedSync.includes("ensureSeededHosts(c, { force: true })"),
+    "release seed synchronization must force curated upgrades",
+  );
+  assert(
+    maintenance.includes("refreshAccountHostProfiles(hosts, signal)"),
+    "explicit maintenance must refresh external profile data",
   );
 });
 

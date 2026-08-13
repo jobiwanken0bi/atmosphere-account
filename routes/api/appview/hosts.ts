@@ -40,11 +40,7 @@ export const handler = define.handlers({
       () => listPublicAccountHosts(input),
     );
     return json(hosts, {
-      headers: {
-        // Page links must not combine totals from independently cached
-        // inventory snapshots.
-        "cache-control": "no-store",
-      },
+      headers: hostDirectorySuccessHeaders(),
     });
   }, {
     scope: "appview-host-directory",
@@ -52,6 +48,20 @@ export const handler = define.handlers({
     refillMs: 60_000,
   }),
 });
+
+function hostDirectorySuccessHeaders(): HeadersInit {
+  // The result is public-only and its full filter/page tuple is part of the
+  // cache key. Keep browsers on revalidation while allowing the edge/shared
+  // cache to absorb short bursts and serve stale during a bounded refresh.
+  return {
+    "cache-control":
+      "public, max-age=0, s-maxage=30, stale-while-revalidate=120",
+  };
+}
+
+export function hostDirectorySuccessHeadersForTest(): Headers {
+  return new Headers(hostDirectorySuccessHeaders());
+}
 
 function validDirectorySearch(search: URLSearchParams): boolean {
   const queries = search.getAll("q");

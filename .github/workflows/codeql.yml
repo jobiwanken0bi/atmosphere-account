@@ -14,6 +14,9 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  DENO_VERSION: 2.8.3
+
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
@@ -36,7 +39,8 @@ jobs:
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: 2.7.12
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
 
       - name: Audit dependencies
         run: deno task audit

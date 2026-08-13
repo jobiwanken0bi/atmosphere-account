@@ -10,6 +10,7 @@ import {
   hostDirectoryResultForHosts,
   isGeneratedAppviewAssetPathForTest,
   proxiedHeadersForTest,
+  rewriteAppviewApiUrlForTest,
   rewriteAppviewHtmlForTest,
   rewriteAppviewUrlForTest,
   seededHostDetailFallback,
@@ -533,6 +534,7 @@ Deno.test("proxied appview response headers strip transport metadata but keep co
     "server": "railway-hikari",
     "transfer-encoding": "chunked",
     "x-hikari-trace": "ord1.test",
+    "x-atmosphere-render-origin": "https://atmosphereaccount.com",
     "x-railway-edge": "ord1",
     "x-railway-request-id": "request-id",
   });
@@ -553,6 +555,7 @@ Deno.test("proxied appview response headers strip transport metadata but keep co
   assertEquals(headers.has("server"), false);
   assertEquals(headers.has("transfer-encoding"), false);
   assertEquals(headers.has("x-hikari-trace"), false);
+  assertEquals(headers.has("x-atmosphere-render-origin"), false);
   assertEquals(headers.has("x-railway-edge"), false);
   assertEquals(headers.has("x-railway-request-id"), false);
   assertEquals(headers.getSetCookie().length, 2);
@@ -769,4 +772,68 @@ Deno.test("appview redirects preserve OAuth HTTPS while rejecting active or priv
       assertEquals(rewritten, null);
     }
   }
+});
+
+Deno.test("media redirects preserve only allowlisted signed object URLs", () => {
+  const signed = new URL(
+    "https://derived-media.up.railway.app/atmosphere/v1/blob.webp",
+  );
+  signed.search = new URLSearchParams({
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": "AKIAEXAMPLE/20260812/iad/s3/aws4_request",
+    "X-Amz-Date": "20260812T120000Z",
+    "X-Amz-Expires": "604800",
+    "X-Amz-SignedHeaders": "host",
+    "X-Amz-Signature": "a".repeat(64),
+  }).toString();
+
+  const mediaPaths = [
+    "/api/atproto/blob?did=did%3Aplc%3Aa&cid=bafy",
+    "/api/registry/banner/did%3Aplc%3Aa",
+    "/api/registry/og-banner/did%3Aplc%3Aa",
+    "/api/registry/project-og/example.test",
+    "/api/registry/screenshot/did%3Aplc%3Aa/3",
+  ];
+  for (const path of mediaPaths) {
+    assertEquals(
+      rewriteAppviewApiUrlForTest(
+        signed.toString(),
+        "https://appview.internal",
+        new URL(path, "https://atmosphereaccount.com"),
+        ["https://derived-media.up.railway.app"],
+      ),
+      signed.toString(),
+    );
+  }
+  const current = new URL(mediaPaths[0], "https://atmosphereaccount.com");
+  assertEquals(
+    rewriteAppviewApiUrlForTest(
+      signed.toString(),
+      "https://appview.internal",
+      current,
+      [],
+    ),
+    null,
+  );
+  signed.hostname = "attacker.example";
+  assertEquals(
+    rewriteAppviewApiUrlForTest(
+      signed.toString(),
+      "https://appview.internal",
+      current,
+      ["https://derived-media.up.railway.app"],
+    ),
+    null,
+  );
+  signed.hostname = "derived-media.up.railway.app";
+  signed.searchParams.delete("X-Amz-Signature");
+  assertEquals(
+    rewriteAppviewApiUrlForTest(
+      signed.toString(),
+      "https://appview.internal",
+      current,
+      ["https://derived-media.up.railway.app"],
+    ),
+    null,
+  );
 });

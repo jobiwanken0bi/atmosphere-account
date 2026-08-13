@@ -602,6 +602,8 @@ const SCHEMA_STATEMENTS: string[] = [
     relay_url TEXT NOT NULL,
     relay_status TEXT NOT NULL,
     relay_account_count INTEGER NOT NULL DEFAULT 0,
+    -- SQLite INTEGER values are signed 64-bit, so this already has parity
+    -- with Postgres bigint Jetstream sequence values.
     relay_seq INTEGER,
     is_bluesky_host INTEGER NOT NULL DEFAULT 0,
     first_observed_at INTEGER NOT NULL,
@@ -620,6 +622,8 @@ const SCHEMA_STATEMENTS: string[] = [
     relay_url TEXT NOT NULL,
     relay_status TEXT NOT NULL,
     relay_account_count INTEGER,
+    -- SQLite INTEGER values are signed 64-bit, so no widening migration is
+    -- required for existing local/libSQL databases.
     relay_seq INTEGER,
     observed_at INTEGER NOT NULL,
     scan_id TEXT NOT NULL

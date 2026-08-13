@@ -6,6 +6,7 @@ import {
 } from "./account-host-public-intent.ts";
 import type { DbClient } from "./db.ts";
 import type { PdsServerDescription } from "./pds-server-description.ts";
+import { assertRejects } from "jsr:@std/assert@1";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   const a = JSON.stringify(actual);
@@ -93,6 +94,25 @@ Deno.test("PDS public intent accepts explicit same-origin signup CTAs", async ()
     label: "Join This Server",
   });
   assertEquals(redirect, "manual");
+});
+
+Deno.test("PDS public signup probes obey the inventory abort signal", async () => {
+  const controller = new AbortController();
+  controller.abort(new DOMException("inventory deadline", "TimeoutError"));
+  let fetches = 0;
+  await assertRejects(
+    () =>
+      fetchPdsPublicSignupPage("https://host.social", {
+        signal: controller.signal,
+        fetchImpl: (() => {
+          fetches++;
+          return Promise.resolve(new Response(""));
+        }) as typeof fetch,
+      }),
+    DOMException,
+    "inventory deadline",
+  );
+  assertEquals(fetches, 0);
 });
 
 Deno.test("PDS public signup probes refuse redirects and oversized pages", async () => {

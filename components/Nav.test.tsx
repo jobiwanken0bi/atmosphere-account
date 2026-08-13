@@ -37,6 +37,11 @@ Deno.test("anonymous navigation without saved accounts has no login control", ()
   const html = renderToString(<Nav account={{ user: null }} />);
 
   assertEquals(html.includes("nav-account"), false);
+  assertStringIncludes(html, 'id="account-nav-slot"');
+  assertStringIncludes(
+    html,
+    'data-account-state-url="/api/account/nav-state"',
+  );
   assertEquals(html.includes('href="/signin"'), false);
   assertEquals(html.includes("Login with Atmosphere"), false);
 });

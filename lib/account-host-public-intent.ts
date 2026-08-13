@@ -47,6 +47,7 @@ export interface PublicHostEnrichmentOptions {
   checkedAt?: number;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -113,6 +114,7 @@ export async function fetchPdsPublicSignupPage(
   options: {
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
+    signal?: AbortSignal;
   } = {},
 ): Promise<PublicSignupPageEvidence | null> {
   const endpoint = normalizeAccountHostPublicServiceEndpoint(serviceEndpoint);
@@ -124,10 +126,13 @@ export async function fetchPdsPublicSignupPage(
     ? Math.min(30_000, Math.max(500, Math.floor(requestedTimeout)))
     : PUBLIC_SIGNUP_PAGE_TIMEOUT_MS;
   try {
+    options.signal?.throwIfAborted();
     const response = await fetchImpl(root, {
       headers: { accept: "text/html,application/xhtml+xml" },
       redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
@@ -152,7 +157,8 @@ export async function fetchPdsPublicSignupPage(
     );
     if (!body.ok) return null;
     return findSameOriginSignupLink(body.text, root);
-  } catch {
+  } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason ?? error;
     return null;
   }
 }
@@ -226,6 +232,7 @@ export async function enrichObservedAccountHostPublicIntentForClient(
     DEFAULT_PUBLIC_HOST_ENRICHMENT_CONCURRENCY,
     50,
   );
+  options.signal?.throwIfAborted();
   const candidates = await loadCandidates(
     client,
     checkedAt - PUBLIC_HOST_ENRICHMENT_RECHECK_MS,
@@ -240,6 +247,7 @@ export async function enrichObservedAccountHostPublicIntentForClient(
   };
 
   for (let offset = 0; offset < candidates.length; offset += concurrency) {
+    options.signal?.throwIfAborted();
     const batch = candidates.slice(offset, offset + concurrency);
     const results = await Promise.all(batch.map(async (candidate) => {
       const endpoint = normalizeAccountHostPublicServiceEndpoint(
@@ -253,6 +261,7 @@ export async function enrichObservedAccountHostPublicIntentForClient(
         timeoutMs: options.timeoutMs,
         cacheTtlMs: 0,
         checkedAt,
+        signal: options.signal,
       });
       const standardIntent = description
         ? detectPdsPublicIntent(
@@ -267,12 +276,14 @@ export async function enrichObservedAccountHostPublicIntentForClient(
         ? await fetchPdsPublicSignupPage(endpoint, {
           fetchImpl: options.fetchImpl,
           timeoutMs: options.timeoutMs,
+          signal: options.signal,
         })
         : null;
       return { candidate, description, publicSignupPage };
     }));
 
     for (const { candidate, description, publicSignupPage } of results) {
+      options.signal?.throwIfAborted();
       if (!description) {
         summary.unavailable++;
         await client.execute({

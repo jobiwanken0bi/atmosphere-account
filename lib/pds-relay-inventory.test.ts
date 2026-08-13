@@ -1,7 +1,10 @@
 import { createClient } from "@libsql/client";
 import {
   fetchRelayPdsInventory,
+  inventoryDbErrorCode,
+  inventoryDbRetryDelayMs,
   isBlueskyHostedPds,
+  isRetryableInventoryDbError,
   normalizeRelayServiceHost,
   parseRelayListHostsPage,
   persistRelayPdsInventoryForClient,
@@ -256,6 +259,35 @@ Deno.test("relay inventory follows an empty page when it has a cursor", async ()
   assertEquals(result.instances.map((row) => row.serviceHost), [
     "pds.example.com",
   ]);
+});
+
+Deno.test("relay inventory obeys an overall abort signal before fetching", async () => {
+  const controller = new AbortController();
+  controller.abort(new DOMException("inventory deadline", "TimeoutError"));
+  let fetches = 0;
+  await assertRejects(
+    () =>
+      fetchRelayPdsInventory({
+        signal: controller.signal,
+        fetchImpl: (() => {
+          fetches++;
+          return Promise.resolve(new Response('{"hosts":[]}'));
+        }) as typeof fetch,
+      }),
+    "inventory deadline",
+  );
+  assertEquals(fetches, 0);
+});
+
+Deno.test("relay inventory retries only transient database failures with bounded jitter", () => {
+  const serialization = Object.assign(new Error("retry"), { code: "40001" });
+  assert(isRetryableInventoryDbError(serialization));
+  assertEquals(inventoryDbErrorCode(serialization), "40001");
+  assert(isRetryableInventoryDbError(new Error("database is locked")));
+  assert(!isRetryableInventoryDbError(new Error("invalid integer syntax")));
+  assertEquals(inventoryDbRetryDelayMs(1, () => 0), 50);
+  assertEquals(inventoryDbRetryDelayMs(2, () => 1), 200);
+  assertEquals(inventoryDbRetryDelayMs(10, () => 1), 2_000);
 });
 
 Deno.test("relay inventory refuses redirects and unbounded or non-JSON pages", async () => {

@@ -125,27 +125,33 @@ function splitSqlStatements(sql: string): string[] {
   return statements;
 }
 
-const args = Deno.args.filter((arg) => arg !== "--");
-if (args.includes("--help") || args.includes("-h")) usage(0);
-if (args.length > 1) usage();
-const schemaPath = args[0] ?? DEFAULT_SCHEMA_PATH;
+export async function migratePostgresSchema(
+  schemaPath = DEFAULT_SCHEMA_PATH,
+): Promise<{ statements: number; elapsedMs: number }> {
+  await loadDotEnvIfPresent();
 
-await loadDotEnvIfPresent();
+  const started = performance.now();
+  const db = createPostgresExecuteClient();
+  try {
+    const schema = await Deno.readTextFile(schemaPath);
+    const migrationSql = withPostgresSchemaMigrationLock(schema);
+    const statements = splitSqlStatements(schema)
+      .filter((stmt) => !/^(BEGIN|COMMIT|ROLLBACK)$/i.test(stmt.trim()));
+    await db.execute(migrationSql);
 
-const started = performance.now();
-const db = createPostgresExecuteClient();
-const schema = await Deno.readTextFile(schemaPath);
-const migrationSql = withPostgresSchemaMigrationLock(schema);
-const statements = splitSqlStatements(schema)
-  .filter((stmt) => !/^(BEGIN|COMMIT|ROLLBACK)$/i.test(stmt.trim()));
-
-try {
-  await db.execute(migrationSql);
-} finally {
-  await (db as typeof db & { end?: () => Promise<void> }).end?.();
+    const elapsedMs = Math.round(performance.now() - started);
+    console.log(
+      `[db:migrate:postgres] applied ${statements.length} statements from ${schemaPath} (${elapsedMs}ms)`,
+    );
+    return { statements: statements.length, elapsedMs };
+  } finally {
+    await (db as typeof db & { end?: () => Promise<void> }).end?.();
+  }
 }
 
-const elapsed = Math.round(performance.now() - started);
-console.log(
-  `[db:migrate:postgres] applied ${statements.length} statements from ${schemaPath} (${elapsed}ms)`,
-);
+if (import.meta.main) {
+  const args = Deno.args.filter((arg) => arg !== "--");
+  if (args.includes("--help") || args.includes("-h")) usage(0);
+  if (args.length > 1) usage();
+  await migratePostgresSchema(args[0] ?? DEFAULT_SCHEMA_PATH);
+}

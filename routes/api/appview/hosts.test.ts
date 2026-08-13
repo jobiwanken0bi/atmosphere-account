@@ -1,8 +1,19 @@
 import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
 import {
   hostDirectoryCacheKey,
+  hostDirectorySuccessHeadersForTest,
   validHostDirectorySearchForTest,
 } from "./hosts.ts";
+
+Deno.test("successful public host directories allow bounded shared caching", () => {
+  const cacheControl = hostDirectorySuccessHeadersForTest().get(
+    "cache-control",
+  );
+  assertEquals(cacheControl?.includes("public"), true);
+  assertEquals(cacheControl?.includes("s-maxage=30"), true);
+  assertEquals(cacheControl?.includes("stale-while-revalidate=120"), true);
+  assertEquals(cacheControl?.includes("no-store"), false);
+});
 
 Deno.test("host directory cache key normalizes equivalent public filters", () => {
   assertEquals(
