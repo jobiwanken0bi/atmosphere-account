@@ -1,4 +1,6 @@
-import { hostHandleDemoFrames } from "./HostHandleDemo.tsx";
+import { h } from "preact";
+import { renderToString } from "preact-render-to-string";
+import HostHandleDemo, { hostHandleDemoFrames } from "./HostHandleDemo.tsx";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   const a = JSON.stringify(actual);
@@ -17,3 +19,23 @@ Deno.test("host handle animation always fills one six-host cycle", () => {
     suffix: "bsky.social",
   });
 });
+
+Deno.test("host handle animation keeps one stable input surface", () => {
+  const html = renderToString(h(HostHandleDemo, {
+    examples: [
+      { label: "Bluesky handle", prefix: "you.", suffix: "bsky.social" },
+      { label: "Sprk handle", prefix: "you.", suffix: "sprk.so" },
+    ],
+    demoAriaLabel: "Animated handle examples",
+    demoButton: "Login with Atmosphere",
+  }));
+
+  assertEquals(count(html, 'class="host-handle-demo-input"'), 1);
+  assertEquals(count(html, 'class="host-handle-at"'), 1);
+  assertEquals(count(html, 'class="host-handle-value-frame"'), 6);
+  assertEquals(count(html, 'class="host-handle-demo-label-frame"'), 6);
+});
+
+function count(source: string, value: string): number {
+  return source.split(value).length - 1;
+}
