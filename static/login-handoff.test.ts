@@ -36,6 +36,11 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
   if (!source.includes('"x-atmosphere-login-bodyless": "1"')) {
     throw new Error("Expected an explicit bodyless proxy marker");
   }
+  if (!source.includes("if (event.defaultPrevented) return")) {
+    throw new Error(
+      "Expected already-handled form submissions to stay handled",
+    );
+  }
   if (!source.includes("HANDOFF_TIMEOUT_MS")) {
     throw new Error("Expected a bounded browser handoff");
   }
