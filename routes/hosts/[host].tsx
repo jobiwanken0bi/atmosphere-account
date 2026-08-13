@@ -351,7 +351,10 @@ function HostDetailPage(
 
             <div class="glass host-detail-claim-row">
               {managed && (
-                <p class="profile-form-status profile-form-status--ok">
+                <p
+                  class="profile-form-status profile-form-status--ok"
+                  role="status"
+                >
                   Host changes saved.
                 </p>
               )}

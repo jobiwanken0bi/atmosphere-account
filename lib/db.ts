@@ -453,8 +453,27 @@ const SCHEMA_STATEMENTS: string[] = [
     method TEXT NOT NULL,
     claimed_at INTEGER NOT NULL,
     verified_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
   )`,
+  /** Existing SQLite/Turso databases predate the claim foreign key and SQLite
+   * cannot add one in place. This compatibility trigger gives upgraded stores
+   * the same deletion semantics as Postgres and prevents a deleted/recreated
+   * host row from inheriting orphaned ownership. */
+  `CREATE TRIGGER IF NOT EXISTS account_host_claim_host_delete
+    AFTER DELETE ON account_host BEGIN
+      DELETE FROM account_host_claim WHERE host = old.host;
+    END`,
+  /** During a rolling deploy, an older application instance can parse a new
+   * strong method as legacy OAuth and run a same-owner refresh/upsert. Never
+   * let it weaken DNS/exact-handle ownership. */
+  `CREATE TRIGGER IF NOT EXISTS account_host_claim_prevent_assurance_downgrade
+    BEFORE UPDATE OF method ON account_host_claim
+    WHEN old.method IN ('dns_txt', 'atproto_handle')
+      AND new.method NOT IN ('dns_txt', 'atproto_handle')
+    BEGIN
+      SELECT RAISE(ABORT, 'host claim assurance downgrade');
+    END`,
   `CREATE TABLE IF NOT EXISTS account_host_claim_challenge (
     token_hash TEXT PRIMARY KEY,
     host TEXT NOT NULL,

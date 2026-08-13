@@ -1,5 +1,6 @@
 import { IS_DEV } from "./env.ts";
 import {
+  authoritativeHandleFromDidDocument,
   type DidDocument,
   findPdsEndpoint,
   resolveDidDocument,
@@ -119,10 +120,9 @@ export async function verifyAtprotoHostClaimDomainProof(
       return { ok: false, reason: "missing_domain_proof" };
     }
     const doc = await (options.resolveDidDocument ?? resolveDidDocument)(did);
-    const exactHandle = `at://${normalizedHost}`;
     if (
       doc.id !== did ||
-      !(doc.alsoKnownAs ?? []).includes(exactHandle)
+      authoritativeHandleFromDidDocument(doc) !== normalizedHost
     ) {
       return { ok: false, reason: "missing_domain_proof" };
     }

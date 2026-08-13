@@ -290,6 +290,75 @@ Deno.test("host email recovery has bounded terminal states and append-only audit
   }
 });
 
+Deno.test("host ownership is removed with its host on Postgres and upgraded SQLite", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  const postgresClaim = postgres.match(
+    /CREATE TABLE IF NOT EXISTS account_host_claim\s*\(([\s\S]*?)\);/i,
+  )?.[1] ?? "";
+  const sqliteClaim = sqlite.match(
+    /CREATE TABLE IF NOT EXISTS account_host_claim\s*\(([\s\S]*?)\)`/i,
+  )?.[1] ?? "";
+  for (
+    const [backend, definition] of [
+      ["Postgres", postgresClaim],
+      ["SQLite", sqliteClaim],
+    ] as const
+  ) {
+    if (
+      !/REFERENCES account_host\(host\) ON DELETE CASCADE/i.test(definition)
+    ) {
+      throw new Error(`${backend} ownership must cascade with host deletion`);
+    }
+  }
+  if (
+    !sqlite.includes(
+      "CREATE TRIGGER IF NOT EXISTS account_host_claim_host_delete",
+    ) ||
+    !sqlite.includes("DELETE FROM account_host_claim WHERE host = old.host")
+  ) {
+    throw new Error(
+      "Upgraded SQLite stores need a deletion trigger because FKs cannot be added in place",
+    );
+  }
+});
+
+Deno.test("rolling deploys cannot downgrade strong host ownership to a weaker method", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  for (const schema of [postgres, sqlite]) {
+    if (!schema.includes("account_host_claim_prevent_assurance_downgrade")) {
+      throw new Error("Expected a durable host-claim downgrade guard");
+    }
+    for (const method of ["dns_txt", "atproto_handle"]) {
+      if (!schema.includes(`'${method}'`)) {
+        throw new Error(`Downgrade guard must protect ${method}`);
+      }
+    }
+    if (!schema.includes("NOT IN ('dns_txt', 'atproto_handle')")) {
+      throw new Error("Downgrade guard must reject every weaker method");
+    }
+  }
+  if (
+    !postgres.includes(
+      "CREATE OR REPLACE FUNCTION prevent_account_host_claim_assurance_downgrade()",
+    ) ||
+    !postgres.includes(
+      "BEFORE UPDATE OF method ON account_host_claim",
+    )
+  ) {
+    throw new Error("Postgres must install the rolling-deploy downgrade guard");
+  }
+  if (
+    !sqlite.includes(
+      "CREATE TRIGGER IF NOT EXISTS account_host_claim_prevent_assurance_downgrade",
+    ) ||
+    !sqlite.includes("SELECT RAISE(ABORT, 'host claim assurance downgrade')")
+  ) {
+    throw new Error("SQLite must install the rolling-deploy downgrade guard");
+  }
+});
+
 function assertStringArrayEquals(actual: string[], expected: string[]): void {
   if (actual.length === expected.length) {
     const mismatch = actual.find((value, index) => value !== expected[index]);

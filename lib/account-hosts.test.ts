@@ -1,3 +1,4 @@
+import { createClient } from "@libsql/client";
 import {
   accountHostAvailability,
   accountHostClaimAuthorityMatchesUser,
@@ -6,6 +7,7 @@ import {
   DEFAULT_ACCOUNT_HOST_SORT,
   fetchHostProfileForTest,
   finalizeEmailClaimRecoveryTransactionForTest,
+  hasCompletedContactEmailClaimEvidenceForTest,
   isAccountHostPubliclyListable,
   isCompletedDnsClaimReplayForTest,
   listSeededAccountHostFallback,
@@ -26,6 +28,7 @@ import {
   writeContactEmailClaimTransactionForTest,
   writeDnsClaimTransactionForTest,
 } from "./account-hosts.ts";
+import type { DbClient } from "./db.ts";
 import { convertQuestionParameters } from "./neon.ts";
 import type { ResolvedHostOwnerTransferContext } from "./host-owner-transfer-intent.ts";
 
@@ -468,7 +471,9 @@ Deno.test("contact email completion consumes proof, creates ownership, and store
   assert(statements[4].sql.includes("UPDATE account_host"));
   const serialized = JSON.stringify(statements);
   assert(!serialized.includes("operator@example.com"));
-  assert(serialized.includes("https://pds.example"));
+  const storedEndpoint = statements[3].args[3];
+  assertEquals(storedEndpoint, "https://pds.example");
+  assertEquals(new URL(String(storedEndpoint)).origin, "https://pds.example");
   assert(serialized.includes("did:web:pds.example"));
 });
 
@@ -522,6 +527,173 @@ Deno.test("contact email claim conflicts stop before evidence or host writes", a
   assert(rejected);
   assertEquals(statements.length, 3);
   assert(!statements.some((sql) => sql.includes("claim_evidence")));
+});
+
+Deno.test("contact email replay is bound to the exact ownership revision", async () => {
+  const databasePath = await Deno.makeTempFile({
+    prefix: "atmosphere-email-replay-",
+    suffix: ".db",
+  });
+  const db = createClient({ url: `file:${databasePath}` });
+  try {
+    await db.execute(`CREATE TABLE account_host (
+      host TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      claim_handle TEXT,
+      claim_did TEXT,
+      verification_status TEXT NOT NULL,
+      operator_listing_opt_in INTEGER,
+      operator_listing_opted_at INTEGER,
+      updated_at INTEGER NOT NULL
+    )`);
+    await db.execute(`CREATE TABLE account_host_claim (
+      host TEXT PRIMARY KEY,
+      claimant_did TEXT NOT NULL,
+      claimant_handle TEXT NOT NULL,
+      method TEXT NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      verified_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    await db.execute(`CREATE TABLE account_host_claim_challenge (
+      token_hash TEXT PRIMARY KEY,
+      host TEXT NOT NULL,
+      claimant_did TEXT NOT NULL,
+      claimant_handle TEXT NOT NULL,
+      email_fingerprint TEXT NOT NULL,
+      method_binding TEXT,
+      delivery_id TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      consumed_at INTEGER
+    )`);
+    await db.execute(`CREATE TABLE account_host_claim_evidence (
+      id TEXT PRIMARY KEY,
+      host TEXT NOT NULL,
+      claimant_did TEXT NOT NULL,
+      method TEXT NOT NULL,
+      endpoint_origin TEXT NOT NULL,
+      pds_did TEXT NOT NULL,
+      email_fingerprint TEXT NOT NULL,
+      challenge_token_hash TEXT NOT NULL,
+      requested_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      completed_at INTEGER NOT NULL,
+      claim_updated_at INTEGER NOT NULL,
+      delivery_id TEXT
+    )`);
+    await db.execute({
+      sql: `INSERT INTO account_host (
+        host, source, verification_status, updated_at
+      ) VALUES (?, 'observed', 'observed', 1)`,
+      args: ["pds.example"],
+    });
+    await db.execute({
+      sql: `INSERT INTO account_host_claim_challenge (
+        token_hash, host, claimant_did, claimant_handle, email_fingerprint,
+        method_binding, delivery_id, created_at, expires_at, consumed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)`,
+      args: [
+        "token-hash",
+        "pds.example",
+        "did:plc:operator",
+        "operator.example",
+        "E".repeat(43),
+        `pds-contact-email-v2.${"B".repeat(43)}`,
+        50,
+        200,
+      ],
+    });
+    const host = {
+      ...listSeededAccountHostFallback()[0],
+      host: "pds.example",
+    };
+    const claim = {
+      host: "pds.example",
+      claimantDid: "did:plc:operator",
+      claimantHandle: "operator.example",
+      method: "pds_contact_email" as const,
+      claimedAt: 100,
+      verifiedAt: 100,
+      updatedAt: 100,
+    };
+    const transaction = await db.transaction("write");
+    await writeContactEmailClaimTransactionForTest(
+      transaction as unknown as DbClient,
+      {
+        proof: {
+          ok: true,
+          tokenHash: "token-hash",
+          host: "pds.example",
+          claimantDid: "did:plc:operator",
+          endpointOrigin: "https://pds.example",
+          pdsDid: "did:web:pds.example",
+          emailFingerprint: "E".repeat(43),
+          methodBinding: `pds-contact-email-v2.${"B".repeat(43)}`,
+          requestedAt: 50,
+          expiresAt: 200,
+          deliveryId: null,
+        },
+        claim,
+        claimHandle: claim.claimantHandle,
+        claimDid: claim.claimantDid,
+        timestamp: 100,
+      },
+    );
+    await transaction.commit();
+    assert(
+      await hasCompletedContactEmailClaimEvidenceForTest(
+        db as unknown as DbClient,
+        host.host,
+        claim.claimantDid,
+        "token-hash",
+        claim.updatedAt,
+      ),
+    );
+    assertEquals(
+      await hasCompletedContactEmailClaimEvidenceForTest(
+        db as unknown as DbClient,
+        host.host,
+        claim.claimantDid,
+        "token-hash",
+        101,
+      ),
+      false,
+    );
+    assertEquals(
+      await hasCompletedContactEmailClaimEvidenceForTest(
+        db as unknown as DbClient,
+        "different.example",
+        claim.claimantDid,
+        "token-hash",
+        claim.updatedAt,
+      ),
+      false,
+    );
+    assertEquals(
+      await hasCompletedContactEmailClaimEvidenceForTest(
+        db as unknown as DbClient,
+        host.host,
+        claim.claimantDid,
+        "different-token-hash",
+        claim.updatedAt,
+      ),
+      false,
+    );
+    assertEquals(
+      await hasCompletedContactEmailClaimEvidenceForTest(
+        db as unknown as DbClient,
+        host.host,
+        "did:plc:different",
+        "token-hash",
+        claim.updatedAt,
+      ),
+      false,
+    );
+  } finally {
+    db.close();
+    await Deno.remove(databasePath);
+  }
 });
 
 Deno.test("contact email ownership rejects a differently classified challenge", async () => {
@@ -652,6 +824,9 @@ Deno.test("DNS recovery consumes proof only after reserving an empty pending slo
   const consumeIndex = statements.findIndex((sql) =>
     sql.includes("account_host_claim_challenge")
   );
+  const ownerReservationIndex = statements.findIndex((sql) =>
+    sql.includes("SET updated_at = updated_at")
+  );
   const pendingCheckIndex = statements.findIndex((sql) =>
     sql.includes("SELECT id FROM account_host_claim_recovery") &&
     sql.includes("LIMIT 1")
@@ -659,12 +834,64 @@ Deno.test("DNS recovery consumes proof only after reserving an empty pending slo
   const insertIndex = statements.findIndex((sql) =>
     sql.includes("INSERT INTO account_host_claim_recovery (")
   );
-  assert(pendingCheckIndex >= 0 && consumeIndex > pendingCheckIndex);
+  assert(pendingCheckIndex >= 0 && ownerReservationIndex > pendingCheckIndex);
+  assert(consumeIndex > ownerReservationIndex);
   assert(insertIndex > consumeIndex);
   assertEquals(recovery.status, "pending");
   assertEquals(recovery.currentOwnerDid, "did:plc:old-owner");
   assert(
-    !statements.some((sql) => sql.includes("UPDATE account_host_claim SET")),
+    !statements.some((sql) =>
+      sql.includes("UPDATE account_host_claim SET claimant_did")
+    ),
+  );
+});
+
+Deno.test("DNS recovery owner reservation prevents stale snapshots from consuming proof", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      if (sql.includes("SET updated_at = updated_at")) {
+        return Promise.resolve({ rows: [], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  let rejected = false;
+  try {
+    await startEmailClaimRecoveryTransactionForTest(client, {
+      tokenHash: "stale-owner-proof-hash",
+      host: "pds.example",
+      previousClaim: {
+        host: "pds.example",
+        claimantDid: "did:plc:old-owner",
+        claimantHandle: "old.example",
+        method: "pds_contact_email",
+        claimedAt: 1,
+        verifiedAt: 1,
+        updatedAt: 1_800_000_000_000,
+      },
+      requester: { did: "did:plc:new-owner", handle: "new.example" },
+      requestedAt: 1_800_000_000_100,
+    });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+  assert(statements.some((sql) => sql.includes("SET updated_at = updated_at")));
+  assert(
+    !statements.some((sql) =>
+      sql.includes("account_host_claim_challenge SET consumed_at")
+    ),
+  );
+  assert(
+    !statements.some((sql) =>
+      sql.includes("INSERT INTO account_host_claim_recovery (")
+    ),
   );
 });
 
@@ -1159,7 +1386,7 @@ Deno.test("recovery notification reservation is a claimant-bound crash-retry lea
     statement.sql.includes("SET notification_attempted_at = ?")
   );
   assert(update?.sql.includes("requester_did = ?"));
-  assert(update?.sql.includes("notification_status = 'pending'"));
+  assert(update?.sql.includes("notification_status IN ('pending', 'failed')"));
   assert(update?.sql.includes("notification_attempted_at IS NULL"));
   assertEquals(update?.args, [
     at,
@@ -1167,6 +1394,86 @@ Deno.test("recovery notification reservation is a claimant-bound crash-retry lea
     "did:plc:new-owner",
     Math.max(0, at - 5 * 60 * 1000),
   ]);
+});
+
+Deno.test("failed recovery notifications can reacquire a lease after cooldown", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const at = 1_800_000_600_100;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const statement = typeof query === "string"
+        ? { sql: query, args: [] }
+        : { sql: query.sql, args: query.args ?? [] };
+      statements.push(statement);
+      if (
+        statement.sql.includes("FROM account_host_claim_recovery") &&
+        statement.sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({
+            notification_status: "failed",
+            notification_attempted_at: at,
+          })],
+          rowsAffected: 0,
+        });
+      }
+      if (statement.sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const reserved = await reserveHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    at,
+    300_000,
+  );
+  assertEquals(reserved?.recovery.notificationStatus, "failed");
+  assertEquals(reserved?.recovery.notificationAttemptedAt, at);
+  const lease = statements.find((statement) =>
+    statement.sql.includes("SET notification_attempted_at = ?")
+  );
+  assert(lease?.sql.includes("notification_status IN ('pending', 'failed')"));
+});
+
+Deno.test("unavailable recovery notifications remain terminal", async () => {
+  const statements: string[] = [];
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("SET notification_attempted_at = ?")) {
+        return Promise.resolve({ rows: [], rowsAffected: 0 });
+      }
+      if (
+        sql.includes("FROM account_host_claim_recovery") &&
+        sql.includes("ORDER BY")
+      ) {
+        return Promise.resolve({
+          rows: [pendingRecoveryRow({ notification_status: "unavailable" })],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        return Promise.resolve({ rows: [emailOwnerRow()], rowsAffected: 0 });
+      }
+      return Promise.resolve({ rows: [], rowsAffected: 1 });
+    },
+  };
+  const reserved = await reserveHostClaimRecoveryNotificationTransactionForTest(
+    client,
+    "pds.example",
+    "did:plc:new-owner",
+    1_800_000_600_100,
+    300_000,
+  );
+  assertEquals(reserved, null);
+  const lease = statements.find((sql) =>
+    sql.includes("SET notification_attempted_at = ?")
+  );
+  assert(lease?.includes("notification_status IN ('pending', 'failed')"));
 });
 
 Deno.test("recovery warning recipient binds to the exact original claim evidence", async () => {

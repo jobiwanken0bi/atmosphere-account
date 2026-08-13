@@ -4,6 +4,7 @@ import {
   hashHostContactEmailToken,
   type HostContactEmailDelivery,
   inspectHostContactEmailChallenge,
+  LOCAL_PREVIEW_CAPABILITY,
   maskEmail,
   normalizeEmail,
   notifyHostContactEmailOfDnsRecovery,
@@ -451,6 +452,35 @@ Deno.test("request separates lookup errors and retains failed attempts for rate 
   assertEquals(store.records.size, 1);
 });
 
+Deno.test("preview verification links require the explicit local-fixture seam", async () => {
+  const options = {
+    now: 100,
+    store: memoryStore(),
+    fetchImpl: describeFetch(),
+    fingerprintSecret: "test-secret-at-least-32-bytes-long",
+  };
+  assertEquals(
+    await requestHostContactEmailChallenge(
+      target,
+      user,
+      "https://atmosphereaccount.com",
+      "/claim",
+      options,
+    ),
+    { ok: false, reason: "delivery_unavailable" },
+  );
+
+  const preview = await requestHostContactEmailChallenge(
+    target,
+    user,
+    "https://atmosphereaccount.com",
+    "/claim",
+    { ...options, previewVerificationUrl: LOCAL_PREVIEW_CAPABILITY },
+  );
+  assert(preview.ok);
+  assert(preview.previewUrl?.includes("email_token="));
+});
+
 Deno.test("request enforces a 60-second resend cooldown in addition to hourly limits", async () => {
   const store = memoryStore();
   const options = {
@@ -735,6 +765,44 @@ Deno.test("Comail delivery validates acceptance and keeps errors free of respons
   assertEquals(message.includes("email_token"), false);
 });
 
+Deno.test("Comail acceptance preserves the mailbox local-part identity", async () => {
+  let requests = 0;
+  const delivery = createComailHostContactEmailDelivery({
+    apiKey: "api-key",
+    senderDid: "did:plc:sender",
+    from: "claims@example.social",
+    fetchImpl: ((_request, init) => {
+      requests++;
+      const payload = JSON.parse(String(init?.body)) as { to: string };
+      assertEquals(payload.to, "Security@example.social");
+      return Promise.resolve(Response.json({
+        accepted: [{
+          // DNS domain casing is immaterial; mailbox local-part casing is not.
+          recipient: "security@EXAMPLE.SOCIAL",
+          messageId: "wrong-mailbox",
+        }],
+        rejected: [],
+      }));
+    }) as typeof fetch,
+  });
+  let rejected = false;
+  try {
+    await delivery.send({
+      kind: "verification",
+      to: "Security@EXAMPLE.SOCIAL",
+      host: "pds.example.social",
+      displayName: "Example",
+      claimantHandle: "operator.example",
+      claimantDidFingerprint: "opaque-did12",
+      verificationUrl: "https://atmosphereaccount.com/claim?email_token=x",
+    });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+  assertEquals(requests, 1);
+});
+
 Deno.test("Comail payload categories match the provider contract", async () => {
   const payloads: Record<string, unknown>[] = [];
   const delivery = createComailHostContactEmailDelivery({
@@ -808,6 +876,10 @@ Deno.test("email normalization and masking never reveal an invalid address", () 
   assertEquals(normalizeEmail(" User@EXAMPLE.COM "), "User@example.com");
   assertEquals(normalizeEmail("a@b"), null);
   assertEquals(normalizeEmail("a@example.com\nBcc:x@evil.example"), null);
+  assertEquals(normalizeEmail("a..b@example.com"), null);
+  assertEquals(normalizeEmail("Display<a@example.com>"), null);
+  assertEquals(normalizeEmail("a@example..com"), null);
+  assertEquals(normalizeEmail("a@-example.com"), null);
   assertEquals(maskEmail("User@example.com"), "Us•••@example.com");
   assertEquals(maskEmail("invalid"), "the PDS contact address");
 });

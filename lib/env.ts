@@ -185,8 +185,23 @@ export function hostClaimEvidenceSecret(): string {
 }
 
 export function hostClaimEvidenceSecretIsConfigured(): boolean {
+  return hostClaimEvidenceSecretIsConfiguredForRuntime(
+    safeGet("HOST_CLAIM_EVIDENCE_SECRET"),
+    IS_HOSTED_RUNTIME || EXPLICIT_PRODUCTION,
+  );
+}
+
+function hostClaimEvidenceSecretIsConfiguredForRuntime(
+  value: string | undefined,
+  production: boolean,
+): boolean {
+  if (!value) return false;
   try {
-    hostClaimEvidenceSecret();
+    hostClaimEvidenceSecretForRuntime(
+      value,
+      production,
+      "",
+    );
     return true;
   } catch {
     return false;
@@ -199,11 +214,15 @@ function hostClaimEvidenceSecretForRuntime(
   devFallback: string,
 ): string {
   if (value) {
-    return validateSecretStrength(
-      "HOST_CLAIM_EVIDENCE_SECRET",
-      value,
-      production,
-    );
+    // This key protects durable mailbox fingerprints, not disposable local
+    // session state. An explicitly configured value must always be a real
+    // cryptographic secret, even when the runtime was classified as dev.
+    if (new TextEncoder().encode(value).byteLength < 32) {
+      throw new Error(
+        "HOST_CLAIM_EVIDENCE_SECRET must contain at least 32 bytes.",
+      );
+    }
+    return value;
   }
   if (production) {
     throw new Error(
@@ -219,6 +238,13 @@ export function hostClaimEvidenceSecretForTest(
   devFallback: string,
 ): string {
   return hostClaimEvidenceSecretForRuntime(value, production, devFallback);
+}
+
+export function hostClaimEvidenceSecretIsConfiguredForTest(
+  value: string | undefined,
+  production: boolean,
+): boolean {
+  return hostClaimEvidenceSecretIsConfiguredForRuntime(value, production);
 }
 
 export const ATMOSPHERE_DID = safeGet("ATMOSPHERE_DID");

@@ -893,7 +893,12 @@ function ManageBody(
     return (
       <div class="host-claim-panel">
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <p class="host-claim-panel-title">Claim required</p>
         <p class="text-body">
@@ -914,7 +919,12 @@ function ManageBody(
     return (
       <div class="host-claim-panel">
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <p class="host-claim-panel-title">
           Operator verification unavailable
@@ -932,7 +942,12 @@ function ManageBody(
     return (
       <div class="host-claim-panel">
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <p class="host-claim-panel-title">
           Managed by <AtmosphereHandle handle={claim?.claimantHandle} />
@@ -972,10 +987,17 @@ function ManageBody(
   return (
     <>
       {notice && (
-        <p class="profile-form-status profile-form-status--ok">{notice}</p>
+        <p class="profile-form-status profile-form-status--ok" role="status">
+          {notice}
+        </p>
       )}
       {error && (
-        <p class="profile-form-status profile-form-status--error">{error}</p>
+        <p
+          class="profile-form-status profile-form-status--error"
+          role="alert"
+        >
+          {error}
+        </p>
       )}
       {claim?.method === "pds_contact_email" &&
         recovery?.status === "pending" &&
@@ -1023,7 +1045,7 @@ function ManageBody(
             </p>
           </div>
         </div>
-        <form method="POST" class="host-manage-form">
+        <form method="POST" class="host-manage-form" data-submit-once="true">
           <label class="profile-form-toggle">
             <input
               type="checkbox"
@@ -1047,8 +1069,9 @@ function ManageBody(
               type="submit"
               name="action"
               value="save_listing"
+              data-pending-label="Saving visibility…"
             >
-              Save directory visibility
+              <span data-submit-once-label>Save directory visibility</span>
             </button>
           </div>
         </form>
@@ -1100,7 +1123,7 @@ function ManageBody(
               </p>
             )}
         </div>
-        <form method="POST" class="host-manage-form">
+        <form method="POST" class="host-manage-form" data-submit-once="true">
           <label class="profile-form-field">
             <span class="profile-form-label">Signup status</span>
             <select
@@ -1138,8 +1161,9 @@ function ManageBody(
               type="submit"
               name="action"
               value="save_profile"
+              data-pending-label="Saving sign-up…"
             >
-              <span>Save sign-up</span>
+              <span data-submit-once-label>Save sign-up</span>
             </button>
           </div>
         </form>
@@ -1195,14 +1219,18 @@ function ManageBody(
                   Strengthen ownership with DNS
                 </a>
               )}
-              <form method="POST">
+              <form method="POST" data-submit-once="true">
                 <input
                   type="hidden"
                   name="action"
                   value="start_owner_transfer"
                 />
-                <button type="submit" class="directory-register-button">
-                  Change managing account
+                <button
+                  type="submit"
+                  class="directory-register-button"
+                  data-pending-label="Preparing account change…"
+                >
+                  <span data-submit-once-label>Change managing account</span>
                 </button>
               </form>
             </div>

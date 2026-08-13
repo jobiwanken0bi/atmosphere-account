@@ -17,9 +17,10 @@ import {
   type HostClaimChallengeReservationLimits,
   type HostClaimChallengeStore,
 } from "./host-claim-challenge.ts";
-import { assertPublicDnsHostname, isDid } from "./identity.ts";
+import { isDid } from "./identity.ts";
 import { hmacSign, randomB64u, sha256B64u } from "./jose.ts";
 import { fetchPdsServerDescription } from "./pds-server-description.ts";
+import { fetchPinnedPublicHttps } from "./pinned-public-https.ts";
 import { isSafeRelativePath, readResponseTextWithLimit } from "./security.ts";
 
 const CHALLENGE_TTL_MS = 20 * 60_000;
@@ -30,6 +31,7 @@ const EMAIL_PROOF_VERSION = "pds-contact-email-v2";
 const COMAIL_ENDPOINT = "https://smtp.atmos.email/v1/send";
 const DELIVERY_TIMEOUT_MS = 8_000;
 const DELIVERY_RESPONSE_MAX_BYTES = 16_000;
+const CONTACT_DESCRIPTION_MAX_BYTES = 32_000;
 
 export interface HostContactClaimTarget {
   host: string;
@@ -115,6 +117,10 @@ export interface HostContactEmailOptions {
   store?: HostContactEmailChallengeStore;
   delivery?: HostContactEmailDelivery;
   fingerprintSecret?: string;
+  /** Explicit local-fixture seam. Never infer preview delivery from a broad
+   * development-runtime flag alone: a misclassified deployment must not hand
+   * the mailbox verification URL back to the requesting browser. */
+  previewVerificationUrl?: symbol;
 }
 
 export type HostContactEmailRequestResult =
@@ -238,7 +244,8 @@ export async function getHostContactEmailAvailability(
   options: HostContactEmailOptions = {},
 ): Promise<HostContactEmailAvailability> {
   const discovery = await discoverAnnouncedContact(target, options.fetchImpl);
-  const deliveryConfigured = !!options.delivery || IS_DEV ||
+  const deliveryConfigured = !!options.delivery ||
+    (IS_DEV && options.previewVerificationUrl === LOCAL_PREVIEW_CAPABILITY) ||
     !!configuredDelivery();
   if (discovery.status === "available") {
     return {
@@ -273,7 +280,8 @@ export async function requestHostContactEmailChallenge(
   const contact = discovery.contact;
 
   const delivery = options.delivery ?? configuredDelivery();
-  const previewOnly = !delivery && IS_DEV;
+  const previewOnly = !delivery && IS_DEV &&
+    options.previewVerificationUrl === LOCAL_PREVIEW_CAPABILITY;
   if (!delivery && !previewOnly) {
     return { ok: false, reason: "delivery_unavailable" };
   }
@@ -583,18 +591,20 @@ async function discoverAnnouncedContact(
   // considered for email proof.
   const endpointOrigin = accountHostContactEndpoint(target.host);
   if (!endpointOrigin) return { status: "lookup_error" };
-  // Production always resolves and rejects private answers before fetch. Local
-  // tests/fixtures may bypass DNS only by explicitly injecting their fetcher;
-  // ordinary dev traffic receives the same SSRF check as production.
-  if (!IS_DEV || !fetchImpl) {
-    try {
-      await assertPublicDnsHostname(new URL(endpointOrigin).hostname);
-    } catch {
-      return { status: "lookup_error" };
-    }
-  }
+  // An ordinary fetch after a separate DNS preflight is vulnerable to DNS
+  // rebinding. Production and ordinary development requests pin TLS to the
+  // already-classified public address. Only the explicitly gated local fixture
+  // can inject a fetcher, and devHostClaimEmailOptions owns that capability.
+  const exactFetch = IS_DEV && fetchImpl
+    ? fetchImpl
+    : ((input: string | URL | Request, init?: RequestInit) =>
+      fetchPinnedPublicHttps(
+        input instanceof Request ? input.url : input,
+        init,
+        { maxBodyBytes: CONTACT_DESCRIPTION_MAX_BYTES },
+      )) as typeof fetch;
   const description = await fetchPdsServerDescription(endpointOrigin, {
-    fetchImpl,
+    fetchImpl: exactFetch,
     cacheTtlMs: 0,
   });
   if (!description) return { status: "lookup_error" };
@@ -616,12 +626,27 @@ async function discoverAnnouncedContact(
 export function normalizeEmail(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const email = value.trim();
-  if (
-    email.length < 3 || email.length > 254 || email.includes("\r") ||
-    email.includes("\n") || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  ) return null;
   const at = email.lastIndexOf("@");
-  return `${email.slice(0, at)}@${email.slice(at + 1).toLowerCase()}`;
+  if (
+    email.length < 3 || email.length > 254 || at < 1 ||
+    at !== email.indexOf("@")
+  ) return null;
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1).toLowerCase();
+  if (
+    local.length > 64 || local.startsWith(".") || local.endsWith(".") ||
+    local.includes("..") ||
+    !/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local)
+  ) return null;
+  const labels = domain.split(".");
+  if (
+    domain.length > 253 || labels.length < 2 ||
+    labels.some((label) =>
+      label.length < 1 || label.length > 63 ||
+      !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
+    ) || /^[0-9]/.test(labels.at(-1) ?? "")
+  ) return null;
+  return `${local}@${domain}`;
 }
 
 export function maskEmail(email: string): string {
@@ -635,6 +660,11 @@ export function maskEmail(email: string): string {
     "•".repeat(Math.max(3, Math.min(8, local.length - visible.length)))
   }@${domain}`;
 }
+
+/** Unforgeable process-local capability used only by the gated development
+ * fixture module. Keeping this out of request-shaped primitive values ensures
+ * a future spread/parse refactor cannot accidentally enable token preview. */
+export const LOCAL_PREVIEW_CAPABILITY = Symbol("host-claim-local-preview");
 
 async function fingerprintEmail(
   email: string,
@@ -704,6 +734,9 @@ function normalizedNow(value: number | undefined): number {
 }
 
 function configuredDelivery(): HostContactEmailDelivery | null {
+  // Provider-backed verification always requires the dedicated durable key,
+  // including in a development-classified process. The predictable local
+  // session fallback is only suitable for the explicitly gated preview seam.
   if (
     !COMAIL_API_KEY || !COMAIL_SENDER_DID || !HOST_CLAIM_EMAIL_FROM ||
     !hostClaimEvidenceSecretIsConfigured()
@@ -733,6 +766,10 @@ export function createComailHostContactEmailDelivery(
   const fetchImpl = config.fetchImpl ?? fetch;
   return {
     async send(input) {
+      const intendedRecipient = normalizeEmail(input.to);
+      if (!intendedRecipient) {
+        throw new Error("Invalid host-claim email recipient");
+      }
       const response = await fetchImpl(COMAIL_ENDPOINT, {
         method: "POST",
         headers: {
@@ -742,7 +779,7 @@ export function createComailHostContactEmailDelivery(
         },
         body: JSON.stringify({
           from,
-          to: input.to,
+          to: intendedRecipient,
           subject: emailSubject(input),
           text: emailText(input),
           html: emailHtml(input),
@@ -766,16 +803,14 @@ export function createComailHostContactEmailDelivery(
         throw new Error(`Comail delivery failed (${response.status})`);
       }
       const result = parseComailDeliveryResult(body.text);
+      const accepted = result?.accepted.find((entry) =>
+        normalizeEmail(entry.recipient) === intendedRecipient
+      );
       if (
         !result || (result.rejected && result.rejected.length > 0) ||
-        !result.accepted.some((entry) =>
-          entry.recipient.toLowerCase() === input.to.toLowerCase()
-        )
+        !accepted
       ) throw new Error("Comail did not accept the intended recipient");
-      const accepted = result.accepted.find((entry) =>
-        entry.recipient.toLowerCase() === input.to.toLowerCase()
-      );
-      return { deliveryId: accepted?.deliveryId ?? null };
+      return { deliveryId: accepted.deliveryId };
     },
   };
 }

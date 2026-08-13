@@ -2205,8 +2205,23 @@ async function startEmailClaimRecoveryTransaction(
   if (pending.rows.length > 0) {
     throw new HostClaimRecoveryCompletionError("recovery_changed");
   }
-  // Consume only after checking the owner snapshot and pending slot. A race on
-  // the partial unique index still rolls this update back with the transaction.
+  // Lock and compare the email-derived owner before consuming the DNS proof.
+  // A plain SELECT is not enough under Postgres READ COMMITTED: the current
+  // owner could strengthen or transfer the claim after our read and before we
+  // insert the recovery. This guarded no-op UPDATE is portable to libSQL and
+  // makes that owner change serialize with this recovery transaction.
+  const ownerReservation = await c.execute({
+    sql: `UPDATE account_host_claim SET updated_at = updated_at
+      WHERE host = ? AND claimant_did = ? AND method = 'pds_contact_email'
+        AND updated_at = ?`,
+    args: [input.host, current.claimantDid, current.updatedAt],
+  });
+  if (Number(ownerReservation.rowsAffected ?? 0) !== 1) {
+    throw new HostClaimRecoveryCompletionError("owner_changed");
+  }
+  // Consume only after reserving both the owner snapshot and pending slot. A
+  // race on the partial unique index still rolls this update back with the
+  // transaction.
   const consumed = await consumeHostDnsChallenge(c, {
     tokenHash: input.tokenHash,
     host: input.host,
@@ -2906,6 +2921,26 @@ export async function claimAccountHostWithContactEmailEvidence(
   };
 }
 
+async function hasCompletedContactEmailClaimEvidence(
+  c: DbClient,
+  host: string,
+  claimantDid: string,
+  tokenHash: string,
+  claimUpdatedAt: number,
+): Promise<boolean> {
+  const evidence = await c.execute({
+    sql: `SELECT 1 FROM account_host_claim_evidence
+      WHERE host = ? AND claimant_did = ? AND method = 'pds_contact_email'
+        AND challenge_token_hash = ? AND claim_updated_at = ?
+      LIMIT 1`,
+    args: [host, claimantDid, tokenHash, claimUpdatedAt],
+  });
+  return evidence.rows.length === 1;
+}
+
+export const hasCompletedContactEmailClaimEvidenceForTest =
+  hasCompletedContactEmailClaimEvidence;
+
 async function completedContactEmailClaimReplay(
   host: AccountHost,
   claim: AccountHostClaim,
@@ -2915,16 +2950,16 @@ async function completedContactEmailClaimReplay(
   if (
     claim.method !== "pds_contact_email" || claim.claimantDid !== userDid
   ) return null;
-  const evidence = await withDb((c) =>
-    c.execute({
-      sql: `SELECT 1 FROM account_host_claim_evidence
-        WHERE host = ? AND claimant_did = ? AND method = 'pds_contact_email'
-          AND challenge_token_hash = ? AND claim_updated_at = ?
-        LIMIT 1`,
-      args: [host.host, userDid, tokenHash, claim.updatedAt],
-    })
+  const hasEvidence = await withDb((c) =>
+    hasCompletedContactEmailClaimEvidence(
+      c,
+      host.host,
+      userDid,
+      tokenHash,
+      claim.updatedAt,
+    )
   );
-  if (evidence.rows.length !== 1) return null;
+  if (!hasEvidence) return null;
   return {
     ok: true,
     host: await getAccountHost(host.host) ?? host,
@@ -3535,7 +3570,7 @@ async function reserveHostClaimRecoveryNotificationTransaction(
   const reserved = await c.execute({
     sql: `UPDATE account_host_claim_recovery SET notification_attempted_at = ?
       WHERE host = ? AND requester_did = ? AND status = 'pending'
-        AND notification_status = 'pending'
+        AND notification_status IN ('pending', 'failed')
         AND (notification_attempted_at IS NULL OR notification_attempted_at <= ?)`,
     args: [at, host, requesterDid, staleBefore],
   });

@@ -90,6 +90,23 @@ Deno.test("host management uses site-specific copy and labelled controls", async
   );
   assertEquals(manageSource.includes("Atmosphere is a router"), false);
   assertEquals(manageSource.includes("Atmosphere sends your users"), false);
+  assertEquals(
+    manageSource.match(/profile-form-status--error/g)?.length,
+    manageSource.match(/role="alert"/g)?.length,
+  );
+  assertStringIncludes(manageSource, 'role="status"');
+  assertStringIncludes(
+    manageSource,
+    'data-pending-label="Preparing account change…"',
+  );
+  assertStringIncludes(
+    manageSource,
+    'data-pending-label="Saving visibility…"',
+  );
+  assertStringIncludes(
+    manageSource,
+    'data-pending-label="Saving sign-up…"',
+  );
 });
 
 Deno.test("host claim puts the current state before relay details", async () => {
@@ -119,6 +136,8 @@ Deno.test("host claim puts the current state before relay details", async () => 
   assertStringIncludes(source, 'value="finalize_recovery"');
   assertStringIncludes(source, "Generate fresh DNS record");
   assertStringIncludes(source, "Verify DNS and finish recovery");
+  assertStringIncludes(source, "Verify DNS and start recovery");
+  assertStringIncludes(source, "Verify DNS to strengthen ownership");
   assertStringIncludes(source, 'dnsFailure === "record_not_found"');
   assertStringIncludes(source, 'dnsFailure === "dns_unavailable"');
   assertStringIncludes(
@@ -126,8 +145,13 @@ Deno.test("host claim puts the current state before relay details", async () => 
     'dnsFailure === "account_mismatch" ? dnsToken : null',
   );
   assertStringIncludes(source, 'role="status"');
+  assertEquals(
+    source.match(/profile-form-status--error/g)?.length,
+    source.match(/role="alert"/g)?.length,
+  );
   assertStringIncludes(source, "This PDS doesn’t publish a contact email");
   assertStringIncludes(source, "Strengthen ownership with DNS");
+  assertStringIncludes(source, 'data-pending-label="Connecting…"');
   const dnsFields = source.slice(
     source.indexOf('<dl class="host-claim-detected-summary">'),
     source.indexOf(
@@ -256,6 +280,10 @@ Deno.test("host and owner controls retain phone-sized targets and padding", asyn
       ".host-claim-form > .host-claim-panel {",
       ".host-claim-dns-field {",
       ".host-claim-copy-button {",
+      ".host-claim-heading .host-card-mark {",
+      "grid-template-columns: minmax(0, 1fr);",
+      ".host-claim-title {",
+      "overflow-wrap: anywhere;",
     ]
   ) {
     assertStringIncludes(styles, fragment);

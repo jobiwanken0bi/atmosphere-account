@@ -202,6 +202,20 @@ Deno.test("host claim intro copy follows the current ownership state", () => {
     hostClaimIntroCopy({ state: "verification", transferring: true }),
     "The new managing account must prove control of this host with DNS before anything changes.",
   );
+  assertEquals(
+    hostClaimIntroCopy({
+      state: "dns",
+      emailClaimDnsPurpose: "recover",
+    }),
+    "Use DNS to prove current control. The existing manager stays in control during the 48-hour review period.",
+  );
+  assertEquals(
+    hostClaimIntroCopy({
+      state: "dns",
+      emailClaimDnsPurpose: "strengthen",
+    }),
+    "Strengthen this email-verified claim with DNS ownership proof.",
+  );
 });
 
 Deno.test("host claim authorization includes complete host and image management", () => {

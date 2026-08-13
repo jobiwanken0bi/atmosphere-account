@@ -1,5 +1,6 @@
 import {
   hostClaimEvidenceSecretForTest,
+  hostClaimEvidenceSecretIsConfiguredForTest,
   isCanonicalSiteOriginForTest,
   validatedPublicOriginForTest,
   validateSecretStrengthForTest,
@@ -37,6 +38,9 @@ Deno.test("durable host-claim evidence requires an independent production key", 
   assertThrows(() =>
     hostClaimEvidenceSecretForTest("too-short", true, "session-fallback")
   );
+  assertThrows(() =>
+    hostClaimEvidenceSecretForTest("too-short", false, "session-fallback")
+  );
   assertEquals(
     hostClaimEvidenceSecretForTest("e".repeat(32), true, "session-fallback"),
     "e".repeat(32),
@@ -44,6 +48,18 @@ Deno.test("durable host-claim evidence requires an independent production key", 
   assertEquals(
     hostClaimEvidenceSecretForTest(undefined, false, "session-fallback"),
     "session-fallback",
+  );
+  assertEquals(
+    hostClaimEvidenceSecretIsConfiguredForTest(undefined, false),
+    false,
+  );
+  assertEquals(
+    hostClaimEvidenceSecretIsConfiguredForTest("too-short", false),
+    false,
+  );
+  assertEquals(
+    hostClaimEvidenceSecretIsConfiguredForTest("e".repeat(32), false),
+    true,
   );
 });
 

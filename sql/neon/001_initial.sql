@@ -317,6 +317,37 @@ CREATE TABLE IF NOT EXISTS account_host_claim (
   updated_at bigint NOT NULL
 );
 
+-- An older instance in a rolling deployment can parse a new strong method as
+-- legacy OAuth and run a same-owner refresh/upsert. Keep it from weakening a
+-- DNS/exact-handle claim; current strong-method transitions remain allowed.
+CREATE OR REPLACE FUNCTION prevent_account_host_claim_assurance_downgrade()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.method IN ('dns_txt', 'atproto_handle')
+     AND NEW.method NOT IN ('dns_txt', 'atproto_handle') THEN
+    RAISE EXCEPTION 'host claim assurance downgrade';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname = 'account_host_claim_prevent_assurance_downgrade'
+      AND tgrelid = 'account_host_claim'::regclass
+  ) THEN
+    CREATE TRIGGER account_host_claim_prevent_assurance_downgrade
+      BEFORE UPDATE OF method ON account_host_claim
+      FOR EACH ROW
+      EXECUTE FUNCTION prevent_account_host_claim_assurance_downgrade();
+  END IF;
+END;
+$$;
+
 CREATE INDEX IF NOT EXISTS account_host_claim_claimant ON account_host_claim(claimant_did);
 
 CREATE TABLE IF NOT EXISTS account_host_claim_challenge (

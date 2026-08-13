@@ -135,6 +135,48 @@ Deno.test("AT Protocol host proof fails closed on every partial match", async ()
   assertEquals(resolvedMismatchedHandle, false);
 });
 
+Deno.test("AT Protocol host proof honors only the first valid DID handle", async () => {
+  const verify = (alsoKnownAs: string[]) =>
+    verifyAtprotoHostClaimDomainProof(
+      { host: "pds.example.com" },
+      { did: "did:plc:operator", handle: "pds.example.com" },
+      {
+        resolveHandleAuthority: () => Promise.resolve("did:plc:operator"),
+        resolveDidDocument: () =>
+          Promise.resolve({
+            id: "did:plc:operator",
+            alsoKnownAs,
+            service: [{
+              id: "#atproto_pds",
+              type: "AtprotoPersonalDataServer",
+              serviceEndpoint: "https://shared-pds.example.net",
+            }],
+          }),
+      },
+    );
+
+  assertEquals(
+    await verify(["at://other.example.com", "at://pds.example.com"]),
+    { ok: false, reason: "missing_domain_proof" },
+  );
+  assertEquals(
+    (await verify(["at://not a handle", "at://PDS.EXAMPLE.COM"])).ok,
+    true,
+  );
+  for (
+    const malformedTarget of [
+      "at://pds.example.com/path",
+      "at://pds.example.com?query=1",
+      "at://pds.example.com.",
+    ]
+  ) {
+    assertEquals(
+      await verify([malformedTarget]),
+      { ok: false, reason: "missing_domain_proof" },
+    );
+  }
+});
+
 Deno.test("only explicit local .test fixtures bypass DNS claims", () => {
   assertEquals(
     hostSelfServiceClaimPolicy("fixture.test", { isDev: true }),

@@ -195,7 +195,10 @@ function DetectedHostClaimPage(
                   </span>
                 </label>
                 {error && (
-                  <p class="profile-form-status profile-form-status--error">
+                  <p
+                    class="profile-form-status profile-form-status--error"
+                    role="alert"
+                  >
                     {error}
                   </p>
                 )}

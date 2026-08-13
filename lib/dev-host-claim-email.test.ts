@@ -3,6 +3,7 @@ import {
   DEV_HOST_CLAIM_EMAIL_HOSTS,
   devHostClaimEmailOptions,
 } from "./dev-host-claim-email.ts";
+import { LOCAL_PREVIEW_CAPABILITY } from "./host-claim-email.ts";
 
 const safe = {
   isDev: true,
@@ -13,7 +14,9 @@ const safe = {
 
 Deno.test("dev contact-email fixtures require every local safety gate", () => {
   const host = DEV_HOST_CLAIM_EMAIL_HOSTS.available;
-  assert(devHostClaimEmailOptions(host, safe));
+  const enabled = devHostClaimEmailOptions(host, safe);
+  assert(enabled);
+  assertEquals(enabled.previewVerificationUrl, LOCAL_PREVIEW_CAPABILITY);
   assertEquals(
     devHostClaimEmailOptions(host, { ...safe, isDev: false }),
     undefined,

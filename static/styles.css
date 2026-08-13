@@ -15671,8 +15671,12 @@ form[data-submit-once-pending="true"] button:disabled {
 
 .host-claim-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
+}
+
+.host-claim-heading .host-card-mark {
+  margin-top: 0.1rem;
 }
 
 .host-claim-title {
@@ -15681,6 +15685,7 @@ form[data-submit-once-pending="true"] button:disabled {
   font-family: "Plus Jakarta Sans", sans-serif;
   font-size: clamp(1.8rem, 4vw, 2.5rem);
   line-height: 1.05;
+  overflow-wrap: anywhere;
 }
 
 .host-claim-copy {
@@ -15895,6 +15900,46 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 @media (max-width: 600px) {
+  .host-claim-card {
+    padding: 1.25rem;
+  }
+
+  .host-claim-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+
+  .host-claim-heading .host-card-mark {
+    grid-row: 1;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-top: 0;
+    border-radius: 11px;
+    font-size: 1rem;
+  }
+
+  .host-claim-heading .host-card-mark-icon {
+    width: 1.55rem;
+    height: 1.55rem;
+  }
+
+  .host-claim-heading > div {
+    grid-row: 2;
+  }
+
+  .host-claim-heading .text-eyebrow {
+    margin-top: 0;
+  }
+
+  .host-claim-title {
+    font-size: clamp(1.5rem, 9vw, 2rem);
+  }
+
+  .host-claim-heading .profile-hero-handle {
+    margin-bottom: 0;
+  }
+
   .host-claim-detected-summary dl {
     grid-template-columns: minmax(0, 1fr);
   }

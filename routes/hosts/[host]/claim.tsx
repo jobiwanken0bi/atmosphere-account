@@ -11,6 +11,7 @@ import {
   type AccountHostClaim,
   type AccountHostClaimAuthority,
   type AccountHostClaimRecovery,
+  type AccountHostClaimResult,
   claimAccountHost,
   claimAccountHostWithAtprotoIdentity,
   claimAccountHostWithContactEmailEvidence,
@@ -117,6 +118,8 @@ type HostContactMethodState =
   | { status: "retry" }
   | { status: "not-offered" };
 
+type HostClaimDnsPurpose = "recover" | "strengthen" | null;
+
 interface HostEmailSentState {
   maskedEmail: string;
   expiresAt: number;
@@ -154,6 +157,7 @@ interface ClaimPageProps {
   repairingClaim: boolean;
   linkError: boolean;
   claimProofMethod: HostClaimProofMethod | null;
+  emailClaimDnsPurpose: HostClaimDnsPurpose;
 }
 
 interface HostClaimLinkContext {
@@ -214,6 +218,7 @@ export const handler = define.handlers({
           repairingClaim={false}
           linkError={false}
           claimProofMethod={null}
+          emailClaimDnsPurpose={null}
         />,
         { status: 404 },
       );
@@ -511,26 +516,12 @@ export const handler = define.handlers({
         );
       }
       const emailToken = readHostClaimEmailToken(ctx.req);
-      const proof = await prepareHostContactEmailChallenge(
-        hostContactClaimTarget(host),
-        ctx.state.user,
+      const result = await submitHostContactEmailClaim({
+        host,
+        user: ctx.state.user,
         emailToken,
-        devHostClaimEmailOptions(host.host),
-      );
-      const result = proof.ok
-        ? await claimAccountHostWithContactEmailEvidence(
-          host.host,
-          ctx.state.user,
-          proof,
-          listingSelection == null
-            ? {}
-            : { operatorListingOptIn: listingSelection },
-        )
-        : {
-          ok: false as const,
-          reason: proof.reason,
-          host,
-        };
+        operatorListingOptIn: listingSelection,
+      });
       if (result.ok) {
         if (linkContext) {
           const linked = await completeAppHostLink(
@@ -545,20 +536,9 @@ export const handler = define.handlers({
           );
           return hardenHostClaimProofResponse(linked);
         }
-        return hardenHostClaimProofResponse(
-          new Response(null, {
-            status: 303,
-            headers: {
-              location: hostClaimManageLocation(
-                result.host.host,
-                false,
-                linkError,
-                false,
-              ),
-              "set-cookie": clearHostClaimEmailTokenCookie(host.host),
-              "cache-control": "no-store",
-            },
-          }),
+        return completedHostContactEmailClaimResponse(
+          result.host.host,
+          linkError,
         );
       }
       const emailFailure = isHostContactEmailVerificationFailureReason(
@@ -817,8 +797,12 @@ export const handler = define.handlers({
     }
     if (result.reason === "recovery_pending") {
       const notificationAttemptedAt = Date.now();
-      const notificationReservation = result.recovery?.notificationStatus ===
-          "pending"
+      // `failed` is transient (for example a provider timeout) and may be
+      // retried after the persistence lease expires. `unavailable` means the
+      // original email evidence no longer matches and must remain terminal.
+      const notificationReservation = result.recovery &&
+          (result.recovery.notificationStatus === "pending" ||
+            result.recovery.notificationStatus === "failed")
         ? await reserveAccountHostClaimRecoveryNotification(
           host.host,
           result.recovery.requesterDid,
@@ -1077,6 +1061,11 @@ async function buildClaimPageProps(
     claim.method === "pds_contact_email" && claim.claimantDid !== user.did;
   const emailOwnerDnsUpgrade = !transferContext && !!claim &&
     claim.method === "pds_contact_email" && claim.claimantDid === user.did;
+  const emailClaimDnsPurpose: HostClaimDnsPurpose = emailRecoveryCandidate
+    ? "recover"
+    : emailOwnerDnsUpgrade
+    ? "strengthen"
+    : null;
   const activeRecovery = pendingRecovery?.status === "pending"
     ? pendingRecovery
     : null;
@@ -1182,6 +1171,7 @@ async function buildClaimPageProps(
     repairingClaim,
     linkError: feedback.linkError ?? false,
     claimProofMethod,
+    emailClaimDnsPurpose,
   };
 }
 
@@ -1193,6 +1183,66 @@ function hostContactClaimTarget(
     displayName: host.displayName,
     serviceEndpoint: host.serviceEndpoint,
   };
+}
+
+interface HostContactEmailClaimSubmissionDependencies {
+  prepare?: typeof prepareHostContactEmailChallenge;
+  claim?: typeof claimAccountHostWithContactEmailEvidence;
+}
+
+/** Complete first-use contact-email proof, while allowing the ownership layer
+ * to recognize a sequential replay after a successful response was lost. */
+export async function submitHostContactEmailClaim(
+  input: {
+    host: AccountHost;
+    user: { did: string; handle: string };
+    emailToken: string;
+    operatorListingOptIn?: boolean;
+  },
+  dependencies: HostContactEmailClaimSubmissionDependencies = {},
+): Promise<AccountHostClaimResult> {
+  const prepare = dependencies.prepare ?? prepareHostContactEmailChallenge;
+  const claim = dependencies.claim ?? claimAccountHostWithContactEmailEvidence;
+  const proof = await prepare(
+    hostContactClaimTarget(input.host),
+    input.user,
+    input.emailToken,
+    devHostClaimEmailOptions(input.host.host),
+  );
+  if (!proof.ok && proof.reason !== "already_used") {
+    return {
+      ok: false,
+      reason: proof.reason,
+      host: input.host,
+    };
+  }
+  // First use retains the freshly checked proof. A consumed token is delegated
+  // raw so the wrapper can match it to stored, account-bound completion
+  // evidence without weakening any other failure path.
+  return await claim(
+    input.host.host,
+    input.user,
+    proof.ok ? proof : input.emailToken,
+    input.operatorListingOptIn == null
+      ? {}
+      : { operatorListingOptIn: input.operatorListingOptIn },
+  );
+}
+
+export function completedHostContactEmailClaimResponse(
+  host: string,
+  linkError: boolean,
+): Response {
+  return hardenHostClaimProofResponse(
+    new Response(null, {
+      status: 303,
+      headers: {
+        location: hostClaimManageLocation(host, false, linkError, false),
+        "set-cookie": clearHostClaimEmailTokenCookie(host),
+        "cache-control": "no-store",
+      },
+    }),
+  );
 }
 
 function emailRequestFailureMessage(
@@ -1332,6 +1382,7 @@ function HostClaimPage(props: ClaimPageProps) {
     repairingClaim,
     linkError,
     claimProofMethod,
+    emailClaimDnsPurpose,
   } = props;
   return (
     <div id="page-top">
@@ -1380,6 +1431,7 @@ function HostClaimPage(props: ClaimPageProps) {
                         linkAppName: linkContext?.app.name ?? null,
                         transferring: !!transferContext,
                         claimProofMethod,
+                        emailClaimDnsPurpose,
                         host: host.host,
                       })}
                     </p>
@@ -1405,6 +1457,7 @@ function HostClaimPage(props: ClaimPageProps) {
                       repairingClaim={repairingClaim}
                       linkError={linkError}
                       claimProofMethod={claimProofMethod}
+                      emailClaimDnsPurpose={emailClaimDnsPurpose}
                     />
                     <DetectedHostSummary host={host} />
                   </>
@@ -1450,6 +1503,7 @@ function ClaimBody(
     repairingClaim,
     linkError,
     claimProofMethod,
+    emailClaimDnsPurpose,
   }: {
     host: AccountHost;
     claim: AccountHostClaim | null;
@@ -1472,11 +1526,10 @@ function ClaimBody(
     repairingClaim: boolean;
     linkError: boolean;
     claimProofMethod: HostClaimProofMethod | null;
+    emailClaimDnsPurpose: HostClaimDnsPurpose;
   },
 ) {
-  const recoveringEmailClaim = state === "verification" &&
-    claim?.method === "pds_contact_email" && !transferContext &&
-    !repairingClaim;
+  const recoveringEmailClaim = emailClaimDnsPurpose === "recover";
   if (
     (state === "recovery-pending" || state === "recovery-ready") && recovery
   ) {
@@ -1579,7 +1632,12 @@ function ClaimBody(
     return (
       <div class="host-claim-panel host-claim-panel-ok">
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <p class="host-claim-panel-title">
           Claimed by <AtmosphereHandle handle={claim?.claimantHandle} />
@@ -1618,10 +1676,16 @@ function ClaimBody(
           </form>
         )}
         {linkContext && (
-          <form method="POST">
+          <form method="POST" data-submit-once="true">
             <input type="hidden" name="action" value="connect_app" />
-            <button type="submit" class="directory-register-button">
-              Connect to {linkContext.app.name}
+            <button
+              type="submit"
+              class="directory-register-button"
+              data-pending-label="Connecting…"
+            >
+              <span data-submit-once-label>
+                Connect to {linkContext.app.name}
+              </span>
             </button>
           </form>
         )}
@@ -1632,7 +1696,12 @@ function ClaimBody(
     return (
       <div class="host-claim-panel">
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <p class="host-claim-panel-title">Already claimed</p>
         <p class="text-body">
@@ -1671,7 +1740,12 @@ function ClaimBody(
             : "claim"}
         />
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <div class="host-claim-panel host-claim-panel-ok">
           <p class="host-claim-panel-title">
@@ -1860,6 +1934,10 @@ function ClaimBody(
               ? "Verify DNS and change manager"
               : repairingClaim
               ? "Verify DNS and restore management"
+              : emailClaimDnsPurpose === "recover"
+              ? "Verify DNS and start recovery"
+              : emailClaimDnsPurpose === "strengthen"
+              ? "Verify DNS to strengthen ownership"
               : "Verify DNS and claim host"}
           </span>
         </button>
@@ -1980,7 +2058,10 @@ function ClaimBody(
       return (
         <div class="host-claim-panel">
           {error && (
-            <p class="profile-form-status profile-form-status--error">
+            <p
+              class="profile-form-status profile-form-status--error"
+              role="alert"
+            >
               {error}
             </p>
           )}
@@ -1997,7 +2078,12 @@ function ClaimBody(
     return (
       <div class="host-claim-panel">
         {error && (
-          <p class="profile-form-status profile-form-status--error">{error}</p>
+          <p
+            class="profile-form-status profile-form-status--error"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         <p class="host-claim-panel-title">
           Operator account required
@@ -2031,7 +2117,12 @@ function ClaimBody(
   return (
     <div class="host-claim-panel">
       {error && (
-        <p class="profile-form-status profile-form-status--error">{error}</p>
+        <p
+          class="profile-form-status profile-form-status--error"
+          role="alert"
+        >
+          {error}
+        </p>
       )}
       <p class="host-claim-panel-title">DNS verification required</p>
       <p class="text-body">
@@ -2111,6 +2202,7 @@ export function hostClaimIntroCopy(
     linkAppName?: string | null;
     transferring?: boolean;
     claimProofMethod?: HostClaimProofMethod | null;
+    emailClaimDnsPurpose?: HostClaimDnsPurpose;
     host?: string;
   },
 ): string {
@@ -2133,6 +2225,12 @@ export function hostClaimIntroCopy(
   }
   if (input.transferring) {
     return "The new managing account must prove control of this host with DNS before anything changes.";
+  }
+  if (input.emailClaimDnsPurpose === "recover") {
+    return "Use DNS to prove current control. The existing manager stays in control during the 48-hour review period.";
+  }
+  if (input.emailClaimDnsPurpose === "strengthen") {
+    return "Strengthen this email-verified claim with DNS ownership proof.";
   }
   if (input.state === "ready") {
     if (input.claimProofMethod === "atproto_handle") {

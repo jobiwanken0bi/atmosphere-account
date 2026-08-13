@@ -1,4 +1,7 @@
-import type { HostContactEmailOptions } from "./host-claim-email.ts";
+import {
+  type HostContactEmailOptions,
+  LOCAL_PREVIEW_CAPABILITY,
+} from "./host-claim-email.ts";
 import { IS_DEV } from "./env.ts";
 
 export const DEV_HOST_CLAIM_EMAIL_HOSTS = {
@@ -40,6 +43,7 @@ export function devHostClaimEmailOptions(
   ) return undefined;
 
   return {
+    previewVerificationUrl: LOCAL_PREVIEW_CAPABILITY,
     fetchImpl: (input) => {
       const url = input instanceof Request
         ? new URL(input.url)

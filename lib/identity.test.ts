@@ -1,5 +1,6 @@
 import {
   assertPublicDnsHostnameForTest,
+  authoritativeHandleFromDidDocument,
   didWebDocumentUrlForTest,
   discoverAuthServer,
   findPdsEndpoint,
@@ -37,6 +38,34 @@ Deno.test("isHandle enforces ATProto-style DNS handle syntax", () => {
   ];
   for (const handle of rejected) {
     if (isHandle(handle)) throw new Error(`expected invalid handle: ${handle}`);
+  }
+});
+
+Deno.test("DID handle selection uses the first syntactically valid at URI", () => {
+  if (
+    authoritativeHandleFromDidDocument({
+      id: "did:plc:owner",
+      alsoKnownAs: [
+        "https://profile.example",
+        "at://invalid handle",
+        "at://FIRST.EXAMPLE.COM",
+        "at://second.example.com",
+      ],
+    }) !== "first.example.com"
+  ) throw new Error("unexpected authoritative DID handle");
+  for (
+    const invalid of [
+      "at://owner.example.com/path",
+      "at://owner.example.com?query=1",
+      "at://owner.example.com.",
+    ]
+  ) {
+    if (
+      authoritativeHandleFromDidDocument({
+        id: "did:plc:owner",
+        alsoKnownAs: [invalid],
+      }) !== null
+    ) throw new Error(`accepted malformed DID handle URI: ${invalid}`);
   }
 });
 
@@ -188,7 +217,9 @@ Deno.test("claim authority resolution never falls back to a public resolver", as
 
     let rejected = false;
     try {
-      await resolveHandleAuthority("authority.example.com");
+      await resolveHandleAuthority("authority.example.com", {
+        publicHttpsFetch: globalThis.fetch,
+      });
     } catch {
       rejected = true;
     }
@@ -220,7 +251,9 @@ Deno.test("ordinary identity resolution retains the public fallback", async () =
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
 
-    const did = await resolveHandle("fallback.example.com");
+    const did = await resolveHandle("fallback.example.com", {
+      publicHttpsFetch: globalThis.fetch,
+    });
     if (did !== "did:plc:fallback") {
       throw new Error(`unexpected public fallback DID: ${did}`);
     }
