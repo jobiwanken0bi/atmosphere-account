@@ -2863,34 +2863,26 @@ h1, h2, h3, h4 {
 
 .host-handle-demo-stage {
   position: relative;
+  display: grid;
+  grid-template-rows: 0.9rem 2.16rem;
+  gap: 0.3rem;
   height: 3.36rem;
 }
 
-.host-handle-demo-frame {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  gap: 0.3rem;
-  opacity: 0;
-  animation: hostHandleFrameCycle var(--host-handle-cycle) linear
-    var(--host-handle-delay) infinite;
-}
-
-.host-handle-demo-frame:first-child {
-  opacity: 1;
-}
-
-.host-handle-demo-label-window,
-.host-handle-demo-window {
+.host-handle-demo-label-stack {
   position: relative;
+  height: 0.9rem;
   overflow: hidden;
 }
 
-.host-handle-demo-label-window {
-  height: 0.9rem;
-  display: block;
-  width: 100%;
-  line-height: 0.9rem;
+.host-handle-demo-label-frame {
+  position: absolute;
+  inset: 0;
+}
+
+.host-handle-demo-window {
+  position: relative;
+  overflow: hidden;
 }
 
 .host-handle-label-phrase {
@@ -2964,11 +2956,12 @@ h1, h2, h3, h4 {
     hue-rotate(193deg) brightness(92%) contrast(95%);
 }
 
-.host-handle-value-text {
-  display: flex;
-  align-items: baseline;
+.host-handle-value-stack {
+  position: relative;
+  display: block;
   flex: 1 1 auto;
   min-width: 0;
+  height: 1em;
   color: #0e1428;
   font-family: "IBM Plex Mono", monospace;
   font-size: clamp(0.84rem, 1.8vw, 0.98rem);
@@ -2976,6 +2969,20 @@ h1, h2, h3, h4 {
   letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
+}
+
+.host-handle-value-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: baseline;
+  opacity: 0;
+  animation: hostHandleFrameCycle var(--host-handle-cycle) steps(1, end)
+    var(--host-handle-delay) infinite;
+}
+
+.host-handle-value-frame:first-child {
+  opacity: 1;
 }
 
 .host-handle-demo-window {
@@ -3101,6 +3108,7 @@ h1, h2, h3, h4 {
   }
 
   .host-handle-demo-stage {
+    grid-template-rows: 0.9rem 2.18rem;
     height: 3.38rem;
   }
 
@@ -3114,24 +3122,32 @@ h1, h2, h3, h4 {
     height: 0.76rem;
   }
 
-  .host-handle-value-text {
+  .host-handle-value-stack {
     font-size: clamp(0.78rem, 4.4vw, 0.94rem);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .host-handle-demo-frame,
+  .host-handle-value-frame,
   .host-handle-label-phrase,
   .host-handle-suffix-text,
   .host-handle-suffix::after {
     animation: none;
   }
 
-  .host-handle-demo-frame {
+  .host-handle-value-frame {
     opacity: 0;
   }
 
-  .host-handle-demo-frame:first-child {
+  .host-handle-value-frame:first-child {
+    opacity: 1;
+  }
+
+  .host-handle-demo-label-frame {
+    opacity: 0;
+  }
+
+  .host-handle-demo-label-frame:first-child {
     opacity: 1;
   }
 
@@ -3141,7 +3157,7 @@ h1, h2, h3, h4 {
     filter: none;
   }
 
-  .host-handle-demo-frame:first-child .host-handle-suffix-text {
+  .host-handle-value-frame:first-child .host-handle-suffix-text {
     clip-path: none;
   }
 
@@ -4497,7 +4513,7 @@ body {
   filter: brightness(0) invert(1);
 }
 
-.dark-phase .host-handle-value,
+.dark-phase .host-handle-value-stack,
 .dark-phase .host-handle-value-prefix {
   color: #fff;
 }

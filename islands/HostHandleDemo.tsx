@@ -12,9 +12,12 @@ interface HostHandleDemoProps {
   demoButton: string;
 }
 
-type HostHandleFrameStyle = JSX.CSSProperties & {
+type HostHandleCycleStyle = JSX.CSSProperties & {
   "--host-handle-cycle": string;
   "--host-handle-delay": string;
+};
+
+type HostHandleFrameStyle = HostHandleCycleStyle & {
   "--host-handle-suffix-width": string;
   "--host-handle-suffix-steps": number;
 };
@@ -54,22 +57,18 @@ export default function HostHandleDemo(
   return (
     <div class="host-handle-demo" aria-label={demoAriaLabel}>
       <div class="host-handle-demo-stage" aria-hidden="true">
-        {frames.map((example, index) => {
-          const suffixLength = Math.max(1, example.suffix.length);
-          const style: HostHandleFrameStyle = {
-            "--host-handle-cycle": `${cycleMs}ms`,
-            "--host-handle-delay": `${index * FRAME_MS}ms`,
-            "--host-handle-suffix-width": `${suffixLength}ch`,
-            "--host-handle-suffix-steps": suffixLength,
-          };
-
-          return (
-            <div
-              key={`${index}:${example.label}:${example.suffix}`}
-              class="host-handle-demo-frame"
-              style={style}
-            >
-              <div class="host-handle-demo-label-window">
+        <div class="host-handle-demo-label-stack">
+          {frames.map((example, index) => {
+            const style: HostHandleCycleStyle = {
+              "--host-handle-cycle": `${cycleMs}ms`,
+              "--host-handle-delay": `${index * FRAME_MS}ms`,
+            };
+            return (
+              <div
+                key={`${index}:${example.label}`}
+                class="host-handle-demo-label-frame"
+                style={style}
+              >
                 <span class="host-handle-label-phrase">
                   <span class="host-handle-label-word">
                     {labelPrefix(example.label)}
@@ -77,11 +76,28 @@ export default function HostHandleDemo(
                   <span class="host-handle-label-kind">handle</span>
                 </span>
               </div>
-              <div class="host-handle-demo-input">
-                <span class="host-handle-at">
-                  <img src="/union.svg" alt="" />
-                </span>
-                <span class="host-handle-value-text">
+            );
+          })}
+        </div>
+        <div class="host-handle-demo-input">
+          <span class="host-handle-at">
+            <img src="/union.svg" alt="" />
+          </span>
+          <span class="host-handle-value-stack">
+            {frames.map((example, index) => {
+              const suffixLength = Math.max(1, example.suffix.length);
+              const style: HostHandleFrameStyle = {
+                "--host-handle-cycle": `${cycleMs}ms`,
+                "--host-handle-delay": `${index * FRAME_MS}ms`,
+                "--host-handle-suffix-width": `${suffixLength}ch`,
+                "--host-handle-suffix-steps": suffixLength,
+              };
+              return (
+                <span
+                  key={`${index}:${example.label}:${example.suffix}`}
+                  class="host-handle-value-frame"
+                  style={style}
+                >
                   <span class="host-handle-value-prefix">
                     {example.prefix}
                   </span>
@@ -93,10 +109,10 @@ export default function HostHandleDemo(
                     </span>
                   </span>
                 </span>
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </span>
+        </div>
       </div>
       <div class="host-handle-demo-button" aria-hidden="true">
         <img src="/union.svg" alt="" class="host-handle-demo-button-icon" />
