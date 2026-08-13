@@ -68,10 +68,15 @@ export function hostFriendlyProfile(host: AccountHost): HostFriendlyProfile {
     },
   };
   const profile = { ...fallback, ...(known[key] ?? {}) };
+  const publishedDescription = host.description.trim();
   const dataLocation = host.dataLocation?.trim();
   const inferredLocation = host.inferredLocation?.trim();
   return {
     ...profile,
+    // The management form describes this as the public listing description,
+    // so an operator-published value must take precedence over the curated
+    // copy used to make otherwise sparse seeded profiles friendlier.
+    summary: publishedDescription || profile.summary,
     location: dataLocation || inferredLocation
       ? dataLocation || `Network: ${inferredLocation}`
       : "Location not listed",
