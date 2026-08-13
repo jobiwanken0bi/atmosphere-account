@@ -3,6 +3,7 @@ import {
   compressResponse,
   preferredCompressionEncoding,
   publicCacheDescriptorForTest,
+  shouldApplyResponseCompression,
 } from "./edge-response.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -40,6 +41,11 @@ Deno.test("compression negotiation honors quality and explicit exclusions", () =
   );
   assertEquals(preferredCompressionEncoding("*;q=0.5"), "br");
   assertEquals(preferredCompressionEncoding(null), null);
+});
+
+Deno.test("response compression stays off in the Vite development adapter", () => {
+  assertEquals(shouldApplyResponseCompression(true), false);
+  assertEquals(shouldApplyResponseCompression(false), true);
 });
 
 Deno.test("text responses are gzip-compressed as a stream with safe validators", async () => {

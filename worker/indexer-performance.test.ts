@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
+  fetchIndexerRecordWithIdentityRefresh,
   indexerFailureLogFields,
   IndexerIdentityCache,
   IndexerSuccessBatch,
@@ -159,4 +160,108 @@ Deno.test("indexer identity cache never serves an expired DID after refresh fail
       }))).pdsUrl,
     "https://new-pds.example",
   );
+});
+
+Deno.test("indexer record fetch refreshes a migrated PDS after a cached miss", async () => {
+  const resolutions: boolean[] = [];
+  const fetches: string[] = [];
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions.push(forceRefresh);
+      return Promise.resolve({
+        pdsUrl: forceRefresh
+          ? "https://new-pds.example"
+          : "https://old-pds.example",
+        handle: "alice.example",
+      });
+    },
+    (pdsUrl) => {
+      fetches.push(pdsUrl);
+      return Promise.resolve(
+        pdsUrl === "https://new-pds.example" ? { cid: "new" } : null,
+      );
+    },
+  );
+
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, [
+    "https://old-pds.example",
+    "https://new-pds.example",
+  ]);
+  assertEquals(result, {
+    identity: {
+      pdsUrl: "https://new-pds.example",
+      handle: "alice.example",
+    },
+    record: { cid: "new" },
+  });
+});
+
+Deno.test("indexer record fetch refreshes a migrated PDS after a permanent HTTP miss", async () => {
+  let resolutions = 0;
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions++;
+      return Promise.resolve({
+        pdsUrl: forceRefresh
+          ? "https://new-pds.example"
+          : "https://old-pds.example",
+        handle: null,
+      });
+    },
+    (pdsUrl) => {
+      if (pdsUrl === "https://old-pds.example") {
+        throw new PublicRecordFetchError(400, "repo not found");
+      }
+      return Promise.resolve({ cid: "new" });
+    },
+  );
+
+  assertEquals(resolutions, 2);
+  assertEquals(result?.record, { cid: "new" });
+});
+
+Deno.test("indexer record fetch does not retry transient PDS failures", async () => {
+  const resolutions: boolean[] = [];
+  await assertRejects(
+    () =>
+      fetchIndexerRecordWithIdentityRefresh(
+        (forceRefresh) => {
+          resolutions.push(forceRefresh);
+          return Promise.resolve({
+            pdsUrl: "https://pds.example",
+            handle: null,
+          });
+        },
+        () => {
+          throw new PublicRecordFetchError(429, "rate limited");
+        },
+      ),
+    PublicRecordFetchError,
+  );
+  assertEquals(resolutions, [false]);
+});
+
+Deno.test("indexer record fetch bounds refresh when the PDS is unchanged", async () => {
+  const resolutions: boolean[] = [];
+  let fetches = 0;
+  await assertRejects(
+    () =>
+      fetchIndexerRecordWithIdentityRefresh(
+        (forceRefresh) => {
+          resolutions.push(forceRefresh);
+          return Promise.resolve({
+            pdsUrl: "https://pds.example",
+            handle: null,
+          });
+        },
+        () => {
+          fetches++;
+          throw new PublicRecordFetchError(404, "record not found");
+        },
+      ),
+    PublicRecordFetchError,
+  );
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, 1);
 });

@@ -7,8 +7,10 @@ import {
   appviewRequestBodyLimitForTest,
   appviewRequestHeadersForTest,
   appviewTargetUrlForTest,
+  getPublicHostDetail,
   hostDirectoryResultForHosts,
   isGeneratedAppviewAssetPathForTest,
+  listPublicAccountHosts,
   proxiedHeadersForTest,
   rewriteAppviewApiUrlForTest,
   rewriteAppviewHtmlForTest,
@@ -19,6 +21,7 @@ import {
   shouldProxyAppviewAssetForTest,
   shouldProxyAppviewBeforeSession,
 } from "./appview-client.ts";
+import { assertRejects } from "jsr:@std/assert@1";
 import { readProxyClientKey } from "./proxy-client-key.ts";
 import {
   DEFAULT_ACCOUNT_HOST_SORT,
@@ -30,6 +33,30 @@ function assertEquals(actual: unknown, expected: unknown): void {
     throw new Error(`Expected ${String(expected)}, got ${String(actual)}`);
   }
 }
+
+Deno.test("public host directory propagates authoritative read failures", async () => {
+  await assertRejects(
+    () =>
+      listPublicAccountHosts(
+        {},
+        () => Promise.reject(new Error("directory database unavailable")),
+      ),
+    Error,
+    "directory database unavailable",
+  );
+});
+
+Deno.test("public host detail propagates authoritative read failures", async () => {
+  await assertRejects(
+    () =>
+      getPublicHostDetail(
+        "example.com",
+        () => Promise.reject(new Error("host database unavailable")),
+      ),
+    Error,
+    "host database unavailable",
+  );
+});
 
 Deno.test("early appview proxy covers DB-backed app surfaces before session hydration", () => {
   for (

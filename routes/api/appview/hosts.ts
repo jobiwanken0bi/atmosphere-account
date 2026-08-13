@@ -35,13 +35,11 @@ export const handler = define.handlers({
       });
     }
     const input = readDirectoryInput(ctx.url.searchParams);
-    const hosts = await hostDirectoryCache.get(
-      hostDirectoryCacheKey(input),
+    return await hostDirectoryResponse(
+      input,
+      hostDirectoryCache,
       () => listPublicAccountHosts(input),
     );
-    return json(hosts, {
-      headers: hostDirectorySuccessHeaders(),
-    });
   }, {
     scope: "appview-host-directory",
     capacity: 120,
@@ -61,6 +59,33 @@ function hostDirectorySuccessHeaders(): HeadersInit {
 
 export function hostDirectorySuccessHeadersForTest(): Headers {
   return new Headers(hostDirectorySuccessHeaders());
+}
+
+async function hostDirectoryResponse(
+  input: AccountHostDirectoryOptions,
+  cache: EdgeStaleCache<AccountHostDirectoryResult>,
+  load: () => Promise<AccountHostDirectoryResult>,
+): Promise<Response> {
+  try {
+    const hosts = await cache.get(hostDirectoryCacheKey(input), load);
+    return json(hosts, {
+      headers: hostDirectorySuccessHeaders(),
+    });
+  } catch (err) {
+    console.error("[appview] host directory unavailable:", err);
+    return json({ error: "host_directory_unavailable" }, {
+      status: 503,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+}
+
+export function hostDirectoryResponseForTest(
+  input: AccountHostDirectoryOptions,
+  cache: EdgeStaleCache<AccountHostDirectoryResult>,
+  load: () => Promise<AccountHostDirectoryResult>,
+): Promise<Response> {
+  return hostDirectoryResponse(input, cache, load);
 }
 
 function validDirectorySearch(search: URLSearchParams): boolean {

@@ -163,7 +163,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   }
 }
 
-interface IndexerIdentity {
+export interface IndexerIdentity {
   pdsUrl: string;
   handle: string | null;
 }
@@ -216,6 +216,10 @@ export class IndexerIdentityCache {
     });
     this.inFlight.set(did, refresh);
     return refresh;
+  }
+
+  invalidate(did: string): void {
+    this.values.delete(did);
   }
 
   private set(did: string, value: IndexerIdentity): void {
@@ -366,21 +370,6 @@ function handleFromDidDocument(
   return aka ? aka.slice("at://".length) : null;
 }
 
-async function resolvePdsForDid(
-  did: string,
-): Promise<string> {
-  return (await resolveIndexerIdentity(did)).pdsUrl;
-}
-
-/** Best-effort handle lookup from the DID document's alsoKnownAs. */
-async function resolveHandleFromDoc(did: string): Promise<string> {
-  try {
-    return (await resolveIndexerIdentity(did)).handle ?? did;
-  } catch {
-    return did;
-  }
-}
-
 async function resolveIndexerIdentity(did: string): Promise<{
   pdsUrl: string;
   handle: string | null;
@@ -394,6 +383,55 @@ async function resolveIndexerIdentity(did: string): Promise<{
   });
 }
 
+/**
+ * Fetch a record through a cached DID identity, refreshing the DID document
+ * once when the cached PDS reports a permanent record miss. Account migrations
+ * can leave a previously cached PDS behind; accepting that miss would advance
+ * the Jetstream cursor without indexing the record from the new PDS.
+ */
+export async function fetchIndexerRecordWithIdentityRefresh<T>(
+  resolveIdentity: (forceRefresh: boolean) => Promise<IndexerIdentity>,
+  fetchRecord: (pdsUrl: string) => Promise<T | null>,
+): Promise<{ identity: IndexerIdentity; record: T } | null> {
+  const identity = await resolveIdentity(false);
+  let firstError: unknown;
+  try {
+    const record = await fetchRecord(identity.pdsUrl);
+    if (record !== null) return { identity, record };
+  } catch (err) {
+    if (!isRefreshableIdentityMiss(err)) throw err;
+    firstError = err;
+  }
+
+  const refreshedIdentity = await resolveIdentity(true);
+  if (refreshedIdentity.pdsUrl === identity.pdsUrl) {
+    if (firstError !== undefined) throw firstError;
+    return null;
+  }
+
+  const record = await fetchRecord(refreshedIdentity.pdsUrl);
+  return record === null ? null : { identity: refreshedIdentity, record };
+}
+
+async function fetchIndexerRecord(
+  did: string,
+  collection: string,
+  rkey: string,
+): Promise<
+  {
+    identity: IndexerIdentity;
+    record: NonNullable<Awaited<ReturnType<typeof getRecordPublic>>>;
+  } | null
+> {
+  return await fetchIndexerRecordWithIdentityRefresh(
+    async (forceRefresh) => {
+      if (forceRefresh) identityCache.invalidate(did);
+      return await resolveIndexerIdentity(did);
+    },
+    (pdsUrl) => getRecordPublic(pdsUrl, did, collection, rkey),
+  );
+}
+
 async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
   const commit = event.commit;
   if (!commit) return;
@@ -404,23 +442,21 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
   // Trust Jetstream's record bytes when present, but fetch from PDS for
   // create/update to make sure we have the canonical value (Jetstream may
   // omit blobs in some configurations).
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     PROFILE_NSID,
     commit.rkey,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const { identity, record: fetched } = result;
 
-  const handle = await resolveHandleFromDoc(event.did);
   const synced = await upsertProfileFromRecord({
     did: event.did,
-    handle,
-    pdsUrl,
+    handle: identity.handle ?? event.did,
+    pdsUrl: identity.pdsUrl,
     record: { ...fetched, rkey: commit.rkey },
     recordRev: commit.rev,
   });
@@ -439,14 +475,13 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     REVIEW_NSID,
     commit.rkey,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const fetched = result.record;
 
   const validation = validateReview(fetched.value);
   if (!validation.ok || !validation.value) {
@@ -498,14 +533,13 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     FEATURED_NSID,
     "self",
   );
-  if (!fetched) return;
+  if (!result) return;
+  const fetched = result.record;
 
   const validation = validateFeatured(fetched.value);
   if (!validation.ok || !validation.value) {
@@ -538,14 +572,13 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     UPDATE_NSID,
     commit.rkey,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const fetched = result.record;
 
   const validation = validateUpdate(fetched.value);
   if (!validation.ok || !validation.value) {
@@ -600,11 +633,9 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  let fetched: Awaited<ReturnType<typeof getRecordPublic>>;
+  let result: Awaited<ReturnType<typeof fetchIndexerRecord>>;
   try {
-    fetched = await getRecordPublic(
-      pdsUrl,
+    result = await fetchIndexerRecord(
       event.did,
       commit.collection,
       commit.rkey,
@@ -628,7 +659,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     }
     throw err;
   }
-  if (!fetched) {
+  if (!result) {
     await recordAppRecordFailure({
       uri,
       collection: commit.collection,
@@ -639,6 +670,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
     });
     return;
   }
+  const fetched = result.record;
 
   if (commit.collection === ATSTORE_LISTING_NSID) {
     const draft = parseAtstoreListing({
@@ -749,23 +781,21 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
     return;
   }
 
-  const pdsUrl = await resolvePdsForDid(event.did);
-  const fetched = await getRecordPublic(
-    pdsUrl,
+  const result = await fetchIndexerRecord(
     event.did,
     commit.collection,
     commit.rkey,
   );
-  if (!fetched) return;
+  if (!result) return;
+  const { identity, record: fetched } = result;
 
-  const authorHandle = await resolveHandleFromDoc(event.did);
   const parsed = await upsertHostProtocolRecord({
     uri,
     cid: fetched.cid,
     collection: commit.collection,
     repoDid: event.did,
     rkey: commit.rkey,
-    authorHandle,
+    authorHandle: identity.handle ?? event.did,
     value: fetched.value,
   });
   if (parsed) {
@@ -785,7 +815,14 @@ function appDirectorySourceType(collection: string): string {
 }
 
 function isPermanentFetchMiss(err: PublicRecordFetchError): boolean {
-  return err.status >= 400 && err.status < 500;
+  return isRefreshableIdentityMiss(err);
+}
+
+function isRefreshableIdentityMiss(
+  err: unknown,
+): err is PublicRecordFetchError {
+  return err instanceof PublicRecordFetchError && err.status >= 400 &&
+    err.status < 500 && ![408, 425, 429].includes(err.status);
 }
 
 async function processEvent(event: JetstreamEvent): Promise<void> {

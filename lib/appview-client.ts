@@ -665,12 +665,15 @@ export function appviewTargetUrlForTest(
 
 export async function listPublicAccountHosts(
   input: AccountHostDirectoryOptions = {},
+  loadDirectory: (
+    input: AccountHostDirectoryOptions,
+  ) => Promise<AccountHostDirectoryResult> = listAccountHostDirectory,
 ): Promise<AccountHostDirectoryResult> {
   const publicInput = { ...input, publicOnly: true };
-  const result = await listAccountHostDirectory(publicInput).catch((err) => {
-    console.warn("[appview] list account hosts failed:", err);
-    return hostDirectoryResultForHosts(publicInput, []);
-  });
+  // The directory read is authoritative. Let failures reach EdgeStaleCache so
+  // it can retain a last-known-good value; converting an outage to an empty
+  // success would replace both the in-process stale value and the CDN entry.
+  const result = await loadDirectory(publicInput);
   let visibleHosts = result.hosts;
   if (visibleHosts.length > 0) {
     visibleHosts = await hydrateAccountHostProfiles(visibleHosts).catch(
@@ -765,8 +768,13 @@ function positiveDirectoryInteger(
 
 export async function getPublicHostDetail(
   hostId: string,
+  loadHost: (hostId: string) => Promise<AccountHost | null> = getAccountHost,
 ): Promise<PublicHostDetail> {
-  let host = await getAccountHost(hostId).catch(() => null);
+  // A failed primary lookup is not the same as a missing host. Propagate the
+  // failure so stale data remains usable and a cold request returns 503 rather
+  // than caching a false 404. Optional profile/claim enrichment stays
+  // best-effort below.
+  let host = await loadHost(hostId);
   if (host && !isAccountHostPubliclyListable(host)) host = null;
   if (host) {
     host = (await hydrateAccountHostProfiles([host]).catch((err) => {

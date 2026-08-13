@@ -1,4 +1,5 @@
 import { define } from "../utils.ts";
+import { IS_DEV } from "./env.ts";
 
 const CACHE_POLICY_VERSION = "public-v1";
 const DEFAULT_EDGE_TTL_SECONDS = 60;
@@ -22,8 +23,17 @@ interface PublicCacheDescriptor {
  */
 export const responseCompressionMiddleware = define.middleware(async (ctx) => {
   const response = await ctx.next();
+  // Fresh's Vite development adapter currently serializes transformed binary
+  // chunks as UTF-8 text. Compressing there corrupts the representation and
+  // leaves browsers waiting forever on DOMContentLoaded. Production uses the
+  // compiled Deno server, which preserves binary response streams.
+  if (!shouldApplyResponseCompression()) return response;
   return compressResponse(ctx.req, response);
 });
+
+export function shouldApplyResponseCompression(isDev = IS_DEV): boolean {
+  return !isDev;
+}
 
 /**
  * Give Deno's CDN a deliberately small, auditable public surface. Anything
