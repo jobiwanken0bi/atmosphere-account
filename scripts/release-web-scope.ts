@@ -40,28 +40,68 @@ async function main(): Promise<void> {
   ) {
     throw new Error("railway.web.json must define string watchPatterns");
   }
-  const files = await changedFilesForCommit(sha);
   console.log(
-    webArtifactChanged(files, rawPatterns as string[]) ? "true" : "false",
+    await latestWebArtifactCommit(sha, rawPatterns as string[]),
   );
 }
 
+export async function latestWebArtifactCommit(
+  sha: string,
+  patterns: readonly string[],
+): Promise<string> {
+  const commits = await firstParentCommits(sha);
+  for (const commit of commits) {
+    const files = await changedFilesForCommit(commit);
+    if (webArtifactChanged(files, patterns)) return commit;
+  }
+  throw new Error(`no web artifact commit found at or before ${sha}`);
+}
+
+export function latestWebArtifactCommitFromHistory(
+  history: ReadonlyArray<{ sha: string; files: readonly string[] }>,
+  patterns: readonly string[],
+): string | null {
+  return history.find(({ files }) => webArtifactChanged(files, patterns))
+    ?.sha ?? null;
+}
+
+async function firstParentCommits(sha: string): Promise<string[]> {
+  return await gitLines([
+    "rev-list",
+    "--first-parent",
+    sha,
+  ], "could not inspect first-parent release history");
+}
+
 async function changedFilesForCommit(sha: string): Promise<string[]> {
+  return await gitLines(
+    diffTreeArgsForCommit(sha),
+    `could not inspect release scope for ${sha}`,
+  );
+}
+
+export function diffTreeArgsForCommit(sha: string): string[] {
+  return [
+    "diff-tree",
+    "--root",
+    "-m",
+    "--first-parent",
+    "--no-commit-id",
+    "--name-only",
+    "-r",
+    sha,
+  ];
+}
+
+async function gitLines(args: string[], failure: string): Promise<string[]> {
   const output = await new Deno.Command("git", {
-    args: [
-      "diff-tree",
-      "--no-commit-id",
-      "--name-only",
-      "-r",
-      "--first-parent",
-      sha,
-    ],
+    args,
     stdout: "piped",
     stderr: "piped",
   }).output();
   if (!output.success) {
     const stderr = new TextDecoder().decode(output.stderr).trim();
-    throw new Error(`could not inspect release scope: ${stderr}`);
+    throw new Error(`${failure}: ${stderr}`);
   }
   return new TextDecoder().decode(output.stdout).split(/\r?\n/).map((file) =>
     file.trim()

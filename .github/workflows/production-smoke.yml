@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_release_sha:
-        description: "Optional override; defaults to the checked-out release SHA"
+        description: "Optional override; defaults to the latest web-artifact SHA at or before the checked-out commit"
         required: false
         type: string
   workflow_run:
@@ -44,7 +44,9 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 2
+          # Worker-only commits still verify the nearest prior web artifact.
+          # Full first-parent history is required to resolve that SHA.
+          fetch-depth: 0
 
       - name: Set up Deno
         uses: denoland/setup-deno@v2
@@ -54,14 +56,10 @@ jobs:
 
       - name: Determine the expected web artifact release
         id: release_scope
-        env:
-          CHECK_COMMIT_SCOPE: ${{ (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
         run: |
           expected="$EXPLICIT_RELEASE_SHA"
-          if [ -z "$expected" ] && [ "$CHECK_COMMIT_SCOPE" = "1" ]; then
-            if [ "$(deno task release:web-changed -- --sha="$SOURCE_RELEASE_SHA")" = "true" ]; then
-              expected="$SOURCE_RELEASE_SHA"
-            fi
+          if [ -z "$expected" ]; then
+            expected="$(deno task release:web-changed -- --sha="$SOURCE_RELEASE_SHA")"
           fi
           echo "expected_release_sha=$expected" >> "$GITHUB_OUTPUT"
 

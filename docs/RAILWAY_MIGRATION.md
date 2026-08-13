@@ -209,10 +209,11 @@ Health checks:
 - Cheap readiness: `deno task smoke:readiness` makes one readiness request and
   requires a healthy database, a fresh indexer lease, a fresh complete PDS
   inventory, and present, matching Deno/Railway web-artifact SHAs. GitHub runs
-  this hourly. After successful `main` CI, it requires the exact commit only
-  when that commit matches `/railway.web.json`'s rebuild scope; worker-only
-  commits retain parity without forcing an unrelated web rebuild. The full suite
-  runs after deploys and once daily.
+  this hourly. Every run resolves and requires the latest first-parent commit
+  that matches `/railway.web.json`'s rebuild scope. A later worker-only commit
+  therefore still verifies the preceding web artifact without forcing an
+  unrelated web rebuild or masking an incomplete rollout. The full suite runs
+  after deploys and once daily.
 - Exact release helper: source-linked Railway deploys report their commit SHA
   natively. Use `deno task release:stamp -- --write --deno` only if Deno Deploy
   does not provide its Git SHA. The helper requires a clean worktree and HEAD
