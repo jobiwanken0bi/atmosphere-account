@@ -26,7 +26,8 @@ concurrency:
 
 env:
   DENO_VERSION: 2.8.3
-  EXPECTED_RELEASE_SHA: ${{ github.event.inputs.expected_release_sha || github.event.workflow_run.head_sha || github.sha }}
+  SOURCE_RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  EXPLICIT_RELEASE_SHA: ${{ github.event.inputs.expected_release_sha || '' }}
 
 jobs:
   readiness:
@@ -34,6 +35,8 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      expected_release_sha: ${{ steps.release_scope.outputs.expected_release_sha }}
 
     steps:
       - name: Checkout release
@@ -41,6 +44,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
 
       - name: Set up Deno
         uses: denoland/setup-deno@v2
@@ -48,9 +52,22 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
           cache: true
 
+      - name: Determine the expected web artifact release
+        id: release_scope
+        env:
+          CHECK_COMMIT_SCOPE: ${{ (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
+        run: |
+          expected="$EXPLICIT_RELEASE_SHA"
+          if [ -z "$expected" ] && [ "$CHECK_COMMIT_SCOPE" = "1" ]; then
+            if [ "$(deno task release:web-changed -- --sha="$SOURCE_RELEASE_SHA")" = "true" ]; then
+              expected="$SOURCE_RELEASE_SHA"
+            fi
+          fi
+          echo "expected_release_sha=$expected" >> "$GITHUB_OUTPUT"
+
       - name: Wait for post-deploy parity, or check once on schedule
         env:
-          SMOKE_EXPECT_RELEASE_SHA: ${{ env.EXPECTED_RELEASE_SHA }}
+          SMOKE_EXPECT_RELEASE_SHA: ${{ steps.release_scope.outputs.expected_release_sha }}
           POST_DEPLOY: ${{ github.event_name == 'workflow_run' && '1' || '0' }}
         run: |
           attempts=1
@@ -89,7 +106,7 @@ jobs:
 
       - name: Smoke production
         env:
-          SMOKE_EXPECT_RELEASE_SHA: ${{ env.EXPECTED_RELEASE_SHA }}
+          SMOKE_EXPECT_RELEASE_SHA: ${{ needs.readiness.outputs.expected_release_sha }}
         run: deno task smoke:production
 
   alert:

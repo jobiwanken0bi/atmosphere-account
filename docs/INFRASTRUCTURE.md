@@ -231,13 +231,17 @@ smoke checks HTML, CSS, static scripts, and generated `/assets` imports on both
 
 GitHub Actions runs the cheap `smoke:readiness` check hourly and the complete
 `smoke:production` suite after successful `main` CI, daily, and on manual
-dispatch. Readiness requires both Deno and Railway to report non-empty, exactly
-matching commit SHAs, a healthy Postgres connection, a fresh indexer lease, and
-a fresh complete inventory. A post-deploy check retries for up to 15 minutes
-while both providers build and promote the release. This avoids paying to
-download every HTML and generated asset every hour while retaining a full daily
-regression check. Manual dispatch accepts `expected_release_sha` only as an
-override for an intentional older release.
+dispatch. Readiness always requires Deno and Railway to report non-empty,
+exactly matching web-artifact SHAs, a healthy Postgres connection, a fresh
+indexer lease, and a fresh complete inventory. For a commit that matches
+`railway.web.json`'s watch patterns, the post-CI verifier additionally requires
+both providers to converge on that exact commit within 15 minutes. A worker- or
+inventory-only commit does not invent a new web release, so it checks parity
+without falsely requiring the unchanged web service to rebuild. Scheduled runs
+also verify current parity rather than assuming the newest repository commit is
+a web artifact. This avoids paying to download every HTML and generated asset
+every hour while retaining a full daily regression check. Manual dispatch
+accepts `expected_release_sha` as an explicit release override.
 
 Railway source builds use service-specific config-as-code files. In production,
 set `web` to `/railway.web.json`, `indexer` to `/railway.indexer.json`, and

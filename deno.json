@@ -30,6 +30,7 @@
     "smoke:picker-assets": "deno run --allow-env --allow-net scripts/smoke-picker-assets.ts",
     "e2e:login": "node scripts/e2e-login-flow.mjs",
     "release:stamp": "deno run --allow-env --allow-run=git,deno,railway scripts/stamp-release-vars.ts",
+    "release:web-changed": "deno run --allow-read=railway.web.json --allow-run=git scripts/release-web-scope.ts",
     "db:maintain": "deno run -A scripts/maintain-db.ts",
     "railway:seed-secrets": "deno run -A scripts/seed-railway-secrets.ts",
     "indexer": "deno run --cached-only --frozen --no-prompt --allow-read=. --allow-write=./local.db,./local.db-wal,./local.db-shm,./local.db-journal --allow-net --allow-env --allow-sys --allow-ffi=./node_modules worker/indexer.ts",
