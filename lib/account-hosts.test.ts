@@ -2327,6 +2327,52 @@ Deno.test("host GET helpers stay read-only while explicit maintenance owns seed 
   );
 });
 
+Deno.test("release seed synchronization preserves claimed host settings", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./account-hosts.ts", import.meta.url),
+  );
+  const seedSync = source.slice(
+    source.indexOf("async function syncSeededHosts("),
+    source.indexOf("export async function getAccountHostClaim("),
+  );
+  const managedFields = [
+    "display_name",
+    "description",
+    "data_location",
+    "homepage_url",
+    "signup_url",
+    "service_endpoint",
+    "account_management_url",
+    "dashboard_url",
+    "capability_manifest_url",
+    "capabilities_json",
+    "support_url",
+    "profile_did",
+    "avatar_url",
+    "profile_checked_at",
+    "profile_handle",
+    "bsky_profile_visible",
+    "claim_did",
+    "claim_handle",
+    "signup_status",
+  ];
+  for (const field of managedFields) {
+    const start = seedSync.indexOf(`${field} = CASE`);
+    assert(start >= 0, `expected guarded seed assignment for ${field}`);
+    const end = seedSync.indexOf("\n          END", start);
+    assert(end > start, `expected complete guarded assignment for ${field}`);
+    const assignment = seedSync.slice(start, end);
+    assert(
+      assignment.includes("account_host.verification_status = 'claimed'"),
+      `claimed hosts must retain ${field}`,
+    );
+    assert(
+      assignment.includes(`account_host.${field}`),
+      `claimed hosts must keep their existing ${field}`,
+    );
+  }
+});
+
 Deno.test("account host public URL normalizer rejects unsafe account links", () => {
   assertEquals(
     normalizeAccountHostPublicHttpsUrl("https://example.host/account#settings"),
