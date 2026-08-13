@@ -9,7 +9,6 @@
       "/components/**",
       "/deno.json",
       "/deno.lock",
-      "/dev.ts",
       "/i18n/**",
       "/islands/**",
       "/lexicons/**",

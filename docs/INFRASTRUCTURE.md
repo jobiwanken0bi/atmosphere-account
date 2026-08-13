@@ -198,49 +198,40 @@ Run `deno task smoke:production` after Deno or Railway appview deploys. It runs
 core HTML pages, and standalone SDK assets. The public shell health response and
 proxied appview readiness response must both expose `release.runtime`; this
 catches stale appview deployments where the Deno shell is current but Railway is
-still serving an older server bundle. For exact release drift detection, use
-provider-native Git metadata. Source-linked Railway services expose
-`RAILWAY_GIT_COMMIT_SHA`; Deno Deploy may expose `DENO_GIT_COMMIT_SHA`. If the
-Deno runtime does not, stamp only the Deno side before deploying, then run:
+still serving an older server bundle. For exact release drift detection, Vite
+embeds one canonical SHA-256 digest of the production web inputs selected by
+`railway.web.json` in both builds. Railway also reports its native full
+`RAILWAY_GIT_COMMIT_SHA`; Deno Deploy may not report a Git SHA but does report
+its immutable build ID. Run:
 
 ```sh
-SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
+SMOKE_EXPECT_ARTIFACT_DIGEST="$(deno task release:web-digest)" \
+SMOKE_ALLOWED_APPVIEW_SHAS="$(deno task release:web-changed -- --sha=HEAD --allowed-appview-shas)" \
+  deno task smoke:production
 ```
 
-The helper below stamps only Deno when its provider metadata is unavailable.
-Railway must deploy the same pushed `main` commit from its connected GitHub
-source:
-
-```sh
-git push origin main
-deno task release:stamp -- --write --deno
-SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production
-```
-
-`release:stamp --write` intentionally fails when the worktree is dirty or HEAD
-does not match its tracked upstream. Push the release commit first so GitHub can
-verify the same SHA, and use `--allow-dirty`, `--allow-unpushed`, or an explicit
-`--sha` only for a deliberate emergency override.
-
-When both layers expose `release.gitSha`, the public-shell smoke also verifies
-that Deno and Railway are serving the same commit. It also runs
-`smoke:picker-assets` because the hosted picker is Deno-facing while
-Fresh-generated island chunks may come from the appview bundle proxy. The picker
-smoke checks HTML, CSS, static scripts, and generated `/assets` imports on both
-`login.atmosphereaccount.com` and `atmosphereaccount.com`.
+The public-shell smoke requires both layers to report that exact full artifact
+digest. It independently requires Railway's full native Git SHA to be in the
+safe first-parent window. The smoke also runs `smoke:picker-assets` because the
+hosted picker is Deno-facing while Fresh-generated island chunks may come from
+the appview bundle proxy. The picker smoke checks HTML, CSS, static scripts, and
+generated `/assets` imports on both `login.atmosphereaccount.com` and
+`atmosphereaccount.com`.
 
 GitHub Actions runs the cheap `smoke:readiness` check hourly and the complete
 `smoke:production` suite after successful `main` CI, daily, and on manual
-dispatch. Readiness always requires Deno and Railway to report non-empty,
-exactly matching web-artifact SHAs, a healthy Postgres connection, a fresh
-indexer lease, and a fresh complete inventory. Each run walks first-parent
-history to the latest commit matching `railway.web.json`'s watch patterns and
-requires both providers to serve that exact artifact within 15 minutes after CI.
-A worker- or inventory-only commit does not invent a new web release, but it
-still verifies the preceding web artifact; it cannot cancel and mask an
-incomplete rollout. This avoids paying to download every HTML and generated
-asset every hour while retaining a full daily regression check. Manual dispatch
-accepts `expected_release_sha` as an explicit release override.
+dispatch. Readiness requires the authoritative artifact digest, a healthy
+Postgres connection, a fresh indexer lease, and a fresh complete inventory. Both
+providers must serve the checked-out source digest. Railway may report any
+commit in the inclusive first-parent sequence from the latest commit matching
+`railway.web.json`'s watch patterns through that source commit. Every later
+commit in that set has equivalent web inputs, so it safely covers both a skipped
+worker-only build and Railway's manual **Deploy Latest Commit** action. A commit
+before the web-changing boundary or outside that first-parent ancestry is never
+accepted. This avoids unrelated Railway rebuilds and hourly full-asset downloads
+while retaining a full daily regression check. Manual dispatch is observational:
+it recomputes the digest and allowed ancestry from the checked-out source rather
+than accepting caller-supplied release identity.
 
 The dedicated `PDS Inventory Watchdog` workflow makes one additional request per
 day at 08:30 UTC, about five minutes after the Railway inventory run's 08:25:15

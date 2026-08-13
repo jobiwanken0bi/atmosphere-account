@@ -2,11 +2,6 @@ name: Production Smoke
 
 on:
   workflow_dispatch:
-    inputs:
-      expected_release_sha:
-        description: "Optional override; defaults to the latest web-artifact SHA at or before the checked-out commit"
-        required: false
-        type: string
   workflow_run:
     workflows: ["CI"]
     branches: [main]
@@ -18,32 +13,34 @@ on:
 
 permissions:
   contents: read
-  issues: write
-
-concurrency:
-  group: production-smoke
-  cancel-in-progress: true
 
 env:
   DENO_VERSION: 2.8.3
-  SOURCE_RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-  EXPLICIT_RELEASE_SHA: ${{ github.event.inputs.expected_release_sha || '' }}
 
 jobs:
   readiness:
     name: Cheap production readiness
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
-      expected_release_sha: ${{ steps.release_scope.outputs.expected_release_sha }}
+      source_sha: ${{ steps.release_scope.outputs.source_sha }}
+      artifact_digest: ${{ steps.release_scope.outputs.artifact_digest }}
+      allowed_appview_shas: ${{ steps.release_scope.outputs.allowed_appview_shas }}
 
     steps:
       - name: Checkout release
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Manual and scheduled checks always inspect trusted main. A
+          # workflow_run checks the exact trusted main commit that passed CI.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'refs/heads/main' }}
           # Worker-only commits still verify the nearest prior web artifact.
           # Full first-parent history is required to resolve that SHA.
           fetch-depth: 0
@@ -57,20 +54,23 @@ jobs:
       - name: Determine the expected web artifact release
         id: release_scope
         run: |
-          expected="$EXPLICIT_RELEASE_SHA"
-          if [ -z "$expected" ]; then
-            expected="$(deno task release:web-changed -- --sha="$SOURCE_RELEASE_SHA")"
-          fi
-          echo "expected_release_sha=$expected" >> "$GITHUB_OUTPUT"
+          source_sha="$(git rev-parse --verify HEAD^{commit})"
+          artifact_digest="$(deno task release:web-digest)"
+          allowed_appview_shas="$(deno task release:web-changed -- \
+            --sha="$source_sha" --allowed-appview-shas)"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "artifact_digest=$artifact_digest" >> "$GITHUB_OUTPUT"
+          echo "allowed_appview_shas=$allowed_appview_shas" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for post-deploy parity, or check once on schedule
+      - name: Wait for a release-compatible artifact, or check once on schedule
         env:
-          SMOKE_EXPECT_RELEASE_SHA: ${{ steps.release_scope.outputs.expected_release_sha }}
+          SMOKE_EXPECT_ARTIFACT_DIGEST: ${{ steps.release_scope.outputs.artifact_digest }}
+          SMOKE_ALLOWED_APPVIEW_SHAS: ${{ steps.release_scope.outputs.allowed_appview_shas }}
           POST_DEPLOY: ${{ github.event_name == 'workflow_run' && '1' || '0' }}
         run: |
           attempts=1
           # Deno and Railway build/promote independently. Allow up to 15
-          # minutes for exact SHA parity before treating it as release drift.
+          # minutes for the exact web digest and an allowed AppView revision.
           if [ "$POST_DEPLOY" = "1" ]; then attempts=30; fi
           for attempt in $(seq 1 "$attempts"); do
             if deno task smoke:readiness; then exit 0; fi
@@ -94,7 +94,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Bind the full suite to the exact trusted source resolved by
+          # readiness even if main advances while this workflow is running.
+          ref: ${{ needs.readiness.outputs.source_sha }}
 
       - name: Set up Deno
         uses: denoland/setup-deno@v2
@@ -104,103 +106,71 @@ jobs:
 
       - name: Smoke production
         env:
-          SMOKE_EXPECT_RELEASE_SHA: ${{ needs.readiness.outputs.expected_release_sha }}
+          SMOKE_EXPECT_ARTIFACT_DIGEST: ${{ needs.readiness.outputs.artifact_digest }}
+          SMOKE_ALLOWED_APPVIEW_SHAS: ${{ needs.readiness.outputs.allowed_appview_shas }}
         run: deno task smoke:production
 
   alert:
     name: Reconcile production alert
     needs: [readiness, full]
-    if: always() && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    if: >-
+      always() &&
+      github.event_name != 'workflow_dispatch' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency:
+      group: production-smoke-alert-reconciliation
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
     env:
       GH_TOKEN: ${{ github.token }}
 
     steps:
-      - name: Open or update readiness alert
-        if: needs.readiness.result == 'failure'
+      - name: Checkout release history
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ needs.readiness.outputs.source_sha || github.event.workflow_run.head_sha || 'refs/heads/main' }}
+          fetch-depth: 0
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+          cache: true
+
+      - name: Reconcile authoritative alert generations
         env:
-          ALERT_TITLE: "Production readiness is failing"
+          SOURCE_SHA: ${{ needs.readiness.outputs.source_sha }}
+          ARTIFACT_DIGEST: ${{ needs.readiness.outputs.artifact_digest }}
+          ALLOWED_APPVIEW_SHAS: ${{ needs.readiness.outputs.allowed_appview_shas }}
+          READINESS_RESULT: ${{ needs.readiness.result }}
+          FULL_RESULT: ${{ needs.full.result }}
         run: |
-          issue_number="$(gh issue list \
-            --repo "$GITHUB_REPOSITORY" \
-            --state open \
-            --search "\"$ALERT_TITLE\" in:title" \
-            --json number,title \
-            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
-            | head -n 1)"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          if [ -n "$issue_number" ]; then
-            gh issue comment "$issue_number" \
-              --repo "$GITHUB_REPOSITORY" \
-              --body "Production verification failed again: ${run_url}"
-          else
-            gh issue create \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$ALERT_TITLE" \
-              --body "Production readiness failed. Investigate exact Deno/Railway release parity, appview/Postgres readiness, the indexer lease, and the complete PDS-inventory heartbeat.\n\nRun: ${run_url}"
+          source_sha="${SOURCE_SHA:-$(git rev-parse --verify HEAD^{commit})}"
+          artifact_digest="$ARTIFACT_DIGEST"
+          allowed_appview_shas="$ALLOWED_APPVIEW_SHAS"
+          if [ -z "$artifact_digest" ]; then
+            artifact_digest="$(deno task release:web-digest)"
           fi
-
-      - name: Close recovered readiness alert
-        if: needs.readiness.result == 'success'
-        env:
-          ALERT_TITLE: "Production readiness is failing"
-        run: |
-          issue_number="$(gh issue list \
-            --repo "$GITHUB_REPOSITORY" \
-            --state open \
-            --search "\"$ALERT_TITLE\" in:title" \
-            --json number,title \
-            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
-            | head -n 1)"
-          if [ -n "$issue_number" ]; then
-            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            gh issue comment "$issue_number" \
-              --repo "$GITHUB_REPOSITORY" \
-              --body "Production recovered and verification is passing again: ${run_url}"
-            gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY"
+          if [ -z "$allowed_appview_shas" ]; then
+            allowed_appview_shas="$(deno task release:web-changed -- \
+              --sha="$source_sha" --allowed-appview-shas)"
           fi
-
-      - name: Open or update full smoke alert
-        if: needs.full.result == 'failure'
-        env:
-          ALERT_TITLE: "Production smoke is failing"
-        run: |
-          issue_number="$(gh issue list \
-            --repo "$GITHUB_REPOSITORY" \
-            --state open \
-            --search "\"$ALERT_TITLE\" in:title" \
-            --json number,title \
-            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
-            | head -n 1)"
-          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          if [ -n "$issue_number" ]; then
-            gh issue comment "$issue_number" \
-              --repo "$GITHUB_REPOSITORY" \
-              --body "The full production smoke failed again: ${run_url}"
-          else
-            gh issue create \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$ALERT_TITLE" \
-              --body "The full daily/post-deploy production smoke failed after readiness passed. Investigate HTML, OAuth metadata, SDK, picker, and generated asset regressions.\n\nRun: ${run_url}"
-          fi
-
-      - name: Close recovered full smoke alert
-        if: needs.full.result == 'success'
-        env:
-          ALERT_TITLE: "Production smoke is failing"
-        run: |
-          issue_number="$(gh issue list \
-            --repo "$GITHUB_REPOSITORY" \
-            --state open \
-            --search "\"$ALERT_TITLE\" in:title" \
-            --json number,title \
-            --jq ".[] | select(.title == \"$ALERT_TITLE\") | .number" \
-            | head -n 1)"
-          if [ -n "$issue_number" ]; then
-            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            gh issue comment "$issue_number" \
-              --repo "$GITHUB_REPOSITORY" \
-              --body "The full production smoke recovered: ${run_url}"
-            gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY"
-          fi
+          deno run --allow-env --allow-run=git,gh scripts/reconcile-production-smoke-alerts.ts \
+            --repository="$GITHUB_REPOSITORY" \
+            --run-url="$run_url" \
+            --source-sha="$source_sha" \
+            --artifact-digest="$artifact_digest" \
+            --allowed-appview-shas="$allowed_appview_shas" \
+            --readiness-result="$READINESS_RESULT" \
+            --full-result="$FULL_RESULT"

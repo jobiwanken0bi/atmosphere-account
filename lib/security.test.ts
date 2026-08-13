@@ -1,4 +1,5 @@
 import {
+  applyReleaseProvenanceHeadersForTest,
   applySecurityHeadersForTest,
   csrfExpectedOriginForTest,
   isCrossOriginReadonlyRequest,
@@ -271,6 +272,30 @@ Deno.test("ordinary pages keep the default referrer policy", () => {
     "strict-origin-when-cross-origin",
   );
   assertEquals(headers.has("cache-control"), false);
+});
+
+Deno.test("outer response headers expose canonical artifact provenance only", () => {
+  const digest = `web-source-v1:sha256:${"ab".repeat(32)}`;
+  const sha = "abcdef1234567890abcdef1234567890abcdef12";
+  const headers = new Headers({
+    "x-atmosphere-release-sha": "route-spoof",
+    "x-atmosphere-artifact-digest": "route-spoof",
+    "x-atmosphere-git-sha": "route-spoof",
+  });
+  applyReleaseProvenanceHeadersForTest(headers, {
+    artifactDigest: digest,
+    gitSha: sha,
+  });
+  assertEquals(headers.get("x-atmosphere-release-sha"), null);
+  assertEquals(headers.get("x-atmosphere-artifact-digest"), digest);
+  assertEquals(headers.get("x-atmosphere-git-sha"), sha);
+
+  applyReleaseProvenanceHeadersForTest(headers, {
+    artifactDigest: null,
+    gitSha: null,
+  });
+  assertEquals(headers.get("x-atmosphere-artifact-digest"), null);
+  assertEquals(headers.get("x-atmosphere-git-sha"), null);
 });
 
 Deno.test("rendered account pages are always private and non-cacheable", () => {

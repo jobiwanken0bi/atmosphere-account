@@ -1,5 +1,7 @@
 import { appviewReadinessForTest, localReadinessForTest } from "./ready.ts";
 
+const ARTIFACT_DIGEST = `web-source-v1:sha256:${"ab".repeat(32)}`;
+
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
     throw new Error(`Expected ${String(expected)}, got ${String(actual)}`);
@@ -29,7 +31,11 @@ function fetchText(body: string, init: ResponseInit = {}): typeof fetch {
 function healthyAppviewBody(): Record<string, unknown> {
   return {
     ok: true,
-    release: { runtime: "railway", gitSha: "abc1234" },
+    release: {
+      runtime: "railway",
+      gitSha: "abcdef1234567890abcdef1234567890abcdef12",
+      artifactDigest: ARTIFACT_DIGEST,
+    },
     database: { ok: true, latencyMs: 3, backend: "postgres" },
     indexer: { present: true, fresh: true },
     pdsInventory: {
@@ -102,7 +108,11 @@ Deno.test("appview readiness is not ready when appview body says ok false", asyn
     "https://appview.example",
     fetchJson({
       ok: false,
-      release: { runtime: "railway", gitSha: "abc1234" },
+      release: {
+        runtime: "railway",
+        gitSha: "abcdef1234567890abcdef1234567890abcdef12",
+        artifactDigest: ARTIFACT_DIGEST,
+      },
     }),
   );
 
@@ -129,9 +139,33 @@ Deno.test("appview readiness stays ready when transport and body are healthy", a
       string,
       unknown
     >).gitSha,
-    "abc1234",
+    "abcdef1234567890abcdef1234567890abcdef12",
+  );
+  assertEquals(
+    ((result.body.appview as Record<string, unknown>).release as Record<
+      string,
+      unknown
+    >).artifactDigest,
+    ARTIFACT_DIGEST,
   );
   assertEquals(redirect, "manual");
+});
+
+Deno.test("appview release sanitizer requires full canonical provenance", async () => {
+  const body = healthyAppviewBody();
+  body.release = {
+    runtime: "railway",
+    gitSha: "abcdef123456",
+    artifactDigest: ARTIFACT_DIGEST.toUpperCase(),
+  };
+  const result = await appviewReadinessForTest(
+    "https://appview.example",
+    fetchJson(body),
+  );
+  const release = (result.body.appview as Record<string, unknown>)
+    .release as Record<string, unknown>;
+  assertEquals(release.gitSha, null);
+  assertEquals(release.artifactDigest, null);
 });
 
 Deno.test("appview readiness degrades when background signals are absent", async () => {
@@ -230,7 +264,11 @@ Deno.test("appview readiness allowlists health fields and redacts upstream error
       error: upstreamSecret,
       detail: upstreamSecret,
       arbitrary: upstreamSecret,
-      release: { runtime: "railway", gitSha: "abc1234" },
+      release: {
+        runtime: "railway",
+        gitSha: "abcdef1234567890abcdef1234567890abcdef12",
+        artifactDigest: ARTIFACT_DIGEST,
+      },
       database: { ok: false, error: upstreamSecret },
       pdsInventory: {
         present: true,

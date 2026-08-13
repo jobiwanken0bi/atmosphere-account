@@ -161,6 +161,8 @@ railway service source connect --repo jobiwanken0bi/atmosphere-account \
 Normal deploys are pushed, reviewed commits on `main`; do not use `railway up`
 for routine production releases. Railway's native commit SHA is authoritative
 even if an old manual `ATMOSPHERE_RELEASE_SHA` variable remains configured.
+Deno's compiled server artifact independently embeds its verified Git commit;
+the mutable environment stamp is not accepted as Deno revision provenance.
 
 Give each source-linked service its own absolute **Railway Config File Path** in
 the service Settings page:
@@ -192,8 +194,10 @@ Health checks:
   `release` object with runtime/deployment metadata when the host provides it.
   When Deno proxies Railway readiness, the shell release remains top-level and
   the appview release appears at `appview.release`. Source-linked Railway
-  deploys report `RAILWAY_GIT_COMMIT_SHA`; stamp Deno only if it does not expose
-  its provider Git SHA.
+  deploys report their full native `RAILWAY_GIT_COMMIT_SHA`; both providers
+  report the canonical `artifactDigest` embedded in their compiled server
+  artifact. Deno's `gitSha` may be null and its immutable build ID remains
+  available as `deploymentId`.
 - Indexer health: check `GET /api/health/ready` for a fresh worker lease and
   verify `worker_lease` in Railway Postgres. A stale lease or inventory marks
   readiness `degraded` without rolling back an otherwise healthy web deploy; the
@@ -202,22 +206,30 @@ Health checks:
   appview deploys. It checks liveness/readiness, OAuth metadata, JWKS, core
   HTML, standalone SDK assets, release metadata, and the hosted picker asset
   chain. The public picker remains on Deno Deploy, but its generated Fresh
-  chunks are proxied from the appview bundle on trusted Atmosphere domains. Use
-  `SMOKE_EXPECT_RELEASE_SHA="$(git rev-parse HEAD)" deno task smoke:production`
-  after deploys when the release SHA variables are configured; this fails if the
-  Deno shell or Railway appview is stale.
+  chunks are proxied from the appview bundle on trusted Atmosphere domains. Use:
+
+  ```sh
+  SMOKE_EXPECT_ARTIFACT_DIGEST="$(deno task release:web-digest)" \
+  SMOKE_ALLOWED_APPVIEW_SHAS="$(deno task release:web-changed -- --sha=HEAD --allowed-appview-shas)" \
+    deno task smoke:production
+  ```
+
+  This fails unless Deno serves the exact source artifact and Railway serves a
+  web-equivalent artifact in the allowed first-parent window.
 - Cheap readiness: `deno task smoke:readiness` makes one readiness request and
   requires a healthy database, a fresh indexer lease, a fresh complete PDS
-  inventory, and present, matching Deno/Railway web-artifact SHAs. GitHub runs
-  this hourly. Every run resolves and requires the latest first-parent commit
-  that matches `/railway.web.json`'s rebuild scope. A later worker-only commit
-  therefore still verifies the preceding web artifact without forcing an
-  unrelated web rebuild or masking an incomplete rollout. The full suite runs
-  after deploys and once daily.
-- Exact release helper: source-linked Railway deploys report their commit SHA
-  natively. Use `deno task release:stamp -- --write --deno` only if Deno Deploy
-  does not provide its Git SHA. The helper requires a clean worktree and HEAD
-  matching its tracked upstream unless you pass an explicit emergency override.
+  inventory, and the exact expected artifact digest from both providers. GitHub
+  runs this hourly. Railway must additionally report a full native commit SHA
+  from the latest first-parent commit matching `/railway.web.json`'s rebuild
+  scope through that source commit, inclusive. This admits a manual **Deploy
+  Latest Commit** after worker-only changes while rejecting older or
+  non-ancestral artifacts. The full suite runs after deploys and once daily.
+- Exact release provenance: Vite embeds the deterministic full
+  `web-source-v1:sha256:…` digest computed from `railway.web.json`'s production
+  web inputs. CI recomputes that digest independently and reads it back through
+  the compiled health route. Railway's full native Git SHA and Deno's immutable
+  build ID remain secondary provider provenance; no mutable release stamp is
+  accepted as artifact identity.
 - PDS inventory health: readiness requires a successful complete relay scan no
   older than 42 hours. Partial and failed scans never refresh the heartbeat.
   Railway starts the daily scan at 08:17 UTC; GitHub's separate inventory
