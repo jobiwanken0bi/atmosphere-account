@@ -28,7 +28,9 @@ Deno.test("Railway services use isolated config-as-code rebuild scopes", async (
   const webPatterns = services.web.build.watchPatterns as string[];
   const indexerPatterns = services.indexer.build.watchPatterns as string[];
   const inventoryPatterns = services.inventory.build.watchPatterns as string[];
-  for (const required of ["/lib/**", "/routes/**", "/static/**"]) {
+  for (
+    const required of ["/client.ts", "/lib/**", "/routes/**", "/static/**"]
+  ) {
     if (!webPatterns.includes(required)) {
       throw new Error(`web watch patterns must include ${required}`);
     }

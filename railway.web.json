@@ -5,6 +5,7 @@
     "dockerfilePath": "railway.web.Dockerfile",
     "watchPatterns": [
       "/.dockerignore",
+      "/client.ts",
       "/components/**",
       "/deno.json",
       "/deno.lock",
