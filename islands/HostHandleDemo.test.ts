@@ -36,6 +36,18 @@ Deno.test("host handle animation keeps one stable input surface", () => {
   assertEquals(count(html, 'class="host-handle-demo-label-frame"'), 6);
 });
 
+Deno.test("host handle labels sit fully inside their animation row", async () => {
+  const css = await Deno.readTextFile(
+    new URL("../static/styles.css", import.meta.url),
+  );
+  const labelFrameRule = css.match(
+    /\.host-handle-demo-label-frame\s*\{([^}]*)\}/,
+  )?.[1] ?? "";
+
+  assertEquals(labelFrameRule.includes("display: flex;"), true);
+  assertEquals(labelFrameRule.includes("align-items: flex-start;"), true);
+});
+
 function count(source: string, value: string): number {
   return source.split(value).length - 1;
 }

@@ -2878,6 +2878,8 @@ h1, h2, h3, h4 {
 .host-handle-demo-label-frame {
   position: absolute;
   inset: 0;
+  display: flex;
+  align-items: flex-start;
 }
 
 .host-handle-demo-window {
