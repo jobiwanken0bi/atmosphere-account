@@ -249,6 +249,7 @@ export default function SignInForm(
                     : "/oauth/switch"}
                   class="signin-account-switch-form"
                   onSubmit={onAuthorizationStart}
+                  data-submit-once="true"
                 >
                   <input
                     type="hidden"
@@ -289,6 +290,7 @@ export default function SignInForm(
                   <button
                     type="submit"
                     class="signin-account-row"
+                    data-pending-label="Continuing…"
                     data-dialog-initial-focus={index === 0 ? "true" : undefined}
                   >
                     <span class="signin-account-avatar" aria-hidden="true">
@@ -313,7 +315,12 @@ export default function SignInForm(
                       </strong>
                       <span>Saved on this device</span>
                     </span>
-                    <span class="signin-account-status">Continue</span>
+                    <span
+                      class="signin-account-status"
+                      data-submit-once-label
+                    >
+                      Continue
+                    </span>
                   </button>
                 </form>
               ))}

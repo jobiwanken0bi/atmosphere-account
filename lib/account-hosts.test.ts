@@ -1058,6 +1058,88 @@ Deno.test("completed DNS recovery finalization is one-shot idempotent", async ()
   assertEquals(statements.length, 2);
 });
 
+Deno.test("a concurrent duplicate DNS recovery finalization replays the committed winner", async () => {
+  const statements: string[] = [];
+  let claimReads = 0;
+  const at = 1_800_000_000_000 + 49 * 60 * 60 * 1000;
+  const client = {
+    execute(query: string | { sql: string; args?: unknown[] }) {
+      const sql = typeof query === "string" ? query : query.sql;
+      statements.push(sql);
+      if (sql.includes("FROM account_host_claim_recovery")) {
+        const completed = sql.includes("status = 'completed'");
+        return Promise.resolve({
+          rows: [pendingRecoveryRow(
+            completed
+              ? {
+                status: "completed",
+                finalization_proof_token_hash: "final-proof-hash",
+                completed_at: at,
+              }
+              : {},
+          )],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("FROM account_host_claim WHERE")) {
+        claimReads += 1;
+        return Promise.resolve({
+          rows: [
+            claimReads === 1 ? { host: "pds.example", ...emailOwnerRow() } : {
+              host: "pds.example",
+              claimant_did: "did:plc:new-owner",
+              claimant_handle: "new.example",
+              method: "dns_txt",
+              claimed_at: at,
+              verified_at: at,
+              updated_at: at,
+            },
+          ],
+          rowsAffected: 0,
+        });
+      }
+      if (sql.includes("SELECT 1 FROM account_host_claim_challenge")) {
+        return Promise.resolve({ rows: [{ 1: 1 }], rowsAffected: 0 });
+      }
+      if (
+        sql.includes("UPDATE account_host_claim_challenge SET consumed_at")
+      ) {
+        return Promise.resolve({ rows: [], rowsAffected: 0 });
+      }
+      if (
+        sql.includes("SELECT host, claimant_did, expires_at, consumed_at")
+      ) {
+        return Promise.resolve({
+          rows: [{
+            host: "pds.example",
+            claimant_did: "did:plc:new-owner",
+            expires_at: at + 1_000,
+            consumed_at: at - 1,
+          }],
+          rowsAffected: 0,
+        });
+      }
+      throw new Error(`unexpected write: ${sql}`);
+    },
+  };
+  const result = await finalizeEmailClaimRecoveryTransactionForTest(
+    client,
+    "pds.example",
+    { did: "did:plc:new-owner", handle: "new.example" },
+    freshFinalDnsProof(),
+    at,
+  );
+  assert(result.ok);
+  if (!result.ok) return;
+  assertEquals(result.claim.claimantDid, "did:plc:new-owner");
+  assertEquals(result.recovery.status, "completed");
+  assert(
+    !statements.some((sql) =>
+      sql.includes("UPDATE account_host_claim SET claimant_did")
+    ),
+  );
+});
+
 Deno.test("initiating or expired DNS proof cannot finalize a cooled recovery", async () => {
   for (
     const [proof, expectedReason] of [

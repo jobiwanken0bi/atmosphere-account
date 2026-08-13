@@ -377,7 +377,10 @@ export function SignInPageContent(
             )}
             <div class="glass signin-page-card">
               {!createMode && permissionStatusCopy(permissionState) && (
-                <p class="profile-form-status profile-form-status--error">
+                <p
+                  class="profile-form-status profile-form-status--error"
+                  role="alert"
+                >
                   {permissionStatusCopy(permissionState)}
                 </p>
               )}
@@ -543,7 +546,12 @@ export function PermissionUpgradeForm(
           <span class="signin-account-status">Current</span>
         </div>
       </div>
-      <form method="GET" action="/oauth/login" class="signin-form">
+      <form
+        method="GET"
+        action="/oauth/login"
+        class="signin-form"
+        data-submit-once="true"
+      >
         <input type="hidden" name="handle" value={user.did} />
         <input type="hidden" name="next" value={returnTo} />
         {intent && <input type="hidden" name="intent" value={intent} />}
@@ -559,16 +567,23 @@ export function PermissionUpgradeForm(
         {capabilities.map((capability) => (
           <input type="hidden" name="capability" value={capability} />
         ))}
-        <button type="submit" class="signin-form-submit">
-          {addsRepositoryPermission
-            ? "Approve and continue"
-            : "Confirm and continue"}
+        <button
+          type="submit"
+          class="signin-form-submit"
+          data-pending-label="Continuing…"
+        >
+          <span data-submit-once-label>
+            {addsRepositoryPermission
+              ? "Approve and continue"
+              : "Confirm and continue"}
+          </span>
         </button>
       </form>
       <form
         method="GET"
         action="/oauth/add-account"
         class="signin-account-list signin-account-switch-form signin-upgrade-other-account"
+        data-submit-once="true"
       >
         <input type="hidden" name="next" value={returnTo} />
         {intent && <input type="hidden" name="intent" value={intent} />}
@@ -584,7 +599,11 @@ export function PermissionUpgradeForm(
         {capabilities.map((capability) => (
           <input type="hidden" name="capability" value={capability} />
         ))}
-        <button type="submit" class="signin-account-row">
+        <button
+          type="submit"
+          class="signin-account-row"
+          data-pending-label="Opening…"
+        >
           <span
             class="signin-account-avatar signin-account-avatar--plus"
             aria-hidden="true"
@@ -595,7 +614,9 @@ export function PermissionUpgradeForm(
             <strong>Use another account</strong>
             <span>Choose a saved account or enter another handle</span>
           </span>
-          <span class="signin-account-status">Continue</span>
+          <span class="signin-account-status" data-submit-once-label>
+            Continue
+          </span>
         </button>
       </form>
     </div>

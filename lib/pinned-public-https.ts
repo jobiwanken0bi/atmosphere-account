@@ -1,5 +1,6 @@
 import { connect as tlsConnect, type ConnectionOptions } from "node:tls";
 import type { Duplex } from "node:stream";
+import { isIP } from "node:net";
 import { isPrivateNetworkHostname } from "./security.ts";
 
 const DNS_TIMEOUT_MS = 3_000;
@@ -94,6 +95,13 @@ async function resolvePublicAddresses(
     resolveWithTimeout(resolve, hostname, "A"),
     resolveWithTimeout(resolve, hostname, "AAAA"),
   ]);
+  for (const [index, result] of lookups.entries()) {
+    if (result.status !== "fulfilled") continue;
+    const expectedFamily = index === 0 ? 4 : 6;
+    if (result.value.some((address) => isIP(address) !== expectedFamily)) {
+      throw new Error("DNS resolver returned an invalid address record");
+    }
+  }
   const addresses = [
     ...new Set(
       lookups.flatMap((result) =>

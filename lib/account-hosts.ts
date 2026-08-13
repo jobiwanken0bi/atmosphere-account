@@ -3158,6 +3158,47 @@ type PreparedHostDnsProof = Extract<
   { ok: true }
 >;
 
+/** A duplicate finalization can prepare the still-unused proof just before a
+ * competing identical transaction commits. Once its guarded consume resumes,
+ * the token is already used even though the requested ownership transition
+ * succeeded. Re-read the exact durable outcome on the same transaction client
+ * so that race is idempotent without accepting a token consumed elsewhere. */
+async function completedEmailRecoveryFinalizationTransactionReplay(
+  c: DbClient,
+  host: string,
+  requesterDid: string,
+  tokenHash: string,
+  recoveryId: string,
+): Promise<
+  Extract<FinalizeEmailRecoveryTransactionResult, { ok: true }> | null
+> {
+  const recoveryResult = await c.execute({
+    sql: `SELECT * FROM account_host_claim_recovery
+      WHERE id = ? AND host = ? AND requester_did = ?
+        AND status = 'completed' AND finalization_proof_token_hash = ?
+      LIMIT 1`,
+    args: [recoveryId, host, requesterDid, tokenHash],
+  });
+  const recoveryRow = recoveryResult.rows[0] as
+    | Record<string, unknown>
+    | undefined;
+  if (!recoveryRow) return null;
+  const claimResult = await c.execute({
+    sql: `SELECT * FROM account_host_claim WHERE host = ? LIMIT 1`,
+    args: [host],
+  });
+  const claimRow = claimResult.rows[0] as Record<string, unknown> | undefined;
+  const claim = claimRow ? parseHostClaimRow(claimRow) : null;
+  if (claim?.method !== "dns_txt" || claim.claimantDid !== requesterDid) {
+    return null;
+  }
+  return {
+    ok: true,
+    claim,
+    recovery: parseAccountHostClaimRecovery(recoveryRow),
+  };
+}
+
 async function finalizeEmailClaimRecoveryTransaction(
   c: DbClient,
   host: string,
@@ -3257,7 +3298,19 @@ async function finalizeEmailClaimRecoveryTransaction(
     claimantDid: user.did,
     consumedAt: at,
   });
-  if (!consumed.ok) return { ok: false, reason: consumed.reason, recovery };
+  if (!consumed.ok) {
+    if (consumed.reason === "already_used") {
+      const replay = await completedEmailRecoveryFinalizationTransactionReplay(
+        c,
+        host,
+        user.did,
+        proof.tokenHash,
+        recovery.id,
+      );
+      if (replay) return replay;
+    }
+    return { ok: false, reason: consumed.reason, recovery };
+  }
 
   const effectiveAt = Math.max(at, current.updatedAt + 1);
   const claim: AccountHostClaim = {
@@ -3660,8 +3713,9 @@ async function recordHostClaimRecoveryNotificationTransaction(
   if (!row) return null;
   const current = parseAccountHostClaimRecovery(row);
   if (current.notificationAttemptedAt !== input.attemptedAt) return current;
-  // A delivered notification is terminal. Failed/unavailable attempts may
-  // later be upgraded to sent, but repeated identical results are idempotent.
+  // A delivered notification is terminal. A transient failure may later be
+  // upgraded to sent; unavailable is terminal. Repeated results are
+  // idempotent.
   if (
     current.notificationStatus === "sent" ||
     current.notificationStatus === input.status

@@ -313,13 +313,33 @@ Deno.test("host ownership is removed with its host on Postgres and upgraded SQLi
   }
   if (
     !sqlite.includes(
+      "DELETE FROM account_host_claim\n    WHERE NOT EXISTS",
+    ) ||
+    !sqlite.includes(
       "CREATE TRIGGER IF NOT EXISTS account_host_claim_host_delete",
     ) ||
     !sqlite.includes("DELETE FROM account_host_claim WHERE host = old.host")
   ) {
     throw new Error(
-      "Upgraded SQLite stores need a deletion trigger because FKs cannot be added in place",
+      "Upgraded SQLite stores must remove legacy orphans and install a deletion trigger because FKs cannot be added in place",
     );
+  }
+});
+
+Deno.test("host recovery participant lookups have matching indexes on both backends", async () => {
+  const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));
+  for (const schema of [postgres, sqlite]) {
+    for (
+      const index of [
+        "account_host_claim_recovery_requester",
+        "account_host_claim_recovery_previous_owner",
+      ]
+    ) {
+      if (!schema.includes(index)) {
+        throw new Error(`Expected recovery participant index ${index}`);
+      }
+    }
   }
 });
 
@@ -345,9 +365,12 @@ Deno.test("rolling deploys cannot downgrade strong host ownership to a weaker me
     ) ||
     !postgres.includes(
       "BEFORE UPDATE OF method ON account_host_claim",
-    )
+    ) ||
+    !postgres.includes("WHEN duplicate_object THEN NULL")
   ) {
-    throw new Error("Postgres must install the rolling-deploy downgrade guard");
+    throw new Error(
+      "Postgres must install the rolling-deploy downgrade guard idempotently under concurrent migration attempts",
+    );
   }
   if (
     !sqlite.includes(

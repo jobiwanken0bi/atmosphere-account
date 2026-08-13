@@ -890,10 +890,21 @@ export const handler = define.handlers({
       },
     );
     return await ctx.render(<HostClaimPage {...page} />, {
-      status: 403,
+      status: hostClaimFailureStatus(result.reason),
     });
   },
 });
+
+export function hostClaimFailureStatus(
+  reason: Extract<AccountHostClaimResult, { ok: false }>["reason"],
+): 403 | 409 | 503 {
+  if (reason === "dns_unavailable") return 503;
+  if (
+    isHostDnsChallengeVerificationFailureReason(reason) ||
+    reason === "already_claimed" || reason === "dns_required"
+  ) return 409;
+  return 403;
+}
 
 export function hostClaimManageLocation(
   host: string,

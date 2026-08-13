@@ -340,10 +340,17 @@ BEGIN
     WHERE tgname = 'account_host_claim_prevent_assurance_downgrade'
       AND tgrelid = 'account_host_claim'::regclass
   ) THEN
-    CREATE TRIGGER account_host_claim_prevent_assurance_downgrade
-      BEFORE UPDATE OF method ON account_host_claim
-      FOR EACH ROW
-      EXECUTE FUNCTION prevent_account_host_claim_assurance_downgrade();
+    BEGIN
+      CREATE TRIGGER account_host_claim_prevent_assurance_downgrade
+        BEFORE UPDATE OF method ON account_host_claim
+        FOR EACH ROW
+        EXECUTE FUNCTION prevent_account_host_claim_assurance_downgrade();
+    EXCEPTION
+      -- The Neon runner applies statements independently and does not use the
+      -- Railway advisory lock. Concurrent idempotent migrations may both pass
+      -- the catalog check; the trigger installed by either transaction wins.
+      WHEN duplicate_object THEN NULL;
+    END;
   END IF;
 END;
 $$;
@@ -455,6 +462,8 @@ CREATE INDEX IF NOT EXISTS account_host_claim_recovery_host
   ON account_host_claim_recovery(host, status, requested_at);
 CREATE INDEX IF NOT EXISTS account_host_claim_recovery_requester
   ON account_host_claim_recovery(requester_did, status, requested_at);
+CREATE INDEX IF NOT EXISTS account_host_claim_recovery_previous_owner
+  ON account_host_claim_recovery(previous_owner_did, status, requested_at);
 CREATE UNIQUE INDEX IF NOT EXISTS account_host_claim_recovery_pending_host
   ON account_host_claim_recovery(host) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS account_host_claim_recovery_audit_recovery

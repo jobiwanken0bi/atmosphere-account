@@ -84,6 +84,26 @@ Deno.test("pinned public HTTPS rejects mixed private DNS answers before connect"
   assertEquals(connects, 0);
 });
 
+Deno.test("pinned public HTTPS rejects non-address DNS answers before connect", async () => {
+  let connects = 0;
+  let rejected = false;
+  try {
+    await fetchPinnedPublicHttps("https://rebind.example.com/", {}, {
+      maxBodyBytes: 1024,
+      resolve: (_host, type) =>
+        Promise.resolve(type === "A" ? ["rebind.internal"] : []),
+      connect: () => {
+        connects++;
+        throw new Error("must not connect");
+      },
+    });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+  assertEquals(connects, 0);
+});
+
 Deno.test("pinned public HTTPS bounds the whole address retry sequence", async () => {
   const started = Date.now();
   let connects = 0;

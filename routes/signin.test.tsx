@@ -218,6 +218,9 @@ Deno.test("permission upgrade forms retain complete project context", () => {
   assertEquals(count(html, 'name="capability" value="app"'), 2);
   assertEquals(count(html, 'name="capability" value="media"'), 2);
   assertStringIncludes(html, "Approve and continue");
+  assertEquals(count(html, 'data-submit-once="true"'), 2);
+  assertStringIncludes(html, 'data-pending-label="Continuing…"');
+  assertStringIncludes(html, 'data-pending-label="Opening…"');
 });
 
 Deno.test("signed-in picker recovery keeps the nonpersistent continuation", () => {
@@ -385,7 +388,7 @@ Deno.test("another-account mode keeps the current session out of the chooser dec
     capabilities: ["identity"],
     action: "account",
     targetName: null,
-    permissionState: "required",
+    permissionState: "failed",
     mode: "signin",
     choosingAnotherAccount: true,
     allowAccountCreation: true,
@@ -398,6 +401,7 @@ Deno.test("another-account mode keeps the current session out of the chooser dec
 
   assertStringIncludes(html, "Enter your account handle");
   assertStringIncludes(html, "Not now");
+  assertStringIncludes(html, 'role="alert"');
   assertEquals(html.includes("Currently signed in"), false);
   assertStringIncludes(html, 'data-remembered-count="0"');
   assertEquals(count(html, 'name="choose" value="another"'), 1);
@@ -443,6 +447,8 @@ Deno.test("another-account mode lists only other saved accounts before manual en
   assertStringIncludes(html, "entry=manual");
   assertStringIncludes(html, 'href="/hosts/pds.example.com/claim"');
   assertStringIncludes(html, "← Back to claim");
+  assertStringIncludes(html, 'data-submit-once="true"');
+  assertStringIncludes(html, 'data-pending-label="Continuing…"');
 });
 
 function count(value: string, needle: string): number {

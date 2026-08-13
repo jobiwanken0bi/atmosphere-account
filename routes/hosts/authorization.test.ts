@@ -3,6 +3,7 @@ import {
   hostClaimAuthorizationHref,
   hostClaimDnsRequestAllowed,
   hostClaimExpiredLinkContinuationPathForTest,
+  hostClaimFailureStatus,
   hostClaimIntroCopy,
   hostClaimManageLocation,
 } from "./[host]/claim.tsx";
@@ -21,6 +22,16 @@ import {
 } from "./[host].tsx";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
+
+Deno.test("host claim failures expose retryable HTTP semantics", () => {
+  assertEquals(hostClaimFailureStatus("record_not_found"), 409);
+  assertEquals(hostClaimFailureStatus("expired"), 409);
+  assertEquals(hostClaimFailureStatus("account_mismatch"), 409);
+  assertEquals(hostClaimFailureStatus("dns_unavailable"), 503);
+  assertEquals(hostClaimFailureStatus("already_claimed"), 409);
+  assertEquals(hostClaimFailureStatus("dns_required"), 409);
+  assertEquals(hostClaimFailureStatus("not_authorized"), 403);
+});
 
 Deno.test("only hosts without verified ownership offer a claim action", () => {
   assertEquals(

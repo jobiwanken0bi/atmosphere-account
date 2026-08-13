@@ -456,6 +456,15 @@ const SCHEMA_STATEMENTS: string[] = [
     updated_at INTEGER NOT NULL,
     FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
   )`,
+  /** A legacy SQLite claim table had no foreign key. Remove ownership rows
+   * whose host was deleted before this compatibility migration installed the
+   * deletion trigger; otherwise recreating that hostname would silently
+   * resurrect stale ownership. */
+  `DELETE FROM account_host_claim
+    WHERE NOT EXISTS (
+      SELECT 1 FROM account_host
+      WHERE account_host.host = account_host_claim.host
+    )`,
   /** Existing SQLite/Turso databases predate the claim foreign key and SQLite
    * cannot add one in place. This compatibility trigger gives upgraded stores
    * the same deletion semantics as Postgres and prevents a deleted/recreated
@@ -959,6 +968,7 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS account_host_claim_evidence_claimant ON account_host_claim_evidence(claimant_did, completed_at)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_recovery_host ON account_host_claim_recovery(host, status, requested_at)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_recovery_requester ON account_host_claim_recovery(requester_did, status, requested_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_claim_recovery_previous_owner ON account_host_claim_recovery(previous_owner_did, status, requested_at)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS account_host_claim_recovery_pending_host ON account_host_claim_recovery(host) WHERE status = 'pending'`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_recovery_audit_recovery ON account_host_claim_recovery_audit(recovery_id, occurred_at)`,
   `CREATE INDEX IF NOT EXISTS host_conformance_status ON host_conformance(status, expires_at)`,
