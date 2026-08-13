@@ -1539,35 +1539,67 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
           created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(host) DO UPDATE SET
-          display_name = excluded.display_name,
-          description = excluded.description,
-          data_location = COALESCE(excluded.data_location, account_host.data_location),
-          homepage_url = excluded.homepage_url,
-          signup_url = CASE
-            WHEN account_host.claim_did IS NULL THEN excluded.signup_url
-            ELSE account_host.signup_url
+          display_name = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.display_name
+            ELSE excluded.display_name
           END,
-          service_endpoint = COALESCE(account_host.service_endpoint, excluded.service_endpoint),
+          description = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.description
+            ELSE excluded.description
+          END,
+          data_location = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.data_location
+            ELSE COALESCE(excluded.data_location, account_host.data_location)
+          END,
+          homepage_url = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.homepage_url
+            ELSE excluded.homepage_url
+          END,
+          signup_url = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.signup_url
+            ELSE excluded.signup_url
+          END,
+          service_endpoint = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.service_endpoint
+            ELSE COALESCE(account_host.service_endpoint, excluded.service_endpoint)
+          END,
           account_management_url = CASE
-            WHEN excluded.account_management_url IS NOT NULL
-            THEN excluded.account_management_url
+            WHEN account_host.verification_status = 'claimed'
+            THEN account_host.account_management_url
+            WHEN excluded.account_management_url IS NOT NULL THEN excluded.account_management_url
             ELSE account_host.account_management_url
           END,
-          dashboard_url = COALESCE(account_host.dashboard_url, excluded.dashboard_url),
-          capability_manifest_url = COALESCE(account_host.capability_manifest_url, excluded.capability_manifest_url),
-          capabilities_json = COALESCE(account_host.capabilities_json, excluded.capabilities_json),
-          support_url = COALESCE(account_host.support_url, excluded.support_url),
+          dashboard_url = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.dashboard_url
+            ELSE COALESCE(account_host.dashboard_url, excluded.dashboard_url)
+          END,
+          capability_manifest_url = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.capability_manifest_url
+            ELSE COALESCE(account_host.capability_manifest_url, excluded.capability_manifest_url)
+          END,
+          capabilities_json = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.capabilities_json
+            ELSE COALESCE(account_host.capabilities_json, excluded.capabilities_json)
+          END,
+          support_url = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.support_url
+            ELSE COALESCE(account_host.support_url, excluded.support_url)
+          END,
           profile_did = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.profile_did
             WHEN COALESCE(account_host.profile_handle, '') <> excluded.profile_handle
             THEN NULL
             ELSE account_host.profile_did
           END,
           avatar_url = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.avatar_url
             WHEN COALESCE(account_host.profile_handle, '') <> excluded.profile_handle
             THEN NULL
             ELSE account_host.avatar_url
           END,
           profile_checked_at = CASE
+            WHEN account_host.verification_status = 'claimed'
+            THEN account_host.profile_checked_at
             WHEN COALESCE(account_host.profile_handle, '') <> excluded.profile_handle
             THEN NULL
             WHEN account_host.avatar_url IS NULL
@@ -1575,15 +1607,28 @@ async function syncSeededHosts(c: DbClient, ts: number): Promise<void> {
             THEN NULL
             ELSE account_host.profile_checked_at
           END,
-          profile_handle = excluded.profile_handle,
-          bsky_profile_visible = excluded.bsky_profile_visible,
+          profile_handle = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.profile_handle
+            ELSE excluded.profile_handle
+          END,
+          bsky_profile_visible = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.bsky_profile_visible
+            ELSE excluded.bsky_profile_visible
+          END,
           claim_did = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.claim_did
             WHEN COALESCE(account_host.claim_handle, '') <> excluded.claim_handle
             THEN NULL
             ELSE account_host.claim_did
           END,
-          claim_handle = excluded.claim_handle,
-          signup_status = excluded.signup_status,
+          claim_handle = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.claim_handle
+            ELSE excluded.claim_handle
+          END,
+          signup_status = CASE
+            WHEN account_host.verification_status = 'claimed' THEN account_host.signup_status
+            ELSE excluded.signup_status
+          END,
           verification_status = CASE
             WHEN account_host.verification_status = 'claimed'
             THEN 'claimed'
