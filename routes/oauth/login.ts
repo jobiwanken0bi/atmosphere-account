@@ -93,7 +93,14 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
   const targetNameFromQs = safeOAuthTargetName(
     singleSearchValue(url.searchParams, "name"),
   ) ?? null;
-  if (req.method === "GET") {
+  const bodylessHandoff = isExplicitBodylessLoginHandoff(req);
+  if (
+    req.headers.get("x-atmosphere-login-bodyless") === "1" &&
+    !bodylessHandoff
+  ) {
+    throw new InvalidOAuthRequestInputError();
+  }
+  if (req.method === "GET" || bodylessHandoff) {
     return {
       handle: fromQs?.trim() || null,
       next: nextFromQs,
@@ -182,6 +189,15 @@ async function getLoginInput(req: Request, url: URL): Promise<LoginInput> {
     };
   }
   throw new InvalidOAuthRequestInputError();
+}
+
+function isExplicitBodylessLoginHandoff(req: Request): boolean {
+  const contentLength = req.headers.get("content-length");
+  return req.method === "POST" &&
+    req.headers.get("x-atmosphere-login") === "1" &&
+    req.headers.get("x-atmosphere-login-bodyless") === "1" &&
+    !(req.headers.get("content-type") ?? "").trim() &&
+    (contentLength === null || contentLength === "0");
 }
 
 export async function readLoginInputForTest(req: Request): Promise<LoginInput> {
