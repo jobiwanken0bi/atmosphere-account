@@ -70,6 +70,9 @@ jobs:
         # Dependencies were installed once above; avoid repeating that work.
         run: deno task build:compiled
 
+      - name: Verify compiled release provenance
+        run: deno task build:verify-release
+
   browser-e2e:
     name: Browser login E2E
     runs-on: ubuntu-latest

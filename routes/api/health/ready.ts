@@ -309,10 +309,14 @@ function publicAppviewRelease(value: unknown): Record<string, unknown> | null {
     deploymentId: publicOpaqueIdentifier(value.deploymentId),
     service: publicOpaqueIdentifier(value.service),
     gitSha: typeof value.gitSha === "string" &&
-        /^[0-9a-f]{7,40}$/i.test(value.gitSha)
-      ? value.gitSha.toLowerCase().slice(0, 12)
+        /^[0-9a-f]{40}$/i.test(value.gitSha)
+      ? value.gitSha.toLowerCase()
       : null,
     gitBranch: publicOpaqueIdentifier(value.gitBranch),
+    artifactDigest: typeof value.artifactDigest === "string" &&
+        /^web-source-v1:sha256:[0-9a-f]{64}$/.test(value.artifactDigest)
+      ? value.artifactDigest
+      : null,
   };
 }
 

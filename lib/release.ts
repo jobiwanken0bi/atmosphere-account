@@ -1,23 +1,43 @@
+import {
+  type ArtifactReleaseProvenance,
+  artifactReleaseProvenance,
+} from "./artifact-release.ts";
+
 export interface RuntimeRelease {
   runtime: "deno-deploy" | "railway" | "vercel" | "fly" | "local" | "other";
   deploymentId: string | null;
   service: string | null;
   gitSha: string | null;
   gitBranch: string | null;
+  artifactDigest: string | null;
 }
 
 type EnvReader = (key: string) => string | undefined;
 
 export function runtimeRelease(): RuntimeRelease {
-  return runtimeReleaseFromEnv(readEnv);
+  return runtimeReleaseFromEnv(readEnv, artifactReleaseProvenance());
 }
 
-export function runtimeReleaseFromEnvForTest(env: EnvReader): RuntimeRelease {
-  return runtimeReleaseFromEnv(env);
+export function runtimeReleaseFromEnvForTest(
+  env: EnvReader,
+  artifact: ArtifactReleaseProvenance = {
+    gitSha: null,
+    gitBranch: null,
+    artifactDigest: null,
+  },
+): RuntimeRelease {
+  return runtimeReleaseFromEnv(env, artifact);
 }
 
-function runtimeReleaseFromEnv(env: EnvReader): RuntimeRelease {
-  const runtime = env("DENO_DEPLOYMENT_ID")
+function runtimeReleaseFromEnv(
+  env: EnvReader,
+  artifact: ArtifactReleaseProvenance,
+): RuntimeRelease {
+  const denoDeployFlag = env("DENO_DEPLOY")?.trim().toLowerCase();
+  const isDenoDeploy = denoDeployFlag === "true" || denoDeployFlag === "1" ||
+    Boolean(env("DENO_DEPLOY_BUILD_ID")?.trim()) ||
+    Boolean(env("DENO_DEPLOYMENT_ID")?.trim());
+  const runtime = isDenoDeploy
     ? "deno-deploy"
     : env("RAILWAY_PROJECT_ID") || env("RAILWAY_ENVIRONMENT_ID")
     ? "railway"
@@ -29,55 +49,69 @@ function runtimeReleaseFromEnv(env: EnvReader): RuntimeRelease {
     ? "other"
     : "local";
 
-  // The current Deno Deploy platform does not provide DENO_GIT_* metadata.
-  // Prefer our explicit stamp there so a CLI production deploy cannot inherit
-  // stale legacy values. Other source-linked providers keep their native Git
-  // provenance ahead of manual fallback stamps.
-  const gitShaKeys = runtime === "deno-deploy"
-    ? [
-      "ATMOSPHERE_RELEASE_SHA",
-      "DENO_GIT_COMMIT_SHA",
-      "GITHUB_SHA",
-    ]
-    : [
-      "RAILWAY_GIT_COMMIT_SHA",
-      "GITHUB_SHA",
-      "VERCEL_GIT_COMMIT_SHA",
-      "RENDER_GIT_COMMIT",
-      "ATMOSPHERE_RELEASE_SHA",
-    ];
-  const gitBranchKeys = runtime === "deno-deploy"
-    ? [
-      "ATMOSPHERE_RELEASE_BRANCH",
-      "DENO_GIT_BRANCH",
-      "GITHUB_REF_NAME",
-    ]
-    : [
-      "RAILWAY_GIT_BRANCH",
-      "GITHUB_REF_NAME",
-      "VERCEL_GIT_COMMIT_REF",
-      "RENDER_GIT_BRANCH",
-      "ATMOSPHERE_RELEASE_BRANCH",
-    ];
+  // Deno Deploy exposes an immutable build ID at runtime, but not the Git SHA
+  // for that build. Its embedded Git SHA is therefore optional; the compiled
+  // canonical artifact digest is the provider-independent source identity.
+  // Never fall back to an app-level release stamp: that value can lag or be
+  // changed independently of the revision serving traffic.
+  // Other source-linked providers retain only their own native provenance.
+  // In particular, a Railway deploy that did not originate from GitHub must
+  // report no Git revision rather than inherit a mutable app-level stamp or a
+  // GitHub Actions environment value unrelated to the running container.
+  const gitSha = runtime === "deno-deploy"
+    ? artifact.gitSha
+    : runtime === "railway"
+    ? firstEnv(env, ["RAILWAY_GIT_COMMIT_SHA"])
+    : runtime === "vercel"
+    ? firstEnv(env, ["VERCEL_GIT_COMMIT_SHA"])
+    : runtime === "fly"
+    ? firstEnv(env, ["ATMOSPHERE_RELEASE_SHA"])
+    : runtime === "other"
+    ? firstEnv(env, ["RENDER_GIT_COMMIT", "GITHUB_SHA"])
+    : null;
+  const gitBranch = runtime === "deno-deploy"
+    ? artifact.gitBranch
+    : runtime === "railway"
+    ? firstEnv(env, ["RAILWAY_GIT_BRANCH"])
+    : runtime === "vercel"
+    ? firstEnv(env, ["VERCEL_GIT_COMMIT_REF"])
+    : runtime === "fly"
+    ? firstEnv(env, ["ATMOSPHERE_RELEASE_BRANCH"])
+    : runtime === "other"
+    ? firstEnv(env, ["RENDER_GIT_BRANCH", "GITHUB_REF_NAME"])
+    : null;
 
   return {
     runtime,
-    deploymentId: firstEnv(env, [
-      "ATMOSPHERE_RELEASE_ID",
-      "DENO_DEPLOYMENT_ID",
-      "RAILWAY_DEPLOYMENT_ID",
-      "VERCEL_DEPLOYMENT_ID",
-      "FLY_ALLOC_ID",
-    ]),
+    deploymentId: firstEnv(
+      env,
+      runtime === "deno-deploy"
+        ? ["DENO_DEPLOY_BUILD_ID", "DENO_DEPLOYMENT_ID"]
+        : runtime === "railway"
+        ? ["RAILWAY_DEPLOYMENT_ID"]
+        : runtime === "vercel"
+        ? ["VERCEL_DEPLOYMENT_ID"]
+        : runtime === "fly"
+        ? ["FLY_ALLOC_ID"]
+        : runtime === "other"
+        ? ["ATMOSPHERE_RELEASE_ID"]
+        : [],
+    ),
     service: firstEnv(env, [
       "ATMOSPHERE_SERVICE_NAME",
       "RAILWAY_SERVICE_NAME",
       "FLY_APP_NAME",
       "VERCEL_PROJECT_PRODUCTION_URL",
     ]),
-    gitSha: shortSha(firstEnv(env, gitShaKeys)),
-    gitBranch: firstEnv(env, gitBranchKeys),
+    gitSha: fullSha(gitSha),
+    gitBranch,
+    artifactDigest: normalizeArtifactDigest(artifact.artifactDigest),
   };
+}
+
+function normalizeArtifactDigest(value: unknown): string | null {
+  if (typeof value !== "string" || !value) return null;
+  return /^web-source-v1:sha256:[0-9a-f]{64}$/.test(value) ? value : null;
 }
 
 function firstEnv(env: EnvReader, keys: string[]): string | null {
@@ -88,12 +122,10 @@ function firstEnv(env: EnvReader, keys: string[]): string | null {
   return null;
 }
 
-function shortSha(value: string | null): string | null {
+function fullSha(value: string | null): string | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
-  return /^[0-9a-f]{7,40}$/.test(normalized)
-    ? normalized.slice(0, 12)
-    : normalized;
+  return /^[0-9a-f]{40}$/.test(normalized) ? normalized : null;
 }
 
 function readEnv(key: string): string | undefined {

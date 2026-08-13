@@ -1,7 +1,17 @@
 import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
+import { buildReleaseProvenance } from "./lib/build-release-provenance.ts";
+
+const provenance = await buildReleaseProvenance();
 
 export default defineConfig({
+  define: {
+    __ATMOSPHERE_ARTIFACT_GIT_SHA__: JSON.stringify(provenance.gitSha),
+    __ATMOSPHERE_ARTIFACT_GIT_BRANCH__: JSON.stringify(
+      provenance.gitBranch,
+    ),
+    __ATMOSPHERE_ARTIFACT_DIGEST__: JSON.stringify(provenance.artifactDigest),
+  },
   build: {
     rollupOptions: {
       external: ["sharp"],

@@ -1,7 +1,7 @@
 import { define } from "../utils.ts";
 import { trustedRequestOrigin } from "./atmosphere-origins.ts";
 import { IS_DEV } from "./env.ts";
-import { runtimeRelease } from "./release.ts";
+import { type RuntimeRelease, runtimeRelease } from "./release.ts";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -510,6 +510,33 @@ export function applySecurityHeadersForTest(
   return headers;
 }
 
+export function applyReleaseProvenanceHeadersForTest(
+  headers: Headers,
+  release: Pick<RuntimeRelease, "artifactDigest" | "gitSha">,
+): void {
+  applyReleaseProvenanceHeaders(headers, release);
+}
+
+function applyReleaseProvenanceHeaders(
+  headers: Headers,
+  release: Pick<RuntimeRelease, "artifactDigest" | "gitSha">,
+): void {
+  // Clear the former ambiguous header and any route-provided provenance. Only
+  // the outer runtime boundary may identify the artifact serving the response.
+  headers.delete("x-atmosphere-release-sha");
+  headers.delete("x-atmosphere-artifact-digest");
+  headers.delete("x-atmosphere-git-sha");
+  if (
+    release.artifactDigest &&
+    /^web-source-v1:sha256:[0-9a-f]{64}$/.test(release.artifactDigest)
+  ) {
+    headers.set("x-atmosphere-artifact-digest", release.artifactDigest);
+  }
+  if (release.gitSha && /^[0-9a-f]{40}$/.test(release.gitSha)) {
+    headers.set("x-atmosphere-git-sha", release.gitSha);
+  }
+}
+
 export const securityHeadersMiddleware = define.middleware(async (ctx) => {
   const response = await ctx.next();
   try {
@@ -524,10 +551,7 @@ export const securityHeadersMiddleware = define.middleware(async (ctx) => {
           response.headers.has("set-cookie"),
       ),
     );
-    const releaseSha = runtimeRelease().gitSha;
-    if (releaseSha) {
-      response.headers.set("x-atmosphere-release-sha", releaseSha);
-    }
+    applyReleaseProvenanceHeaders(response.headers, runtimeRelease());
     return response;
   } catch {
     return response;

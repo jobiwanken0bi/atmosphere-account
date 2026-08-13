@@ -1,8 +1,23 @@
+import {
+  ARTIFACT_DIGEST_PATTERN,
+  assertExpectedArtifactDigest,
+  assertExpectedReleaseTopology,
+  normalizeExpectedArtifactDigest,
+} from "./artifact-digest-expectation.ts";
+import {
+  assertAllowedReleaseSha,
+  assertExclusiveReleaseExpectation,
+  normalizeAllowedReleaseShas,
+  normalizeExpectedReleaseSha,
+} from "./release-sha-expectation.ts";
+
 interface Options {
   siteOrigin: string;
   loginOrigin: string;
   requireAppview: boolean;
-  expectedReleaseSha: string | null;
+  expectedArtifactDigest: string;
+  expectedAppviewSha: string | null;
+  allowedAppviewShas: string[];
 }
 
 interface HtmlSmokeOptions {
@@ -15,6 +30,7 @@ interface SmokeRelease {
   runtime: string;
   deploymentId: string | null;
   gitSha: string | null;
+  artifactDigest: string;
 }
 
 const DEFAULT_SITE_ORIGIN = "https://atmosphereaccount.com";
@@ -32,7 +48,9 @@ function usage(exitCode = 2): never {
       "Options:",
       "  --site-origin=https://atmosphereaccount.com",
       "  --login-origin=https://login.atmosphereaccount.com",
-      "  --expected-release-sha=<git-sha>",
+      "  --expected-artifact-digest=<web-source-v1:sha256:...>",
+      "  --expected-appview-sha=<full-git-sha>",
+      "  --allowed-appview-shas=<full-git-sha,...>",
       "  --no-require-appview  Do not require readiness to report appview.ok.",
     ].join("\n"),
   );
@@ -65,6 +83,39 @@ function normalizeOrigin(value: string, label: string): string {
 function parseOptions(): Options {
   const args = Deno.args.filter((arg) => arg !== "--");
   if (args.includes("--help") || args.includes("-h")) usage(0);
+  const requireAppview = !args.includes("--no-require-appview");
+  const expectedArtifactDigest = normalizeExpectedArtifactDigest(
+    readFlag(args, "--expected-artifact-digest") ??
+      Deno.env.get("SMOKE_EXPECT_ARTIFACT_DIGEST") ??
+      null,
+    "--expected-artifact-digest",
+  );
+  const allowedAppviewShas = normalizeAllowedReleaseShas(
+    readFlag(args, "--allowed-appview-shas") ??
+      Deno.env.get("SMOKE_ALLOWED_APPVIEW_SHAS") ??
+      null,
+    "--allowed-appview-shas",
+  );
+  const explicitAppviewSha = normalizeExpectedReleaseSha(
+    readFlag(args, "--expected-appview-sha") ??
+      Deno.env.get("SMOKE_EXPECT_APPVIEW_SHA") ??
+      null,
+    "--expected-appview-sha",
+  );
+  assertExclusiveReleaseExpectation(
+    explicitAppviewSha,
+    allowedAppviewShas,
+    "--expected-appview-sha",
+    "--allowed-appview-shas",
+  );
+  if (
+    requireAppview && explicitAppviewSha === null &&
+    allowedAppviewShas.length === 0
+  ) {
+    throw new Error(
+      "--expected-appview-sha or --allowed-appview-shas is required",
+    );
+  }
   return {
     siteOrigin: normalizeOrigin(
       readFlag(args, "--site-origin") ??
@@ -78,12 +129,10 @@ function parseOptions(): Options {
         DEFAULT_LOGIN_ORIGIN,
       "--login-origin",
     ),
-    requireAppview: !args.includes("--no-require-appview"),
-    expectedReleaseSha: normalizeExpectedReleaseSha(
-      readFlag(args, "--expected-release-sha") ??
-        Deno.env.get("SMOKE_EXPECT_RELEASE_SHA") ??
-        null,
-    ),
+    requireAppview,
+    expectedArtifactDigest,
+    expectedAppviewSha: explicitAppviewSha,
+    allowedAppviewShas,
   };
 }
 
@@ -181,56 +230,46 @@ function readRelease(value: unknown, label: string): SmokeRelease {
   const gitSha = release.gitSha !== null && release.gitSha !== undefined
     ? assertString(release.gitSha, `${label}.gitSha`)
     : null;
+  if (gitSha !== null && !/^[0-9a-f]{40}$/.test(gitSha)) {
+    throw new Error(`${label}.gitSha must be null or a full Git SHA`);
+  }
+  const artifactDigest = assertString(
+    release.artifactDigest,
+    `${label}.artifactDigest`,
+  );
+  if (!ARTIFACT_DIGEST_PATTERN.test(artifactDigest)) {
+    throw new Error(`${label}.artifactDigest must be canonical and complete`);
+  }
   const deploymentId =
     release.deploymentId !== null && release.deploymentId !== undefined
       ? assertString(release.deploymentId, `${label}.deploymentId`)
       : null;
-  return { runtime, deploymentId, gitSha };
+  return { runtime, deploymentId, gitSha, artifactDigest };
 }
 
-function assertExpectedReleaseSha(
+function assertExpectedReleaseArtifact(
   release: SmokeRelease,
-  expectedSha: string | null,
+  expectedArtifactDigest: string,
   label: string,
 ): void {
-  if (!expectedSha) return;
-  if (!release.gitSha) {
-    throw new Error(
-      `${label} missing gitSha for expected release ${expectedSha}`,
-    );
-  }
-  if (release.gitSha !== expectedSha) {
-    throw new Error(
-      `${label} gitSha expected ${expectedSha}, got ${release.gitSha}`,
-    );
-  }
+  assertExpectedArtifactDigest(
+    release.artifactDigest,
+    expectedArtifactDigest,
+    label,
+  );
 }
 
-function assertMatchingReleaseShas(
+function assertMatchingReleaseArtifacts(
   a: SmokeRelease,
   aLabel: string,
   b: SmokeRelease,
   bLabel: string,
 ): void {
-  if (!a.gitSha || !b.gitSha) {
+  if (a.artifactDigest !== b.artifactDigest) {
     throw new Error(
-      `${aLabel} and ${bLabel} must both report gitSha for release parity`,
+      `${aLabel} artifactDigest ${a.artifactDigest} does not match ${bLabel} artifactDigest ${b.artifactDigest}`,
     );
   }
-  if (a.gitSha !== b.gitSha) {
-    throw new Error(
-      `${aLabel} gitSha ${a.gitSha} does not match ${bLabel} gitSha ${b.gitSha}`,
-    );
-  }
-}
-
-function normalizeExpectedReleaseSha(value: string | null): string | null {
-  const normalized = value?.trim().toLowerCase() ?? "";
-  if (!normalized) return null;
-  if (!/^[0-9a-f]{7,40}$/.test(normalized)) {
-    throw new Error("--expected-release-sha must be a 7-40 character git SHA");
-  }
-  return normalized.slice(0, 12);
 }
 
 function assertArray(value: unknown, label: string): unknown[] {
@@ -337,7 +376,7 @@ async function smokeSiteStyles(origin: string): Promise<void> {
 
 async function smokeHealth(
   origin: string,
-  expectedReleaseSha: string | null,
+  expectedArtifactDigest: string,
 ): Promise<SmokeRelease> {
   const url = new URL("/api/health", origin);
   const { response, body } = await fetchJson(url);
@@ -346,7 +385,11 @@ async function smokeHealth(
   assertEquals(body.ok, true, `${url} ok`);
   assertString(body.service, `${url} service`);
   const release = readRelease(body.release, `${url} release`);
-  assertExpectedReleaseSha(release, expectedReleaseSha, `${url} release`);
+  assertExpectedReleaseArtifact(
+    release,
+    expectedArtifactDigest,
+    `${url} release`,
+  );
   assertString(body.timestamp, `${url} timestamp`);
   console.log(`[smoke:public-shell] ok health ${url}`);
   return release;
@@ -355,7 +398,9 @@ async function smokeHealth(
 async function smokeReadiness(
   origin: string,
   requireAppview: boolean,
-  expectedReleaseSha: string | null,
+  expectedArtifactDigest: string,
+  expectedAppviewSha: string | null,
+  allowedAppviewShas: readonly string[],
 ): Promise<
   { shellRelease: SmokeRelease; appviewRelease: SmokeRelease | null }
 > {
@@ -366,7 +411,11 @@ async function smokeReadiness(
   assertEquals(body.ok, true, `${url} ok`);
   assertString(body.service, `${url} service`);
   const shellRelease = readRelease(body.release, `${url} release`);
-  assertExpectedReleaseSha(shellRelease, expectedReleaseSha, `${url} release`);
+  assertExpectedReleaseArtifact(
+    shellRelease,
+    expectedArtifactDigest,
+    `${url} release`,
+  );
   const pdsInventory = assertObject(
     body.pdsInventory,
     `${url} pdsInventory`,
@@ -400,12 +449,26 @@ async function smokeReadiness(
       (appview as Record<string, unknown>).release,
       `${url} appview.release`,
     );
-    assertExpectedReleaseSha(
+    assertExpectedReleaseTopology(shellRelease, appviewRelease);
+    assertExpectedReleaseArtifact(
       appviewRelease,
-      expectedReleaseSha,
+      expectedArtifactDigest,
       `${url} appview.release`,
     );
-    assertMatchingReleaseShas(
+    if (
+      expectedAppviewSha !== null &&
+      appviewRelease.gitSha !== expectedAppviewSha
+    ) {
+      throw new Error(
+        `${url} appview.release gitSha expected ${expectedAppviewSha}, got ${appviewRelease.gitSha}`,
+      );
+    }
+    assertAllowedReleaseSha(
+      appviewRelease.gitSha,
+      allowedAppviewShas,
+      `${url} appview.release`,
+    );
+    assertMatchingReleaseArtifacts(
       shellRelease,
       `${url} release`,
       appviewRelease,
@@ -551,14 +614,16 @@ export async function main(): Promise<void> {
 
   const healthRelease = await smokeHealth(
     options.siteOrigin,
-    options.expectedReleaseSha,
+    options.expectedArtifactDigest,
   );
   const { shellRelease } = await smokeReadiness(
     options.siteOrigin,
     options.requireAppview,
-    options.expectedReleaseSha,
+    options.expectedArtifactDigest,
+    options.expectedAppviewSha,
+    options.allowedAppviewShas,
   );
-  assertMatchingReleaseShas(
+  assertMatchingReleaseArtifacts(
     healthRelease,
     `${options.siteOrigin}/api/health release`,
     shellRelease,

@@ -1,9 +1,16 @@
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import {
+  assertEquals,
+  assertStringIncludes,
+  assertThrows,
+} from "jsr:@std/assert@1";
 import {
   diffTreeArgsForCommit,
   fileMatchesRailwayWatchPattern,
+  firstParentHistoryArgs,
   latestWebArtifactCommitFromHistory,
+  selectAllowedAppviewCommit,
   webArtifactChanged,
+  webArtifactReleaseScopeFromHistory,
 } from "./release-web-scope.ts";
 
 Deno.test("web release scope follows Railway's exact rebuild patterns", () => {
@@ -34,6 +41,11 @@ Deno.test("web release scope follows Railway's exact rebuild patterns", () => {
 });
 
 Deno.test("web artifact merge diffs compare against the first parent", () => {
+  assertEquals(firstParentHistoryArgs("source-sha"), [
+    "rev-list",
+    "--first-parent",
+    "source-sha",
+  ]);
   assertEquals(diffTreeArgsForCommit("merge-sha"), [
     "diff-tree",
     "--root",
@@ -44,6 +56,49 @@ Deno.test("web artifact merge diffs compare against the first parent", () => {
     "-r",
     "merge-sha",
   ]);
+});
+
+Deno.test("AppView release scope includes only web-equivalent first-parent descendants", () => {
+  const patterns = ["/routes/**", "/lib/**"];
+  const scope = webArtifactReleaseScopeFromHistory([
+    { sha: "worker-c", files: ["worker/indexer.ts"] },
+    { sha: "worker-b", files: ["scripts/index-relay-pds-inventory.ts"] },
+    { sha: "web-a", files: ["routes/apps.tsx"] },
+    { sha: "pre-window", files: ["worker/old.ts"] },
+    { sha: "older-web", files: ["lib/db.ts"] },
+  ], patterns);
+
+  assertEquals(scope, {
+    sourceSha: "worker-c",
+    webArtifactSha: "web-a",
+    allowedAppviewShas: ["web-a", "worker-b", "worker-c"],
+  });
+  if (!scope) throw new Error("expected a release scope");
+  assertEquals(selectAllowedAppviewCommit(scope, "worker-b"), "worker-b");
+  assertThrows(
+    () => selectAllowedAppviewCommit(scope, "pre-window"),
+    Error,
+    "is not in the inclusive first-parent release window",
+  );
+  assertThrows(
+    () => selectAllowedAppviewCommit(scope, "side-branch"),
+    Error,
+    "is not in the inclusive first-parent release window",
+  );
+});
+
+Deno.test("a web-changing source commit permits only itself", () => {
+  assertEquals(
+    webArtifactReleaseScopeFromHistory([
+      { sha: "web-source", files: ["routes/apps.tsx"] },
+      { sha: "older-worker", files: ["worker/indexer.ts"] },
+    ], ["/routes/**"]),
+    {
+      sourceSha: "web-source",
+      webArtifactSha: "web-source",
+      allowedAppviewShas: ["web-source"],
+    },
+  );
 });
 
 Deno.test("latest web artifact survives a later worker-only commit", () => {
@@ -58,21 +113,31 @@ Deno.test("latest web artifact survives a later worker-only commit", () => {
   );
 });
 
-Deno.test("production verification expects the latest web artifact", async () => {
+Deno.test("production verification accepts only the AppView release window", async () => {
   const workflow = await Deno.readTextFile(
     ".github/workflows/production-smoke.yml",
   );
   assertStringIncludes(
     workflow,
-    'expected="$(deno task release:web-changed -- --sha="$SOURCE_RELEASE_SHA")"',
+    "--allowed-appview-shas",
   );
   assertStringIncludes(workflow, "fetch-depth: 0");
   assertStringIncludes(
     workflow,
-    "SMOKE_EXPECT_RELEASE_SHA: ${{ steps.release_scope.outputs.expected_release_sha }}",
+    'artifact_digest="$(deno task release:web-digest)"',
   );
   assertStringIncludes(
     workflow,
-    "SMOKE_EXPECT_RELEASE_SHA: ${{ needs.readiness.outputs.expected_release_sha }}",
+    "SMOKE_ALLOWED_APPVIEW_SHAS: ${{ needs.readiness.outputs.allowed_appview_shas }}",
   );
+  assertStringIncludes(
+    workflow,
+    "SMOKE_ALLOWED_APPVIEW_SHAS: ${{ steps.release_scope.outputs.allowed_appview_shas }}",
+  );
+  assertStringIncludes(
+    workflow,
+    "SMOKE_EXPECT_ARTIFACT_DIGEST: ${{ steps.release_scope.outputs.artifact_digest }}",
+  );
+  assertEquals(workflow.includes("EXPLICIT_APPVIEW_SHA"), false);
+  assertEquals(workflow.includes("SMOKE_EXPECT_SHELL_SHA"), false);
 });
