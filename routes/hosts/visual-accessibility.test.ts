@@ -73,12 +73,17 @@ Deno.test("host detail orders primary actions before related profiles", async ()
 });
 
 Deno.test("host management uses site-specific copy and labelled controls", async () => {
-  const [manageSource, relationshipsSource] = await Promise.all([
-    Deno.readTextFile(new URL("./[host]/manage.tsx", import.meta.url)),
-    Deno.readTextFile(
-      new URL("./[host]/manage/apps.tsx", import.meta.url),
-    ),
-  ]);
+  const [manageSource, relationshipsSource, profileSaveSource, styles] =
+    await Promise.all([
+      Deno.readTextFile(new URL("./[host]/manage.tsx", import.meta.url)),
+      Deno.readTextFile(
+        new URL("./[host]/manage/apps.tsx", import.meta.url),
+      ),
+      Deno.readTextFile(
+        new URL("../../islands/HostProfileSaveButton.tsx", import.meta.url),
+      ),
+      Deno.readTextFile(new URL("../../static/styles.css", import.meta.url)),
+    ]);
 
   assertStringIncludes(manageSource, 'id="main-content"');
   assertStringIncludes(relationshipsSource, 'id="main-content"');
@@ -106,6 +111,66 @@ Deno.test("host management uses site-specific copy and labelled controls", async
   assertStringIncludes(
     manageSource,
     'data-pending-label="Saving sign-up…"',
+  );
+  assertStringIncludes(manageSource, 'aria-label="Host management sections"');
+  assertStringIncludes(manageSource, 'value="save_signup"');
+  assertStringIncludes(manageSource, 'value="save_account"');
+  assertEquals(
+    manageSource.match(/<span data-submit-once-label>Save changes<\/span>/g)
+      ?.length,
+    4,
+  );
+  assertStringIncludes(manageSource, "managedHostSaveLocation(");
+  assertStringIncludes(manageSource, "HostManageSavedStatus");
+  assertStringIncludes(profileSaveSource, '"Save changes"');
+  assertStringIncludes(profileSaveSource, "saved.value = true;");
+  const overview = manageSource.indexOf('class="host-manage-overview"');
+  const publicPresence = manageSource.indexOf('id="public-presence"');
+  const profile = manageSource.indexOf('id="public-profile"');
+  const directory = manageSource.indexOf('id="directory-visibility"');
+  const journeys = manageSource.indexOf('id="account-journeys"');
+  const signup = manageSource.indexOf('id="signup"');
+  const accountLinks = manageSource.indexOf('id="account-links"');
+  const connections = manageSource.indexOf('id="connections-ownership"');
+  const apps = manageSource.indexOf('id="app-connections"');
+  const ownership = manageSource.indexOf('id="managing-account"');
+  const advanced = manageSource.indexOf('id="advanced-settings"');
+  assert(
+    overview < publicPresence && publicPresence < profile &&
+      profile < directory && directory < journeys && journeys < signup &&
+      signup < accountLinks && accountLinks < connections &&
+      connections < apps && apps < ownership && ownership < advanced,
+  );
+  assertStringIncludes(
+    manageSource,
+    'class="host-manage-group host-manage-advanced-group"',
+  );
+  assertStringIncludes(
+    manageSource,
+    '<h2 id="connections-ownership-title">',
+  );
+  assertStringIncludes(manageSource, "Connections &amp; ownership");
+  assertEquals(manageSource.includes("Who this host belongs to"), false);
+  assertStringIncludes(styles, ".host-manage-summary-chevron::before");
+  assertEquals(manageSource.includes(">⌄</span>"), false);
+  assertStringIncludes(manageSource, "host-manage-profile-identity");
+  assertStringIncludes(manageSource, "host-manage-profile-fields");
+  assertStringIncludes(manageSource, "host-manage-avatar-optional");
+  assertStringIncludes(
+    styles,
+    ".host-manage-profile-avatar .host-card-mark",
+  );
+  assertStringIncludes(
+    styles,
+    "grid-template-columns: 8rem minmax(0, 1fr)",
+  );
+  assertStringIncludes(
+    manageSource,
+    'open={Boolean(validation) || savedSection === "advanced"}',
+  );
+  assertStringIncludes(
+    styles,
+    ".host-manage-owner-transfer {\n  white-space: nowrap;\n}",
   );
 });
 
