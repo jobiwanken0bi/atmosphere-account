@@ -197,6 +197,62 @@ Deno.test("indexer record fetch refreshes a migrated PDS after a cached miss", a
   });
 });
 
+Deno.test("indexer record fetch trusts current data from the freshly resolved migrated PDS", async () => {
+  const resolutions: boolean[] = [];
+  const fetches: string[] = [];
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions.push(forceRefresh);
+      return Promise.resolve({
+        pdsUrl: forceRefresh
+          ? "https://new-pds.example"
+          : "https://old-pds.example",
+        handle: "alice.example",
+      });
+    },
+    (pdsUrl) => {
+      fetches.push(pdsUrl);
+      return Promise.resolve({
+        cid: pdsUrl === "https://new-pds.example"
+          ? "newer-than-event"
+          : "stale",
+      });
+    },
+    (record) => record.cid === "event-cid",
+  );
+
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, [
+    "https://old-pds.example",
+    "https://new-pds.example",
+  ]);
+  assertEquals(result?.record, { cid: "newer-than-event" });
+});
+
+Deno.test("indexer record fetch trusts current data after freshly confirming the same PDS", async () => {
+  const resolutions: boolean[] = [];
+  let fetches = 0;
+  const result = await fetchIndexerRecordWithIdentityRefresh(
+    (forceRefresh) => {
+      resolutions.push(forceRefresh);
+      return Promise.resolve({
+        pdsUrl: "https://pds.example",
+        handle: forceRefresh ? "alice.new.example" : "alice.old.example",
+      });
+    },
+    () => {
+      fetches++;
+      return Promise.resolve({ cid: "newer-than-event" });
+    },
+    (record) => record.cid === "event-cid",
+  );
+
+  assertEquals(resolutions, [false, true]);
+  assertEquals(fetches, 1);
+  assertEquals(result?.identity.handle, "alice.new.example");
+  assertEquals(result?.record, { cid: "newer-than-event" });
+});
+
 Deno.test("indexer record fetch refreshes a migrated PDS after a permanent HTTP miss", async () => {
   let resolutions = 0;
   const result = await fetchIndexerRecordWithIdentityRefresh(

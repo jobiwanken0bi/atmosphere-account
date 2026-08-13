@@ -55,8 +55,6 @@ Deno.test("public immutable media bypasses session database hydration", () => {
       "/api/atproto/blob",
       "/api/registry/avatar/did%3Aplc%3Aalice",
       "/api/registry/banner/did%3Aplc%3Aalice",
-      "/api/registry/icon/did%3Aplc%3Aalice",
-      "/api/registry/icon-bw/did%3Aplc%3Aalice",
       "/api/registry/og-banner/did%3Aplc%3Aalice",
       "/api/registry/project-og/example.test",
       "/api/registry/screenshot/did%3Aplc%3Aalice/0",
@@ -71,6 +69,8 @@ Deno.test("public immutable media bypasses session database hydration", () => {
   for (
     const path of [
       "/api/me/avatar",
+      "/api/registry/icon/did%3Aplc%3Aalice",
+      "/api/registry/icon-bw/did%3Aplc%3Aalice",
       "/api/registry/icon-access/request",
       "/api/admin/backfill-og-jpegs",
       "/account",

@@ -253,15 +253,15 @@ export function shouldHydrateAccountDetails(
 const PUBLIC_MEDIA_PATH_PREFIXES = [
   "/api/registry/avatar/",
   "/api/registry/banner/",
-  "/api/registry/icon/",
-  "/api/registry/icon-bw/",
   "/api/registry/og-banner/",
   "/api/registry/project-og/",
   "/api/registry/screenshot/",
 ] as const;
 
 /**
- * Immutable/public media never consumes account state. Skipping session and
+ * Immutable/public media never consumes account state. Owner-preview icon
+ * routes are deliberately excluded because their approval gate reads the
+ * active session. Skipping session and
  * remembered-account hydration here prevents every signed-in page image from
  * performing an otherwise unrelated session/ownership database query.
  */

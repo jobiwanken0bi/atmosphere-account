@@ -385,19 +385,29 @@ async function resolveIndexerIdentity(did: string): Promise<{
 
 /**
  * Fetch a record through a cached DID identity, refreshing the DID document
- * once when the cached PDS reports a permanent record miss. Account migrations
- * can leave a previously cached PDS behind; accepting that miss would advance
- * the Jetstream cursor without indexing the record from the new PDS.
+ * once when the cached PDS reports a permanent miss or returns a record that
+ * differs from the historical Jetstream CID. Account migrations can leave a
+ * previously cached PDS behind; accepting its result could advance the cursor
+ * without indexing the record from the new PDS.
+ *
+ * A CID mismatch is only an identity-refresh signal, not a fatal integrity
+ * error: the current PDS may legitimately contain a newer revision by the time
+ * this event is processed. Once a fresh DID resolution confirms the endpoint,
+ * its current record is authoritative.
  */
 export async function fetchIndexerRecordWithIdentityRefresh<T>(
   resolveIdentity: (forceRefresh: boolean) => Promise<IndexerIdentity>,
   fetchRecord: (pdsUrl: string) => Promise<T | null>,
+  isExpectedRecord: (record: T) => boolean = () => true,
 ): Promise<{ identity: IndexerIdentity; record: T } | null> {
   const identity = await resolveIdentity(false);
+  let firstRecord: T | null = null;
   let firstError: unknown;
   try {
-    const record = await fetchRecord(identity.pdsUrl);
-    if (record !== null) return { identity, record };
+    firstRecord = await fetchRecord(identity.pdsUrl);
+    if (firstRecord !== null && isExpectedRecord(firstRecord)) {
+      return { identity, record: firstRecord };
+    }
   } catch (err) {
     if (!isRefreshableIdentityMiss(err)) throw err;
     firstError = err;
@@ -406,7 +416,9 @@ export async function fetchIndexerRecordWithIdentityRefresh<T>(
   const refreshedIdentity = await resolveIdentity(true);
   if (refreshedIdentity.pdsUrl === identity.pdsUrl) {
     if (firstError !== undefined) throw firstError;
-    return null;
+    return firstRecord === null
+      ? null
+      : { identity: refreshedIdentity, record: firstRecord };
   }
 
   const record = await fetchRecord(refreshedIdentity.pdsUrl);
@@ -417,6 +429,7 @@ async function fetchIndexerRecord(
   did: string,
   collection: string,
   rkey: string,
+  expectedCid?: string,
 ): Promise<
   {
     identity: IndexerIdentity;
@@ -429,6 +442,7 @@ async function fetchIndexerRecord(
       return await resolveIndexerIdentity(did);
     },
     (pdsUrl) => getRecordPublic(pdsUrl, did, collection, rkey),
+    (record) => !expectedCid || record.cid === expectedCid,
   );
 }
 
@@ -449,6 +463,7 @@ async function handleProfileEvent(event: JetstreamEvent): Promise<void> {
     event.did,
     PROFILE_NSID,
     commit.rkey,
+    commit.cid,
   );
   if (!result) return;
   const { identity, record: fetched } = result;
@@ -479,6 +494,7 @@ async function handleReviewEvent(event: JetstreamEvent): Promise<void> {
     event.did,
     REVIEW_NSID,
     commit.rkey,
+    commit.cid,
   );
   if (!result) return;
   const fetched = result.record;
@@ -537,6 +553,7 @@ async function handleFeaturedEvent(event: JetstreamEvent): Promise<void> {
     event.did,
     FEATURED_NSID,
     "self",
+    commit.cid,
   );
   if (!result) return;
   const fetched = result.record;
@@ -576,6 +593,7 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     event.did,
     UPDATE_NSID,
     commit.rkey,
+    commit.cid,
   );
   if (!result) return;
   const fetched = result.record;
@@ -639,6 +657,7 @@ async function handleAppDirectoryEvent(event: JetstreamEvent): Promise<void> {
       event.did,
       commit.collection,
       commit.rkey,
+      commit.cid,
     );
   } catch (err) {
     if (err instanceof PublicRecordFetchError && isPermanentFetchMiss(err)) {
@@ -785,6 +804,7 @@ async function handleHostProtocolEvent(event: JetstreamEvent): Promise<void> {
     event.did,
     commit.collection,
     commit.rkey,
+    commit.cid,
   );
   if (!result) return;
   const { identity, record: fetched } = result;
