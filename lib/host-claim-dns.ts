@@ -344,7 +344,7 @@ async function lookupExactTxtValue(
   | { ok: false; reason: "dns_unavailable" | "record_not_found" }
 > {
   let answers: readonly (readonly string[])[];
-  let timeout: number | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     answers = await Promise.race([
       resolver.resolve(recordName),

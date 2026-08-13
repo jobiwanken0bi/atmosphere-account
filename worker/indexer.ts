@@ -848,7 +848,7 @@ async function runOnce(logConnectionLifecycle: boolean): Promise<never> {
   activeSocket = ws;
   let lastPersistedAt = 0;
   let processedCursor = cursor ?? 0;
-  let renewTimer: number | undefined;
+  let renewTimer: ReturnType<typeof setInterval> | undefined;
   let connectedAt: number | null = null;
   let processingQueue = Promise.resolve();
 

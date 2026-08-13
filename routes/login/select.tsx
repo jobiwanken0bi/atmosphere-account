@@ -311,7 +311,7 @@ async function recordLoginSelectionBestEffort(input: {
   did: string;
   handle: string;
 }): Promise<void> {
-  let timer = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
       recordLoginSelection(input).catch(() => {}),
@@ -320,7 +320,7 @@ async function recordLoginSelectionBestEffort(input: {
       }),
     ]);
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

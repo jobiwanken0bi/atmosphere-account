@@ -219,7 +219,7 @@ export async function runPdsInventory(
   let exitCode = 0;
   let renewalInFlight = false;
   let renewalPromise: Promise<void> | null = null;
-  let renewTimer: number | undefined;
+  let renewTimer: ReturnType<typeof setInterval> | undefined;
 
   const deadlineTimer = setTimeout(() => {
     deadline.abort(
