@@ -20,7 +20,7 @@ const en = {
       "Already use Bluesky, Blacksky, Spark, Tangled, or another AT Protocol service? You already have an Atmosphere account.",
     ogTitle: "Atmosphere Account",
     ogDescription:
-      "You may already have one account for a growing open ecosystem of apps.",
+      "One account for all your apps. Yours to keep, wherever you go.",
     ogImageAlt: "Atmosphere Account — sky, glass clouds, and hero headline",
   },
 
@@ -219,8 +219,10 @@ const en = {
   },
 
   hostsDirectory: {
+    metaTitle: "Account hosts",
+    metaDescription: "Find the home where your account lives.",
     eyebrow: "Account hosts",
-    headline: "Choose where your account lives.",
+    headline: "Find the home where your account lives.",
     intro:
       "Account hosts keep your Atmosphere account online so you can use it across apps. Compare who each host is for, where account data is hosted, and whether signup is open.",
     searchLabel: "Search account hosts",
@@ -598,8 +600,8 @@ const en = {
   },
 
   explore: {
-    metaTitle: "Apps — Atmosphere Account",
-    metaDescription: "Discover apps built for the Atmosphere.",
+    metaTitle: "Apps",
+    metaDescription: "Discover apps and services in the Atmosphere.",
     heroEyebrow: "Apps",
     heroHeadline: "Atmosphere apps, all in one place.",
     heroSubhead:

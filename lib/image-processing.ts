@@ -73,3 +73,13 @@ export async function fitWebp(
     return Uint8Array.from(webp) as Uint8Array<ArrayBuffer>;
   });
 }
+
+export async function renderSvgPng(svg: string): Promise<Uint8Array> {
+  return await withImageTransformSlot(async () => {
+    const png = await sharp(new TextEncoder().encode(svg), {
+      failOn: "error",
+      limitInputPixels: 40_000_000,
+    }).png().toBuffer();
+    return new Uint8Array(png).slice();
+  });
+}

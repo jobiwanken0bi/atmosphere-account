@@ -257,7 +257,6 @@ export const handler = define.handlers({
      */
     const useAppListingMeta = !!appListing?.atstoreListingUri || !profile;
     if (useAppListingMeta && appListing) {
-      const pageTitle = `${appListing.name} on Atmosphere Apps`;
       const imageUrl = appImageUrl(
         appListing.heroUrl,
         "media",
@@ -265,9 +264,8 @@ export const handler = define.handlers({
         appListing.heroFallbackUrl,
       ) || appImageUrl(appListing.iconUrl, "icon") || undefined;
       ctx.state.pageMeta = {
-        title: pageTitle,
-        description: appListing.description || appListing.tagline ||
-          "An Atmosphere app listing.",
+        title: appListing.name,
+        description: "Atmosphere app",
         ogType: "website",
         canonicalUrl: shareUrl,
         imageUrl: imageUrl?.startsWith("/")
@@ -277,9 +275,6 @@ export const handler = define.handlers({
       };
     } else if (profile) {
       const messages = getMessages(ctx.state.locale).explore;
-      const pageTitle = `${profile.name} on Atmosphere Apps`;
-      const pageDescription = profile.description ||
-        messages.detail.missingProfile;
       const ogImageUrl = profile.bannerCid
         ? new URL(
           `/api/registry/project-og/${encodeURIComponent(profile.handle)}`,
@@ -287,8 +282,8 @@ export const handler = define.handlers({
         ).href
         : undefined;
       ctx.state.pageMeta = {
-        title: pageTitle,
-        description: pageDescription,
+        title: profile.name,
+        description: "Atmosphere app",
         // "website" unfurls more reliably than "profile" (fewer parsers expect
         // profile:* sub-properties). Same visible link card everywhere.
         ogType: "website",

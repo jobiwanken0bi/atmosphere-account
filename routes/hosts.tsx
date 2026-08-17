@@ -27,6 +27,11 @@ import {
 
 export default define.page(async function HostsPage(ctx) {
   const copy = getMessages(ctx.state.locale).hostsDirectory;
+  ctx.state.pageMeta = {
+    title: copy.metaTitle,
+    description: copy.metaDescription,
+    canonicalUrl: new URL("/hosts", ctx.url.origin).href,
+  };
   const input = readDirectoryInput(ctx.url.searchParams);
   const appliedFilterCount = activeFilterCount(input);
   let loadFailed = false;

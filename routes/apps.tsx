@@ -15,6 +15,7 @@ import { EdgeStaleCache } from "../lib/edge-cache.ts";
 import AppDirectoryOwnerCta, {
   appRegistrationSigninHref as ownerRegistrationSigninHref,
 } from "../components/explore/AppDirectoryOwnerCta.tsx";
+import { getMessages } from "../i18n/mod.ts";
 
 /** Shared registration URL retained for route-level and no-JS contract tests. */
 export function appRegistrationSigninHref(): string {
@@ -43,6 +44,13 @@ export const handler = define.handlers({
     if (isBrowseRequest(url)) {
       return redirectBrowseAllUrl(url);
     }
+
+    const meta = getMessages(ctx.state.locale).explore;
+    ctx.state.pageMeta = {
+      title: meta.metaTitle,
+      description: meta.metaDescription,
+      canonicalUrl: new URL("/apps", ctx.url.origin).href,
+    };
 
     const result = await loadAppsHomeResult(ctx.req.headers).catch(() =>
       emptyAppsHomeResult()

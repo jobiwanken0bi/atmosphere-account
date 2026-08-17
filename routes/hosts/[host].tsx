@@ -47,17 +47,23 @@ export const handler = define.handlers({
       },
     );
     if (host) {
-      const friendly = hostFriendlyProfile(host);
       const publicOrigin = trustedRequestOrigin(ctx.url, ctx.req.headers);
       ctx.state.pageMeta = {
-        title: `${host.displayName} on Atmosphere Hosts`,
-        description: friendly.summary,
+        title: host.displayName,
+        description: "Atmosphere account host",
         ogType: "website",
         canonicalUrl: new URL(
           `/hosts/${encodeURIComponent(host.host)}`,
           publicOrigin,
         ).href,
-        imageUrl: host.avatarUrl ?? undefined,
+        imageUrl: new URL(
+          `/api/og/host/${encodeURIComponent(host.host)}`,
+          publicOrigin,
+        ).href,
+        imageAlt: `${host.displayName} — Atmosphere account host`,
+        imageType: "image/png",
+        imageWidth: 1200,
+        imageHeight: 630,
       };
     }
     const [pdsDescription, linkedApps] = host

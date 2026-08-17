@@ -14637,9 +14637,39 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .account-home-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  list-style: none;
   cursor: pointer;
   font-weight: 600;
   color: #0e1428;
+}
+
+.account-home-details summary::-webkit-details-marker,
+.host-manage-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-home-details summary::after,
+.host-manage-advanced-summary::after {
+  content: "";
+  width: 0.52rem;
+  height: 0.52rem;
+  flex: 0 0 auto;
+  margin: 0 0.2rem 0.2rem 0.5rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.68;
+  transform: rotate(45deg);
+  transform-origin: center;
+  transition: transform 0.16s ease;
+}
+
+.account-home-details[open] > summary::after,
+.host-manage-advanced[open] > .host-manage-advanced-summary::after {
+  transform: rotate(225deg);
 }
 
 .account-home-details dl {
@@ -16485,7 +16515,10 @@ form[data-submit-once-pending="true"] button:disabled {
 .host-manage-advanced-summary {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   min-height: 2.75rem;
+  list-style: none;
   cursor: pointer;
   font-weight: 700;
   font-size: 0.9rem;
