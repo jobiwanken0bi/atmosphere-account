@@ -7,6 +7,7 @@ import BskyIcon from "../../components/icons/BskyIcon.tsx";
 import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
 import HostVisitLink from "../../islands/HostVisitLink.tsx";
 import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
+import ShareButton from "../../islands/ShareButton.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHost,
@@ -46,16 +47,19 @@ export const handler = define.handlers({
         return { host: null, claim: null };
       },
     );
+    const publicOrigin = trustedRequestOrigin(ctx.url, ctx.req.headers);
+    const shareUrl = host
+      ? new URL(
+        `/hosts/${encodeURIComponent(host.host)}/`,
+        publicOrigin,
+      ).href
+      : new URL(ctx.url.pathname, publicOrigin).href;
     if (host) {
-      const publicOrigin = trustedRequestOrigin(ctx.url, ctx.req.headers);
       ctx.state.pageMeta = {
         title: host.displayName,
         description: "Atmosphere account host",
         ogType: "website",
-        canonicalUrl: new URL(
-          `/hosts/${encodeURIComponent(host.host)}`,
-          publicOrigin,
-        ).href,
+        canonicalUrl: shareUrl,
         imageUrl: new URL(
           `/api/og/host/${encodeURIComponent(host.host)}`,
           publicOrigin,
@@ -99,6 +103,7 @@ export const handler = define.handlers({
         )}
         account={buildAccountMenuProps(ctx.state)}
         verifiedOwnerDid={verifiedOwnerDid}
+        shareUrl={shareUrl}
       />,
       { status: host ? 200 : 404 },
     );
@@ -117,6 +122,7 @@ function HostDetailPage(
     backHref,
     account,
     verifiedOwnerDid,
+    shareUrl,
   }: {
     host: AccountHost | null;
     claim: AccountHostClaim | null;
@@ -128,6 +134,7 @@ function HostDetailPage(
     backHref: string;
     account: ReturnType<typeof buildAccountMenuProps>;
     verifiedOwnerDid: string | null;
+    shareUrl: string;
   },
 ) {
   if (!host) {
@@ -188,6 +195,17 @@ function HostDetailPage(
               <a href={backHref} class="text-link-button">
                 ← Back to hosts
               </a>
+              <ShareButton
+                url={shareUrl}
+                title={host.displayName}
+                text="Atmosphere account host"
+                copy={{
+                  button: "Share",
+                  copyLink: "Copy link",
+                  copied: "Copied",
+                  copyFailed: "Could not copy",
+                }}
+              />
             </div>
 
             <div class="profile-hero host-detail-hero glass">
