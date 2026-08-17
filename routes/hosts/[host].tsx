@@ -8,6 +8,10 @@ import DirectoryIdentityLink from "../../components/DirectoryIdentityLink.tsx";
 import HostVisitLink from "../../islands/HostVisitLink.tsx";
 import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
 import ShareButton from "../../islands/ShareButton.tsx";
+import {
+  buildHostSocialPageMeta,
+  HOST_SOCIAL_DESCRIPTION,
+} from "../../lib/host-social-card.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AccountHost,
@@ -48,28 +52,17 @@ export const handler = define.handlers({
       },
     );
     const publicOrigin = trustedRequestOrigin(ctx.url, ctx.req.headers);
-    const shareUrl = host
-      ? new URL(
-        `/hosts/${encodeURIComponent(host.host)}/`,
+    const hostPageMeta = host
+      ? buildHostSocialPageMeta({
+        host: host.host,
+        name: host.displayName,
         publicOrigin,
-      ).href
+      })
+      : null;
+    const shareUrl = hostPageMeta
+      ? hostPageMeta.canonicalUrl
       : new URL(ctx.url.pathname, publicOrigin).href;
-    if (host) {
-      ctx.state.pageMeta = {
-        title: host.displayName,
-        description: "Atmosphere account host",
-        ogType: "website",
-        canonicalUrl: shareUrl,
-        imageUrl: new URL(
-          `/api/og/host/${encodeURIComponent(host.host)}`,
-          publicOrigin,
-        ).href,
-        imageAlt: `${host.displayName} — Atmosphere account host`,
-        imageType: "image/png",
-        imageWidth: 1200,
-        imageHeight: 630,
-      };
-    }
+    if (hostPageMeta) ctx.state.pageMeta = hostPageMeta;
     const [pdsDescription, linkedApps] = host
       ? await Promise.all([
         host.serviceEndpoint
@@ -198,7 +191,7 @@ function HostDetailPage(
               <ShareButton
                 url={shareUrl}
                 title={host.displayName}
-                text="Atmosphere account host"
+                text={HOST_SOCIAL_DESCRIPTION}
                 copy={{
                   button: "Share",
                   copyLink: "Copy link",

@@ -2,6 +2,7 @@ import { renderSvgPng } from "./image-processing.ts";
 
 export const HOST_SOCIAL_CARD_WIDTH = 1200;
 export const HOST_SOCIAL_CARD_HEIGHT = 630;
+export const HOST_SOCIAL_DESCRIPTION = "Atmosphere Account Host";
 
 export interface HostSocialCardInput {
   name: string;
@@ -9,6 +10,28 @@ export interface HostSocialCardInput {
   domain: string;
   avatarDataUrl?: string | null;
   handleIconDataUrl?: string | null;
+}
+
+export interface HostSocialPageMetaInput {
+  host: string;
+  name: string;
+  publicOrigin: string;
+}
+
+/** Keep link text and generated artwork on one canonical host identity. */
+export function buildHostSocialPageMeta(input: HostSocialPageMetaInput) {
+  const encodedHost = encodeURIComponent(input.host);
+  return {
+    title: input.name,
+    description: HOST_SOCIAL_DESCRIPTION,
+    ogType: "website" as const,
+    canonicalUrl: new URL(`/hosts/${encodedHost}/`, input.publicOrigin).href,
+    imageUrl: new URL(`/api/og/host/${encodedHost}`, input.publicOrigin).href,
+    imageAlt: `${input.name} — ${HOST_SOCIAL_DESCRIPTION}`,
+    imageType: "image/png",
+    imageWidth: HOST_SOCIAL_CARD_WIDTH,
+    imageHeight: HOST_SOCIAL_CARD_HEIGHT,
+  };
 }
 
 let atmosphereHandleIconPromise: Promise<string | null> | null = null;
@@ -122,7 +145,7 @@ export function buildHostSocialCardSvg(input: HostSocialCardInput): string {
     <rect x="92" y="170" width="296" height="296" rx="66" fill="rgba(255,255,255,.36)" stroke="rgba(255,255,255,.72)" stroke-width="2"/>
     ${avatar}
   </g>
-  <text x="450" y="215" class="eyebrow">ATMOSPHERE ACCOUNT HOST</text>
+  <text x="450" y="215" class="eyebrow">${HOST_SOCIAL_DESCRIPTION.toUpperCase()}</text>
   ${titleMarkup}
   ${identityMarkup}
 </svg>`;

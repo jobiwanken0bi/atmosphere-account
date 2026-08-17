@@ -1,4 +1,7 @@
-import { buildHostSocialCardSvg } from "./host-social-card.ts";
+import {
+  buildHostSocialCardSvg,
+  buildHostSocialPageMeta,
+} from "./host-social-card.ts";
 
 function assertIncludes(value: string, expected: string): void {
   if (!value.includes(expected)) {
@@ -31,4 +34,30 @@ Deno.test("host social card falls back to a monogram", () => {
   });
   assertIncludes(svg, ">L</text>");
   assertIncludes(svg, "Long Example Hosting");
+});
+
+Deno.test("host page metadata uses the generated card and agreed preview text", () => {
+  const meta = buildHostSocialPageMeta({
+    host: "pds.example.social",
+    name: "Example Host",
+    publicOrigin: "https://atmosphereaccount.com",
+  });
+
+  if (meta.title !== "Example Host") throw new Error("Unexpected title");
+  if (meta.description !== "Atmosphere Account Host") {
+    throw new Error("Unexpected description");
+  }
+  if (
+    meta.canonicalUrl !==
+      "https://atmosphereaccount.com/hosts/pds.example.social/"
+  ) {
+    throw new Error(`Unexpected canonical URL: ${meta.canonicalUrl}`);
+  }
+  if (
+    meta.imageUrl !==
+      "https://atmosphereaccount.com/api/og/host/pds.example.social"
+  ) {
+    throw new Error(`Unexpected image URL: ${meta.imageUrl}`);
+  }
+  if (meta.imageType !== "image/png") throw new Error("Unexpected image type");
 });
