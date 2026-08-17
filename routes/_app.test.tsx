@@ -26,12 +26,13 @@ function renderAppShell(
   pathname: string,
   signedIn = false,
   remembered = false,
+  pageMeta: Record<string, unknown> = {},
 ): string {
   const ctx = {
     Component: () => <main>Page</main>,
     state: {
       locale: "en",
-      pageMeta: {},
+      pageMeta,
       user: signedIn ? { did: "did:plc:test", handle: "test.example" } : null,
       rememberedAccounts: remembered
         ? [{ did: "did:plc:remembered", handle: "remembered.example" }]
@@ -41,6 +42,21 @@ function renderAppShell(
   };
   return renderToString(h(App, ctx as never));
 }
+
+Deno.test("app shell uses page-specific preview titles and descriptions", () => {
+  const html = renderAppShell("/apps", false, false, {
+    title: "Apps",
+    description: "Discover apps and services in the Atmosphere.",
+  });
+
+  assertIncludes(html, "<title>Apps</title>");
+  assertIncludes(html, 'property="og:title" content="Apps"');
+  assertIncludes(
+    html,
+    'name="twitter:description" content="Discover apps and services in the Atmosphere."',
+  );
+  assertIncludes(html, 'property="og:image:type" content="image/png"');
+});
 
 Deno.test("global app eagerly loads sign-in enhancement only for initial forms", () => {
   for (

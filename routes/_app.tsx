@@ -80,6 +80,8 @@ export default define.page(function App(ctx) {
   const pageOgImage = pageMeta.imageUrl
     ? socialImageUrl(pageMeta.imageUrl)
     : socialImageUrl(asset(socialImagePath));
+  const pageOgImageType = pageMeta.imageType ??
+    (pageMeta.imageUrl ? "image/jpeg" : "image/png");
   const pageOgImageAlt = pageMeta.imageAlt ?? defaultSocialImageAlt;
   const pageOgImageWidth = pageMeta.imageWidth ?? 1200;
   const pageOgImageHeight = pageMeta.imageHeight ?? 630;
@@ -120,7 +122,7 @@ export default define.page(function App(ctx) {
         <meta property="og:image:secure_url" content={pageOgImage} />
         <meta
           property="og:image:type"
-          content={pageMeta.imageType ?? "image/jpeg"}
+          content={pageOgImageType}
         />
         <meta property="og:image:width" content={String(pageOgImageWidth)} />
         <meta property="og:image:height" content={String(pageOgImageHeight)} />
