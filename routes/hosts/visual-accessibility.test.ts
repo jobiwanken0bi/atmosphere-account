@@ -27,6 +27,22 @@ Deno.test("host detail puts the operator action before Advanced", async () => {
   );
 });
 
+Deno.test("host detail summary keeps host identity separate from PDS handle endings", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./[host].tsx", import.meta.url),
+  );
+
+  assertEquals(
+    source.match(/hostDirectoryDomain\(host\)/g)?.length,
+    2,
+  );
+  assertEquals(source.includes("handleSummary"), false);
+  assertStringIncludes(
+    source,
+    "handles may use a different domain.",
+  );
+});
+
 Deno.test("host preview cards always show compact account counts", async () => {
   const [source, styles] = await Promise.all([
     Deno.readTextFile(new URL("../hosts.tsx", import.meta.url)),

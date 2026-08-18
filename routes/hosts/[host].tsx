@@ -160,7 +160,6 @@ function HostDetailPage(
   const friendly = hostFriendlyProfile(host);
   const signupSummary = hostSignupSummary(host, pdsDescription);
   const temporarilyUnavailable = accountHostAvailability(host) === "grace";
-  const handleSummary = hostHandleSummary(friendly, pdsDescription);
   const isManagedByCurrentAccount = Boolean(
     claim && account.user && verifiedOwnerDid === account.user.did,
   );
@@ -352,9 +351,12 @@ function HostDetailPage(
                 <div>
                   <p class="text-eyebrow">Host domain</p>
                   <h2>
-                    <BreakableHostname value={handleSummary.label} />
+                    <BreakableHostname value={hostDirectoryDomain(host)} />
                   </h2>
-                  <p>{handleSummary.detail}</p>
+                  <p>
+                    This is the public domain for this account host. Account
+                    handles may use a different domain.
+                  </p>
                 </div>
               </article>
               <article class="glass host-detail-choice-card">
@@ -782,30 +784,6 @@ function hostSignupSummary(
   }
 
   return { label: friendly.signupLabel, detail: friendly.signupDetail };
-}
-
-function hostHandleSummary(
-  friendly: ReturnType<typeof hostFriendlyProfile>,
-  pds: PdsServerDescription | null,
-): { label: string; detail: string } {
-  if (!pds?.availableUserDomains.length) {
-    const baseDetail = friendly.handleDetail.replace(/\.$/, "");
-    return {
-      label: friendly.handleLabel,
-      detail: /own domain/i.test(baseDetail)
-        ? `${baseDetail}.`
-        : `${baseDetail}. You can also use your own domain.`,
-    };
-  }
-
-  const domains = pds.availableUserDomains;
-  const visible = domains.slice(0, 3).join(", ");
-  const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
-  return {
-    label: `${visible}${extra}`,
-    detail:
-      "These are the handle endings this host can give new accounts. You can also use your own domain.",
-  };
 }
 
 function pdsSignupFactsLabel(pds: PdsServerDescription): string {
