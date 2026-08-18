@@ -196,7 +196,7 @@ export function AppsHostsPage(props: AppsHostsPageProps) {
                     </p>
                   </div>
                 </div>
-                <div class="account-products-grid">
+                <div class="account-products-grid account-products-grid--single">
                   {hosts.map((host) => (
                     <ManagedHostCard
                       key={host.host}
@@ -336,33 +336,35 @@ export function ManagedHostCard(
     link.status === "pending"
   );
   return (
-    <article class="account-product-card">
-      <div class="account-product-card-heading">
-        <HostMark host={host} />
-        <div>
-          <h3>{host.displayName}</h3>
-          <span>{host.host}</span>
+    <article class="account-product-card account-product-card--single-profile">
+      <div class="account-product-card-content">
+        <div class="account-product-card-heading">
+          <HostMark host={host} />
+          <div>
+            <h3>{host.displayName}</h3>
+            <span>{host.host}</span>
+          </div>
         </div>
-      </div>
-      <div class="account-product-badges">
-        <span>Account host</span>
+        <div class="account-product-badges">
+          <span>Account host</span>
+          {connectedLinks.length > 0 && (
+            <span>{countLabel(connectedLinks.length, "connected app")}</span>
+          )}
+          {pendingLinks.length > 0 && (
+            <span>{countLabel(pendingLinks.length, "pending app")}</span>
+          )}
+        </div>
         {connectedLinks.length > 0 && (
-          <span>{countLabel(connectedLinks.length, "connected app")}</span>
+          <p class="account-product-links">
+            {connectedLinks.map((link) => link.appName).join(", ")}
+          </p>
         )}
         {pendingLinks.length > 0 && (
-          <span>{countLabel(pendingLinks.length, "pending app")}</span>
+          <p class="account-product-links">
+            Pending: {pendingLinks.map((link) => link.appName).join(", ")}
+          </p>
         )}
       </div>
-      {connectedLinks.length > 0 && (
-        <p class="account-product-links">
-          {connectedLinks.map((link) => link.appName).join(", ")}
-        </p>
-      )}
-      {pendingLinks.length > 0 && (
-        <p class="account-product-links">
-          Pending: {pendingLinks.map((link) => link.appName).join(", ")}
-        </p>
-      )}
       <div class="account-product-actions">
         <a href={`/hosts/${encodeURIComponent(host.host)}`}>View profile</a>
         <a

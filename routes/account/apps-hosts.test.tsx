@@ -124,6 +124,9 @@ Deno.test("host-only managers do not see app or developer settings", () => {
   );
 
   assertStringIncludes(html, "<h2>Host profiles</h2>");
+  assertStringIncludes(html, "account-products-grid--single");
+  assertStringIncludes(html, "account-product-card--single-profile");
+  assertStringIncludes(html, "account-product-card-content");
   assertStringIncludes(
     html,
     "Manage the host profiles operated by this account and their app connections.",
