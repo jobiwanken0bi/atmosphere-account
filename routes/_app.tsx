@@ -64,7 +64,7 @@ export default define.page(function App(ctx) {
     : url.pathname.startsWith("/apps")
     ? "Atmosphere apps, profiles, reviews, and updates."
     : url.pathname.startsWith("/hosts")
-    ? "Atmosphere account hosts: choose where your account lives."
+    ? "Atmosphere account hosts: where your account lives."
     : t.meta.ogImageAlt;
   /**
    * Per-page OG overrides set by route handlers via `ctx.state.pageMeta`.
