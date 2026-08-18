@@ -3,6 +3,7 @@ import opentype from "opentype.js";
 
 export const HOST_SOCIAL_CARD_WIDTH = 1200;
 export const HOST_SOCIAL_CARD_HEIGHT = 630;
+export const HOST_SOCIAL_CARD_VERSION = "2";
 export const HOST_SOCIAL_DESCRIPTION = "Atmosphere Account Host";
 
 export interface HostSocialCardInput {
@@ -46,7 +47,10 @@ export function buildHostSocialPageMeta(input: HostSocialPageMetaInput) {
     description: HOST_SOCIAL_DESCRIPTION,
     ogType: "website" as const,
     canonicalUrl: new URL(`/hosts/${encodedHost}/`, input.publicOrigin).href,
-    imageUrl: new URL(`/api/og/host/${encodedHost}`, input.publicOrigin).href,
+    imageUrl: new URL(
+      `/api/og/host/${encodedHost}?v=${HOST_SOCIAL_CARD_VERSION}`,
+      input.publicOrigin,
+    ).href,
     imageAlt: `${input.name} — ${HOST_SOCIAL_DESCRIPTION}`,
     imageType: "image/png",
     imageWidth: HOST_SOCIAL_CARD_WIDTH,

@@ -22,7 +22,10 @@ import {
 } from "../../lib/account-hosts.ts";
 import { getHostDetailFromAppview } from "../../lib/appview-client.ts";
 import { buildHostDashboardState } from "../../lib/host-dashboard.ts";
-import { hostFriendlyProfile, hostPdsDomain } from "../../lib/host-friendly.ts";
+import {
+  hostDirectoryDomain,
+  hostFriendlyProfile,
+} from "../../lib/host-friendly.ts";
 import {
   fetchPdsServerDescription,
   type PdsServerDescription,
@@ -246,7 +249,7 @@ function HostDetailPage(
                       <AtmosphereHandle handle={host.profileHandle} />
                     </p>
                   )}
-                  <p class="host-detail-domain">{hostPdsDomain(host)}</p>
+                  <p class="host-detail-domain">{hostDirectoryDomain(host)}</p>
                   {temporarilyUnavailable && (
                     <div
                       class="host-detail-status-row"

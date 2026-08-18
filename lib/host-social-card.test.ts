@@ -56,7 +56,7 @@ Deno.test("host page metadata uses the generated card and agreed preview text", 
   }
   if (
     meta.imageUrl !==
-      "https://atmosphereaccount.com/api/og/host/pds.example.social"
+      "https://atmosphereaccount.com/api/og/host/pds.example.social?v=2"
   ) {
     throw new Error(`Unexpected image URL: ${meta.imageUrl}`);
   }

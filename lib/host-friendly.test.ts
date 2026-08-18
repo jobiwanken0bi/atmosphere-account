@@ -1,6 +1,10 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { listSeededAccountHostFallback } from "./account-hosts.ts";
-import { hostFriendlyProfile, hostPdsDomain } from "./host-friendly.ts";
+import {
+  hostDirectoryDomain,
+  hostFriendlyProfile,
+  hostPdsDomain,
+} from "./host-friendly.ts";
 
 const spark = listSeededAccountHostFallback().find((host) =>
   host.host === "sprk.so"
@@ -26,6 +30,21 @@ Deno.test("hostPdsDomain falls back to the inventory host", () => {
   assertEquals(
     hostPdsDomain({ host: "example.host", serviceEndpoint: "not a URL" }),
     "example.host",
+  );
+});
+
+Deno.test("public host identity stays on the registry domain", () => {
+  const sparkManagedAccount = {
+    host: "sprk.so",
+    serviceEndpoint: "https://goldenear.us-west.host.bsky.network",
+  };
+  assertEquals(
+    hostDirectoryDomain({ host: "SPRk.SO" }),
+    "sprk.so",
+  );
+  assertEquals(
+    hostDirectoryDomain(sparkManagedAccount),
+    "sprk.so",
   );
 });
 
