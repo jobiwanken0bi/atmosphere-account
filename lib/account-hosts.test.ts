@@ -5,6 +5,7 @@ import {
   accountHostClaimUpdateQueryForTest,
   accountHostDashboardSettingsUpdateQueryForTest,
   DEFAULT_ACCOUNT_HOST_SORT,
+  establishAccountHostRegistrationOwnershipForTest,
   fetchHostProfileForTest,
   finalizeEmailClaimRecoveryTransactionForTest,
   hasCompletedContactEmailClaimEvidenceForTest,
@@ -1941,6 +1942,103 @@ Deno.test("claim ownership upserts are idempotent only for the same DID", async 
   }, { ...claim, method: "pds_contact_email" });
   assertEquals(rejectedLegacy, false);
   assertEquals(attemptedLegacyWrite, false);
+});
+
+Deno.test("fresh local host registration creates the claim parent before ownership", async () => {
+  const databasePath = await Deno.makeTempFile({
+    prefix: "atmosphere-fresh-host-registration-",
+    suffix: ".db",
+  });
+  const db = createClient({ url: `file:${databasePath}` });
+  try {
+    await db.execute("PRAGMA foreign_keys = ON");
+    await db.execute(`CREATE TABLE account_host (
+      host TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    await db.execute(`CREATE TABLE account_host_claim (
+      host TEXT PRIMARY KEY,
+      claimant_did TEXT NOT NULL,
+      claimant_handle TEXT NOT NULL,
+      method TEXT NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      verified_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
+    )`);
+
+    const timestamp = 1_800_000_000_000;
+    const claimed = await establishAccountHostRegistrationOwnershipForTest(
+      db as unknown as DbClient,
+      {
+        host: "fresh-host.test",
+        displayName: "Fresh Host",
+        timestamp,
+        claim: {
+          host: "fresh-host.test",
+          claimantDid: "did:plc:fresh-host",
+          claimantHandle: "fresh-host.test",
+          method: "local_dev_fixture",
+          claimedAt: timestamp,
+          verifiedAt: timestamp,
+          updatedAt: timestamp,
+        },
+      },
+    );
+
+    assertEquals(claimed, true);
+    const hostRows = await db.execute({
+      sql: "SELECT display_name FROM account_host WHERE host = ?",
+      args: ["fresh-host.test"],
+    });
+    const claimRows = await db.execute({
+      sql: `SELECT claimant_did, method
+        FROM account_host_claim WHERE host = ?`,
+      args: ["fresh-host.test"],
+    });
+    assertEquals(hostRows.rows[0]?.display_name, "Fresh Host");
+    assertEquals(claimRows.rows[0]?.claimant_did, "did:plc:fresh-host");
+    assertEquals(claimRows.rows[0]?.method, "local_dev_fixture");
+
+    const competingClaim =
+      await establishAccountHostRegistrationOwnershipForTest(
+        db as unknown as DbClient,
+        {
+          host: "fresh-host.test",
+          displayName: "Competing Host",
+          timestamp: timestamp + 1,
+          claim: {
+            host: "fresh-host.test",
+            claimantDid: "did:plc:competing-host",
+            claimantHandle: "competing-host.test",
+            method: "local_dev_fixture",
+            claimedAt: timestamp + 1,
+            verifiedAt: timestamp + 1,
+            updatedAt: timestamp + 1,
+          },
+        },
+      );
+    assertEquals(competingClaim, false);
+    const unchangedHost = await db.execute({
+      sql: "SELECT display_name FROM account_host WHERE host = ?",
+      args: ["fresh-host.test"],
+    });
+    const unchangedClaim = await db.execute({
+      sql: "SELECT claimant_did FROM account_host_claim WHERE host = ?",
+      args: ["fresh-host.test"],
+    });
+    assertEquals(unchangedHost.rows[0]?.display_name, "Fresh Host");
+    assertEquals(
+      unchangedClaim.rows[0]?.claimant_did,
+      "did:plc:fresh-host",
+    );
+  } finally {
+    db.close();
+    await Deno.remove(databasePath).catch(() => {});
+  }
 });
 
 Deno.test("seeded account host fallback includes known public hosts", () => {
