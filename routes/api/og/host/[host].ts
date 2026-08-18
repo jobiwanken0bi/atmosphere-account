@@ -15,7 +15,7 @@ import {
 import { withRateLimit } from "../../../../lib/rate-limit.ts";
 import { isPrivateNetworkUrl } from "../../../../lib/security.ts";
 import { assertPublicDnsHostname } from "../../../../lib/identity.ts";
-import { hostPdsDomain } from "../../../../lib/host-friendly.ts";
+import { hostDirectoryDomain } from "../../../../lib/host-friendly.ts";
 import { squarePng } from "../../../../lib/image-processing.ts";
 
 const MAX_AVATAR_BYTES = 2_000_000;
@@ -41,7 +41,7 @@ export const handler = define.handlers({
     const png = await renderHostSocialCardPng({
       name: host.displayName,
       handle: host.profileHandle,
-      domain: hostPdsDomain(host),
+      domain: hostDirectoryDomain(host),
       avatarDataUrl,
       handleIconDataUrl,
     });

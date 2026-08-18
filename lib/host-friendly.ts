@@ -90,7 +90,14 @@ export function hostFriendlyProfile(host: AccountHost): HostFriendlyProfile {
   };
 }
 
-/** The user-facing PDS domain shown on host cards and detail pages. */
+/** The canonical domain that identifies a host in the public directory. */
+export function hostDirectoryDomain(
+  host: Pick<AccountHost, "host">,
+): string {
+  return host.host.trim().toLowerCase();
+}
+
+/** The network endpoint hostname used by the host's PDS service. */
 export function hostPdsDomain(
   host: Pick<AccountHost, "host" | "serviceEndpoint">,
 ): string {

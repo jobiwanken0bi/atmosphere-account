@@ -15,7 +15,10 @@ import type {
 import { DEFAULT_ACCOUNT_HOST_SORT } from "../lib/account-hosts.ts";
 import { accountHostAvailability } from "../lib/account-hosts.ts";
 import { listHostsFromAppview } from "../lib/appview-client.ts";
-import { hostFriendlyProfile, hostPdsDomain } from "../lib/host-friendly.ts";
+import {
+  hostDirectoryDomain,
+  hostFriendlyProfile,
+} from "../lib/host-friendly.ts";
 import { hostHasCurrentConformance } from "../lib/host-conformance.ts";
 import { hostDetailHref } from "../lib/host-directory-navigation.ts";
 import { getMessages } from "../i18n/mod.ts";
@@ -455,7 +458,7 @@ function HostCard(
               </p>
             )}
             <p class="host-card-domain">
-              {hostPdsDomain(host)}
+              {hostDirectoryDomain(host)}
             </p>
           </div>
         </div>
