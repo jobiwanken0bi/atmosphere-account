@@ -120,6 +120,8 @@ interface Props {
   publicProfileHandle?: string | null;
   /** Directory identifier used to continue into verified host connection. */
   managedAppIdentifier?: string | null;
+  /** Avoid offering another host when this app already has one. */
+  hasAccountHost?: boolean;
   /** Publish this DID's first and only ATStore app record. */
   createNewListing?: boolean;
   /** Exact shared record managed by this form, used for targeted removal. */
@@ -729,6 +731,7 @@ export default function CreateProfileForm(
     initialPublished,
     publicProfileHandle,
     managedAppIdentifier,
+    hasAccountHost = false,
     createNewListing = false,
     atstoreListingUri = null,
     reauthReturnTo = "/apps/manage",
@@ -2067,14 +2070,14 @@ export default function CreateProfileForm(
             {tManage.viewPublicProfile}
           </a>
         )}
-        {published.value && hostAppIdentifier.value && (
+        {published.value && hostAppIdentifier.value && !hasAccountHost && (
           <a
             href={`/apps/manage/host?app=${
               encodeURIComponent(hostAppIdentifier.value)
             }`}
             class="profile-form-button-secondary profile-form-button-secondary--lg"
           >
-            Add account hosting
+            Connect account host
           </a>
         )}
         {published.value && (

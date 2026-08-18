@@ -288,7 +288,9 @@ export function ManagedAppCard(
           </div>
         </div>
         <div class="account-product-badges">
-          <span>{app.atstoreListingUri ? "ATStore app" : "App profile"}</span>
+          <span>
+            {app.atstoreListingUri ? "Shows on ATStore" : "App profile"}
+          </span>
           {connectedLinks.length > 0 && (
             <span>{countLabel(connectedLinks.length, "connected host")}</span>
           )}

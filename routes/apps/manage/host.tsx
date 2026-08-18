@@ -42,6 +42,7 @@ import {
   appHostRelationshipLabel,
   appHostRelationshipOption,
 } from "../../../lib/app-host-relationship-copy.ts";
+import { appManagementHref } from "../../../lib/app-management-navigation.ts";
 
 const MAX_RELATIONSHIP_FORM_BYTES = 16_384;
 
@@ -129,6 +130,22 @@ export const handler = define.handlers({
     if (relationship !== "same_product" && relationship !== "same_operator") {
       return await renderForOwner(ctx, {
         error: "Choose how this host relates to the app.",
+        success: null,
+      });
+    }
+    let currentLinks: DirectoryEntityAppLink[];
+    try {
+      currentLinks = await listDirectoryEntityLinksForApp(app.id);
+    } catch (error) {
+      return appviewUnavailable(error);
+    }
+    const currentHosting = currentLinks.find((link) =>
+      link.relationship !== "host_only"
+    );
+    if (currentHosting) {
+      return await renderForOwner(ctx, {
+        error:
+          `${app.name} already uses ${currentHosting.hostDisplayName} for account hosting. Remove that connection before choosing another host.`,
         success: null,
       });
     }
@@ -266,7 +283,7 @@ async function loadOwnedApp(
   return { app, apps: portfolio.apps };
 }
 
-function AppHostRelationshipsPage(props: {
+export function AppHostRelationshipsPage(props: {
   app: AppListing;
   apps: AppListing[];
   links: DirectoryEntityAppLink[];
@@ -275,6 +292,10 @@ function AppHostRelationshipsPage(props: {
   success: string | null;
 }) {
   const { app, apps, links, account, error, success } = props;
+  const accountHostingLinks = links.filter((link) =>
+    link.relationship !== "host_only"
+  );
+  const backHref = appManagementHref(app, account.user?.did ?? "");
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -284,7 +305,7 @@ function AppHostRelationshipsPage(props: {
           class="signin-page-section host-manage-section"
         >
           <div class="container signin-page-container relationship-manage-container">
-            <a href="/apps/manage" class="text-link-button">
+            <a href={backHref} class="text-link-button">
               ← Back to app management
             </a>
             <div class="glass signin-page-card host-manage-card">
@@ -326,13 +347,13 @@ function AppHostRelationshipsPage(props: {
                 </p>
               )}
 
-              {links.length > 0 && (
+              {accountHostingLinks.length > 0 && (
                 <section
                   class="relationship-list"
                   aria-label="Current host connections"
                 >
                   <h2>Current connections</h2>
-                  {links.map((link) => (
+                  {accountHostingLinks.map((link) => (
                     <article
                       class="relationship-row"
                       key={`${link.host}:${link.appListingId}`}
@@ -377,95 +398,97 @@ function AppHostRelationshipsPage(props: {
                 </section>
               )}
 
-              <section class="relationship-create">
-                <div class="relationship-create-heading">
-                  <div>
-                    <h2>Add account hosting</h2>
-                    <p>
-                      Start with a detected PDS or connect an existing claimed
-                      host below.
-                    </p>
+              {accountHostingLinks.length === 0 && (
+                <section class="relationship-create">
+                  <div class="relationship-create-heading">
+                    <div>
+                      <h2>Connect account hosting</h2>
+                      <p>
+                        Start with a detected PDS or connect an existing claimed
+                        host below.
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <form
-                  method="POST"
-                  class="host-manage-form"
-                  data-submit-once="true"
-                >
-                  <input
-                    type="hidden"
-                    name="appListingId"
-                    value={app.id}
-                  />
-                  <label class="profile-form-field">
-                    <span class="profile-form-label">Relationship</span>
-                    <select class="profile-form-input" name="relationship">
-                      <option value="same_product">
-                        {appHostRelationshipOption("same_product")}
-                      </option>
-                      <option value="same_operator">
-                        {appHostRelationshipOption("same_operator")}
-                      </option>
-                    </select>
-                  </label>
-                  <div class="owner-app-relationship-actions">
+                  <form
+                    method="POST"
+                    class="host-manage-form"
+                    data-submit-once="true"
+                  >
+                    <input
+                      type="hidden"
+                      name="appListingId"
+                      value={app.id}
+                    />
+                    <label class="profile-form-field">
+                      <span class="profile-form-label">Relationship</span>
+                      <select class="profile-form-input" name="relationship">
+                        <option value="same_product">
+                          {appHostRelationshipOption("same_product")}
+                        </option>
+                        <option value="same_operator">
+                          {appHostRelationshipOption("same_operator")}
+                        </option>
+                      </select>
+                    </label>
+                    <div class="owner-app-relationship-actions">
+                      <button
+                        class="directory-register-button"
+                        type="submit"
+                        name="action"
+                        value="start_detected"
+                        data-pending-label="Finding PDS…"
+                      >
+                        <span data-submit-once-label>Find a detected PDS</span>
+                      </button>
+                    </div>
+                  </form>
+                  <form
+                    method="POST"
+                    class="host-manage-form"
+                    data-submit-once="true"
+                  >
+                    <input type="hidden" name="action" value="define" />
+                    <input
+                      type="hidden"
+                      name="appListingId"
+                      value={app.id}
+                    />
+                    <label class="profile-form-field">
+                      <span class="profile-form-label">Host domain</span>
+                      <input
+                        class="profile-form-input"
+                        name="host"
+                        value={app.accountHost ?? ""}
+                        placeholder="eurosky.social"
+                        autoComplete="off"
+                        required
+                      />
+                    </label>
+                    <label class="profile-form-field">
+                      <span class="profile-form-label">Relationship</span>
+                      <select class="profile-form-input" name="relationship">
+                        <option value="same_product">
+                          {appHostRelationshipOption("same_product")}
+                        </option>
+                        <option value="same_operator">
+                          {appHostRelationshipOption("same_operator")}
+                        </option>
+                      </select>
+                    </label>
+                    <p class="profile-form-hint">
+                      If the host is claimed by another DID, switch to that
+                      account on the next screen to complete approval.
+                    </p>
                     <button
                       class="directory-register-button"
                       type="submit"
-                      name="action"
-                      value="start_detected"
-                      data-pending-label="Finding PDS…"
+                      data-pending-label="Saving connection…"
                     >
-                      <span data-submit-once-label>Find a detected PDS</span>
+                      <span data-submit-once-label>Save connection</span>
                     </button>
-                  </div>
-                </form>
-                <form
-                  method="POST"
-                  class="host-manage-form"
-                  data-submit-once="true"
-                >
-                  <input type="hidden" name="action" value="define" />
-                  <input
-                    type="hidden"
-                    name="appListingId"
-                    value={app.id}
-                  />
-                  <label class="profile-form-field">
-                    <span class="profile-form-label">Host domain</span>
-                    <input
-                      class="profile-form-input"
-                      name="host"
-                      value={app.accountHost ?? ""}
-                      placeholder="eurosky.social"
-                      autoComplete="off"
-                      required
-                    />
-                  </label>
-                  <label class="profile-form-field">
-                    <span class="profile-form-label">Relationship</span>
-                    <select class="profile-form-input" name="relationship">
-                      <option value="same_product">
-                        {appHostRelationshipOption("same_product")}
-                      </option>
-                      <option value="same_operator">
-                        {appHostRelationshipOption("same_operator")}
-                      </option>
-                    </select>
-                  </label>
-                  <p class="profile-form-hint">
-                    If the host is claimed by another DID, switch to that
-                    account on the next screen to complete approval.
-                  </p>
-                  <button
-                    class="directory-register-button"
-                    type="submit"
-                    data-pending-label="Saving connection…"
-                  >
-                    <span data-submit-once-label>Save connection</span>
-                  </button>
-                </form>
-              </section>
+                  </form>
+                </section>
+              )}
             </div>
           </div>
         </main>
