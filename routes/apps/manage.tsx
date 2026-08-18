@@ -37,7 +37,11 @@ import {
   type CollectionSuggestion,
   listCollectionSuggestions,
 } from "../../lib/collection-catalog.ts";
-import { userControlsAppListing } from "../../lib/directory-entity-links.ts";
+import {
+  type DirectoryEntityAppLink,
+  listDirectoryEntityLinksForApp,
+  userControlsAppListing,
+} from "../../lib/directory-entity-links.ts";
 import {
   APP_MANAGEMENT_CAPABILITIES,
   oauthSigninUrl,
@@ -55,6 +59,16 @@ export function isEditableRequestedApp(
 ): boolean {
   return userControlsAppListing(app, userDid) &&
     Boolean(app.atstoreListingUri?.startsWith(`at://${userDid}/`));
+}
+
+export function primaryAccountHostLink(
+  links: DirectoryEntityAppLink[],
+): DirectoryEntityAppLink | null {
+  const hostingLinks = links.filter((link) =>
+    link.relationship !== "host_only"
+  );
+  return hostingLinks.find((link) => link.status === "verified") ??
+    hostingLinks[0] ?? null;
 }
 
 export const handler = define.handlers({
@@ -385,6 +399,13 @@ export const handler = define.handlers({
         await getAppListingByIdentifier(user.did, {
           syncLegacy: false,
         }).catch(() => null);
+    const accountHostLink = managedAppListing
+      ? primaryAccountHostLink(
+        await listDirectoryEntityLinksForApp(managedAppListing.id).catch(
+          () => [],
+        ),
+      )
+      : null;
     return ctx.render(
       <ManagePage
         user={user}
@@ -408,6 +429,7 @@ export const handler = define.handlers({
         migrationFocus={ctx.url.searchParams.get("migrate") ===
           "shared-records"}
         managedAppListingId={managedAppListing?.id ?? null}
+        accountHostLink={accountHostLink}
         createNewListing={creatingAdditionalApp}
         reauthReturnTo={next}
         takedown={takedown}
@@ -674,6 +696,7 @@ interface ManagePageProps {
   showAtstoreMigration: boolean;
   migrationFocus: boolean;
   managedAppListingId: string | null;
+  accountHostLink: DirectoryEntityAppLink | null;
   createNewListing: boolean;
   reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
@@ -700,6 +723,7 @@ function ManagePage(
     showAtstoreMigration,
     migrationFocus,
     managedAppListingId,
+    accountHostLink,
     createNewListing,
     reauthReturnTo,
     takedown,
@@ -769,39 +793,11 @@ function ManagePage(
                 publicProfileHandle={publicProfileHandle}
               />
               {!createNewListing && (
-                <section class="glass directory-relationship-entry owner-app-relationship-entry">
-                  <div>
-                    <p class="text-eyebrow">Account hosting</p>
-                    <h2>Add account hosting</h2>
-                    <p>
-                      The app and host keep separate public profiles. Verified
-                      connections show whether the host provides account
-                      services for the app or the two share an operator.
-                    </p>
-                  </div>
-                  <div class="owner-app-relationship-actions">
-                    {initialPublished && managedAppListingId
-                      ? (
-                        <a
-                          class="directory-register-button"
-                          href={`/apps/manage/host?app=${
-                            encodeURIComponent(managedAppListingId)
-                          }`}
-                        >
-                          Add account hosting
-                        </a>
-                      )
-                      : (
-                        <p class="profile-form-hint">
-                          Publish the app profile first, then connect a detected
-                          or already-claimed PDS.
-                        </p>
-                      )}
-                    <a class="text-link-button" href="/account/apps-hosts">
-                      View apps and hosts
-                    </a>
-                  </div>
-                </section>
+                <AppHostingSummary
+                  link={accountHostLink}
+                  initialPublished={initialPublished}
+                  managedAppListingId={managedAppListingId}
+                />
               )}
               {showAtstoreMigration && migrationFocus && (
                 <MigrationSection
@@ -821,6 +817,7 @@ function ManagePage(
                 collectionSuggestions={collectionSuggestions}
                 publicProfileHandle={publicProfileHandle}
                 managedAppIdentifier={managedAppListingId}
+                hasAccountHost={!!accountHostLink}
                 createNewListing={createNewListing}
                 atstoreListingUri={atstoreListingUri}
                 reauthReturnTo={reauthReturnTo}
@@ -832,6 +829,83 @@ function ManagePage(
         <Footer variant="compact" />
       </div>
     </div>
+  );
+}
+
+export function AppHostingSummary(
+  {
+    link,
+    initialPublished,
+    managedAppListingId,
+  }: {
+    link: DirectoryEntityAppLink | null;
+    initialPublished: boolean;
+    managedAppListingId: string | null;
+  },
+) {
+  const manageHref = managedAppListingId
+    ? `/apps/manage/host?app=${encodeURIComponent(managedAppListingId)}`
+    : null;
+  return (
+    <section class="glass directory-relationship-entry owner-app-relationship-entry">
+      <div>
+        <p class="text-eyebrow">Account hosting</p>
+        {link
+          ? (
+            <>
+              <h2>{link.hostDisplayName}</h2>
+              <p>
+                {link.host} is the account host for this app.
+              </p>
+              <span
+                class={`relationship-status relationship-status--${link.status}`}
+              >
+                {link.status === "verified"
+                  ? "Verified"
+                  : "Waiting for host approval"}
+              </span>
+            </>
+          )
+          : (
+            <>
+              <h2>Connect an account host</h2>
+              <p>
+                Choose the one PDS domain that provides accounts for this app.
+              </p>
+            </>
+          )}
+      </div>
+      <div class="owner-app-relationship-actions">
+        {link && manageHref
+          ? (
+            <>
+              <a class="directory-register-button" href={manageHref}>
+                Manage account hosting
+              </a>
+              <a
+                class="text-link-button"
+                href={`/hosts/${encodeURIComponent(link.host)}`}
+              >
+                View host
+              </a>
+            </>
+          )
+          : initialPublished && manageHref
+          ? (
+            <a class="directory-register-button" href={manageHref}>
+              Connect account host
+            </a>
+          )
+          : (
+            <p class="profile-form-hint">
+              Publish the app profile first, then connect its PDS.
+            </p>
+          )}
+        <a class="text-link-button" href="/account/apps-hosts">
+          View apps and hosts
+        </a>
+      </div>
+    </section>
   );
 }
 
@@ -892,7 +966,7 @@ function OwnerAppSummary(
   const state = atstoreListingUri
     ? {
       tone: "ok",
-      label: "ATStore-backed",
+      label: "Shows on ATStore",
       title: "Shared app record active",
       body:
         "Edits from this page update shared app records for interoperable discovery, reviews, and favorites.",
