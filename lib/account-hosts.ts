@@ -1997,6 +1997,43 @@ async function upsertAccountHostClaimForOwner(
 export const upsertAccountHostClaimForOwnerForTest =
   upsertAccountHostClaimForOwner;
 
+interface AccountHostRegistrationOwnershipInput {
+  host: string;
+  displayName: string;
+  timestamp: number;
+  claim: AccountHostClaim;
+}
+
+async function establishAccountHostRegistrationOwnership(
+  c: DbClient,
+  input: AccountHostRegistrationOwnershipInput,
+): Promise<boolean> {
+  // A fresh claim needs its foreign-key parent before account_host_claim can
+  // be inserted. The no-op conflict keeps existing host fields untouched until
+  // the conditional ownership upsert confirms this claimant may manage them.
+  const parentWrite = await c.execute({
+    sql: `INSERT INTO account_host (
+        host, display_name, description, created_at, updated_at
+      ) VALUES (?, ?, '', ?, ?)
+      ON CONFLICT(host) DO NOTHING`,
+    args: [
+      input.host,
+      input.displayName,
+      input.timestamp,
+      input.timestamp,
+    ],
+  });
+  const parentInserted = Number(parentWrite.rowsAffected ?? 0) === 1;
+  const claimed = await upsertAccountHostClaimForOwner(c, input.claim);
+  if (!claimed && parentInserted) {
+    throw new Error("new account host ownership could not be established");
+  }
+  return claimed;
+}
+
+export const establishAccountHostRegistrationOwnershipForTest =
+  establishAccountHostRegistrationOwnership;
+
 async function writeDnsClaimTransaction(
   c: DbClient,
   input: DnsClaimWriteInput,
@@ -4157,10 +4194,14 @@ export async function registerAccountHost(
     updatedAt: ts,
   };
   const saved = await withDbTransaction(async (c) => {
-    // Establish (or refresh) ownership first. The conditional conflict update
-    // prevents a concurrent claimant from being overwritten, and every later
-    // host-field write rolls back if ownership cannot be established.
-    if (!await upsertAccountHostClaimForOwner(c, claim)) return false;
+    if (
+      !await establishAccountHostRegistrationOwnership(c, {
+        host,
+        displayName,
+        timestamp: ts,
+        claim,
+      })
+    ) return false;
 
     const hostWrite = await c.execute({
       sql: `INSERT INTO account_host (
