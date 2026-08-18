@@ -224,7 +224,7 @@ const en = {
     eyebrow: "Account hosts",
     headline: "Where your account lives.",
     intro:
-      "Your account host is the home for your Atmosphere account. It keeps your Atmosphere account online so you can use it across apps, and you can move to a new host later—like moving houses—without losing your identity. Compare who each host is for, where your data is stored, and whether signup is open.",
+      "Your account host is the home for your Atmosphere account. It keeps your Atmosphere account online so you can use it across apps, and you can move to a new host later, like moving houses, without losing your identity.",
     searchLabel: "Search account hosts",
     searchPlaceholder: "Search account hosts…",
     search: "Search",
