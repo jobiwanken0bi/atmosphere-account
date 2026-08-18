@@ -7349,6 +7349,8 @@ body {
 }
 
 .app-detail-hero {
+  position: relative;
+  z-index: 3;
   margin-top: 1rem;
   flex-direction: column;
   gap: 1rem;
@@ -7428,8 +7430,188 @@ body {
 .app-detail-inline-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
   margin-top: auto;
+}
+
+.app-detail-metadata-popover {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.app-detail-metadata-popover::before {
+  position: absolute;
+  z-index: 19;
+  top: 100%;
+  left: 0;
+  width: min(22rem, calc(100vw - 2rem));
+  height: 0.75rem;
+  content: "";
+}
+
+.app-detail-metadata-popover > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.app-detail-metadata-popover > summary::-webkit-details-marker {
+  display: none;
+}
+
+.app-detail-scopes-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.7rem);
+  left: 0;
+  display: block;
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(30rem, calc(100vh - 7rem));
+  padding: 1rem;
+  overflow: auto;
+  border-radius: 18px;
+  background: rgba(247, 250, 255, 0.98);
+  backdrop-filter: blur(20px) saturate(1.15);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-0.35rem) scale(0.98);
+  transform-origin: top left;
+  box-shadow: 0 20px 54px rgba(28, 48, 91, 0.2);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.app-detail-scopes-popover::after {
+  position: absolute;
+  top: -0.38rem;
+  left: 1rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-top: 1px solid rgba(42, 90, 168, 0.14);
+  border-left: 1px solid rgba(42, 90, 168, 0.14);
+  background: rgba(247, 250, 255, 0.96);
+  content: "";
+  transform: rotate(45deg);
+}
+
+.app-detail-metadata-popover[open] .app-detail-scopes-popover,
+.app-detail-metadata-popover:hover .app-detail-scopes-popover,
+.app-detail-metadata-popover:focus-within .app-detail-scopes-popover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.app-detail-scopes-popover-heading {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.7rem;
+}
+
+.app-detail-scopes-popover-icon {
+  display: inline-flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.48rem;
+  border: 1px solid rgba(42, 90, 168, 0.16);
+  border-radius: 0.72rem;
+  background: rgba(42, 90, 168, 0.09);
+  color: #254a9e;
+}
+
+.app-detail-scopes-popover-heading h2,
+.app-detail-scopes-popover-heading p,
+.app-detail-scopes-note {
+  margin: 0;
+}
+
+.app-detail-scopes-popover-heading h2 {
+  color: #0e1428;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.app-detail-scopes-popover-heading p,
+.app-detail-scopes-note {
+  margin-top: 0.2rem;
+  color: rgba(18, 26, 47, 0.64);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.app-detail-scope-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-detail-scope-list li {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid rgba(42, 90, 168, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.app-detail-scope-list span {
+  color: rgba(18, 26, 47, 0.82);
+  font-size: 0.8rem;
+  line-height: 1.38;
+}
+
+.app-detail-scope-list code {
+  overflow-wrap: anywhere;
+  color: rgba(37, 74, 158, 0.82);
+  font-size: 0.7rem;
+}
+
+.app-detail-scopes-note {
+  margin-top: 0.75rem;
+}
+
+.dark-phase .app-detail-scopes-popover::after {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(22, 34, 62, 0.98);
+}
+
+.dark-phase .app-detail-scopes-popover {
+  background: rgba(22, 34, 62, 0.98);
+}
+
+.dark-phase .app-detail-scopes-popover-icon {
+  border-color: rgba(166, 191, 255, 0.22);
+  background: rgba(106, 149, 255, 0.16);
+  color: #d8e4ff;
+}
+
+.dark-phase .app-detail-scopes-popover-heading h2 {
+  color: #f0f4ff;
+}
+
+.dark-phase .app-detail-scopes-popover-heading p,
+.dark-phase .app-detail-scopes-note {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.dark-phase .app-detail-scope-list li {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dark-phase .app-detail-scope-list span {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.dark-phase .app-detail-scope-list code {
+  color: #d8e4ff;
 }
 
 .app-detail-hero .app-detail-inline-actions .profile-hero-action--icon-only {
@@ -7724,6 +7906,35 @@ body {
 
 .app-detail-related {
   margin-top: 1.3rem;
+}
+
+/* Related cards sit outside the directory panel. Keep their media and footer
+ * in normal flow so the footer cannot cover most of the image at three-column
+ * widths. */
+.app-detail-related-grid .app-fresh-card {
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: auto;
+}
+
+.app-detail-related-grid .app-fresh-media {
+  position: relative;
+  inset: auto;
+  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: 1200 / 630;
+  overflow: hidden;
+}
+
+.app-detail-related-grid .app-fresh-media img {
+  position: absolute;
+  inset: 0;
+}
+
+.app-detail-related-grid .app-fresh-footer {
+  position: relative;
+  flex: 0 0 auto;
+  margin-top: -0.55rem;
 }
 
 .app-detail-technical {

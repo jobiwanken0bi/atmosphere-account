@@ -5,6 +5,7 @@ import {
   type BskyClient,
   getProfileMicroblogViewer,
 } from "./bsky-clients.ts";
+import { appMetadataLinkKind } from "./app-metadata-links.ts";
 
 export type AppActionLinkKind =
   | "website"
@@ -12,6 +13,9 @@ export type AppActionLinkKind =
   | "tangled"
   | "ios"
   | "android"
+  | "privacy"
+  | "terms"
+  | "scopes"
   | "external";
 
 export interface AppActionLink extends AppDirectoryLink {
@@ -121,6 +125,12 @@ function hasEquivalentUrl(links: AppActionLink[], uri: string): boolean {
 export function appActionLinkKind(
   link: Pick<AppDirectoryLink, "uri" | "label" | "role">,
 ): AppActionLinkKind {
+  const metadataKind = appMetadataLinkKind(link);
+  if (metadataKind === "privacy") return "privacy";
+  if (metadataKind === "terms") return "terms";
+  if (metadataKind === "scopes" || metadataKind === "oauth_metadata") {
+    return "scopes";
+  }
   const url = parseUrl(link.uri);
   const host = url?.hostname.replace(/^www\./, "").toLowerCase() ?? "";
   const path = url?.pathname.toLowerCase() ?? "";
@@ -167,6 +177,9 @@ function appActionLinkLabel(
   if (kind === "ios") return "App Store";
   if (kind === "android") return "Play Store";
   if (kind === "website") return "Explore";
+  if (kind === "privacy") return "Privacy";
+  if (kind === "terms") return "Terms";
+  if (kind === "scopes") return "Scopes";
   return link.label?.trim() || roleLabel(link.role) || "Open";
 }
 

@@ -118,4 +118,25 @@ Deno.test("appActionLinkKind recognizes common ATStore link shapes", () => {
     }),
     "tangled",
   );
+  assertEquals(
+    appActionLinkKind({
+      uri: "https://example.com/privacy",
+      label: "Privacy policy",
+    }),
+    "privacy",
+  );
+  assertEquals(
+    appActionLinkKind({
+      uri: "https://example.com/terms",
+      role: "community.lexicon.app.defs#linkRoleTerms",
+    }),
+    "terms",
+  );
+  assertEquals(
+    appActionLinkKind({
+      uri: "https://example.com/oauth-client-metadata.json",
+      label: "OAuth client metadata",
+    }),
+    "scopes",
+  );
 });

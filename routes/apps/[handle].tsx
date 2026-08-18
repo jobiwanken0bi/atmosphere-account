@@ -78,6 +78,11 @@ import {
   type AppActionLinkKind,
   appActionLinks,
 } from "../../lib/app-listing-links.ts";
+import {
+  type AppPublicMetadata,
+  getAppPublicMetadata,
+  scopeDescription,
+} from "../../lib/app-public-metadata.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { isAdmin } from "../../lib/admin.ts";
 import { isHandle } from "../../lib/identity.ts";
@@ -203,20 +208,27 @@ export const handler = define.handlers({
     // Host relationship resolution is independent of reviewer identity
     // enrichment. Start it in the same batch so slow DID/handle fallbacks do
     // not add another serial wait before the page can render.
-    const [displayReviews, displayAppReviews, resolvedHostLink] = await Promise
-      .all([
-        legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
-        enrichAppMirroredReviews(appReviews),
-        appListing
-          ? getResolvedHostLinkForApp(appListing).catch((err) => {
-            console.warn(
-              `[apps] host relationship lookup failed for ${appListing?.id}:`,
-              err,
-            );
-            return null;
-          })
-          : Promise.resolve(null),
-      ]);
+    const [
+      displayReviews,
+      displayAppReviews,
+      resolvedHostLink,
+      appPublicMetadata,
+    ] = await Promise.all([
+      legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
+      enrichAppMirroredReviews(appReviews),
+      appListing
+        ? getResolvedHostLinkForApp(appListing).catch((err) => {
+          console.warn(
+            `[apps] host relationship lookup failed for ${appListing?.id}:`,
+            err,
+          );
+          return null;
+        })
+        : Promise.resolve(null),
+      appListing
+        ? getAppPublicMetadata(appListing).catch(() => emptyAppPublicMetadata())
+        : Promise.resolve(emptyAppPublicMetadata()),
+    ]);
     /**
      * Share URL intentionally ends in `/`. Bluesky's composer runs a
      * client-side `getLikelyType` over the pasted URL: it splits the path
@@ -301,6 +313,7 @@ export const handler = define.handlers({
       <ProfileDetailPage
         profile={profile}
         appListing={appListing}
+        appPublicMetadata={appPublicMetadata}
         resolvedHostLink={resolvedHostLink}
         relatedApps={relatedApps}
         appReviews={displayAppReviews}
@@ -331,6 +344,7 @@ export const handler = define.handlers({
 interface DetailProps {
   profile: ProfileRow | null;
   appListing: AppListing | null;
+  appPublicMetadata: AppPublicMetadata;
   resolvedHostLink: ResolvedDirectoryHostLink | null;
   relatedApps: AppListing[];
   appReviews: DisplayAppReview[];
@@ -358,6 +372,7 @@ function ProfileDetailPage(
   {
     profile,
     appListing,
+    appPublicMetadata,
     resolvedHostLink,
     relatedApps,
     appReviews,
@@ -385,6 +400,7 @@ function ProfileDetailPage(
     return (
       <AppListingDetailPage
         app={appListing}
+        appPublicMetadata={appPublicMetadata}
         resolvedHostLink={resolvedHostLink}
         relatedApps={relatedApps}
         reviews={appReviews}
@@ -407,6 +423,7 @@ function ProfileDetailPage(
       return (
         <AppListingDetailPage
           app={appListing}
+          appPublicMetadata={appPublicMetadata}
           resolvedHostLink={resolvedHostLink}
           relatedApps={relatedApps}
           reviews={appReviews}
@@ -634,6 +651,7 @@ function ProfileDetailPage(
 
 interface AppListingDetailProps {
   app: AppListing;
+  appPublicMetadata: AppPublicMetadata;
   resolvedHostLink: ResolvedDirectoryHostLink | null;
   relatedApps: AppListing[];
   reviews: DisplayAppReview[];
@@ -653,6 +671,7 @@ interface AppListingDetailProps {
 function AppListingDetailPage(
   {
     app,
+    appPublicMetadata,
     resolvedHostLink,
     relatedApps,
     reviews,
@@ -727,6 +746,7 @@ function AppListingDetailPage(
 
             <AppListingHero
               app={app}
+              publicMetadata={appPublicMetadata}
               resolvedHostLink={resolvedHostLink}
               microblogViewerClientId={microblogViewerClientId}
             />
@@ -777,14 +797,16 @@ function AppListingDetailPage(
   );
 }
 
-function AppListingHero(
-  { app, resolvedHostLink, microblogViewerClientId }: {
+export function AppListingHero(
+  { app, publicMetadata, resolvedHostLink, microblogViewerClientId }: {
     app: AppListing;
+    publicMetadata: AppPublicMetadata;
     resolvedHostLink: ResolvedDirectoryHostLink | null;
     microblogViewerClientId: string | null;
   },
 ) {
   const links = appActionLinks(app, { microblogViewerClientId });
+  const metadataLinks = derivedMetadataLinks(links, publicMetadata);
   const primaryLinks = links
     .filter((link) => !isCompactAppAction(link.kind))
     .sort((a, b) =>
@@ -796,7 +818,10 @@ function AppListingHero(
   const destinationLinks = primaryLinks.filter((link) =>
     link.kind !== "ios" && link.kind !== "android"
   );
-  const compactLinks = links.filter((link) => isCompactAppAction(link.kind));
+  const compactLinks = [...links, ...metadataLinks].filter((link) =>
+    isCompactAppAction(link.kind) &&
+    !(link.kind === "scopes" && publicMetadata.scopes.length > 0)
+  );
   const hostHref = resolvedHostLink
     ? `/hosts/${encodeURIComponent(resolvedHostLink.host)}`
     : null;
@@ -839,12 +864,16 @@ function AppListingHero(
                     <AtmosphereHandle handle={displayHost(app.primaryUrl)} />
                   </p>
                 )}
-                {compactLinks.length > 0 && (
+                {(compactLinks.length > 0 ||
+                  publicMetadata.scopes.length > 0) && (
                   <div
                     class="app-detail-inline-actions"
-                    aria-label="App profiles and source"
+                    aria-label="App profiles, legal pages, and permissions"
                   >
                     {compactLinks.map(renderAppAction)}
+                    {publicMetadata.scopes.length > 0 && (
+                      <AppScopesPopover scopes={publicMetadata.scopes} />
+                    )}
                   </div>
                 )}
               </div>
@@ -960,11 +989,21 @@ function renderAppActionIcon(
   if (kind === "android") {
     return <AndroidIcon class="profile-hero-action-icon-svg" />;
   }
+  if (kind === "privacy") {
+    return <PrivacyIcon class="profile-hero-action-icon-svg" />;
+  }
+  if (kind === "terms") {
+    return <TermsIcon class="profile-hero-action-icon-svg" />;
+  }
+  if (kind === "scopes") {
+    return <ScopesIcon class="profile-hero-action-icon-svg" />;
+  }
   return <span aria-hidden="true">↗</span>;
 }
 
 function isCompactAppAction(kind: AppActionLinkKind): boolean {
-  return kind === "bluesky" || kind === "tangled";
+  return kind === "bluesky" || kind === "tangled" || kind === "privacy" ||
+    kind === "terms" || kind === "scopes";
 }
 
 function primaryAppActionRank(kind: AppActionLinkKind): number {
@@ -972,6 +1011,128 @@ function primaryAppActionRank(kind: AppActionLinkKind): number {
   if (kind === "ios") return 1;
   if (kind === "android") return 2;
   return 3;
+}
+
+function derivedMetadataLinks(
+  links: AppActionLink[],
+  metadata: AppPublicMetadata,
+): AppActionLink[] {
+  const out: AppActionLink[] = [];
+  if (metadata.privacyUrl && !links.some((link) => link.kind === "privacy")) {
+    out.push({
+      uri: metadata.privacyUrl,
+      label: "Privacy",
+      role: "privacy",
+      kind: "privacy",
+    });
+  }
+  if (metadata.termsUrl && !links.some((link) => link.kind === "terms")) {
+    out.push({
+      uri: metadata.termsUrl,
+      label: "Terms",
+      role: "terms",
+      kind: "terms",
+    });
+  }
+  return out;
+}
+
+function AppScopesPopover({ scopes }: { scopes: string[] }) {
+  return (
+    <details class="app-detail-metadata-popover">
+      <summary
+        class="profile-hero-action profile-hero-action--icon-only"
+        role="button"
+        aria-label="Scopes"
+        aria-haspopup="dialog"
+        title="Scopes"
+      >
+        <span class="profile-hero-action-icon app-detail-link-icon">
+          <ScopesIcon class="profile-hero-action-icon-svg" />
+        </span>
+      </summary>
+      <div
+        class="glass app-detail-scopes-popover"
+        role="dialog"
+        aria-labelledby="app-permissions-title"
+      >
+        <div class="app-detail-scopes-popover-heading">
+          <span class="app-detail-scopes-popover-icon" aria-hidden="true">
+            <ScopesIcon class="profile-hero-action-icon-svg" />
+          </span>
+          <div>
+            <h2 id="app-permissions-title">App permissions</h2>
+            <p>What this app may ask for when you connect your account.</p>
+          </div>
+        </div>
+        <ul class="app-detail-scope-list">
+          {scopes.map((scope) => (
+            <li key={scope}>
+              <span>{scopeDescription(scope)}</span>
+              <code>{scope}</code>
+            </li>
+          ))}
+        </ul>
+        <p class="app-detail-scopes-note">
+          Your account host will still ask you to approve access.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function PrivacyIcon({ class: className }: { class?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      class={className}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.7"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3 4.5 6v5.3c0 4.6 3 8.1 7.5 9.7 4.5-1.6 7.5-5.1 7.5-9.7V6L12 3Z" />
+      <path d="M9.4 12.1 11.2 14l3.7-4" />
+    </svg>
+  );
+}
+
+function TermsIcon({ class: className }: { class?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      class={className}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.7"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 3.5h8l4 4V20.5H6Z" />
+      <path d="M14 3.5v4h4M9 12h6M9 15.5h6" />
+    </svg>
+  );
+}
+
+function ScopesIcon({ class: className }: { class?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      class={className}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.7"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="8.2" cy="12" r="3.2" />
+      <path d="M11.4 12H21M17 12v3M14 12v2" />
+    </svg>
+  );
 }
 
 function AppReviewsSection(
@@ -1245,6 +1406,15 @@ function formatAppDescription(value: string): string {
 
 function emptyReviewSummary(): ReviewSummary {
   return { visibleCount: 0, averageRating: null, distribution: null };
+}
+
+function emptyAppPublicMetadata(): AppPublicMetadata {
+  return {
+    privacyUrl: null,
+    termsUrl: null,
+    scopes: [],
+    oauthMetadataUrl: null,
+  };
 }
 
 async function enrichReviews(reviews: ReviewRow[]): Promise<DisplayReview[]> {
