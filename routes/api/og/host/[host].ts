@@ -1,5 +1,8 @@
 import { define } from "../../../../utils.ts";
-import { getHostDetailFromAppview } from "../../../../lib/appview-client.ts";
+import {
+  appviewBaseUrl,
+  getHostDetailFromAppview,
+} from "../../../../lib/appview-client.ts";
 import {
   loadAtmosphereHandleIconDataUrl,
   renderHostSocialCardPng,
@@ -13,8 +16,10 @@ import { withRateLimit } from "../../../../lib/rate-limit.ts";
 import { isPrivateNetworkUrl } from "../../../../lib/security.ts";
 import { assertPublicDnsHostname } from "../../../../lib/identity.ts";
 import { hostPdsDomain } from "../../../../lib/host-friendly.ts";
+import { squarePng } from "../../../../lib/image-processing.ts";
 
 const MAX_AVATAR_BYTES = 2_000_000;
+const TRUSTED_AVATAR_CDN_HOSTS = new Set(["cdn.bsky.app"]);
 const CACHE_CONTROL =
   "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400";
 
@@ -62,14 +67,20 @@ async function loadAvatarDataUrl(
   source: string,
   requestOrigin: string,
 ): Promise<string | null> {
-  const url = new URL(source, requestOrigin);
-  const sameOrigin = url.origin === requestOrigin;
+  const publicUrl = new URL(source, requestOrigin);
+  const sameOrigin = publicUrl.origin === requestOrigin;
   if (
-    url.username || url.password ||
-    (!sameOrigin && isPrivateNetworkUrl(url.toString())) ||
-    (sameOrigin && url.pathname.startsWith("/api/og/"))
+    publicUrl.username || publicUrl.password ||
+    (!sameOrigin && isPrivateNetworkUrl(publicUrl.toString())) ||
+    (sameOrigin && publicUrl.pathname.startsWith("/api/og/"))
   ) return null;
-  if (!sameOrigin) await assertPublicDnsHostname(url.hostname);
+  const appviewOrigin = appviewBaseUrl();
+  const url = resolveAvatarFetchUrl(publicUrl, requestOrigin, appviewOrigin);
+  const trustedAppview = !!appviewOrigin && url.origin === appviewOrigin;
+  const trustedCdn = TRUSTED_AVATAR_CDN_HOSTS.has(url.hostname);
+  if (!sameOrigin && !trustedAppview && !trustedCdn) {
+    await assertPublicDnsHostname(url.hostname);
+  }
 
   const response = await fetch(url, {
     redirect: "manual",
@@ -83,5 +94,32 @@ async function loadAvatarDataUrl(
   const mime = safeRasterImageMime(response.headers.get("content-type"));
   const bytes = await readRasterImageBytesWithLimit(response, MAX_AVATAR_BYTES);
   if (!mime || !bytes || !matchesRasterImageSignature(bytes, mime)) return null;
-  return `data:${mime};base64,${bytes.toBase64()}`;
+  const png = await squarePng(bytes, 280);
+  return `data:image/png;base64,${png.toBase64()}`;
+}
+
+function resolveAvatarFetchUrl(
+  publicUrl: URL,
+  requestOrigin: string,
+  appviewOrigin: string | null,
+): URL {
+  if (
+    appviewOrigin && publicUrl.origin === requestOrigin &&
+    publicUrl.pathname === "/api/atproto/blob"
+  ) {
+    return new URL(`${publicUrl.pathname}${publicUrl.search}`, appviewOrigin);
+  }
+  return publicUrl;
+}
+
+export function resolveAvatarFetchUrlForTest(
+  source: string,
+  requestOrigin: string,
+  appviewOrigin: string | null,
+): string {
+  return resolveAvatarFetchUrl(
+    new URL(source, requestOrigin),
+    requestOrigin,
+    appviewOrigin,
+  ).href;
 }

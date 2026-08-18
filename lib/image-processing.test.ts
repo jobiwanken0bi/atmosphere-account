@@ -1,5 +1,6 @@
 import {
   imageProcessingRuntimeSettings,
+  squarePng,
   withImageTransformSlot,
 } from "./image-processing.ts";
 
@@ -41,5 +42,16 @@ Deno.test("image transforms are serialized across concurrent requests", async ()
     throw new Error(
       `image transforms were not serialized: peak=${peak} order=${order}`,
     );
+  }
+});
+
+Deno.test("avatar normalization produces an embeddable square PNG", async () => {
+  const source = new TextEncoder().encode(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="4"><rect width="8" height="4" fill="#f08"/></svg>',
+  );
+  const png = await squarePng(source, 32);
+  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (!signature.every((byte, index) => png[index] === byte)) {
+    throw new Error("Avatar normalization did not return a PNG");
   }
 });
