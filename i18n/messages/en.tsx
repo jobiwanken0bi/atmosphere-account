@@ -220,11 +220,11 @@ const en = {
 
   hostsDirectory: {
     metaTitle: "Account hosts",
-    metaDescription: "Find the home where your account lives.",
+    metaDescription: "Where your account lives.",
     eyebrow: "Account hosts",
-    headline: "Find the home where your account lives.",
+    headline: "Where your account lives.",
     intro:
-      "Account hosts keep your Atmosphere account online so you can use it across apps. Compare who each host is for, where account data is hosted, and whether signup is open.",
+      "Your account host is the home for your Atmosphere account. It keeps your Atmosphere account online so you can use it across apps, and you can move to a new host later—like moving houses—without losing your identity. Compare who each host is for, where your data is stored, and whether signup is open.",
     searchLabel: "Search account hosts",
     searchPlaceholder: "Search account hosts…",
     search: "Search",
