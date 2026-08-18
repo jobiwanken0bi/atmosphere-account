@@ -1,4 +1,5 @@
 import { renderSvgPng } from "./image-processing.ts";
+import opentype from "opentype.js";
 
 export const HOST_SOCIAL_CARD_WIDTH = 1200;
 export const HOST_SOCIAL_CARD_HEIGHT = 630;
@@ -18,6 +19,25 @@ export interface HostSocialPageMetaInput {
   publicOrigin: string;
 }
 
+interface HostSocialFontPath {
+  toPathData(decimalPlaces?: number): string;
+}
+
+export interface HostSocialFont {
+  getPath(
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    options?: { kerning?: boolean },
+  ): HostSocialFontPath;
+  getAdvanceWidth(
+    text: string,
+    fontSize: number,
+    options?: { kerning?: boolean },
+  ): number;
+}
+
 /** Keep link text and generated artwork on one canonical host identity. */
 export function buildHostSocialPageMeta(input: HostSocialPageMetaInput) {
   const encodedHost = encodeURIComponent(input.host);
@@ -35,6 +55,20 @@ export function buildHostSocialPageMeta(input: HostSocialPageMetaInput) {
 }
 
 let atmosphereHandleIconPromise: Promise<string | null> | null = null;
+let hostSocialFontPromise: Promise<HostSocialFont> | null = null;
+
+/** Convert every runtime label to paths so rendering never depends on host fonts. */
+export function loadHostSocialFont(): Promise<HostSocialFont> {
+  hostSocialFontPromise ??= Deno.readFile(
+    "static/fonts/NotoSans-Regular.ttf",
+  ).then((bytes) => {
+    const parser = opentype as unknown as {
+      parse(buffer: ArrayBuffer): HostSocialFont;
+    };
+    return parser.parse(bytes.buffer as ArrayBuffer);
+  });
+  return hostSocialFontPromise;
+}
 
 /** Reuse the site glyph rather than substituting a typographic `@`. */
 export function loadAtmosphereHandleIconDataUrl(): Promise<string | null> {
@@ -50,7 +84,10 @@ export function loadAtmosphereHandleIconDataUrl(): Promise<string | null> {
 }
 
 /** Build the same sky-and-glass-cloud visual language as the static OG cards. */
-export function buildHostSocialCardSvg(input: HostSocialCardInput): string {
+export function buildHostSocialCardSvg(
+  input: HostSocialCardInput,
+  font?: HostSocialFont,
+): string {
   const name = normalizedName(input.name);
   const lines = titleLines(name);
   const fontSize = titleFontSize(lines);
@@ -58,39 +95,86 @@ export function buildHostSocialCardSvg(input: HostSocialCardInput): string {
   const domain = normalizedIdentity(input.domain, 64) ?? "Account host";
   const titleY = lines.length === 1 ? 326 : 288;
   const identityY = lines.length === 1 ? 390 : 424;
-  const titleLinesMarkup = lines.map((line, index) =>
-    `<tspan x="450" dy="${index === 0 ? 0 : 72}">${escapeXml(line)}</tspan>`
-  ).join("");
-  const titleMarkup = lines.length === 1
+  const titleMarkup = font
+    ? lines.map((line, index) =>
+      fontTextPath(font, line, 450, titleY + index * 72, fontSize, "#0e1428", {
+        letterSpacing: -fontSize * 0.035,
+        strokeWidth: 1.15,
+      })
+    ).join("\n")
+    : lines.length === 1
     ? `<text x="450" y="${titleY}" class="title" font-size="${fontSize}">${
       escapeXml(lines[0])
     }</text>`
-    : `<text x="450" y="${titleY}" class="title" font-size="${fontSize}">${titleLinesMarkup}</text>`;
+    : `<text x="450" y="${titleY}" class="title" font-size="${fontSize}">${
+      lines.map((line, index) =>
+        `<tspan x="450" dy="${index === 0 ? 0 : 72}">${escapeXml(line)}</tspan>`
+      ).join("")
+    }</text>`;
   const handleIcon = handle && input.handleIconDataUrl
     ? `<image x="450" y="${identityY - 21}" width="22" height="22" href="${
       escapeXml(input.handleIconDataUrl)
     }"/>`
     : "";
   const handleTextX = handleIcon ? 480 : 450;
-  const identityMarkup = handle
-    ? `${handleIcon}
-       <text x="${handleTextX}" y="${identityY}" class="handle">${
-      escapeXml(handle)
-    }</text>
-       <text x="450" y="${identityY + 42}" class="domain">${
+  const handleMarkup = handle
+    ? font
+      ? fontTextPath(
+        font,
+        handle,
+        handleTextX,
+        identityY,
+        27,
+        "rgba(18,26,47,.78)",
+        { strokeWidth: 0.35 },
+      )
+      : `<text x="${handleTextX}" y="${identityY}" class="handle">${
+        escapeXml(handle)
+      }</text>`
+    : "";
+  const domainMarkup = font
+    ? fontTextPath(
+      font,
+      domain,
+      450,
+      identityY + (handle ? 42 : 0),
+      24,
+      "rgba(18,26,47,.62)",
+    )
+    : `<text x="450" y="${identityY + (handle ? 42 : 0)}" class="domain">${
       escapeXml(domain)
-    }</text>`
-    : `<text x="450" y="${identityY}" class="domain">${
-      escapeXml(domain)
+    }</text>`;
+  const identityMarkup = `${handleIcon}\n${handleMarkup}\n${domainMarkup}`;
+  const initialMarkup = font
+    ? fontTextPath(
+      font,
+      name.slice(0, 1).toUpperCase(),
+      240,
+      363,
+      126,
+      "#f6f8ff",
+      { anchor: "middle", strokeWidth: 1.2 },
+    )
+    : `<text x="240" y="363" text-anchor="middle" class="initial">${
+      escapeXml(name.slice(0, 1).toUpperCase())
     }</text>`;
   const avatar = input.avatarDataUrl
     ? `<image x="100" y="178" width="280" height="280" href="${
       escapeXml(input.avatarDataUrl)
     }" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>`
     : `<rect x="100" y="178" width="280" height="280" rx="58" fill="url(#avatarFallback)"/>
-       <text x="240" y="363" text-anchor="middle" class="initial">${
-      escapeXml(name.slice(0, 1).toUpperCase())
-    }</text>`;
+       ${initialMarkup}`;
+  const eyebrowMarkup = font
+    ? fontTextPath(
+      font,
+      HOST_SOCIAL_DESCRIPTION.toUpperCase(),
+      450,
+      215,
+      25,
+      "rgba(18,26,47,.7)",
+      { letterSpacing: 4, strokeWidth: 0.45 },
+    )
+    : `<text x="450" y="215" class="eyebrow">${HOST_SOCIAL_DESCRIPTION.toUpperCase()}</text>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -145,7 +229,7 @@ export function buildHostSocialCardSvg(input: HostSocialCardInput): string {
     <rect x="92" y="170" width="296" height="296" rx="66" fill="rgba(255,255,255,.36)" stroke="rgba(255,255,255,.72)" stroke-width="2"/>
     ${avatar}
   </g>
-  <text x="450" y="215" class="eyebrow">${HOST_SOCIAL_DESCRIPTION.toUpperCase()}</text>
+  ${eyebrowMarkup}
   ${titleMarkup}
   ${identityMarkup}
 </svg>`;
@@ -154,7 +238,44 @@ export function buildHostSocialCardSvg(input: HostSocialCardInput): string {
 export async function renderHostSocialCardPng(
   input: HostSocialCardInput,
 ): Promise<Uint8Array> {
-  return await renderSvgPng(buildHostSocialCardSvg(input));
+  const font = await loadHostSocialFont();
+  return await renderSvgPng(buildHostSocialCardSvg(input, font));
+}
+
+function fontTextPath(
+  font: HostSocialFont,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  fill: string,
+  options: {
+    anchor?: "start" | "middle";
+    letterSpacing?: number;
+    strokeWidth?: number;
+  } = {},
+): string {
+  const letterSpacing = options.letterSpacing ?? 0;
+  const characters = Array.from(text);
+  const width = characters.reduce(
+    (sum, character, index) =>
+      sum + font.getAdvanceWidth(character, fontSize, { kerning: false }) +
+      (index < characters.length - 1 ? letterSpacing : 0),
+    0,
+  );
+  let cursor = options.anchor === "middle" ? x - width / 2 : x;
+  const paths = characters.map((character, index) => {
+    const path = font.getPath(character, cursor, y, fontSize, {
+      kerning: false,
+    });
+    cursor += font.getAdvanceWidth(character, fontSize, { kerning: false }) +
+      (index < characters.length - 1 ? letterSpacing : 0);
+    return path.toPathData(1);
+  }).filter(Boolean).join(" ");
+  const stroke = options.strokeWidth
+    ? ` stroke="${fill}" stroke-width="${options.strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"`
+    : "";
+  return `<path data-card-text="true" d="${paths}" fill="${fill}"${stroke}/>`;
 }
 
 function normalizedName(value: string): string {

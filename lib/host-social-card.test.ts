@@ -1,6 +1,7 @@
 import {
   buildHostSocialCardSvg,
   buildHostSocialPageMeta,
+  loadHostSocialFont,
 } from "./host-social-card.ts";
 
 function assertIncludes(value: string, expected: string): void {
@@ -60,4 +61,18 @@ Deno.test("host page metadata uses the generated card and agreed preview text", 
     throw new Error(`Unexpected image URL: ${meta.imageUrl}`);
   }
   if (meta.imageType !== "image/png") throw new Error("Unexpected image type");
+});
+
+Deno.test("production host cards render text as portable vector paths", async () => {
+  const font = await loadHostSocialFont();
+  const svg = buildHostSocialCardSvg({
+    name: "Example Host",
+    handle: "example.social",
+    domain: "pds.example.social",
+  }, font);
+
+  assertIncludes(svg, 'data-card-text="true"');
+  if (svg.includes("<text")) {
+    throw new Error("Production host card still depends on runtime fonts");
+  }
 });

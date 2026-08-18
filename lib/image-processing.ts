@@ -83,3 +83,20 @@ export async function renderSvgPng(svg: string): Promise<Uint8Array> {
     return new Uint8Array(png).slice();
   });
 }
+
+/** Normalize externally sourced avatars before embedding them in an SVG. */
+export async function squarePng(
+  bytes: Uint8Array,
+  size: number,
+): Promise<Uint8Array> {
+  return await withImageTransformSlot(async () => {
+    const png = await sharp(bytes, {
+      failOn: "error",
+      limitInputPixels: 40_000_000,
+    }).rotate().resize(size, size, {
+      fit: "cover",
+      position: "center",
+    }).png().toBuffer();
+    return new Uint8Array(png).slice();
+  });
+}
