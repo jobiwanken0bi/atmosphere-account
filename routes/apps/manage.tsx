@@ -29,6 +29,8 @@ import {
   getAppListingById,
   getAppListingByIdentifier,
   getManagedAppListingByAccountDid,
+  getResolvedHostLinkForApp,
+  type ResolvedDirectoryHostLink,
 } from "../../lib/app-directory.ts";
 import { ATSTORE_LISTING_NSID } from "../../lib/app-lexicons.ts";
 import type { AccountIndicator, LexiconInterop } from "../../lib/lexicons.ts";
@@ -69,6 +71,20 @@ export function primaryAccountHostLink(
   );
   return hostingLinks.find((link) => link.status === "verified") ??
     hostingLinks[0] ?? null;
+}
+
+export function appHostingManagementSelection(
+  links: DirectoryEntityAppLink[],
+  resolved: ResolvedDirectoryHostLink | null,
+): {
+  link: DirectoryEntityAppLink | null;
+  resolvedHost: ResolvedDirectoryHostLink | null;
+} {
+  const link = primaryAccountHostLink(links);
+  return {
+    link,
+    resolvedHost: link ? null : resolved,
+  };
 }
 
 export const handler = define.handlers({
@@ -399,13 +415,24 @@ export const handler = define.handlers({
         await getAppListingByIdentifier(user.did, {
           syncLegacy: false,
         }).catch(() => null);
-    const accountHostLink = managedAppListing
-      ? primaryAccountHostLink(
-        await listDirectoryEntityLinksForApp(managedAppListing.id).catch(
-          () => [],
-        ),
-      )
-      : null;
+    let accountHostLinks: DirectoryEntityAppLink[] = [];
+    let resolvedHostLink: ResolvedDirectoryHostLink | null = null;
+    if (managedAppListing) {
+      accountHostLinks = await listDirectoryEntityLinksForApp(
+        managedAppListing.id,
+      ).catch(() => []);
+      if (
+        !primaryAccountHostLink(accountHostLinks) &&
+        managedAppListing.accountHost
+      ) {
+        resolvedHostLink = await getResolvedHostLinkForApp(managedAppListing)
+          .catch(() => null);
+      }
+    }
+    const accountHostSelection = appHostingManagementSelection(
+      accountHostLinks,
+      resolvedHostLink,
+    );
     return ctx.render(
       <ManagePage
         user={user}
@@ -429,7 +456,8 @@ export const handler = define.handlers({
         migrationFocus={ctx.url.searchParams.get("migrate") ===
           "shared-records"}
         managedAppListingId={managedAppListing?.id ?? null}
-        accountHostLink={accountHostLink}
+        accountHostLink={accountHostSelection.link}
+        resolvedAccountHost={accountHostSelection.resolvedHost}
         createNewListing={creatingAdditionalApp}
         reauthReturnTo={next}
         takedown={takedown}
@@ -697,6 +725,7 @@ interface ManagePageProps {
   migrationFocus: boolean;
   managedAppListingId: string | null;
   accountHostLink: DirectoryEntityAppLink | null;
+  resolvedAccountHost: ResolvedDirectoryHostLink | null;
   createNewListing: boolean;
   reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
@@ -724,6 +753,7 @@ function ManagePage(
     migrationFocus,
     managedAppListingId,
     accountHostLink,
+    resolvedAccountHost,
     createNewListing,
     reauthReturnTo,
     takedown,
@@ -795,6 +825,7 @@ function ManagePage(
               {!createNewListing && (
                 <AppHostingSummary
                   link={accountHostLink}
+                  resolvedHost={resolvedAccountHost}
                   initialPublished={initialPublished}
                   managedAppListingId={managedAppListingId}
                 />
@@ -817,7 +848,7 @@ function ManagePage(
                 collectionSuggestions={collectionSuggestions}
                 publicProfileHandle={publicProfileHandle}
                 managedAppIdentifier={managedAppListingId}
-                hasAccountHost={!!accountHostLink}
+                hasAccountHost={!!accountHostLink || !!resolvedAccountHost}
                 createNewListing={createNewListing}
                 atstoreListingUri={atstoreListingUri}
                 reauthReturnTo={reauthReturnTo}
@@ -835,14 +866,20 @@ function ManagePage(
 export function AppHostingSummary(
   {
     link,
+    resolvedHost = null,
     initialPublished,
     managedAppListingId,
   }: {
     link: DirectoryEntityAppLink | null;
+    resolvedHost?: ResolvedDirectoryHostLink | null;
     initialPublished: boolean;
     managedAppListingId: string | null;
   },
 ) {
+  const connectedHost = (link?.host ?? resolvedHost?.host.trim()) || null;
+  const connectedHostName = link?.hostDisplayName.trim() ||
+    resolvedHost?.name.trim() ||
+    connectedHost;
   const manageHref = managedAppListingId
     ? `/apps/manage/host?app=${encodeURIComponent(managedAppListingId)}`
     : null;
@@ -850,20 +887,22 @@ export function AppHostingSummary(
     <section class="glass directory-relationship-entry owner-app-relationship-entry">
       <div>
         <p class="text-eyebrow">Account hosting</p>
-        {link
+        {connectedHost
           ? (
             <>
-              <h2>{link.hostDisplayName}</h2>
+              <h2>{connectedHostName}</h2>
               <p>
-                {link.host} is the account host for this app.
+                {connectedHost} is the account host for this app.
               </p>
-              <span
-                class={`relationship-status relationship-status--${link.status}`}
-              >
-                {link.status === "verified"
-                  ? "Verified"
-                  : "Waiting for host approval"}
-              </span>
+              {link && (
+                <span
+                  class={`relationship-status relationship-status--${link.status}`}
+                >
+                  {link.status === "verified"
+                    ? "Verified"
+                    : "Waiting for host approval"}
+                </span>
+              )}
             </>
           )
           : (
@@ -876,7 +915,7 @@ export function AppHostingSummary(
           )}
       </div>
       <div class="owner-app-relationship-actions">
-        {link && manageHref
+        {connectedHost && manageHref
           ? (
             <>
               <a class="directory-register-button" href={manageHref}>
@@ -884,7 +923,7 @@ export function AppHostingSummary(
               </a>
               <a
                 class="text-link-button"
-                href={`/hosts/${encodeURIComponent(link.host)}`}
+                href={`/hosts/${encodeURIComponent(connectedHost)}`}
               >
                 View host
               </a>
