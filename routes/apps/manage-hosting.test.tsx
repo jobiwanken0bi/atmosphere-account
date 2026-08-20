@@ -5,7 +5,12 @@ import {
 import { renderToString } from "preact-render-to-string";
 import type { AppListing } from "../../lib/app-directory.ts";
 import type { DirectoryEntityAppLink } from "../../lib/directory-entity-links.ts";
-import { AppHostingSummary, primaryAccountHostLink } from "./manage.tsx";
+import CreateProfileForm from "../../islands/CreateProfileForm.tsx";
+import {
+  appHostingManagementSelection,
+  AppHostingSummary,
+  primaryAccountHostLink,
+} from "./manage.tsx";
 import { AppHostRelationshipsPage } from "./manage/host.tsx";
 
 function listing(overrides: Partial<AppListing> = {}): AppListing {
@@ -75,11 +80,15 @@ Deno.test("app management offers one host connection only when none exists", () 
   assertEquals(html.includes("Manage account hosting"), false);
 });
 
-Deno.test("app management shows an inferred claimed host as connected", () => {
+Deno.test("app management shows an account-identity host as connected", () => {
   const html = renderToString(
     <AppHostingSummary
       link={null}
-      inferredHost="sprk.so"
+      resolvedHost={{
+        host: "sprk.so",
+        name: "sprk.so",
+        relationship: "inferred",
+      }}
       initialPublished
       managedAppListingId="app-one"
     />,
@@ -105,6 +114,50 @@ Deno.test("verified hosting is preferred and host-only overrides are ignored", (
     "verified.example",
   );
   assertEquals(primaryAccountHostLink([hostOnly]), null);
+});
+
+Deno.test("an authoritative host-only override suppresses inferred hosting", () => {
+  const hostOnly = hostLink({
+    host: "sprk.so",
+    relationship: "host_only",
+  });
+
+  assertEquals(
+    appHostingManagementSelection([hostOnly], null),
+    { link: null, resolvedHost: null },
+  );
+  assertEquals(
+    appHostingManagementSelection([], {
+      host: "sprk.so",
+      name: "sprk.so",
+      relationship: "inferred",
+    }),
+    {
+      link: null,
+      resolvedHost: {
+        host: "sprk.so",
+        name: "sprk.so",
+        relationship: "inferred",
+      },
+    },
+  );
+});
+
+Deno.test("a resolved host suppresses the duplicate editor connect action", () => {
+  const html = renderToString(
+    <CreateProfileForm
+      did="did:plc:owner"
+      handle="sprk.so"
+      initial={null}
+      initialPublished
+      publicProfileHandle="sprk.so"
+      managedAppIdentifier="app-one"
+      hasAccountHost
+    />,
+  );
+
+  assertStringIncludes(html, 'href="/apps/sprk.so"');
+  assertEquals(html.includes("Connect account host"), false);
 });
 
 Deno.test("hosting management returns to the exact ATStore app and hides add forms", () => {

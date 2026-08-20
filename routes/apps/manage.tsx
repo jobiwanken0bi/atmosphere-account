@@ -29,6 +29,8 @@ import {
   getAppListingById,
   getAppListingByIdentifier,
   getManagedAppListingByAccountDid,
+  getResolvedHostLinkForApp,
+  type ResolvedDirectoryHostLink,
 } from "../../lib/app-directory.ts";
 import { ATSTORE_LISTING_NSID } from "../../lib/app-lexicons.ts";
 import type { AccountIndicator, LexiconInterop } from "../../lib/lexicons.ts";
@@ -69,6 +71,20 @@ export function primaryAccountHostLink(
   );
   return hostingLinks.find((link) => link.status === "verified") ??
     hostingLinks[0] ?? null;
+}
+
+export function appHostingManagementSelection(
+  links: DirectoryEntityAppLink[],
+  resolved: ResolvedDirectoryHostLink | null,
+): {
+  link: DirectoryEntityAppLink | null;
+  resolvedHost: ResolvedDirectoryHostLink | null;
+} {
+  const link = primaryAccountHostLink(links);
+  return {
+    link,
+    resolvedHost: link ? null : resolved,
+  };
 }
 
 export const handler = define.handlers({
@@ -399,13 +415,24 @@ export const handler = define.handlers({
         await getAppListingByIdentifier(user.did, {
           syncLegacy: false,
         }).catch(() => null);
-    const accountHostLink = managedAppListing
-      ? primaryAccountHostLink(
-        await listDirectoryEntityLinksForApp(managedAppListing.id).catch(
-          () => [],
-        ),
-      )
-      : null;
+    let accountHostLinks: DirectoryEntityAppLink[] = [];
+    let resolvedHostLink: ResolvedDirectoryHostLink | null = null;
+    if (managedAppListing) {
+      accountHostLinks = await listDirectoryEntityLinksForApp(
+        managedAppListing.id,
+      ).catch(() => []);
+      if (
+        !primaryAccountHostLink(accountHostLinks) &&
+        managedAppListing.accountHost
+      ) {
+        resolvedHostLink = await getResolvedHostLinkForApp(managedAppListing)
+          .catch(() => null);
+      }
+    }
+    const accountHostSelection = appHostingManagementSelection(
+      accountHostLinks,
+      resolvedHostLink,
+    );
     return ctx.render(
       <ManagePage
         user={user}
@@ -429,8 +456,8 @@ export const handler = define.handlers({
         migrationFocus={ctx.url.searchParams.get("migrate") ===
           "shared-records"}
         managedAppListingId={managedAppListing?.id ?? null}
-        accountHostLink={accountHostLink}
-        inferredAccountHost={managedAppListing?.accountHost ?? null}
+        accountHostLink={accountHostSelection.link}
+        resolvedAccountHost={accountHostSelection.resolvedHost}
         createNewListing={creatingAdditionalApp}
         reauthReturnTo={next}
         takedown={takedown}
@@ -698,7 +725,7 @@ interface ManagePageProps {
   migrationFocus: boolean;
   managedAppListingId: string | null;
   accountHostLink: DirectoryEntityAppLink | null;
-  inferredAccountHost: string | null;
+  resolvedAccountHost: ResolvedDirectoryHostLink | null;
   createNewListing: boolean;
   reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
@@ -726,7 +753,7 @@ function ManagePage(
     migrationFocus,
     managedAppListingId,
     accountHostLink,
-    inferredAccountHost,
+    resolvedAccountHost,
     createNewListing,
     reauthReturnTo,
     takedown,
@@ -798,7 +825,7 @@ function ManagePage(
               {!createNewListing && (
                 <AppHostingSummary
                   link={accountHostLink}
-                  inferredHost={inferredAccountHost}
+                  resolvedHost={resolvedAccountHost}
                   initialPublished={initialPublished}
                   managedAppListingId={managedAppListingId}
                 />
@@ -821,7 +848,7 @@ function ManagePage(
                 collectionSuggestions={collectionSuggestions}
                 publicProfileHandle={publicProfileHandle}
                 managedAppIdentifier={managedAppListingId}
-                hasAccountHost={!!accountHostLink || !!inferredAccountHost}
+                hasAccountHost={!!accountHostLink || !!resolvedAccountHost}
                 createNewListing={createNewListing}
                 atstoreListingUri={atstoreListingUri}
                 reauthReturnTo={reauthReturnTo}
@@ -839,17 +866,20 @@ function ManagePage(
 export function AppHostingSummary(
   {
     link,
-    inferredHost = null,
+    resolvedHost = null,
     initialPublished,
     managedAppListingId,
   }: {
     link: DirectoryEntityAppLink | null;
-    inferredHost?: string | null;
+    resolvedHost?: ResolvedDirectoryHostLink | null;
     initialPublished: boolean;
     managedAppListingId: string | null;
   },
 ) {
-  const connectedHost = (link?.host ?? inferredHost?.trim()) || null;
+  const connectedHost = (link?.host ?? resolvedHost?.host.trim()) || null;
+  const connectedHostName = link?.hostDisplayName.trim() ||
+    resolvedHost?.name.trim() ||
+    connectedHost;
   const manageHref = managedAppListingId
     ? `/apps/manage/host?app=${encodeURIComponent(managedAppListingId)}`
     : null;
@@ -860,7 +890,7 @@ export function AppHostingSummary(
         {connectedHost
           ? (
             <>
-              <h2>{link?.hostDisplayName ?? connectedHost}</h2>
+              <h2>{connectedHostName}</h2>
               <p>
                 {connectedHost} is the account host for this app.
               </p>
