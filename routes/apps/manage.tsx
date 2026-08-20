@@ -430,6 +430,7 @@ export const handler = define.handlers({
           "shared-records"}
         managedAppListingId={managedAppListing?.id ?? null}
         accountHostLink={accountHostLink}
+        inferredAccountHost={managedAppListing?.accountHost ?? null}
         createNewListing={creatingAdditionalApp}
         reauthReturnTo={next}
         takedown={takedown}
@@ -697,6 +698,7 @@ interface ManagePageProps {
   migrationFocus: boolean;
   managedAppListingId: string | null;
   accountHostLink: DirectoryEntityAppLink | null;
+  inferredAccountHost: string | null;
   createNewListing: boolean;
   reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
@@ -724,6 +726,7 @@ function ManagePage(
     migrationFocus,
     managedAppListingId,
     accountHostLink,
+    inferredAccountHost,
     createNewListing,
     reauthReturnTo,
     takedown,
@@ -795,6 +798,7 @@ function ManagePage(
               {!createNewListing && (
                 <AppHostingSummary
                   link={accountHostLink}
+                  inferredHost={inferredAccountHost}
                   initialPublished={initialPublished}
                   managedAppListingId={managedAppListingId}
                 />
@@ -817,7 +821,7 @@ function ManagePage(
                 collectionSuggestions={collectionSuggestions}
                 publicProfileHandle={publicProfileHandle}
                 managedAppIdentifier={managedAppListingId}
-                hasAccountHost={!!accountHostLink}
+                hasAccountHost={!!accountHostLink || !!inferredAccountHost}
                 createNewListing={createNewListing}
                 atstoreListingUri={atstoreListingUri}
                 reauthReturnTo={reauthReturnTo}
@@ -835,14 +839,17 @@ function ManagePage(
 export function AppHostingSummary(
   {
     link,
+    inferredHost = null,
     initialPublished,
     managedAppListingId,
   }: {
     link: DirectoryEntityAppLink | null;
+    inferredHost?: string | null;
     initialPublished: boolean;
     managedAppListingId: string | null;
   },
 ) {
+  const connectedHost = (link?.host ?? inferredHost?.trim()) || null;
   const manageHref = managedAppListingId
     ? `/apps/manage/host?app=${encodeURIComponent(managedAppListingId)}`
     : null;
@@ -850,20 +857,22 @@ export function AppHostingSummary(
     <section class="glass directory-relationship-entry owner-app-relationship-entry">
       <div>
         <p class="text-eyebrow">Account hosting</p>
-        {link
+        {connectedHost
           ? (
             <>
-              <h2>{link.hostDisplayName}</h2>
+              <h2>{link?.hostDisplayName ?? connectedHost}</h2>
               <p>
-                {link.host} is the account host for this app.
+                {connectedHost} is the account host for this app.
               </p>
-              <span
-                class={`relationship-status relationship-status--${link.status}`}
-              >
-                {link.status === "verified"
-                  ? "Verified"
-                  : "Waiting for host approval"}
-              </span>
+              {link && (
+                <span
+                  class={`relationship-status relationship-status--${link.status}`}
+                >
+                  {link.status === "verified"
+                    ? "Verified"
+                    : "Waiting for host approval"}
+                </span>
+              )}
             </>
           )
           : (
@@ -876,7 +885,7 @@ export function AppHostingSummary(
           )}
       </div>
       <div class="owner-app-relationship-actions">
-        {link && manageHref
+        {connectedHost && manageHref
           ? (
             <>
               <a class="directory-register-button" href={manageHref}>
@@ -884,7 +893,7 @@ export function AppHostingSummary(
               </a>
               <a
                 class="text-link-button"
-                href={`/hosts/${encodeURIComponent(link.host)}`}
+                href={`/hosts/${encodeURIComponent(connectedHost)}`}
               >
                 View host
               </a>

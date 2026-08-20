@@ -75,6 +75,23 @@ Deno.test("app management offers one host connection only when none exists", () 
   assertEquals(html.includes("Manage account hosting"), false);
 });
 
+Deno.test("app management shows an inferred claimed host as connected", () => {
+  const html = renderToString(
+    <AppHostingSummary
+      link={null}
+      inferredHost="sprk.so"
+      initialPublished
+      managedAppListingId="app-one"
+    />,
+  );
+
+  assertStringIncludes(html, "sprk.so is the account host for this app.");
+  assertStringIncludes(html, "Manage account hosting");
+  assertStringIncludes(html, 'href="/hosts/sprk.so"');
+  assertEquals(html.includes("Connect an account host"), false);
+  assertEquals(html.includes("Connect account host"), false);
+});
+
 Deno.test("verified hosting is preferred and host-only overrides are ignored", () => {
   const pending = hostLink({ host: "pending.example", status: "pending" });
   const hostOnly = hostLink({
