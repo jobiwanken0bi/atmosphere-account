@@ -549,6 +549,49 @@ Deno.test("host claim writes have enough proxy time for bounded delivery", () =>
   );
 });
 
+Deno.test("OAuth flows outlive the short public-shell proxy budget", () => {
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/login", "POST", 5000),
+    30000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/login", "GET", 5000),
+    30000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/create", "GET", 5000),
+    30000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/callback", "GET", 5000),
+    30000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/login", "HEAD", 5000),
+    5000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/callback", "POST", 5000),
+    5000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/login", "POST", 30000),
+    30000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/login", "POST", 45000),
+    45000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/create", "POST", 5000),
+    5000,
+  );
+  assertEquals(
+    appviewPageFetchTimeoutMs("/oauth/add-account", "GET", 5000),
+    5000,
+  );
+});
+
 Deno.test("proxied appview response headers strip transport metadata but keep cookies", () => {
   const source = new Headers({
     "alt-svc": 'h3=":443"',
