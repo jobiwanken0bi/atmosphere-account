@@ -37,6 +37,7 @@ const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
 const DEFAULT_APPVIEW_FETCH_TIMEOUT_MS = 5000;
 const MIN_APPVIEW_FETCH_TIMEOUT_MS = 1000;
 const HOST_CLAIM_ROUTE_FETCH_TIMEOUT_MS = 20_000;
+const OAUTH_FLOW_ROUTE_FETCH_TIMEOUT_MS = 30_000;
 const MAX_APPVIEW_HANDOFF_BODY_BYTES = 64 * 1024;
 const DEFAULT_APPVIEW_REQUEST_BODY_BYTES = 256 * 1024;
 const PROFILE_APPVIEW_REQUEST_BODY_BYTES = 36_000_000;
@@ -61,10 +62,12 @@ export function appviewFetchTimeoutMs(
 }
 
 /**
- * Host-claim pages can perform bounded direct handle/DID/contact lookups; writes
- * can additionally include an 8s transactional email delivery or DNS lookup.
- * Keep the ordinary public-shell budget short while allowing the claim route
- * to finish instead of aborting after work may already have taken effect.
+ * Keep the ordinary public-shell budget short while allowing routes that
+ * intentionally wait on external identity infrastructure to finish. Host
+ * claims can perform bounded handle/DID/contact lookups plus delivery or DNS.
+ * OAuth flows resolve identity and authorization metadata, persist or consume
+ * one-time state, and call PAR or token endpoints; their individual upstream
+ * requests already have budgets longer than the default 5s proxy window.
  */
 export function appviewPageFetchTimeoutMs(
   pathname: string,
@@ -72,10 +75,19 @@ export function appviewPageFetchTimeoutMs(
   configured = APPVIEW_FETCH_TIMEOUT_MS,
 ): number {
   const normalizedMethod = method.toUpperCase();
-  return (normalizedMethod === "GET" || normalizedMethod === "HEAD" ||
-      normalizedMethod === "POST") &&
-      /^\/hosts\/[^/]+\/claim$/.test(pathname)
-    ? Math.max(configured, HOST_CLAIM_ROUTE_FETCH_TIMEOUT_MS)
+  const hostClaim = (normalizedMethod === "GET" ||
+    normalizedMethod === "HEAD" ||
+    normalizedMethod === "POST") &&
+    /^\/hosts\/[^/]+\/claim$/.test(pathname);
+  if (hostClaim) {
+    return Math.max(configured, HOST_CLAIM_ROUTE_FETCH_TIMEOUT_MS);
+  }
+  const oauthFlow = (pathname === "/oauth/login" &&
+    (normalizedMethod === "GET" || normalizedMethod === "POST")) ||
+    ((pathname === "/oauth/create" || pathname === "/oauth/callback") &&
+      normalizedMethod === "GET");
+  return oauthFlow
+    ? Math.max(configured, OAUTH_FLOW_ROUTE_FETCH_TIMEOUT_MS)
     : configured;
 }
 
