@@ -178,6 +178,13 @@ Deno.test("app showcase CSS keeps featured and collection stacks balanced", asyn
   );
   assertStringIncludes(
     css,
+    `.app-fresh-card {
+  --app-directory-name-size: 0.9rem;
+  --app-directory-meta-size: 0.74rem;
+  --app-directory-avatar-size: 2.5rem;`,
+  );
+  assertStringIncludes(
+    css,
     `.app-category-copy {
   display: flex;
   flex-direction: column;
