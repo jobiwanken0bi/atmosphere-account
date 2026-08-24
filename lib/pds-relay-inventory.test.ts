@@ -53,6 +53,7 @@ async function createInventoryTestDb() {
     description TEXT NOT NULL DEFAULT '',
     homepage_url TEXT,
     service_endpoint TEXT,
+    service_observed_at INTEGER,
     signup_status TEXT NOT NULL DEFAULT 'unknown',
     verification_status TEXT NOT NULL DEFAULT 'observed',
     source TEXT NOT NULL DEFAULT 'observed',
@@ -99,6 +100,55 @@ Deno.test("relay PDS host normalization accepts public DNS names", () => {
   );
   for (const invalid of [null, "localhost", "https://pds.example", "a..com"]) {
     assertEquals(normalizeRelayServiceHost(invalid), null);
+  }
+});
+
+Deno.test("relay discovery fills a missing host service endpoint without overwriting one", async () => {
+  const db = await createInventoryTestDb();
+  try {
+    await db.execute({
+      sql: `INSERT INTO account_host
+        (host, service_endpoint, updated_at) VALUES (?, ?, ?), (?, ?, ?)`,
+      args: [
+        "sprk.so",
+        null,
+        0,
+        "custom.example",
+        "https://canonical.custom.example",
+        0,
+      ],
+    });
+    const instances = parseRelayListHostsPage({
+      hosts: [
+        { hostname: "sprk.so", status: "active", accountCount: 12 },
+        { hostname: "custom.example", status: "active", accountCount: 4 },
+      ],
+    }).instances;
+
+    await persistRelayPdsInventoryForClient(
+      db as unknown as DbClient,
+      instances,
+      { observedAt: 100, scanId: "service-endpoints", complete: true },
+    );
+
+    const endpoints = await db.execute(
+      `SELECT host, service_endpoint, service_observed_at
+        FROM account_host ORDER BY host`,
+    );
+    assertEquals(endpoints.rows, [
+      {
+        host: "custom.example",
+        service_endpoint: "https://canonical.custom.example",
+        service_observed_at: null,
+      },
+      {
+        host: "sprk.so",
+        service_endpoint: "https://sprk.so",
+        service_observed_at: 100,
+      },
+    ]);
+  } finally {
+    db.close();
   }
 });
 

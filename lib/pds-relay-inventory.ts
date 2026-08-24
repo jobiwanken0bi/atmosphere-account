@@ -545,7 +545,29 @@ export async function persistRelayPdsInventoryForClient(
     publishedHosts = Number(published.rowsAffected ?? 0);
     await executeInventoryQuery(c, {
       sql: `UPDATE account_host
-        SET observed_account_count = COALESCE((
+        SET service_endpoint = COALESCE(account_host.service_endpoint, (
+              SELECT MIN(p.service_endpoint)
+              FROM pds_instance p
+              WHERE p.account_host = account_host.host
+                AND p.relay_status <> 'not_seen'
+            )),
+            service_observed_at = CASE
+              WHEN account_host.service_endpoint IS NULL OR
+                account_host.service_endpoint = (
+                  SELECT MIN(p.service_endpoint)
+                  FROM pds_instance p
+                  WHERE p.account_host = account_host.host
+                    AND p.relay_status <> 'not_seen'
+                )
+              THEN COALESCE(account_host.service_observed_at, (
+                SELECT MAX(p.last_observed_at)
+                FROM pds_instance p
+                WHERE p.account_host = account_host.host
+                  AND p.relay_status <> 'not_seen'
+              ))
+              ELSE account_host.service_observed_at
+            END,
+            observed_account_count = COALESCE((
               SELECT SUM(p.relay_account_count)
               FROM pds_instance p
               WHERE p.account_host = account_host.host

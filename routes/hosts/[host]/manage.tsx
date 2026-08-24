@@ -17,11 +17,13 @@ import {
   getPendingAccountHostClaimRecovery,
   type HostSignupStatus,
   isAccountHostPubliclyListable,
+  normalizeAccountHostPublicServiceEndpoint,
   updateAccountHostDashboardSettings,
   updateAccountHostDirectoryListing,
   updateAccountHostProfileSettings,
   verifiedAccountHostOwnerDid,
 } from "../../../lib/account-hosts.ts";
+import { compiledAccountHostServiceEndpoint } from "../../../lib/account-host-endpoints.ts";
 import {
   buildHostDashboardState,
   fetchHostDashboardManifest,
@@ -659,7 +661,7 @@ async function publishManagedHostProfile(
   }
 
   try {
-    const serviceEndpoint = host.serviceEndpoint || session.pdsUrl;
+    const serviceEndpoint = managedHostServiceEndpoint(host);
     const records = await publishHostRecords(user, session.pdsUrl, {
       host: host.host,
       displayName: values.displayName,
@@ -703,7 +705,7 @@ async function publishManagedHostService(
 ): Promise<HostPublishResult> {
   if (!session) return { ok: true };
   try {
-    const endpoint = serviceEndpoint || session.pdsUrl;
+    const endpoint = serviceEndpoint || managedHostServiceEndpoint(host);
     const service = await publishHostServiceRecord(user, session.pdsUrl, {
       host: host.host,
       displayName: host.displayName,
@@ -812,7 +814,11 @@ function HostManagePage(props: HostManagePageProps) {
     recovery,
     savedSection,
   } = props;
-  const dashboard = buildHostDashboardState({ host });
+  const dashboard = buildHostDashboardState({
+    host: host
+      ? { ...host, serviceEndpoint: managedHostServiceEndpoint(host) || null }
+      : null,
+  });
   const publicHostPageIsReady = !!host && isAccountHostPubliclyListable(host);
   return (
     <div id="page-top">
@@ -1487,7 +1493,8 @@ function ManageBody(
                 required
               />
               <span class="profile-form-hint">
-                The canonical PDS origin for this host.
+                The canonical PDS origin operated by this host. This is separate
+                from where the managing account itself is hosted.
               </span>
             </label>
             <label class="profile-form-field">
@@ -1950,11 +1957,27 @@ function valuesFromHost(host: AccountHost): ManageFormValues {
     signupStatus: host.signupStatus,
     profileHandle: host.profileHandle ?? "",
     bskyProfileVisible: host.bskyProfileVisible,
-    serviceEndpoint: host.serviceEndpoint ?? "",
+    serviceEndpoint: managedHostServiceEndpoint(host),
     accountManagementUrl: savedAccountPageUrl,
     manifestUrl: host.capabilityManifestUrl ?? "",
     supportUrl: host.supportUrl ?? "",
   };
+}
+
+/**
+ * The repository that stores a host listing belongs to its managing account,
+ * but that account's own PDS is not necessarily the PDS described by the
+ * listing. Prefer the endpoint captured during host discovery, then a compiled
+ * umbrella-host binding, and finally the discovered host domain itself.
+ */
+export function managedHostServiceEndpoint(
+  host: Pick<AccountHost, "host" | "serviceEndpoint">,
+): string {
+  return normalizeAccountHostPublicServiceEndpoint(host.serviceEndpoint) ??
+    normalizeAccountHostPublicServiceEndpoint(
+      compiledAccountHostServiceEndpoint(host.host),
+    ) ??
+    normalizeAccountHostPublicServiceEndpoint(`https://${host.host}`) ?? "";
 }
 
 function valuesFromForm(

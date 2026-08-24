@@ -11,6 +11,7 @@ import { hostAuthorizationHref } from "./[host]/manage/apps.tsx";
 import {
   managedHostAuthorizationHref,
   managedHostSaveLocation,
+  managedHostServiceEndpoint,
   managedHostTransferAuthorizationHref,
   managedHostTransferNextHref,
 } from "./[host]/manage.tsx";
@@ -23,6 +24,27 @@ import {
 } from "./[host].tsx";
 
 const HOST = { host: "pds.example.social", displayName: "Example PDS" };
+
+Deno.test("managed host endpoints come from the listed PDS, not its manager", () => {
+  assertEquals(
+    managedHostServiceEndpoint({ host: "sprk.so", serviceEndpoint: null }),
+    "https://sprk.so",
+  );
+  assertEquals(
+    managedHostServiceEndpoint({
+      host: "example.social",
+      serviceEndpoint: "https://pds.example.social/",
+    }),
+    "https://pds.example.social",
+  );
+  assertEquals(
+    managedHostServiceEndpoint({
+      host: "bsky.network",
+      serviceEndpoint: null,
+    }),
+    "https://bsky.social",
+  );
+});
 
 Deno.test("host management saves return to the same settings section", () => {
   assertEquals(
