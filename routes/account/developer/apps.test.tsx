@@ -216,7 +216,7 @@ Deno.test("ambiguous legacy recovery does not offer another app registration", (
 
   assertStringIncludes(html, "Developer settings need one app");
   assertStringIncludes(html, "multiple legacy app profiles");
-  assertStringIncludes(html, "Manage apps and hosts");
+  assertStringIncludes(html, "Manage listings");
   assertStringIncludes(html, "Use another account");
   assertEquals(html.includes('href="/apps/manage?new=1"'), false);
 });

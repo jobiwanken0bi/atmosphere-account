@@ -301,7 +301,7 @@ async function AccountPage(
                       class="account-dashboard-button account-dashboard-button--primary"
                     >
                       <AccountIcon name="apps" />
-                      <span>Manage apps and hosts</span>
+                      <span>Manage listings</span>
                     </a>
                   </div>
                 </DashboardSection>

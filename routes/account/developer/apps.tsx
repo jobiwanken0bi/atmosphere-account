@@ -485,7 +485,7 @@ export function DeveloperAccessRecovery(
                   href={ambiguous ? "/account/apps-hosts" : "/apps"}
                   class="profile-form-button-primary"
                 >
-                  {ambiguous ? "Manage apps and hosts" : "Back to Apps"}
+                  {ambiguous ? "Manage listings" : "Back to Apps"}
                 </a>
                 <form method="post" action="/oauth/add-account">
                   <input

@@ -57,10 +57,10 @@ Deno.test("translated catalogs may change text while preserving shape", () => {
   assert(translated.meta.title === "Translated title", "translation rejected");
 });
 
-Deno.test("account navigation uses the Apps and hosts information architecture", () => {
+Deno.test("account navigation names the listings workspace clearly", () => {
   assert(
-    getMessages("en").nav.account.managedProducts === "Apps and hosts",
-    "legacy Managed products terminology returned",
+    getMessages("en").nav.account.managedProducts === "Manage listings",
+    "listing management label drifted",
   );
 });
 

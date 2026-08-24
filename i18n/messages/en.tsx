@@ -50,7 +50,7 @@ const en = {
         "Sign in with your Atmosphere account to publish an app listing.",
       hostedBy: (host: string): string => `Hosted by ${host}`,
       manageAccount: "Manage account",
-      managedProducts: "Apps and hosts",
+      managedProducts: "Manage listings",
       manageProfile: "Manage app listing",
       manageReviews: "Your reviews",
       viewProfile: "View app listing",

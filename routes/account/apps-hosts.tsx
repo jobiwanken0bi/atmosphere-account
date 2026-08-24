@@ -118,7 +118,7 @@ export function AppsHostsPage(props: AppsHostsPageProps) {
             </a>
             <header class="account-products-head">
               <p class="text-eyebrow">Account management</p>
-              <h1>Apps and hosts</h1>
+              <h1>Manage listings</h1>
               <p>{appsHostsIntro(apps.length, hosts.length)}</p>
               <div
                 class="account-products-counts"
@@ -425,7 +425,7 @@ function redirectToSignin(url: URL): Response {
 
 function appviewUnavailable(_error: unknown): Response {
   console.error("[appview] apps and hosts unavailable");
-  return new Response("Apps and hosts are temporarily unavailable.", {
+  return new Response("Managed listings are temporarily unavailable.", {
     status: 503,
     headers: { "cache-control": "no-store" },
   });

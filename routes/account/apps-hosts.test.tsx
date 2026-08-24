@@ -62,7 +62,7 @@ const ACCOUNT = {
   rememberedAccounts: [],
 };
 
-Deno.test("Apps and hosts is only available to profile-managing accounts", () => {
+Deno.test("Manage listings is only available to profile-managing accounts", () => {
   assertEquals(hasManagedProfiles([], []), false);
   assertEquals(hasManagedProfiles([APP], []), true);
   assertEquals(hasManagedProfiles([], [HOST]), true);
@@ -86,7 +86,7 @@ Deno.test("app managers see their app profile and developer settings only", () =
     />,
   );
 
-  assertStringIncludes(html, "<h1>Apps and hosts</h1>");
+  assertStringIncludes(html, "<h1>Manage listings</h1>");
   assertStringIncludes(
     html,
     "Manage this account’s app profile, connected hosts, and developer settings.",

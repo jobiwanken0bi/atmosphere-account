@@ -14,6 +14,10 @@ import {
   getRecordPublic,
 } from "../../lib/pds.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import {
+  type AccountHost,
+  listManagedAccountHosts,
+} from "../../lib/account-hosts.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import ShareButton from "../../islands/ShareButton.tsx";
@@ -406,6 +410,9 @@ export const handler = define.handlers({
         ),
       )
       : null;
+    const managedAccountHosts = await listManagedAccountHosts(user.did).catch(
+      () => [],
+    );
     return ctx.render(
       <ManagePage
         user={user}
@@ -430,6 +437,7 @@ export const handler = define.handlers({
           "shared-records"}
         managedAppListingId={managedAppListing?.id ?? null}
         accountHostLink={accountHostLink}
+        managedAccountHosts={managedAccountHosts}
         createNewListing={creatingAdditionalApp}
         reauthReturnTo={next}
         takedown={takedown}
@@ -697,6 +705,7 @@ interface ManagePageProps {
   migrationFocus: boolean;
   managedAppListingId: string | null;
   accountHostLink: DirectoryEntityAppLink | null;
+  managedAccountHosts: AccountHost[];
   createNewListing: boolean;
   reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
@@ -724,6 +733,7 @@ function ManagePage(
     migrationFocus,
     managedAppListingId,
     accountHostLink,
+    managedAccountHosts,
     createNewListing,
     reauthReturnTo,
     takedown,
@@ -795,6 +805,7 @@ function ManagePage(
               {!createNewListing && (
                 <AppHostingSummary
                   link={accountHostLink}
+                  managedHosts={managedAccountHosts}
                   initialPublished={initialPublished}
                   managedAppListingId={managedAppListingId}
                 />
@@ -835,14 +846,23 @@ function ManagePage(
 export function AppHostingSummary(
   {
     link,
+    managedHosts = [],
     initialPublished,
     managedAppListingId,
   }: {
     link: DirectoryEntityAppLink | null;
+    managedHosts?: Array<Pick<AccountHost, "host" | "displayName">>;
     initialPublished: boolean;
     managedAppListingId: string | null;
   },
 ) {
+  const ownedHosts = managedHosts.filter((host) => host.host.trim());
+  const ownedHost = ownedHosts.length === 1 ? ownedHosts[0] : null;
+  const ownedHostTitle = ownedHost
+    ? ownedHost.displayName?.trim() || ownedHost.host
+    : ownedHosts.length > 1
+    ? `${ownedHosts.length} account host listings`
+    : null;
   const manageHref = managedAppListingId
     ? `/apps/manage/host?app=${encodeURIComponent(managedAppListingId)}`
     : null;
@@ -868,9 +888,13 @@ export function AppHostingSummary(
           )
           : (
             <>
-              <h2>Connect an account host</h2>
+              <h2>{ownedHostTitle ?? "Connect an account host"}</h2>
               <p>
-                Choose the one PDS domain that provides accounts for this app.
+                {ownedHost
+                  ? `This account also manages the ${ownedHost.host} account host listing. Manage account hosting if it provides accounts for this app.`
+                  : ownedHosts.length > 1
+                  ? `This account also manages ${ownedHosts.length} account host listings. Manage account hosting to choose one for this app.`
+                  : "Choose the one PDS domain that provides accounts for this app."}
               </p>
             </>
           )}
@@ -893,7 +917,9 @@ export function AppHostingSummary(
           : initialPublished && manageHref
           ? (
             <a class="directory-register-button" href={manageHref}>
-              Connect account host
+              {ownedHosts.length > 0
+                ? "Manage account hosting"
+                : "Connect account host"}
             </a>
           )
           : (
@@ -901,9 +927,20 @@ export function AppHostingSummary(
               Publish the app profile first, then connect its PDS.
             </p>
           )}
-        <a class="text-link-button" href="/account/apps-hosts">
-          View apps and hosts
-        </a>
+        {!link && ownedHost
+          ? (
+            <a
+              class="text-link-button"
+              href={`/hosts/${encodeURIComponent(ownedHost.host)}/manage`}
+            >
+              Manage host listing
+            </a>
+          )
+          : (
+            <a class="text-link-button" href="/account/apps-hosts">
+              Manage listings
+            </a>
+          )}
       </div>
     </section>
   );

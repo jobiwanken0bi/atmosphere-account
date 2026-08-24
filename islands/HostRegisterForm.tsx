@@ -448,7 +448,7 @@ export default function HostRegisterForm(
             <h2>Connect apps to this host</h2>
             <p class="text-body">
               After creating this host profile, you can connect it to a
-              separately managed app from Apps and hosts.
+              separately managed app from the Manage listings page.
             </p>
           </div>
         </section>
