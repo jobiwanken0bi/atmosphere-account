@@ -6575,28 +6575,41 @@ body {
 }
 
 .app-card {
+  container-type: inline-size;
+  flex-direction: column;
   align-items: stretch;
+  gap: 0.72rem;
   height: 100%;
-  min-height: 10.5rem;
-  padding: 0.9rem;
+  min-width: 0;
+  min-height: 12rem;
+  padding: 1.05rem;
   text-align: left;
 }
 
 .app-card--compact {
-  display: grid;
-  grid-template-columns: 3.85rem minmax(0, 1fr);
-  gap: 0.9rem;
-  min-height: 9.5rem;
+  display: flex;
+  gap: 0.62rem;
+  min-height: 10.5rem;
 }
 
-.app-card-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 3.85rem;
+.app-card-top {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: start;
+  column-gap: 0.7rem;
+  row-gap: 0.2rem;
+  min-width: 0;
+}
+
+.app-card--compact .app-card-top {
+  grid-template-columns: 3.25rem minmax(0, 1fr) auto;
 }
 
 .app-card-icon {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  flex: 0 0 56px;
   background:
     linear-gradient(
       180deg,
@@ -6610,9 +6623,58 @@ body {
 }
 
 .app-card--compact .app-card-icon {
-  width: 3.85rem;
-  height: 3.85rem;
+  flex-basis: 3.25rem;
+  width: 3.25rem;
+  height: 3.25rem;
   border-radius: 1rem;
+}
+
+.app-card-rating-metric {
+  display: inline-flex;
+  grid-column: 3;
+  grid-row: 1;
+  align-items: center;
+  align-self: baseline;
+  justify-content: flex-end;
+  justify-self: end;
+  gap: 0.04rem;
+  color: rgba(18, 26, 47, 0.58);
+  font-size: 0.75rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.app-card-rating-star {
+  color: #d89a23;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.app-card-rating-count {
+  color: rgba(18, 26, 47, 0.48);
+}
+
+.app-card-like-metric {
+  display: inline-flex;
+  grid-column: 2;
+  align-items: center;
+  align-self: center;
+  justify-self: end;
+  gap: 0.16rem;
+  color: rgba(18, 26, 47, 0.58);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.app-card-like-icon {
+  width: 0.78rem;
+  height: 0.78rem;
+  color: #b44567;
+  stroke-width: 1.9;
 }
 
 .app-card-compact-cta {
@@ -6633,41 +6695,13 @@ body {
   box-shadow: 0 10px 22px rgba(42, 90, 168, 0.14);
 }
 
-.app-card .profile-card-body {
-  display: flex;
-  flex-direction: column;
-  align-self: stretch;
-  gap: 0.38rem;
-}
-
-.app-card-identity-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  min-width: 0;
-}
-
-.app-card-identity-copy {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 0.26rem;
-  min-width: 0;
-}
-
-.app-card .profile-card-title-row {
-  align-items: baseline;
-  flex-wrap: nowrap;
-  min-height: 0;
-  gap: 0.42rem;
-  overflow: hidden;
-}
-
 .app-card .profile-card-name {
   display: block;
-  flex: 0 0 auto;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: baseline;
   min-width: 0;
-  max-width: 65%;
+  max-width: 100%;
   overflow: hidden;
   line-height: 1.28;
   text-overflow: ellipsis;
@@ -6675,7 +6709,11 @@ body {
 }
 
 .app-card .profile-card-handle {
-  flex: 1 1 auto;
+  display: block;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  width: 100%;
   max-width: 100%;
   min-height: 0;
   margin: 0;
@@ -6698,9 +6736,12 @@ body {
 
 .app-card-view {
   display: inline-flex;
+  grid-column: 3;
   flex: 0 0 auto;
   align-items: center;
+  align-self: center;
   justify-content: center;
+  justify-self: end;
   min-width: 3.8rem;
   min-height: 2rem;
   padding: 0.35rem 0.68rem;
@@ -6714,8 +6755,13 @@ body {
 }
 
 .app-card .profile-card-description {
+  width: 100%;
+  min-height: 4.2em;
+  -webkit-line-clamp: 3;
+}
+
+.app-card--compact .profile-card-description {
   min-height: 2.5rem;
-  margin-top: 0.18rem;
   -webkit-line-clamp: 2;
 }
 
@@ -6734,38 +6780,22 @@ body {
   white-space: nowrap;
 }
 
-.app-card-meta {
-  gap: 0.45rem;
-  min-height: 2.65rem;
+.app-card-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.6rem;
   margin-top: auto;
-}
-
-.app-card--compact .app-card-meta {
-  min-height: 0;
-  margin-top: 0.55rem;
-}
-
-.app-card-taxonomy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
   min-width: 0;
 }
 
-.app-card .profile-card-subcategories {
-  align-content: flex-start;
-  min-height: 1.7rem;
-}
-
-.app-card-signals {
+.app-card-footer-meta {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.4rem;
-  min-height: 1.4rem;
-  color: rgba(18, 26, 47, 0.58);
-  font-size: 0.78rem;
+  grid-column: 1;
+  align-items: center;
+  align-self: center;
+  gap: 0.55rem;
+  min-width: 0;
 }
 
 .app-promo-collection {
@@ -6780,22 +6810,23 @@ body {
   font-weight: 750;
 }
 
-.app-card-signals span {
+.app-card-host-indicator {
   display: inline-flex;
+  grid-column: 3;
+  grid-row: 2;
   align-items: center;
-  min-height: 1.42rem;
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-  background: rgba(255, 255, 255, 0.36);
-  border: 1px solid rgba(255, 255, 255, 0.42);
-}
-
-.app-card-signals .app-card-host-indicator {
+  align-self: start;
+  justify-self: end;
   gap: 0.3rem;
-  border-color: rgba(42, 90, 168, 0.2);
-  background: rgba(42, 90, 168, 0.1);
-  color: #254a9e;
+  min-height: 1.55rem;
+  border: 1px solid rgba(105, 77, 173, 0.22);
+  border-radius: 999px;
+  padding: 0.12rem 0.48rem;
+  background: rgba(121, 91, 190, 0.12);
+  color: #594092;
+  font-size: 0.69rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .app-card-host-indicator svg {
@@ -6819,19 +6850,19 @@ body {
   color: #d8e4ff;
 }
 
-.dark-phase .app-card-signals {
+.dark-phase .app-card-rating-metric,
+.dark-phase .app-card-like-metric {
   color: rgba(255, 255, 255, 0.66);
 }
 
-.dark-phase .app-card-signals span {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
+.dark-phase .app-card-rating-count {
+  color: rgba(255, 255, 255, 0.54);
 }
 
-.dark-phase .app-card-signals .app-card-host-indicator {
-  border-color: rgba(166, 191, 255, 0.24);
-  background: rgba(106, 149, 255, 0.16);
-  color: #d8e4ff;
+.dark-phase .app-card-host-indicator {
+  border-color: rgba(202, 181, 255, 0.25);
+  background: rgba(171, 139, 247, 0.14);
+  color: #e0d2ff;
 }
 
 .dark-phase .app-section-link {
@@ -21782,23 +21813,10 @@ form[data-submit-once-pending="true"] button:disabled {
    overrides win the cascade over the base rules above.
    ============================================================ */
 @media (max-width: 640px) {
-  /* App directory cards: drop "View" below the identity block and stack name
-     over handle, so the app name gets the full card width (up to two lines)
-     instead of being capped at 65% and racing the handle + View for a ~99px
-     sliver. The whole card is the link, so View is only a visual affordance. */
-  .app-card-identity-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.4rem;
-  }
-  .app-card-view {
-    align-self: flex-start;
-  }
-  .app-card .profile-card-title-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.05rem;
-    overflow: visible;
+  /* Keep both app-card metadata rows aligned at phone widths. */
+  .app-card-top {
+    column-gap: 0.6rem;
+    row-gap: 0.18rem;
   }
   .app-card .profile-card-name {
     max-width: 100%;

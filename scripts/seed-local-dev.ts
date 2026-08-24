@@ -6,13 +6,17 @@ Deno.env.delete("TURSO_AUTH_TOKEN");
 Deno.env.delete("NEON_DATABASE_URL");
 Deno.env.delete("NEON_DIRECT_DATABASE_URL");
 
-const { ATSTORE_LISTING_NSID } = await import("../lib/app-lexicons.ts");
+const {
+  ATSTORE_FAVORITE_NSID,
+  ATSTORE_LISTING_NSID,
+  ATSTORE_REVIEW_NSID,
+} = await import("../lib/app-lexicons.ts");
 const {
   deleteAppRecord,
   rescoreAppDirectoryTrending,
   upsertAppRecordFromDraft,
 } = await import("../lib/app-directory.ts");
-const { listAccountHosts } = await import("../lib/account-hosts.ts");
+const { syncSeededAccountHosts } = await import("../lib/account-hosts.ts");
 const { setAppUserType } = await import("../lib/account-types.ts");
 const { withDb } = await import("../lib/db.ts");
 const { upsertProfile } = await import("../lib/registry.ts");
@@ -214,9 +218,54 @@ const apps = [
   },
 ] as const;
 
+// Local-only social proof fixtures. Together these exercise the three card
+// states that are otherwise difficult to see in a fresh database:
+// - Bluesky: rating + hearts + Host
+// - Grain: rating only
+// - Skylights: hearts only
+const appEngagementFixtures = [
+  {
+    slug: "bluesky",
+    reviewRatings: [
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+    ],
+    favoriteCount: 128,
+  },
+  {
+    slug: "grain",
+    reviewRatings: [5, 5, 5, 5, 5, 5, 5, 4],
+    favoriteCount: 0,
+  },
+  {
+    slug: "skylights",
+    reviewRatings: [],
+    favoriteCount: 37,
+  },
+] as const;
+
 const listingIds: string[] = [];
 
-await listAccountHosts();
+await syncSeededAccountHosts();
 
 await Promise.all([
   setAppUserType({
@@ -391,6 +440,123 @@ await withDb(async (c) => {
     ],
   });
 
+  // Bluesky is the all-signals example. Pin the seeded host profile to the
+  // app's product DID so the Host badge is deterministic in older local DBs.
+  const blueskyListingId = listingIds[
+    apps.findIndex((app) => app.slug === "bluesky")
+  ];
+  if (blueskyListingId) {
+    await c.execute({
+      sql: `
+        UPDATE account_host
+        SET profile_did = (
+              SELECT product_did FROM app_listing WHERE id = ?
+            ),
+            updated_at = ?
+        WHERE host = 'bsky.network' AND source = 'seeded'
+      `,
+      args: [blueskyListingId, now],
+    });
+  }
+
+  // Remove only this script's synthetic engagement before recreating it.
+  // This keeps reruns exact without touching developer-created interactions.
+  await c.execute({
+    sql: `DELETE FROM app_review WHERE author_did LIKE ?`,
+    args: ["did:plc:localdevreview%"],
+  });
+  await c.execute({
+    sql: `DELETE FROM app_favorite WHERE author_did LIKE ?`,
+    args: ["did:plc:localdevfavorite%"],
+  });
+
+  for (
+    const [fixtureIndex, fixture] of appEngagementFixtures.entries()
+  ) {
+    const appIndex = apps.findIndex((app) => app.slug === fixture.slug);
+    const listingId = listingIds[appIndex];
+    if (!listingId) {
+      throw new Error(
+        `[dev:seed] missing listing for engagement fixture ${fixture.slug}`,
+      );
+    }
+    const listingResult = await c.execute({
+      sql: `
+        SELECT atstore_listing_uri
+        FROM app_listing
+        WHERE id = ?
+        LIMIT 1
+      `,
+      args: [listingId],
+    });
+    const listingUri = (listingResult.rows[0] as Record<string, unknown>)
+      ?.atstore_listing_uri;
+    if (typeof listingUri !== "string" || !listingUri) {
+      throw new Error(
+        `[dev:seed] missing ATStore URI for engagement fixture ${fixture.slug}`,
+      );
+    }
+    const safeSlug = fixture.slug.replace(/[^a-z0-9]/g, "");
+
+    for (const [reviewIndex, rating] of fixture.reviewRatings.entries()) {
+      const suffix = `${fixtureIndex}${String(reviewIndex).padStart(3, "0")}`;
+      const authorDid = `did:plc:localdevreview${suffix}`;
+      const rkey = `${safeSlug}review${suffix}`;
+      const createdAt = now - (reviewIndex + 1) * 3_600_000;
+      await c.execute({
+        sql: `
+          INSERT INTO app_review (
+            uri, listing_uri, listing_id, author_did, rkey, cid, rating,
+            body, created_at, updated_at, indexed_at, deleted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        `,
+        args: [
+          `at://${authorDid}/${ATSTORE_REVIEW_NSID}/${rkey}`,
+          listingUri,
+          listingId,
+          authorDid,
+          rkey,
+          `local-review-${safeSlug}-${suffix}`,
+          rating,
+          reviewIndex === 0
+            ? "A local development review for previewing directory cards."
+            : "",
+          createdAt,
+          createdAt,
+          now,
+        ],
+      });
+    }
+
+    for (
+      let favoriteIndex = 0;
+      favoriteIndex < fixture.favoriteCount;
+      favoriteIndex++
+    ) {
+      const suffix = `${fixtureIndex}${String(favoriteIndex).padStart(3, "0")}`;
+      const authorDid = `did:plc:localdevfavorite${suffix}`;
+      const rkey = `${safeSlug}favorite${suffix}`;
+      await c.execute({
+        sql: `
+          INSERT INTO app_favorite (
+            uri, listing_uri, listing_id, author_did, rkey, cid,
+            created_at, indexed_at, deleted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        `,
+        args: [
+          `at://${authorDid}/${ATSTORE_FAVORITE_NSID}/${rkey}`,
+          listingUri,
+          listingId,
+          authorDid,
+          rkey,
+          `local-favorite-${safeSlug}-${suffix}`,
+          now - (favoriteIndex + 1) * 900_000,
+          now,
+        ],
+      });
+    }
+  }
+
   const muListingId = listingIds[apps.findIndex((app) => app.slug === "mu")];
   if (muListingId) {
     await c.execute({
@@ -442,5 +608,15 @@ await rescoreAppDirectoryTrending();
 await resetDevHostClaimFixtures();
 
 console.log(
-  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), one app/host profile comparison pair, the host-claim scenario lab, one detected unclaimed host, and refreshed seeded hosts in local.db`,
+  `[dev:seed] seeded ${apps.length} local app listing(s), ${hostAccountCounts.length} host account count fixture(s), ${
+    appEngagementFixtures.reduce(
+      (total, fixture) => total + fixture.reviewRatings.length,
+      0,
+    )
+  } app review fixture(s), ${
+    appEngagementFixtures.reduce(
+      (total, fixture) => total + fixture.favoriteCount,
+      0,
+    )
+  } app heart fixture(s), one app/host profile comparison pair, the host-claim scenario lab, one detected unclaimed host, and refreshed seeded hosts in local.db`,
 );
