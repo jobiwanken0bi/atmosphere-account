@@ -3,6 +3,7 @@ import {
   applySecurityHeadersForTest,
   csrfExpectedOriginForTest,
   isCrossOriginReadonlyRequest,
+  isCsrfSafeMarkedLoginStartRequest,
   isPrivateNetworkUrl,
   isSafeRelativePath,
   isSameOriginUnsafeRequest,
@@ -80,6 +81,113 @@ Deno.test("Atmosphere Login selection verification is the only cross-origin POST
   );
   assertEquals(
     isCrossOriginReadonlyRequest(req, "/api/account/microblog-viewer"),
+    false,
+  );
+});
+
+Deno.test("CSRF accepts a marked login fetch when embedded browsers omit provenance", () => {
+  const req = new Request("https://atmosphereaccount.com/oauth/login", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "multipart/form-data; boundary=embedded-browser",
+      cookie: "atmo_oauth_flow=existing",
+      "x-atmosphere-login": "1",
+    },
+  });
+  assertEquals(
+    isSameOriginUnsafeRequest(req, "https://atmosphereaccount.com"),
+    false,
+  );
+  assertEquals(
+    isCsrfSafeMarkedLoginStartRequest(req, "/oauth/login"),
+    true,
+  );
+});
+
+Deno.test("marked login fallback never overrides explicit cross-site evidence", () => {
+  const evidenceHeaders: Array<Record<string, string>> = [
+    { origin: "https://evil.example" },
+    { referer: "https://evil.example/form" },
+    { "sec-fetch-site": "cross-site" },
+    { "sec-fetch-site": "same-site" },
+  ];
+  for (const evidence of evidenceHeaders) {
+    const req = new Request("https://atmosphereaccount.com/oauth/login", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "multipart/form-data; boundary=cross-site",
+        cookie: "atmo_oauth_flow=existing",
+        "x-atmosphere-login": "1",
+        ...evidence,
+      },
+    });
+    assertEquals(
+      isCsrfSafeMarkedLoginStartRequest(req, "/oauth/login"),
+      false,
+    );
+  }
+});
+
+Deno.test("marked login fallback requires the exact enhanced form shape", () => {
+  const request = (
+    pathname: string,
+    overrides: Record<string, string> = {},
+    method = "POST",
+  ) =>
+    new Request(`https://atmosphereaccount.com${pathname}`, {
+      method,
+      headers: {
+        accept: "application/json",
+        "content-type": "multipart/form-data; boundary=login-form",
+        "x-atmosphere-login": "1",
+        ...overrides,
+      },
+    });
+
+  assertEquals(
+    isCsrfSafeMarkedLoginStartRequest(
+      request("/oauth/login", { "x-atmosphere-login": "0" }),
+      "/oauth/login",
+    ),
+    false,
+  );
+  assertEquals(
+    isCsrfSafeMarkedLoginStartRequest(
+      request("/oauth/login", { accept: "" }),
+      "/oauth/login",
+    ),
+    false,
+  );
+  assertEquals(
+    isCsrfSafeMarkedLoginStartRequest(
+      request("/oauth/login", { "content-type": "" }),
+      "/oauth/login",
+    ),
+    false,
+  );
+  assertEquals(
+    isCsrfSafeMarkedLoginStartRequest(
+      request("/oauth/login", {
+        "content-type": "application/x-www-form-urlencoded",
+      }),
+      "/oauth/login",
+    ),
+    false,
+  );
+  assertEquals(
+    isCsrfSafeMarkedLoginStartRequest(
+      request("/oauth/switch"),
+      "/oauth/switch",
+    ),
+    false,
+  );
+  assertEquals(
+    isCsrfSafeMarkedLoginStartRequest(
+      request("/oauth/login", {}, "GET"),
+      "/oauth/login",
+    ),
     false,
   );
 });

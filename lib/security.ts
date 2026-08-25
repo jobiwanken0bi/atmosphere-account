@@ -370,6 +370,37 @@ export function isCrossOriginReadonlyRequest(
     pathname === "/api/login/selection";
 }
 
+/**
+ * The enhanced login form marks its same-origin fetch with a non-CORS-
+ * safelisted header. Embedded and privacy-focused browsers can omit Origin,
+ * Referer, and Fetch Metadata even when cookies are attached; without this
+ * fallback those legitimate requests are indistinguishable from an unknown
+ * origin and fail before reaching the OAuth handler.
+ *
+ * A cross-origin browser cannot attach `x-atmosphere-login` without a
+ * successful CORS preflight, which this application does not grant. Keep the
+ * exemption limited to the exact JSON multipart login-start shape and never
+ * let it override any explicit provenance header.
+ */
+export function isCsrfSafeMarkedLoginStartRequest(
+  req: Request,
+  pathname: string,
+): boolean {
+  if (
+    req.method.toUpperCase() !== "POST" || pathname !== "/oauth/login" ||
+    req.headers.get("x-atmosphere-login") !== "1" ||
+    !(req.headers.get("accept") ?? "").toLowerCase().includes(
+      "application/json",
+    ) ||
+    !(req.headers.get("content-type") ?? "").toLowerCase().startsWith(
+      "multipart/form-data;",
+    )
+  ) return false;
+
+  return !req.headers.has("origin") && !req.headers.has("referer") &&
+    !req.headers.has("sec-fetch-site");
+}
+
 function isTokenBearingLoginRoute(pathname: string): boolean {
   return pathname === "/signin" ||
     pathname === "/oauth/add-account" ||
@@ -559,7 +590,10 @@ export const securityHeadersMiddleware = define.middleware(async (ctx) => {
 });
 
 export const csrfMiddleware = define.middleware((ctx) => {
-  if (isCrossOriginReadonlyRequest(ctx.req, ctx.url.pathname)) {
+  if (
+    isCrossOriginReadonlyRequest(ctx.req, ctx.url.pathname) ||
+    isCsrfSafeMarkedLoginStartRequest(ctx.req, ctx.url.pathname)
+  ) {
     return ctx.next();
   }
   if (
