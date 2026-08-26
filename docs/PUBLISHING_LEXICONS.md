@@ -169,14 +169,21 @@ and recommendation actions. The legacy `com.atmosphereaccount.registry.update`
 collection remains read-compatible for existing history but is not used for new
 posts.
 
-The metadata maximum contains the current allowlisted capability bundles plus
-`include:fyi.atstore.authBasic`, which remains in the ceiling only so an
-inherited ATStore grant can survive a contextual upgrade. It does not advertise
-`include:com.atmosphereaccount.registry.fullPermissions` or
+The metadata maximum temporarily contains both the current allowlisted bundles
+and the previous exact scope tokens. This is a rollout compatibility ceiling,
+not the permission request: the public shell and authoritative AppView deploy
+independently, and authorization servers cache client metadata. Deploy the
+expanded metadata first and wait beyond its 300-second shared-cache window
+before an AppView begins requesting the new Standard.site tokens. After that
+convergence, keeping both generations in the ceiling prevents an `invalid_scope`
+window while the AppView rollout completes. Current contextual requests do not
+ask for `include:com.atmosphereaccount.registry.fullPermissions` or
 `repo:com.atmosphereaccount.registry.update`. When a current action upgrades an
 inherited legacy grant, the scope logic preserves known unrelated permissions
 but removes that Atmosphere permission-set include and retired collection before
-starting the new authorization request.
+starting the new authorization request. The retired tokens can leave the
+metadata ceiling in a later release after every runtime and authorization-server
+cache has converged.
 
 `blob:image/*` remains a top-level scope because the atproto permission spec
 [explicitly disallows `blob` permissions inside permission

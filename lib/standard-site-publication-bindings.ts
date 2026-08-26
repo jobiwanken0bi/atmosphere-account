@@ -1,5 +1,9 @@
 import { withDb } from "./db.ts";
-import { buildStandardSitePublication } from "./standard-site-updates.ts";
+import {
+  buildStandardSitePublication,
+  standardSitePublicationRkeyFromUri,
+  standardSitePublicationUri,
+} from "./standard-site-updates.ts";
 
 export interface StandardSitePublicationBinding {
   appListingId: string;
@@ -70,13 +74,21 @@ export async function getStandardSitePublicationBindingByUri(
  */
 export async function claimStandardSitePublicationBinding(input: {
   appListingId: string;
+  productDid: string;
   publicationUrl: string;
   publicationUri: string;
 }): Promise<StandardSitePublicationBinding> {
   const appId = normalizedAppId(input.appListingId);
+  const productDid = normalizedProductDid(input.productDid);
   const url = normalizedPublicationUrl(input.publicationUrl);
   const uri = input.publicationUri.trim();
-  if (!appId || !url || !uri.startsWith("at://") || uri.length > 512) {
+  const rkey = productDid
+    ? standardSitePublicationRkeyFromUri(uri, productDid)
+    : null;
+  if (
+    !appId || !productDid || !url || !rkey || uri.length > 512 ||
+    uri !== standardSitePublicationUri(productDid, rkey)
+  ) {
     throw new Error("invalid Standard.site publication binding");
   }
   return await withDb(async (client) => {
@@ -109,6 +121,11 @@ export async function claimStandardSitePublicationBinding(input: {
 function normalizedAppId(value: string): string | null {
   const appId = value.trim();
   return appId && appId.length <= 256 ? appId : null;
+}
+
+function normalizedProductDid(value: string): string | null {
+  const did = value.trim();
+  return did.startsWith("did:") && did.length <= 512 ? did : null;
 }
 
 function normalizedPublicationUrl(value: string): string | null {

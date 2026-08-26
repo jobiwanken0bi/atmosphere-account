@@ -19,6 +19,7 @@ import {
   parseStandardSitePublication,
   STANDARD_SITE_DOCUMENT_NSID,
   STANDARD_SITE_PUBLICATION_NSID,
+  standardSitePublicationRkeyFromUri,
   standardSiteVersionFromTags,
 } from "./standard-site-updates.ts";
 
@@ -292,6 +293,7 @@ async function loadAtmospherePublicationUrls(
       { limit: STANDARD_SITE_PUBLICATION_SCAN_LIMIT, cursor },
     );
     for (const envelope of page.records) {
+      if (!standardSitePublicationRkeyFromUri(envelope.uri, did)) continue;
       const publication = parseStandardSitePublication(envelope.value);
       if (!publication) continue;
       result.set(envelope.uri, publication.url);
