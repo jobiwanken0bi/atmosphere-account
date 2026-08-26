@@ -7409,14 +7409,17 @@ body {
 }
 
 .app-detail-hero-title {
+  display: flex;
   min-width: 0;
+  min-height: 120px;
+  flex-direction: column;
 }
 
 .app-detail-hero-identity {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  min-height: 120px;
+  min-height: 0;
 }
 
 .app-detail-hero-side {
@@ -7463,10 +7466,41 @@ body {
 
 .app-detail-inline-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.65rem;
   margin-top: auto;
+}
+
+.app-detail-inline-action-group {
+  display: flex;
+  max-width: 100%;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.app-detail-inline-action-group-label {
+  color: rgba(18, 26, 47, 0.58);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.075em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.app-detail-inline-action-buttons {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.18rem;
+  border: 1px solid rgba(42, 90, 168, 0.11);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .app-detail-metadata-popover {
@@ -7649,9 +7683,9 @@ body {
 }
 
 .app-detail-hero .app-detail-inline-actions .profile-hero-action--icon-only {
-  width: 2.5rem;
-  height: 2.5rem;
-  min-height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-height: 2.75rem;
 }
 
 .app-detail-hero
@@ -7670,7 +7704,10 @@ body {
   padding-bottom: 0;
 }
 
-.app-detail-hero .profile-hero-action:not(.profile-hero-action--icon-only) {
+.app-detail-hero
+  .profile-hero-action:not(.profile-hero-action--icon-only):not(
+    .profile-hero-action--metadata
+  ) {
   width: 100%;
   background: rgba(42, 90, 168, 0.92);
   border-color: rgba(42, 90, 168, 0.24);
@@ -7679,9 +7716,66 @@ body {
 }
 
 .app-detail-hero
-  .profile-hero-action:not(.profile-hero-action--icon-only):hover {
+  .profile-hero-action:not(.profile-hero-action--icon-only):not(
+    .profile-hero-action--metadata
+  ):hover {
   background: rgba(32, 75, 148, 0.96);
   border-color: rgba(32, 75, 148, 0.3);
+}
+
+.app-detail-hero .profile-hero-action.profile-hero-action--metadata {
+  width: auto;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 0.48rem;
+  gap: 0.28rem;
+  border-color: rgba(42, 90, 168, 0.15);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: none;
+  color: #254a9e;
+  font-size: 0.76rem;
+}
+
+.app-detail-hero .profile-hero-action.profile-hero-action--metadata:hover {
+  border-color: rgba(42, 90, 168, 0.26);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.profile-hero-action--metadata .profile-hero-action-icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0.2rem;
+  border-radius: 0.45rem;
+  box-shadow: none;
+}
+
+.app-detail-metadata-action-label {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.dark-phase .app-detail-inline-action-group-label {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.dark-phase .app-detail-inline-action-buttons {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark-phase
+  .app-detail-hero
+  .profile-hero-action.profile-hero-action--metadata {
+  border-color: rgba(166, 191, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #d8e4ff;
+}
+
+.dark-phase
+  .app-detail-hero
+  .profile-hero-action.profile-hero-action--metadata:hover {
+  border-color: rgba(190, 208, 255, 0.32);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .app-detail-hero .profile-hero-action.directory-identity-link {
@@ -8066,7 +8160,10 @@ body {
     flex-wrap: nowrap;
   }
 
-  .app-detail-hero .profile-hero-action:not(.profile-hero-action--icon-only) {
+  .app-detail-hero
+    .profile-hero-action:not(.profile-hero-action--icon-only):not(
+      .profile-hero-action--metadata
+    ) {
     flex: 1 1 auto;
     justify-content: center;
     min-width: 0;
@@ -22092,6 +22189,7 @@ form[data-submit-once-pending="true"] button:disabled {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "media identity"
+      "inline-actions inline-actions"
       "actions actions"
       "platforms platforms"
       "desc desc";
@@ -22123,6 +22221,17 @@ form[data-submit-once-pending="true"] button:disabled {
     align-self: start;
     min-height: 0;
   }
+  .app-detail-inline-actions {
+    grid-area: inline-actions;
+    width: 100%;
+    margin-top: 0;
+  }
+  .app-detail-inline-action-group--access {
+    flex-basis: 100%;
+  }
+  .app-detail-scopes-popover {
+    width: min(22rem, calc(100vw - 4rem));
+  }
   .app-detail-hero .profile-hero-actions,
   .app-detail-hero .profile-hero-actions.app-detail-action-columns {
     grid-area: actions;
@@ -22139,6 +22248,8 @@ form[data-submit-once-pending="true"] button:disabled {
   .app-detail-hero
     .profile-hero-action:not(.profile-hero-action--icon-only):not(
       .profile-hero-action--store-icon
+    ):not(
+      .profile-hero-action--metadata
     ) {
     flex: 1 1 40%;
     width: auto;
@@ -22153,6 +22264,8 @@ form[data-submit-once-pending="true"] button:disabled {
   .app-detail-hero
     .profile-hero-action:not(.profile-hero-action--icon-only):not(
       .profile-hero-action--store-icon
+    ):not(
+      .profile-hero-action--metadata
     )
     .profile-hero-action-arrow {
     margin-left: 0;
