@@ -189,14 +189,20 @@ function sameOriginLoginDestination(form) {
 }
 
 function renderAuthorizationLink(form, destination) {
-  renderFormError(form, "");
-  const error = form.querySelector("[data-signin-form-error]");
-  if (!(error instanceof HTMLElement)) return;
+  let notice = form.querySelector("[data-signin-form-error]");
+  if (!(notice instanceof HTMLElement)) {
+    notice = document.createElement("p");
+    notice.className = "signin-form-error";
+    notice.setAttribute("data-signin-form-error", "true");
+    notice.setAttribute("role", "alert");
+    notice.setAttribute("aria-live", "assertive");
+    form.append(notice);
+  }
   const fallback = document.createElement("a");
   fallback.href = destination;
   fallback.target = "_top";
   fallback.textContent = "Continue to authorization";
-  error.replaceChildren(
+  notice.replaceChildren(
     document.createTextNode(
       "Authorization is ready, but it did not open automatically. ",
     ),

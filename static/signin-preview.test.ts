@@ -43,6 +43,7 @@ Deno.test("sign-in preview exposes keyboard selection and associated errors", as
   assertStringIncludes(source, "globalThis.location.assign(destination)");
   assertStringIncludes(source, "renderAuthorizationLink(form, destination)");
   assertStringIncludes(source, 'fallback.target = "_top"');
+  assertEquals(source.includes('renderFormError(form, "")'), false);
   assertEquals(source.includes('"x-atmosphere-login"'), false);
   assertEquals(source.includes("fetch(form.action"), false);
   assertEquals(source.includes("body.error"), false);
