@@ -381,6 +381,37 @@ Deno.test("early appview proxy covers DB-backed APIs before session hydration", 
   }
 });
 
+Deno.test("early appview proxy delegates Standard.site publication verification", () => {
+  assertEquals(
+    shouldProxyAppviewBeforeSession(
+      "/.well-known/site.standard.publication/apps/grain",
+    ),
+    true,
+  );
+  assertEquals(
+    shouldProxyAppviewBeforeSession(
+      "/.well-known/site.standard.publication-malicious/apps/grain",
+    ),
+    false,
+  );
+});
+
+Deno.test("Standard.site verifier runs after the early appview proxy", async () => {
+  const source = await Deno.readTextFile(
+    new URL("../main.ts", import.meta.url),
+  );
+  const appviewProxy = source.indexOf(
+    "app.use(appviewEarlyProxyMiddleware)",
+  );
+  const verifier = source.indexOf(
+    "app.use(standardSiteVerificationMiddleware)",
+  );
+  assertEquals(
+    appviewProxy >= 0 && verifier >= 0 && appviewProxy < verifier,
+    true,
+  );
+});
+
 Deno.test("retired passkey routes are not forwarded to the appview", () => {
   for (
     const path of [

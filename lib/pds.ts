@@ -292,6 +292,7 @@ export async function putRecord(
   collection: string,
   rkey: string,
   record: Record<string, unknown>,
+  options: { swapRecord?: string } = {},
 ): Promise<PutRecordResult> {
   const url = `${
     normalizeServiceEndpoint(pdsUrl)
@@ -304,6 +305,7 @@ export async function putRecord(
       collection,
       rkey,
       record: { ...record, $type: collection },
+      ...(options.swapRecord ? { swapRecord: options.swapRecord } : {}),
     }),
   });
   if (!res.ok) {
@@ -352,6 +354,7 @@ export async function deleteRecord(
   pdsUrl: string,
   collection: string,
   rkey: string,
+  options: { swapRecord?: string } = {},
 ): Promise<void> {
   const url = `${
     normalizeServiceEndpoint(pdsUrl)
@@ -359,7 +362,12 @@ export async function deleteRecord(
   const res = await authedFetch(did, url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ repo: did, collection, rkey }),
+    body: JSON.stringify({
+      repo: did,
+      collection,
+      rkey,
+      ...(options.swapRecord ? { swapRecord: options.swapRecord } : {}),
+    }),
   });
   if (res.status === 404) return;
   if (!res.ok) {

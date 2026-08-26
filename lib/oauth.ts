@@ -40,6 +40,7 @@ import {
   DEFAULT_OAUTH_SCOPE,
   hasOAuthCapabilities,
   IDENTITY_OAUTH_SCOPE,
+  inheritedScopeForCapabilities,
   type OAuthCapability,
   scopeCoversScope,
   scopeForCapabilities,
@@ -538,17 +539,31 @@ type CallbackSessionSaveResult = "saved" | "narrower" | "conflict";
 function classifySessionScopeReplacement(
   currentScope: string,
   incomingScope: string,
+  capabilities: readonly OAuthCapability[] = [],
 ): "replace" | "narrower" | "conflict" {
-  if (scopeSafelyCoversScope(incomingScope, currentScope)) return "replace";
-  if (scopeSafelyCoversScope(currentScope, incomingScope)) return "narrower";
+  const retainedCurrentScope = inheritedScopeForCapabilities(
+    currentScope,
+    capabilities,
+  );
+  if (scopeSafelyCoversScope(incomingScope, retainedCurrentScope)) {
+    return "replace";
+  }
+  if (scopeSafelyCoversScope(retainedCurrentScope, incomingScope)) {
+    return "narrower";
+  }
   return "conflict";
 }
 
 export function classifySessionScopeReplacementForTest(
   currentScope: string,
   incomingScope: string,
+  capabilities: readonly OAuthCapability[] = [],
 ): "replace" | "narrower" | "conflict" {
-  return classifySessionScopeReplacement(currentScope, incomingScope);
+  return classifySessionScopeReplacement(
+    currentScope,
+    incomingScope,
+    capabilities,
+  );
 }
 
 /**
@@ -559,6 +574,7 @@ export function classifySessionScopeReplacementForTest(
 async function saveCallbackSession(
   session: SessionData,
   replaceableSessionHash?: string,
+  capabilities: readonly OAuthCapability[] = [],
 ): Promise<CallbackSessionSaveResult> {
   for (let attempt = 0; attempt < 4; attempt++) {
     const current = await loadStoredSession(session.did);
@@ -579,6 +595,7 @@ async function saveCallbackSession(
     const decision = classifySessionScopeReplacement(
       currentScope,
       session.scope ?? IDENTITY_OAUTH_SCOPE,
+      capabilities,
     );
     if (decision === "replace") {
       if (await replaceSessionIfUnchanged(session, current.serialized)) {
@@ -1105,6 +1122,7 @@ export async function completeCallback(
     const saved = await saveCallbackSession(
       session,
       flow.replaceableSessionHash,
+      flow.capabilities,
     );
     // Two capability upgrades may have started from the same older grant.
     // Neither token can be merged with the other, so preserve the winner and

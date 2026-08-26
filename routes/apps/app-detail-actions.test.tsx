@@ -4,7 +4,17 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { renderToString } from "preact-render-to-string";
 import type { AppListing } from "../../lib/app-directory.ts";
-import { AppListingHero } from "./[handle].tsx";
+import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import type { ProfileUpdateRow } from "../../lib/profile-updates.ts";
+import { atmosphereStandardSiteUpdateSource } from "../../lib/standard-site-updates.ts";
+import {
+  AppListingDetailPage,
+  AppListingHero,
+  filterProfileUpdatesForApp,
+  mergeProfileUpdateHistories,
+  prioritizeProfileUpdates,
+  profileUpdateDidsForAppDetail,
+} from "./[handle].tsx";
 
 function listing(overrides: Partial<AppListing> = {}): AppListing {
   return {
@@ -48,6 +58,178 @@ function listing(overrides: Partial<AppListing> = {}): AppListing {
     ...overrides,
   };
 }
+
+function update(
+  rkey: string,
+  overrides: Partial<ProfileUpdateRow> = {},
+): ProfileUpdateRow {
+  return {
+    uri: `at://did:plc:spark/site.standard.document/${rkey}`,
+    cid: `cid-${rkey}`,
+    rkey,
+    projectDid: "did:plc:spark",
+    title: `Update ${rkey}`,
+    body: `Body ${rkey}`,
+    version: null,
+    tangledCommitUrl: null,
+    tangledRepoUrl: null,
+    source: "standard_site",
+    status: "visible",
+    createdAt: Date.UTC(2026, 7, 26),
+    updatedAt: Date.UTC(2026, 7, 26),
+    indexedAt: Date.UTC(2026, 7, 26),
+    ...overrides,
+  };
+}
+
+Deno.test("migrated app detail reads merge legacy and product update DIDs", () => {
+  assertEquals(
+    profileUpdateDidsForAppDetail(
+      "did:plc:legacy-profile",
+      "did:plc:product",
+    ),
+    ["did:plc:legacy-profile", "did:plc:product"],
+  );
+  assertEquals(
+    profileUpdateDidsForAppDetail("did:plc:same", "did:plc:same"),
+    ["did:plc:same"],
+  );
+  assertEquals(profileUpdateDidsForAppDetail(null, "did:plc:product"), [
+    "did:plc:product",
+  ]);
+  assertEquals(profileUpdateDidsForAppDetail("did:plc:legacy", null), [
+    "did:plc:legacy",
+  ]);
+  assertEquals(profileUpdateDidsForAppDetail(null, null), []);
+});
+
+Deno.test("app detail merges legacy and Standard.site history deterministically", () => {
+  const legacy = update("legacy", {
+    uri: "at://did:plc:legacy/com.atmosphereaccount.registry.update/legacy",
+    projectDid: "did:plc:legacy",
+    source: "manual",
+    createdAt: Date.UTC(2026, 7, 20),
+    indexedAt: Date.UTC(2026, 7, 20),
+  });
+  const standard = update("standard", {
+    createdAt: Date.UTC(2026, 7, 21),
+    indexedAt: Date.UTC(2026, 7, 21),
+  });
+  const staleDuplicate = update("standard", {
+    title: "Stale duplicate",
+    createdAt: standard.createdAt,
+    indexedAt: standard.indexedAt - 1,
+  });
+
+  const merged = mergeProfileUpdateHistories([
+    [legacy, staleDuplicate],
+    [standard],
+  ]);
+
+  assertEquals(merged.map((row) => row.rkey), ["standard", "legacy"]);
+  assertEquals(merged[0].title, standard.title);
+});
+
+Deno.test("app detail keeps generic updates but isolates Atmosphere app sources", () => {
+  const appId = "app-spark";
+  const generic = update("generic");
+  const currentApp = update("current", {
+    source: atmosphereStandardSiteUpdateSource(appId),
+  });
+  const otherApp = update("other", {
+    source: atmosphereStandardSiteUpdateSource("another-app"),
+  });
+  const legacy = update("legacy", {
+    uri: "at://did:plc:legacy/com.atmosphereaccount.registry.update/legacy",
+    source: "manual",
+  });
+
+  assertEquals(
+    filterProfileUpdatesForApp(
+      [generic, currentApp, otherApp, legacy],
+      appId,
+    ).map((row) => row.rkey),
+    ["generic", "current", "legacy"],
+  );
+});
+
+Deno.test("requested app update moves first without dropping update history", () => {
+  const updates = [update("one"), update("two"), update("three")];
+
+  const prioritized = prioritizeProfileUpdates(updates, "three");
+
+  assertEquals(prioritized.map((row) => row.rkey), ["three", "one", "two"]);
+  assertEquals(updates.map((row) => row.rkey), ["one", "two", "three"]);
+  assertEquals(
+    prioritizeProfileUpdates(updates, "missing").map((row) => row.rkey),
+    ["one", "two", "three"],
+  );
+});
+
+Deno.test("requested update prefers the product Standard.site row over a legacy rkey collision", () => {
+  const rkey = "3m4standardxx";
+  const appId = "app-spark";
+  const legacy = update(rkey, {
+    uri: `at://did:plc:legacy/com.atmosphereaccount.registry.update/${rkey}`,
+    projectDid: "did:plc:legacy",
+    source: "manual",
+  });
+  const standard = update(rkey, {
+    source: atmosphereStandardSiteUpdateSource(appId),
+  });
+
+  const prioritized = prioritizeProfileUpdates(
+    [legacy, standard],
+    rkey,
+    { productDid: "did:plc:spark", appId },
+  );
+
+  assertEquals(prioritized.map((row) => row.uri), [
+    standard.uri,
+    legacy.uri,
+  ]);
+});
+
+Deno.test("shared app listing renders its product updates in What's New", () => {
+  const html = renderToString(
+    <AppListingDetailPage
+      app={listing({ productDid: "did:plc:spark" })}
+      appPublicMetadata={{
+        privacyUrl: null,
+        termsUrl: null,
+        scopes: [],
+        oauthMetadataUrl: null,
+      }}
+      resolvedHostLink={null}
+      relatedApps={[]}
+      reviews={[]}
+      ownReview={null}
+      ownFavorite={null}
+      reviewSort="newest"
+      sourceAliases={[]}
+      canInspectSources={false}
+      updates={[update("release", {
+        title: "Standard.site release",
+        body: "Shared listing update body",
+      })]}
+      locale="en"
+      signedInUser={null}
+      account={buildAccountMenuProps({
+        user: null,
+        accountType: null,
+        accountHost: null,
+        rememberedAccounts: [],
+      })}
+      microblogViewerClientId={null}
+      shareUrl="https://atmosphereaccount.com/apps/spark/"
+      backNavigation={{ href: "/apps", label: "Back to apps" }}
+    />,
+  );
+
+  assertStringIncludes(html, "What’s New");
+  assertStringIncludes(html, "Standard.site release");
+  assertStringIncludes(html, "Shared listing update body");
+});
 
 Deno.test("app hero groups profile, policy, and access actions in order", () => {
   const html = renderToString(

@@ -110,6 +110,12 @@ export default define.page(function App(ctx) {
             <meta property="og:url" content={pageMeta.canonicalUrl} />
           </>
         )}
+        {pageMeta.standardSiteDocumentUri && (
+          <link
+            rel="site.standard.document"
+            href={pageMeta.standardSiteDocumentUri}
+          />
+        )}
         <meta
           name="twitter:title"
           content={pageMeta.title ?? t.meta.ogTitle}

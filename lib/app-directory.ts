@@ -660,13 +660,25 @@ async function ensureUniqueSlug(
   let slug = base;
   for (let i = 2; i < 50; i++) {
     const res = await execute({
-      sql: `SELECT id FROM app_listing WHERE slug = ? AND id <> ? LIMIT 1`,
-      args: [slug, listingId],
+      sql: `
+        SELECT id FROM (
+          SELECT id FROM app_listing WHERE slug = ? AND id <> ?
+          UNION ALL
+          SELECT listing_id AS id FROM app_alias
+          WHERE alias_key = ? AND listing_id <> ?
+        ) reserved_slug
+        LIMIT 1
+      `,
+      args: [slug, listingId, appSlugAliasKey(slug), listingId],
     });
     if (res.rows.length === 0) return slug;
     slug = `${base}-${i}`;
   }
   return `${base}-${listingId.slice(0, 8)}`;
+}
+
+export function appSlugAliasKey(slug: string): string {
+  return `slug:${slugify(slug)}`;
 }
 
 export async function upsertAppRecordFromDraft(input: {
@@ -761,6 +773,28 @@ async function mergeDuplicateListing(
   now: number,
 ): Promise<void> {
   if (listingId === duplicateId) return;
+  // Preserve Standard.site publication ownership when two directory records
+  // collapse into one listing. Prefer an existing binding on the surviving
+  // listing for the same historical URL, then move every non-conflicting row.
+  await c.execute({
+    sql: `
+      DELETE FROM app_standard_site_publication
+      WHERE app_listing_id = ?
+        AND publication_url IN (
+          SELECT publication_url FROM app_standard_site_publication
+          WHERE app_listing_id = ?
+        )
+    `,
+    args: [duplicateId, listingId],
+  });
+  await c.execute({
+    sql: `
+      UPDATE app_standard_site_publication
+      SET app_listing_id = ?, updated_at = ?
+      WHERE app_listing_id = ?
+    `,
+    args: [listingId, now, duplicateId],
+  });
   await c.execute({
     sql: `UPDATE app_alias SET listing_id = ? WHERE listing_id = ?`,
     args: [listingId, duplicateId],
@@ -840,12 +874,54 @@ async function recomputeListing(
     return;
   }
   const merged = mergeAppListingDrafts(drafts);
+  const previousListing = await c.execute({
+    sql: `SELECT slug FROM app_listing WHERE id = ? LIMIT 1`,
+    args: [listingId],
+  });
+  const previousSlug = String(
+    (previousListing.rows[0] as Record<string, unknown> | undefined)?.slug ??
+      "",
+  ).trim();
   const slug = await ensureUniqueSlug(
     c.execute.bind(c),
     merged.slug,
     listingId,
   );
   const now = Date.now();
+  // Reserve the old public path before moving the listing. Besides keeping
+  // Standard.site publication/document URLs valid after a rename, doing this
+  // before the slug update closes the window in which another listing could
+  // claim the just-vacated path.
+  if (previousSlug && previousSlug !== slug) {
+    const aliasKey = appSlugAliasKey(previousSlug);
+    await c.execute({
+      sql: `
+        INSERT INTO app_alias (alias_key, listing_id, source_uri, created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(alias_key) DO NOTHING
+      `,
+      args: [
+        aliasKey,
+        listingId,
+        `app-listing:${listingId}`,
+        now,
+      ],
+    });
+    const reservation = await c.execute({
+      sql: `SELECT listing_id FROM app_alias WHERE alias_key = ? LIMIT 1`,
+      args: [aliasKey],
+    });
+    if (
+      String(
+        (reservation.rows[0] as Record<string, unknown> | undefined)
+          ?.listing_id ?? "",
+      ) !== listingId
+    ) {
+      throw new Error(
+        `Historical app slug is already reserved: ${previousSlug}`,
+      );
+    }
+  }
   await c.execute({
     sql: `
       INSERT INTO app_listing (
@@ -2066,6 +2142,7 @@ export async function getAppListingByIdentifier(
   }
   const raw = decodeURIComponent(identifier).trim();
   const keyCandidates = uniqueStrings([
+    appSlugAliasKey(raw),
     didAlias(raw),
     raw.startsWith("at://") ? `uri:${raw}` : null,
     urlAlias(raw),

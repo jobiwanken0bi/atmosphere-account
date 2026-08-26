@@ -58,6 +58,24 @@ Deno.test("app shell uses page-specific preview titles and descriptions", () => 
   assertIncludes(html, 'property="og:image:type" content="image/png"');
 });
 
+Deno.test("app shell emits a Standard.site document verification backlink", () => {
+  const uri = "at://did:plc:product/site.standard.document/3m4standardxx";
+  const html = renderAppShell(
+    "/apps/grain?update=3m4standardxx",
+    false,
+    false,
+    {
+      standardSiteDocumentUri: uri,
+    },
+  );
+
+  assertIncludes(
+    html,
+    `rel="site.standard.document" href="${uri}"`,
+  );
+  assertOmits(renderAppShell("/apps/grain"), "site.standard.document");
+});
+
 Deno.test("global app eagerly loads sign-in enhancement only for initial forms", () => {
   for (
     const pathname of [

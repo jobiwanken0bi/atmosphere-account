@@ -109,4 +109,8 @@ Deno.test("scope descriptions explain common permission shapes", () => {
     "records",
   );
   assertStringIncludes(scopeDescription("transition:generic"), "legacy access");
+  assertStringIncludes(
+    scopeDescription("repo:com.atmosphereaccount.registry.update"),
+    "legacy Atmosphere What’s New",
+  );
 });

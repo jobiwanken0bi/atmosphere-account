@@ -1,5 +1,6 @@
-import { withDb } from "./db.ts";
+import { type DbClient, withDb } from "./db.ts";
 import { UPDATE_NSID, type UpdateRecord } from "./lexicons.ts";
+import { STANDARD_SITE_DOCUMENT_NSID } from "./standard-site-updates.ts";
 
 export const MAX_UPDATE_TITLE_LENGTH = 80;
 export const MAX_UPDATE_BODY_LENGTH = 1000;
@@ -134,12 +135,100 @@ export async function upsertProfileUpdate(input: {
         now,
       ],
     });
-    const update = await getProfileUpdateByRkey(input.projectDid, input.rkey, {
+    const update = await getProfileUpdateByUri(input.uri, {
       includeRemoved: true,
     });
     if (!update) throw new Error("profile_update_write_failed");
     return update;
   });
+}
+
+export async function markProfileUpdateRemovedByUri(
+  uri: string,
+): Promise<boolean> {
+  return await withDb(async (c) => {
+    const now = Date.now();
+    const r = await c.execute({
+      sql: `
+        UPDATE profile_update SET
+          status = 'removed',
+          updated_at = ?,
+          indexed_at = ?
+        WHERE uri = ? AND status != 'removed'
+      `,
+      args: [now, now, uri],
+    });
+    return Number(r.rowsAffected ?? 0) > 0;
+  });
+}
+
+/**
+ * Tombstone Standard.site rows that are absent from the product's current
+ * projected window. Callers must only invoke this after exhausting a complete
+ * listRecords scan and selecting the valid ATStore-compatible top 40; a
+ * bounded partial scan cannot safely distinguish deletion, invalid edits, or
+ * records that live on an unvisited page.
+ */
+export async function markMissingStandardSiteProfileUpdatesRemoved(
+  projectDid: string,
+  projectedUris: ReadonlySet<string>,
+  indexedBefore = Date.now(),
+): Promise<number> {
+  return await withDb((c) =>
+    markMissingStandardSiteProfileUpdatesRemovedInDb(
+      c,
+      projectDid,
+      projectedUris,
+      indexedBefore,
+    )
+  );
+}
+
+export async function markMissingStandardSiteProfileUpdatesRemovedInDb(
+  c: DbClient,
+  projectDid: string,
+  projectedUris: ReadonlySet<string>,
+  indexedBefore = Number.MAX_SAFE_INTEGER,
+): Promise<number> {
+  const prefix = `at://${projectDid}/${STANDARD_SITE_DOCUMENT_NSID}/`;
+  const existing = await c.execute({
+    sql: `
+      SELECT uri
+      FROM profile_update
+      WHERE project_did = ?
+        AND status = 'visible'
+        AND substr(uri, 1, ?) = ?
+        AND indexed_at < ?
+    `,
+    args: [projectDid, prefix.length, prefix, indexedBefore],
+  });
+  const missing = existing.rows
+    .map((row) => typeof row.uri === "string" ? row.uri : "")
+    .filter((uri) => uri && !projectedUris.has(uri));
+  if (missing.length === 0) return 0;
+
+  const now = Date.now();
+  let removed = 0;
+  // Keep every statement comfortably below SQLite's conservative parameter
+  // limit while preserving exact URI identity across record collections.
+  for (let index = 0; index < missing.length; index += 100) {
+    const chunk = missing.slice(index, index + 100);
+    const result = await c.execute({
+      sql: `
+        UPDATE profile_update SET
+          status = 'removed',
+          updated_at = ?,
+          indexed_at = ?
+        WHERE project_did = ?
+          AND status != 'removed'
+          AND indexed_at < ?
+          AND uri IN (${chunk.map(() => "?").join(", ")})
+      `,
+      args: [now, now, projectDid, indexedBefore, ...chunk],
+    });
+    removed += Number(result.rowsAffected ?? 0);
+  }
+  return removed;
 }
 
 export async function markProfileUpdateRemovedByRkey(
@@ -182,11 +271,31 @@ export async function getProfileUpdateByRkey(
   });
 }
 
+export async function getProfileUpdateByUri(
+  uri: string,
+  opts: { includeRemoved?: boolean } = {},
+): Promise<ProfileUpdateRow | null> {
+  return await withDb(async (c) => {
+    const r = await c.execute({
+      sql: `
+        SELECT *
+        FROM profile_update
+        WHERE uri = ?
+          ${opts.includeRemoved ? "" : "AND status = 'visible'"}
+        LIMIT 1
+      `,
+      args: [uri],
+    });
+    const row = r.rows[0] as unknown as RawProfileUpdateRow | undefined;
+    return row ? rowToUpdate(row) : null;
+  });
+}
+
 export async function listProfileUpdates(
   projectDid: string,
   opts: { limit?: number; includeRemoved?: boolean } = {},
 ): Promise<ProfileUpdateRow[]> {
-  const limit = Math.max(1, Math.min(opts.limit ?? 6, 25));
+  const limit = Math.max(1, Math.min(opts.limit ?? 6, 40));
   return await withDb(async (c) => {
     const r = await c.execute({
       sql: `

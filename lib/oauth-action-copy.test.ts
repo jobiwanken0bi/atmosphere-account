@@ -59,6 +59,10 @@ Deno.test("ordinary actions name the task without permission jargon", () => {
 
 Deno.test("app and host management state what access is approved", () => {
   assertStringIncludes(
+    authActionCopy("app_updates", "Grain").signInBody,
+    "publish, edit, and remove its What’s New posts",
+  );
+  assertStringIncludes(
     authActionCopy("app", "Grain").signInBody,
     "manage its app records and images",
   );
@@ -79,6 +83,7 @@ Deno.test("account creation policy explicitly covers every OAuth action", () => 
     report_review: true,
     favorite: true,
     app: true,
+    app_updates: false,
     host_claim: true,
     host_manage: false,
     host_transfer: true,

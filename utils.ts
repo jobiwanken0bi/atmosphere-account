@@ -42,6 +42,8 @@ export interface PageMeta {
    * pages so crawlers dedupe trailing-slash vs non-slash variants.
    */
   canonicalUrl?: string;
+  /** AT URI asserted by a canonical Standard.site document permalink. */
+  standardSiteDocumentUri?: string;
 }
 
 export interface State {

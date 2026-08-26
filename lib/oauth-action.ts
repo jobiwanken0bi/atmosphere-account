@@ -11,6 +11,7 @@ export const OAUTH_ACTIONS = [
   "report_review",
   "favorite",
   "app",
+  "app_updates",
   "host_claim",
   "host_manage",
   "host_transfer",
@@ -50,6 +51,7 @@ const ACCOUNT_CREATION_ERRORS = new Set<AccountCreationError>([
  * upgrade, so every contextual entry point must request the matching bundle.
  */
 export const APP_MANAGEMENT_CAPABILITIES = ["app", "media"] as const;
+export const APP_UPDATE_MANAGEMENT_CAPABILITIES = ["app_updates"] as const;
 export const HOST_MANAGEMENT_CAPABILITIES = ["host", "media"] as const;
 export const APP_HOST_MANAGEMENT_CAPABILITIES = [
   "app",
@@ -75,6 +77,7 @@ const OAUTH_ACTION_CAPABILITY_BUNDLES = {
   report_review: [["identity"]],
   favorite: [["favorite"]],
   app: [APP_MANAGEMENT_CAPABILITIES],
+  app_updates: [APP_UPDATE_MANAGEMENT_CAPABILITIES],
   host_claim: [HOST_MANAGEMENT_CAPABILITIES],
   host_manage: [HOST_MANAGEMENT_CAPABILITIES],
   host_transfer: [HOST_MANAGEMENT_CAPABILITIES],

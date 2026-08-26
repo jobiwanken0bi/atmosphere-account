@@ -13,6 +13,7 @@ export const OAUTH_CAPABILITIES = [
   "legacy_review",
   "favorite",
   "app",
+  "app_updates",
   "host",
   "media",
 ] as const;
@@ -26,12 +27,13 @@ const REVIEW_MANAGE_SCOPE =
   "repo:fyi.atstore.listing.review?action=update&action=delete";
 const FAVORITE_SCOPE =
   "repo:fyi.atstore.listing.favorite?action=create&action=delete";
-// Stage the next capability in client metadata before any independently
-// deployed AppView starts requesting it. Authorization servers cache metadata
-// and require exact requested-token membership.
-const STANDARD_SITE_UPDATE_SCOPES = [
-  "repo:site.standard.publication?action=create&action=update",
-  "repo:site.standard.document?action=create&action=update&action=delete",
+const LEGACY_REGISTRY_FULL_PERMISSIONS_SCOPE =
+  "include:com.atmosphereaccount.registry.fullPermissions";
+const LEGACY_REGISTRY_UPDATE_COLLECTION =
+  "com.atmosphereaccount.registry.update";
+const SAFE_LEGACY_REGISTRY_SCOPES = [
+  "repo:com.atmosphereaccount.registry.profile",
+  "repo:com.atmosphereaccount.registry.review",
 ] as const;
 
 const CAPABILITY_SCOPES: Record<OAuthCapability, readonly string[]> = {
@@ -44,10 +46,14 @@ const CAPABILITY_SCOPES: Record<OAuthCapability, readonly string[]> = {
     "repo:community.lexicon.app.profile",
     "repo:fyi.atstore.profile",
     "repo:fyi.atstore.listing.detail",
-    // Transitional collections remain necessary while legacy listings can
-    // still be edited and publish What's New records.
+    // The legacy profile collection remains necessary while old listings can
+    // still be edited. What's New uses Standard.site through its own narrowly
+    // requested capability.
     "repo:com.atmosphereaccount.registry.profile",
-    "repo:com.atmosphereaccount.registry.update",
+  ],
+  app_updates: [
+    "repo:site.standard.publication?action=create&action=update",
+    "repo:site.standard.document?action=create&action=update&action=delete",
   ],
   host: [
     "repo:account.atmosphere.host.profile",
@@ -57,9 +63,10 @@ const CAPABILITY_SCOPES: Record<OAuthCapability, readonly string[]> = {
 };
 
 /**
- * Scopes requested by the pre-progressive implementation. Keep these in the
- * metadata maximum so existing refresh sessions remain valid while they age
- * out, but do not request them in new action flows.
+ * Scopes requested by the pre-progressive implementation. Keep this constant
+ * for recognizing and sanitizing inherited grants and, temporarily, in the
+ * rollout-safe metadata ceiling. Do not request the legacy union in new
+ * authorization flows.
  */
 export const LEGACY_OAUTH_SCOPE =
   "atproto include:com.atmosphereaccount.registry.fullPermissions include:fyi.atstore.authBasic repo:com.atmosphereaccount.registry.profile repo:com.atmosphereaccount.registry.review repo:com.atmosphereaccount.registry.update repo:fyi.atstore.profile repo:fyi.atstore.listing.detail repo:fyi.atstore.listing.review repo:fyi.atstore.listing.favorite repo:community.lexicon.app.profile repo:account.atmosphere.host.profile repo:account.atmosphere.host.service blob:image/*";
@@ -67,11 +74,20 @@ export const LEGACY_OAUTH_SCOPE =
 /** Default for a flow with no action attached: identity authentication only. */
 export const DEFAULT_OAUTH_SCOPE = IDENTITY_OAUTH_SCOPE;
 
-/** Maximum scope union advertised in the OAuth client metadata document. */
+/**
+ * Maximum scope union advertised in the OAuth client metadata.
+ *
+ * The public shell and authoritative AppView deploy independently, and OAuth
+ * authorization servers cache this document. The expanded ceiling must go live
+ * before an AppView starts requesting the new tokens. Once it has converged,
+ * retaining the previous exact tokens keeps both AppView generations valid
+ * during the rest of the rollout. Contextual authorization requests still use
+ * only the current capability scopes, and inherited grants are sanitized by
+ * inheritedScopeForCapabilities().
+ */
 export const OAUTH_CLIENT_METADATA_SCOPE = unionScopeStrings(
   LEGACY_OAUTH_SCOPE,
   ...Object.values(CAPABILITY_SCOPES).map((tokens) => tokens.join(" ")),
-  STANDARD_SITE_UPDATE_SCOPES.join(" "),
 );
 
 export function isOAuthCapability(value: unknown): value is OAuthCapability {
@@ -100,9 +116,53 @@ export function scopeForCapabilities(
   );
   return unionScopeStrings(
     IDENTITY_OAUTH_SCOPE,
-    existingScope ?? "",
+    inheritedScopeForCapabilities(existingScope, capabilities),
     additions.join(" "),
   );
+}
+
+/**
+ * Remove grants that the Standard.site migration deliberately supersedes from
+ * an inherited authorization. The old full-permissions include also covered
+ * profile and review records, so retain those known, unrelated permissions as
+ * direct grants rather than silently narrowing the user's working session.
+ *
+ * Apply this to every product-capability upgrade. Identity-only flows never
+ * union an existing product grant, while any write upgrade must avoid sending
+ * the retired collection back to an authorization server.
+ */
+export function inheritedScopeForCapabilities(
+  existingScope: string | null | undefined,
+  capabilities: readonly OAuthCapability[],
+): string {
+  const tokens = scopeTokens(existingScope);
+  if (!capabilities.some((capability) => capability !== "identity")) {
+    return tokens.join(" ");
+  }
+
+  const retained: string[] = [];
+  for (const token of tokens) {
+    if (token.split("?", 1)[0] === LEGACY_REGISTRY_FULL_PERMISSIONS_SCOPE) {
+      retained.push(...SAFE_LEGACY_REGISTRY_SCOPES);
+      continue;
+    }
+
+    const repo = parseRepoScope(token);
+    if (
+      !repo || !repo.collections.includes(LEGACY_REGISTRY_UPDATE_COLLECTION)
+    ) {
+      retained.push(token);
+      continue;
+    }
+
+    const collections = repo.collections.filter((collection) =>
+      collection !== LEGACY_REGISTRY_UPDATE_COLLECTION
+    );
+    if (collections.length > 0) {
+      retained.push(repoScopeToken(collections, repo.actions));
+    }
+  }
+  return unionScopeStrings(retained.join(" "));
 }
 
 export function scopeTokens(scope: string | null | undefined): string[] {
@@ -296,9 +356,18 @@ function capabilityIsGranted(
         "fyi.atstore.profile",
         "fyi.atstore.listing.detail",
         "com.atmosphereaccount.registry.profile",
-        "com.atmosphereaccount.registry.update",
       ].every((collection) =>
         repoActionsGranted(grants, collection, ALL_REPO_ACTIONS)
+      );
+    case "app_updates":
+      return repoActionsGranted(
+        grants,
+        "site.standard.publication",
+        ["create", "update"],
+      ) && repoActionsGranted(
+        grants,
+        "site.standard.document",
+        ["create", "update", "delete"],
       );
     case "host":
       return [
@@ -348,6 +417,22 @@ function parseRepoScope(token: string): {
     collections,
     actions: actions.length > 0 ? actions : [...ALL_REPO_ACTIONS],
   };
+}
+
+function repoScopeToken(
+  collections: readonly string[],
+  actions: readonly RepoAction[],
+): string {
+  if (collections.length === 1) {
+    const params = new URLSearchParams();
+    for (const action of actions) params.append("action", action);
+    const query = params.toString();
+    return `repo:${collections[0]}${query ? `?${query}` : ""}`;
+  }
+  const params = new URLSearchParams();
+  for (const collection of collections) params.append("collection", collection);
+  for (const action of actions) params.append("action", action);
+  return `repo?${params.toString()}`;
 }
 
 function isRepoAction(value: string): value is RepoAction {

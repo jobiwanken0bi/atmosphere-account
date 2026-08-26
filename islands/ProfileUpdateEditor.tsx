@@ -46,6 +46,7 @@ export type EditableProfileUpdate = Pick<
 >;
 
 interface Props {
+  appId: string;
   projectDid: string;
   currentHandle: string;
   rememberedAccounts?: Array<{ did: string; handle: string }>;
@@ -84,6 +85,7 @@ export function profileUpdateReauthorization(
   payload: unknown,
   targetName: string,
   projectDid: string,
+  appId: string,
   kind: ProfileUpdateResumeKind,
   currentReturnTo?: string,
 ): ContextualReauthorization | null {
@@ -93,6 +95,7 @@ export function profileUpdateReauthorization(
       returnTo: profileUpdateResumeReturnTo(
         currentReturnTo ?? serverContext.returnTo,
         projectDid,
+        appId,
         kind,
       ),
       action: serverContext.action,
@@ -112,16 +115,18 @@ export function profileUpdateReauthorization(
     returnTo: profileUpdateResumeReturnTo(
       currentReturnTo ?? "/apps/manage",
       projectDid,
+      appId,
       kind,
     ),
-    action: "app",
-    capabilities: ["app", "media"],
+    action: "app_updates",
+    capabilities: ["app_updates"],
     targetName,
   });
 }
 
 export default function ProfileUpdateEditor(
   {
+    appId,
     projectDid,
     currentHandle,
     rememberedAccounts = [],
@@ -143,11 +148,16 @@ export default function ProfileUpdateEditor(
   const message = useSignal<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
-  const pendingKey = profileUpdatePendingKey(projectDid);
-  const deletePendingKey = profileUpdateDeletePendingKey(projectDid);
-  const resumeProofKey = profileUpdateResumeProofKey(projectDid, "save");
+  const pendingKey = profileUpdatePendingKey(projectDid, appId);
+  const deletePendingKey = profileUpdateDeletePendingKey(projectDid, appId);
+  const resumeProofKey = profileUpdateResumeProofKey(
+    projectDid,
+    appId,
+    "save",
+  );
   const deleteResumeProofKey = profileUpdateResumeProofKey(
     projectDid,
+    appId,
     "delete",
   );
 
@@ -216,6 +226,7 @@ export default function ProfileUpdateEditor(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         ...publishable,
+        appId,
         rkey: publishable.rkey,
       }),
     });
@@ -225,6 +236,7 @@ export default function ProfileUpdateEditor(
         data,
         currentHandle,
         projectDid,
+        appId,
         "save",
         currentReturnTo(),
       );
@@ -232,7 +244,7 @@ export default function ProfileUpdateEditor(
         try {
           await savePendingBrowserAction(
             pendingKey,
-            pendingProfileUpdateAction(projectDid, publishable),
+            pendingProfileUpdateAction(projectDid, appId, publishable),
             { ownerDid: projectDid },
           );
         } catch {
@@ -284,7 +296,9 @@ export default function ProfileUpdateEditor(
     message.value = null;
     try {
       const res = await fetch(
-        `/api/registry/profile/updates?rkey=${encodeURIComponent(rkey)}`,
+        `/api/registry/profile/updates?app=${encodeURIComponent(appId)}&rkey=${
+          encodeURIComponent(rkey)
+        }`,
         { method: "DELETE" },
       );
       const data = await res.json().catch(() => ({}));
@@ -293,6 +307,7 @@ export default function ProfileUpdateEditor(
           data,
           currentHandle,
           projectDid,
+          appId,
           "delete",
           currentReturnTo(),
         );
@@ -300,7 +315,7 @@ export default function ProfileUpdateEditor(
           try {
             await savePendingBrowserAction(
               deletePendingKey,
-              pendingProfileUpdateDeleteAction(projectDid, rkey),
+              pendingProfileUpdateDeleteAction(projectDid, appId, rkey),
               { ownerDid: projectDid },
             );
           } catch {
@@ -348,7 +363,7 @@ export default function ProfileUpdateEditor(
       return;
     }
 
-    const resume = profileUpdateResumeLocation(href, projectDid);
+    const resume = profileUpdateResumeLocation(href, projectDid, appId);
     if (resume.hadMarker) {
       globalThis.history.replaceState(null, "", resume.cleanLocation);
     }
@@ -374,7 +389,11 @@ export default function ProfileUpdateEditor(
         const pending = await loadPendingBrowserAction<
           PendingProfileUpdateAction
         >(pendingKey).catch(() => null);
-        const draft = pendingProfileUpdateDraftForDid(pending, projectDid);
+        const draft = pendingProfileUpdateDraftForDid(
+          pending,
+          projectDid,
+          appId,
+        );
         if (!draft) {
           await clearAuthorizationState();
           return;
@@ -399,7 +418,11 @@ export default function ProfileUpdateEditor(
       const pending = await loadPendingBrowserAction(deletePendingKey).catch(
         () => null,
       );
-      const rkey = pendingProfileUpdateDeleteForDid(pending, projectDid);
+      const rkey = pendingProfileUpdateDeleteForDid(
+        pending,
+        projectDid,
+        appId,
+      );
       if (!rkey) {
         await clearAuthorizationState();
         return;
@@ -467,20 +490,6 @@ export default function ProfileUpdateEditor(
               placeholder={t.notesPlaceholder}
               onInput={(e) =>
                 body.value = (e.currentTarget as HTMLTextAreaElement).value}
-              class="profile-form-input"
-              disabled={disabled}
-            />
-          </label>
-          <label class="profile-form-field">
-            <span class="profile-form-label">{t.commitLabel}</span>
-            <input
-              type="url"
-              maxLength={512}
-              value={tangledCommitUrl.value}
-              placeholder={t.commitPlaceholder}
-              onInput={(e) =>
-                tangledCommitUrl.value =
-                  (e.currentTarget as HTMLInputElement).value}
               class="profile-form-input"
               disabled={disabled}
             />
@@ -567,7 +576,7 @@ export default function ProfileUpdateEditor(
             const kind = reauthorizationKind.value;
             if (!kind) return;
             armProfileUpdateResume(
-              profileUpdateResumeProofKey(projectDid, kind),
+              profileUpdateResumeProofKey(projectDid, appId, kind),
             );
           }}
           onClose={() => {
