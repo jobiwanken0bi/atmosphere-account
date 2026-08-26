@@ -7,6 +7,7 @@ import {
   accountCreationErrorMessage,
   APP_HOST_MANAGEMENT_CAPABILITIES,
   APP_MANAGEMENT_CAPABILITIES,
+  APP_UPDATE_MANAGEMENT_CAPABILITIES,
   HOST_MANAGEMENT_CAPABILITIES,
   isAccountCreationAction,
   isOAuthActionCapabilityRequest,
@@ -67,6 +68,7 @@ Deno.test("account creation is limited to actions a new DID can complete", () =>
       "legacy_review_manage",
       "host_manage",
       "app_host",
+      "app_updates",
       "developer",
     ] as const
   ) {
@@ -131,6 +133,10 @@ Deno.test("each OAuth action accepts only its intended capability bundles", () =
     { action: "favorite", capabilities: ["favorite"] },
     { action: "app", capabilities: [...APP_MANAGEMENT_CAPABILITIES] },
     {
+      action: "app_updates",
+      capabilities: [...APP_UPDATE_MANAGEMENT_CAPABILITIES],
+    },
+    {
       action: "host_claim",
       capabilities: [...HOST_MANAGEMENT_CAPABILITIES],
     },
@@ -176,6 +182,8 @@ Deno.test("OAuth action policy rejects cross-action and additive mismatches", ()
     { action: "review_manage", capabilities: ["review"] },
     { action: "app", capabilities: ["app"] },
     { action: "app", capabilities: ["media"] },
+    { action: "app_updates", capabilities: ["app"] },
+    { action: "app_updates", capabilities: ["app_updates", "media"] },
     { action: "host_claim", capabilities: ["identity"] },
     { action: "host_claim", capabilities: ["host"] },
     { action: "host_manage", capabilities: ["host"] },

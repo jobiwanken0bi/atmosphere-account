@@ -17,6 +17,7 @@ const ACCOUNT_CREATION_BY_ACTION = {
   report_review: true,
   favorite: true,
   app: true,
+  app_updates: false,
   host_claim: true,
   host_manage: false,
   host_transfer: true,
@@ -118,6 +119,17 @@ export function authActionCopy(
           `Use the account that represents ${name}. You’ll approve access to manage its app records and images.`,
         upgradeBody: (handle) =>
           `You’re signed in as @${handle}. Approve access to manage its app records, including images, to continue.`,
+      };
+    }
+    case "app_updates": {
+      const name = targetName || "your app";
+      return {
+        eyebrow: "What’s New",
+        title: "Manage your app’s updates",
+        signInBody:
+          `Use the account that represents ${name}. You’ll approve access to publish, edit, and remove its What’s New posts.`,
+        upgradeBody: (handle) =>
+          `You’re signed in as @${handle}. Approve access to manage ${name}’s What’s New posts.`,
       };
     }
     case "host_claim": {

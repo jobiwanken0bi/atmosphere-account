@@ -54,6 +54,36 @@ Deno.test("Postgres baseline adds the verified preferred account host field", as
   }
 });
 
+Deno.test("Postgres migration replaces cross-collection update rkey uniqueness", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const drop = schema.indexOf(
+    "DROP INDEX IF EXISTS profile_update_project_rkey",
+  );
+  const replacement = schema.indexOf(
+    "CREATE INDEX IF NOT EXISTS profile_update_project_rkey_lookup",
+  );
+  if (drop < 0 || replacement < 0 || drop >= replacement) {
+    throw new Error(
+      "Postgres must drop legacy profile-update rkey uniqueness before creating the collection-safe lookup index",
+    );
+  }
+});
+
+Deno.test("Standard.site publication bindings are app- and URL-stable", async () => {
+  const schema = await Deno.readTextFile("sql/neon/001_initial.sql");
+  const table = schema.match(
+    /CREATE TABLE IF NOT EXISTS app_standard_site_publication\s*\(([\s\S]*?)\);/i,
+  )?.[1] ?? "";
+  if (
+    !/PRIMARY KEY \(app_listing_id, publication_url\)/i.test(table) ||
+    !/publication_uri text NOT NULL UNIQUE/i.test(table)
+  ) {
+    throw new Error(
+      "Standard.site bindings must select one unique publication per app URL",
+    );
+  }
+});
+
 Deno.test("relay inventory sequence columns are widened on existing Postgres databases", async () => {
   const postgres = await Deno.readTextFile("sql/neon/001_initial.sql");
   const sqlite = await Deno.readTextFile(new URL("./db.ts", import.meta.url));

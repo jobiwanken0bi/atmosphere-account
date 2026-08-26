@@ -3,6 +3,7 @@ import { App, staticFiles } from "fresh";
 import type { State } from "./utils.ts";
 import { localeMiddleware } from "./i18n/mod.ts";
 import { wellKnownMiddleware } from "./lib/wellknown.ts";
+import { standardSiteVerificationMiddleware } from "./lib/standard-site-verification.ts";
 import { trailingSlashRedirectMiddleware } from "./lib/trailing-slash-redirect.ts";
 import { sessionMiddleware } from "./lib/session.ts";
 import { csrfMiddleware, securityHeadersMiddleware } from "./lib/security.ts";
@@ -39,6 +40,7 @@ app.use(wellKnownMiddleware);
 app.use(localeMiddleware);
 app.use(edgeCachePolicyMiddleware);
 app.use(appviewEarlyProxyMiddleware);
+app.use(standardSiteVerificationMiddleware);
 app.use(sessionMiddleware);
 
 app.fsRoutes();

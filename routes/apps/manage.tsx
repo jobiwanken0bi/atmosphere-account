@@ -2,6 +2,7 @@ import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
 import CreateProfileForm from "../../islands/CreateProfileForm.tsx";
+import ProfileUpdateEditor from "../../islands/ProfileUpdateEditor.tsx";
 import AtstoreMigrationButton from "../../islands/AtstoreMigrationButton.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
@@ -51,6 +52,12 @@ import {
   oauthSigninUrl,
 } from "../../lib/oauth-action.ts";
 import { existingAppRegistrationRedirect } from "../../lib/app-profile-cardinality.ts";
+import {
+  listProfileUpdates,
+  type ProfileUpdateRow,
+} from "../../lib/profile-updates.ts";
+import { syncStandardSiteDocumentsForProduct } from "../../lib/standard-site-sync.ts";
+import { isAtmosphereStandardSiteUpdateSource } from "../../lib/standard-site-updates.ts";
 
 /**
  * An explicit edit target is trusted only when this DID owns the exact
@@ -413,6 +420,14 @@ export const handler = define.handlers({
     const managedAccountHosts = await listManagedAccountHosts(user.did).catch(
       () => [],
     );
+    const canManageProductUpdates = !creatingAdditionalApp &&
+      managedAppListing?.productDid === user.did;
+    if (canManageProductUpdates) {
+      await syncStandardSiteDocumentsForProduct(user.did).catch(() => null);
+    }
+    const profileUpdates = canManageProductUpdates
+      ? await listProfileUpdates(user.did, { limit: 40 }).catch(() => [])
+      : [];
     return ctx.render(
       <ManagePage
         user={user}
@@ -438,6 +453,15 @@ export const handler = define.handlers({
         managedAppListingId={managedAppListing?.id ?? null}
         accountHostLink={accountHostLink}
         managedAccountHosts={managedAccountHosts}
+        profileUpdates={managedAppListing
+          ? profileUpdates.filter((update) =>
+            isAtmosphereStandardSiteUpdateSource(
+              update.source,
+              managedAppListing.id,
+            )
+          )
+          : []}
+        canManageProductUpdates={canManageProductUpdates}
         createNewListing={creatingAdditionalApp}
         reauthReturnTo={next}
         takedown={takedown}
@@ -706,6 +730,8 @@ interface ManagePageProps {
   managedAppListingId: string | null;
   accountHostLink: DirectoryEntityAppLink | null;
   managedAccountHosts: AccountHost[];
+  profileUpdates: ProfileUpdateRow[];
+  canManageProductUpdates: boolean;
   createNewListing: boolean;
   reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
@@ -734,6 +760,8 @@ function ManagePage(
     managedAppListingId,
     accountHostLink,
     managedAccountHosts,
+    profileUpdates,
+    canManageProductUpdates,
     createNewListing,
     reauthReturnTo,
     takedown,
@@ -834,6 +862,18 @@ function ManagePage(
                 reauthReturnTo={reauthReturnTo}
                 rememberedAccounts={account.rememberedAccounts}
               />
+              {!createNewListing && managedAppListingId &&
+                canManageProductUpdates &&
+                initialPublished && (
+                <ProfileUpdateEditor
+                  appId={managedAppListingId}
+                  projectDid={user.did}
+                  currentHandle={user.handle}
+                  rememberedAccounts={account.rememberedAccounts}
+                  initialUpdates={profileUpdates}
+                  disabled={!!takedown}
+                />
+              )}
             </div>
           </div>
         </main>

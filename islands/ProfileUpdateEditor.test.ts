@@ -15,14 +15,15 @@ function assertEquals(actual: unknown, expected: unknown): void {
 Deno.test("profile updates open validated contextual reauthorization", () => {
   const reauthUrl = oauthReauthorizationUrl({
     next: "/apps/manage?app=grain.social",
-    action: "app",
-    capabilities: ["app", "media"],
+    action: "app_updates",
+    capabilities: ["app_updates"],
     name: "Grain",
   });
   const authorization = profileUpdateReauthorization(
     { error: "reauth_required", reauthUrl },
     "grain.social",
     "did:plc:grain",
+    "grain.social",
     "save",
   );
   assertEquals(
@@ -34,8 +35,8 @@ Deno.test("profile updates open validated contextual reauthorization", () => {
       .searchParams.get("next"),
     authorization?.returnTo,
   );
-  assertEquals(authorization?.action, "app");
-  assertEquals(authorization?.capabilities, ["app", "media"]);
+  assertEquals(authorization?.action, "app_updates");
+  assertEquals(authorization?.capabilities, ["app_updates"]);
 });
 
 Deno.test("expired profile update sessions get a safe local modal fallback", () => {
@@ -43,14 +44,15 @@ Deno.test("expired profile update sessions get a safe local modal fallback", () 
     { error: "not_authenticated" },
     "grain.social",
     "did:plc:grain",
+    "grain.social",
     "delete",
   );
   assertEquals(
     authorization?.returnTo,
-    "/apps/manage?profile-update-delete-resume=did%3Aplc%3Agrain",
+    "/apps/manage?app=grain.social&profile-update-delete-resume=did%3Aplc%3Agrain",
   );
   assertEquals(authorization?.targetName, "grain.social");
-  assertEquals(authorization?.capabilities, ["app", "media"]);
+  assertEquals(authorization?.capabilities, ["app_updates"]);
 });
 
 Deno.test("profile updates reject untrusted reauthorization payloads", () => {
@@ -59,10 +61,11 @@ Deno.test("profile updates reject untrusted reauthorization payloads", () => {
       {
         error: "reauth_required",
         reauthUrl:
-          "https://evil.example/signin?next=/apps/manage&permission=required&action=app&capability=app",
+          "https://evil.example/signin?next=/apps/manage&permission=required&action=app_updates&capability=app_updates",
       },
       "grain.social",
       "did:plc:grain",
+      "grain.social",
       "save",
     ),
     null,
@@ -72,6 +75,7 @@ Deno.test("profile updates reject untrusted reauthorization payloads", () => {
       { error: "project_required" },
       "grain.social",
       "did:plc:grain",
+      "grain.social",
       "save",
     ),
     null,

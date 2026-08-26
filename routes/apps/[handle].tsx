@@ -50,6 +50,13 @@ import {
   listProfileUpdates,
   type ProfileUpdateRow,
 } from "../../lib/profile-updates.ts";
+import { syncStandardSiteDocumentsForProduct } from "../../lib/standard-site-sync.ts";
+import {
+  ATMOSPHERE_STANDARD_SITE_UPDATE_SOURCE_PREFIX,
+  isAtmosphereStandardSiteUpdateSource,
+  STANDARD_SITE_DOCUMENT_NSID,
+} from "../../lib/standard-site-updates.ts";
+import { resolveRuntimeStandardSiteDocumentVerification } from "../../lib/standard-site-verification.ts";
 import { appImageUrl } from "../../lib/media.ts";
 import { syncProfileByIdentifier } from "../../lib/profile-sync.ts";
 import {
@@ -190,29 +197,52 @@ export const handler = define.handlers({
     const legacyProfile = profile && !appListing?.atstoreListingUri
       ? profile
       : null;
-    const [reviewSummary, reviews, ownReview, updates] = legacyProfile
-      ? await Promise.all([
-        getReviewSummary(legacyProfile.did).catch(() => emptyReviewSummary()),
-        listVisibleReviews(legacyProfile.did, { limit: 20 }).catch(() => []),
-        user
-          ? getOwnReview(legacyProfile.did, user.did).catch(() => null)
-          : null,
-        listProfileUpdates(legacyProfile.did, { limit: 6 }).catch(() => []),
-      ])
-      : [
-        emptyReviewSummary(),
-        [] as ReviewRow[],
-        null,
-        [] as ProfileUpdateRow[],
-      ];
+    const updateDids = profileUpdateDidsForAppDetail(
+      appListing?.legacyProfileDid ?? legacyProfile?.did ?? null,
+      appListing?.productDid ?? null,
+    );
+    const requestedUpdateRkey = ctx.url.searchParams.get("update")?.trim() ||
+      null;
+    const [reviewSummary, reviews, ownReview, updates] = await Promise.all([
+      legacyProfile
+        ? getReviewSummary(legacyProfile.did).catch(() => emptyReviewSummary())
+        : Promise.resolve(emptyReviewSummary()),
+      legacyProfile
+        ? listVisibleReviews(legacyProfile.did, { limit: 20 }).catch(() => [])
+        : Promise.resolve([] as ReviewRow[]),
+      legacyProfile && user
+        ? getOwnReview(legacyProfile.did, user.did).catch(() => null)
+        : Promise.resolve(null),
+      updateDids.length > 0
+        ? loadAppDetailUpdates({
+          dids: updateDids,
+          productDid: appListing?.productDid ?? null,
+          appId: appListing?.id ?? null,
+          requestedRkey: requestedUpdateRkey,
+        }).catch(() => [] as ProfileUpdateRow[])
+        : Promise.resolve([] as ProfileUpdateRow[]),
+    ]);
     // Host relationship resolution is independent of reviewer identity
     // enrichment. Start it in the same batch so slow DID/handle fallbacks do
     // not add another serial wait before the page can render.
+    const hasRequestedStandardSiteDocument = !!(
+      appListing?.productDid && requestedUpdateRkey &&
+      updates.some((update) =>
+        (update.source === "standard_site" ||
+          isAtmosphereStandardSiteUpdateSource(
+            update.source,
+            appListing.id,
+          )) &&
+        update.projectDid === appListing?.productDid &&
+        update.rkey === requestedUpdateRkey
+      )
+    );
     const [
       displayReviews,
       displayAppReviews,
       resolvedHostLink,
       appPublicMetadata,
+      standardSiteDocumentUri,
     ] = await Promise.all([
       legacyProfile ? enrichReviews(reviews) : Promise.resolve([]),
       enrichAppMirroredReviews(appReviews),
@@ -228,6 +258,16 @@ export const handler = define.handlers({
       appListing
         ? getAppPublicMetadata(appListing).catch(() => emptyAppPublicMetadata())
         : Promise.resolve(emptyAppPublicMetadata()),
+      appListing && requestedUpdateRkey && hasRequestedStandardSiteDocument
+        ? resolveRuntimeStandardSiteDocumentVerification({
+          appId: appListing.id,
+          slug: handle,
+          productDid: appListing.productDid,
+          rkey: requestedUpdateRkey,
+          pathname: ctx.url.pathname,
+          search: ctx.url.search,
+        }).catch(() => null)
+        : Promise.resolve(null),
     ]);
     /**
      * Share URL intentionally ends in `/`. Bluesky's composer runs a
@@ -261,6 +301,12 @@ export const handler = define.handlers({
         publicOrigin,
       ).href
       : currentPublicUrl.href;
+    // A verified Standard.site update is its own canonical document URL.
+    // Keep the trailing-slash share workaround for the general app page, but
+    // do not erase the document's `?update=<tid>` identity from page metadata.
+    const pageCanonicalUrl = standardSiteDocumentUri
+      ? currentPublicUrl.href
+      : shareUrl;
     /**
      * Per-page social meta. When the project has a banner, use the
      * dedicated OG JPEG route (~1200×630, tens of KB) for og:image so link
@@ -279,7 +325,8 @@ export const handler = define.handlers({
         title: appListing.name,
         description: "Atmosphere app",
         ogType: "website",
-        canonicalUrl: shareUrl,
+        canonicalUrl: pageCanonicalUrl,
+        standardSiteDocumentUri: standardSiteDocumentUri ?? undefined,
         imageUrl: imageUrl?.startsWith("/")
           ? new URL(imageUrl, publicOrigin).href
           : imageUrl,
@@ -299,7 +346,8 @@ export const handler = define.handlers({
         // "website" unfurls more reliably than "profile" (fewer parsers expect
         // profile:* sub-properties). Same visible link card everywhere.
         ogType: "website",
-        canonicalUrl: shareUrl,
+        canonicalUrl: pageCanonicalUrl,
+        standardSiteDocumentUri: standardSiteDocumentUri ?? undefined,
         imageUrl: ogImageUrl,
         imageAlt: profile.bannerCid
           ? messages.detail.share.bannerAlt(profile.name)
@@ -409,6 +457,7 @@ function ProfileDetailPage(
         reviewSort={appReviewSort}
         sourceAliases={appSourceAliases}
         canInspectSources={canInspectAppSources}
+        updates={updates}
         locale={locale}
         signedInUser={signedInUser}
         account={account}
@@ -432,6 +481,7 @@ function ProfileDetailPage(
           reviewSort={appReviewSort}
           sourceAliases={appSourceAliases}
           canInspectSources={canInspectAppSources}
+          updates={updates}
           locale={locale}
           signedInUser={signedInUser}
           account={account}
@@ -660,6 +710,7 @@ interface AppListingDetailProps {
   reviewSort: AppReviewSort;
   sourceAliases: AppAliasRow[];
   canInspectSources: boolean;
+  updates: ProfileUpdateRow[];
   locale: Locale;
   signedInUser: { did: string; handle: string } | null;
   account: ReturnType<typeof buildAccountMenuProps>;
@@ -668,7 +719,7 @@ interface AppListingDetailProps {
   backNavigation: AppDetailBackNavigation;
 }
 
-function AppListingDetailPage(
+export function AppListingDetailPage(
   {
     app,
     appPublicMetadata,
@@ -680,6 +731,7 @@ function AppListingDetailPage(
     reviewSort,
     sourceAliases,
     canInspectSources,
+    updates,
     locale,
     signedInUser,
     account,
@@ -703,6 +755,7 @@ function AppListingDetailPage(
   const isOwner = signedInUser?.did === app.productDid ||
     signedInUser?.did === app.profileDid ||
     signedInUser?.did === app.legacyProfileDid;
+  const whatsNewCopy = getMessages(locale).explore.detail.whatsNew;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -779,6 +832,8 @@ function AppListingDetailPage(
               locale={locale}
               rememberedAccounts={account.rememberedAccounts}
             />
+
+            <ProfileWhatsNew updates={updates} copy={whatsNewCopy} />
 
             {relatedApps.length > 0 && (
               <RelatedAppsSection
@@ -1472,6 +1527,143 @@ async function relatedListings(app: AppListing): Promise<AppListing[]> {
     syncLegacy: false,
   });
   return result.apps.filter((item) => item.id !== app.id).slice(0, 3);
+}
+
+export function profileUpdateDidsForAppDetail(
+  legacyProfileDid: string | null,
+  appProductDid: string | null,
+): string[] {
+  return [
+    ...new Set(
+      [legacyProfileDid, appProductDid].filter(
+        (did): did is string => typeof did === "string" && did.length > 0,
+      ),
+    ),
+  ];
+}
+
+export function mergeProfileUpdateHistories(
+  histories: ProfileUpdateRow[][],
+): ProfileUpdateRow[] {
+  const byUri = new Map<string, ProfileUpdateRow>();
+  for (const update of histories.flat()) {
+    const current = byUri.get(update.uri);
+    if (
+      !current || update.indexedAt > current.indexedAt ||
+      (update.indexedAt === current.indexedAt &&
+        update.updatedAt > current.updatedAt)
+    ) {
+      byUri.set(update.uri, update);
+    }
+  }
+  return [...byUri.values()].sort((left, right) =>
+    right.createdAt - left.createdAt ||
+    right.indexedAt - left.indexedAt ||
+    right.updatedAt - left.updatedAt ||
+    left.uri.localeCompare(right.uri)
+  );
+}
+
+export function filterProfileUpdatesForApp(
+  updates: ProfileUpdateRow[],
+  appId: string | null,
+): ProfileUpdateRow[] {
+  return updates.filter((update) =>
+    !update.source.startsWith(
+      ATMOSPHERE_STANDARD_SITE_UPDATE_SOURCE_PREFIX,
+    ) || !!appId && isAtmosphereStandardSiteUpdateSource(update.source, appId)
+  );
+}
+
+export function prioritizeProfileUpdates(
+  updates: ProfileUpdateRow[],
+  requestedRkey: string | null,
+  options: { productDid?: string | null; appId?: string | null } = {},
+): ProfileUpdateRow[] {
+  if (!requestedRkey) return updates;
+  const standardDocumentSuffix =
+    `/${STANDARD_SITE_DOCUMENT_NSID}/${requestedRkey}`;
+  const exactStandardUri = options.productDid
+    ? `at://${options.productDid}${standardDocumentSuffix}`
+    : null;
+  const requested = updates
+    .map((update, index) => ({
+      index,
+      update,
+      score: (exactStandardUri && update.uri === exactStandardUri ? 4 : 0) +
+        (update.uri.endsWith(standardDocumentSuffix) ? 2 : 0) +
+        (update.source === "standard_site" ||
+            (options.appId && isAtmosphereStandardSiteUpdateSource(
+              update.source,
+              options.appId,
+            ))
+          ? 1
+          : 0),
+    }))
+    .filter(({ update }) => update.rkey === requestedRkey)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .at(0);
+  const requestedIndex = requested?.index ?? -1;
+  if (requestedIndex <= 0) return updates;
+  return [
+    updates[requestedIndex],
+    ...updates.slice(0, requestedIndex),
+    ...updates.slice(requestedIndex + 1),
+  ];
+}
+
+export interface AppDetailUpdateSyncDependencies {
+  listUpdates: (
+    did: string,
+    options: { limit: number },
+  ) => Promise<ProfileUpdateRow[]>;
+  syncProduct: (did: string) => Promise<unknown>;
+}
+
+const runtimeAppDetailUpdateSyncDependencies: AppDetailUpdateSyncDependencies =
+  {
+    listUpdates: listProfileUpdates,
+    syncProduct: syncStandardSiteDocumentsForProduct,
+  };
+
+export async function loadAppDetailUpdates(
+  input: {
+    dids: string[];
+    productDid: string | null;
+    appId: string | null;
+    requestedRkey: string | null;
+  },
+  dependencies: AppDetailUpdateSyncDependencies =
+    runtimeAppDetailUpdateSyncDependencies,
+): Promise<
+  ProfileUpdateRow[]
+> {
+  const outputLimit = input.requestedRkey ? 40 : 6;
+  // Filtering is app-specific but profile_update is keyed by DID, so read the
+  // bounded maximum before filtering to avoid another app's newest rows
+  // crowding this app's own updates out of the six-row public view.
+  const queryLimit = 40;
+  const refreshProduct = input.productDid &&
+      input.dids.includes(input.productDid)
+    // Every public product page asks for a refresh so external Standard.site
+    // creates, edits, and deletes converge. The sync itself is TTL-cached and
+    // singleflighted per DID, keeping public loads bounded.
+    ? dependencies.syncProduct(input.productDid).catch(() => null)
+    : Promise.resolve(null);
+  const histories = await Promise.all(
+    input.dids.map(async (did) => {
+      if (did === input.productDid) await refreshProduct;
+      return await dependencies.listUpdates(did, { limit: queryLimit });
+    }),
+  );
+  const updates = filterProfileUpdatesForApp(
+    mergeProfileUpdateHistories(histories),
+    input.appId,
+  );
+  return prioritizeProfileUpdates(updates, input.requestedRkey, {
+    productDid: input.productDid,
+    appId: input.appId,
+  }).slice(0, outputLimit);
 }
 
 function readAppReviewSort(value: string | null): AppReviewSort {

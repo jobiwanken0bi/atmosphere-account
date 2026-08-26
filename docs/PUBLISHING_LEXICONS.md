@@ -139,14 +139,15 @@ not the scope sent with every authorization request. Each flow requests the
 smallest allowlisted capability bundle needed by the action that opened it (see
 `lib/oauth-scopes.ts`):
 
-| Action                                   | Requested permission                                                                                       |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Sign in or use the hosted account picker | `atproto` only                                                                                             |
-| Write a new shared review                | `include:fyi.atstore.authThirdPartyReviews`                                                                |
-| Edit or delete a shared review           | `repo:fyi.atstore.listing.review?action=update&action=delete`                                              |
-| Favorite or unfavorite an app            | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                                            |
-| Register or manage an app                | the community app profile, ATStore profile/detail, transitional legacy app collections, and `blob:image/*` |
-| Claim or manage a host                   | `repo:account.atmosphere.host.profile`, `repo:account.atmosphere.host.service`, and `blob:image/*`         |
+| Action                                    | Requested permission                                                                                       |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Sign in or use the hosted account picker  | `atproto` only                                                                                             |
+| Write a new shared review                 | `include:fyi.atstore.authThirdPartyReviews`                                                                |
+| Edit or delete a shared review            | `repo:fyi.atstore.listing.review?action=update&action=delete`                                              |
+| Favorite or unfavorite an app             | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                                            |
+| Register or manage an app                 | the community app profile, ATStore profile/detail, transitional legacy app collections, and `blob:image/*` |
+| Publish, edit, or delete What's New posts | `site.standard.publication` create/update and `site.standard.document` create/update/delete                |
+| Claim or manage a host                    | `repo:account.atmosphere.host.profile`, `repo:account.atmosphere.host.service`, and `blob:image/*`         |
 
 Every action bundle also includes `atproto`. When an already-authorized account
 adds a capability, this site requests the union of its existing grant and the
@@ -159,12 +160,23 @@ proves ownership before a claim becomes effective. Browser input may name only
 the capabilities allowlisted in `lib/oauth-scopes.ts`; arbitrary raw scope
 strings are rejected.
 
-The metadata maximum temporarily retains the pre-progressive broad scope union,
-including `include:com.atmosphereaccount.registry.fullPermissions` and
-`include:fyi.atstore.authBasic`, so existing refresh grants remain representable
-while they age out. New ordinary flows do not request that maximum. This
-distinction matters when reviewing consent screens: inspect the authorization
-request, not only the client metadata document.
+What's New is a separate contextual job instead of part of every app-profile
+authorization. New posts use the same Standard.site records ATStore indexes: one
+`site.standard.publication` for the Atmosphere app page and one
+`site.standard.document` per update. Do not replace these direct grants with
+`include:site.standard.authFull`; that bundle includes unrelated subscription
+and recommendation actions. The legacy `com.atmosphereaccount.registry.update`
+collection remains read-compatible for existing history but is not used for new
+posts.
+
+The metadata maximum contains the current allowlisted capability bundles plus
+`include:fyi.atstore.authBasic`, which remains in the ceiling only so an
+inherited ATStore grant can survive a contextual upgrade. It does not advertise
+`include:com.atmosphereaccount.registry.fullPermissions` or
+`repo:com.atmosphereaccount.registry.update`. When a current action upgrades an
+inherited legacy grant, the scope logic preserves known unrelated permissions
+but removes that Atmosphere permission-set include and retired collection before
+starting the new authorization request.
 
 `blob:image/*` remains a top-level scope because the atproto permission spec
 [explicitly disallows `blob` permissions inside permission

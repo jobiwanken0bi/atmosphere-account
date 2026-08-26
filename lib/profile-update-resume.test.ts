@@ -30,35 +30,53 @@ const draft: ProfileUpdateDraft = {
   body: "A carefully preserved draft.",
   tangledCommitUrl: "https://tangled.org/example/repo/commit/abc",
 };
+const APP_ID = "grain.social";
 
 Deno.test("profile update pending storage and proofs are isolated", () => {
   assertEquals(
-    profileUpdatePendingKey("did:plc:alice") ===
-      profileUpdatePendingKey("did:plc:bob"),
+    profileUpdatePendingKey("did:plc:alice", APP_ID) ===
+      profileUpdatePendingKey("did:plc:bob", APP_ID),
     false,
   );
   assertEquals(
-    profileUpdateResumeProofKey("did:plc:alice", "save") ===
-      profileUpdateResumeProofKey("did:plc:bob", "save"),
+    profileUpdateResumeProofKey("did:plc:alice", APP_ID, "save") ===
+      profileUpdateResumeProofKey("did:plc:bob", APP_ID, "save"),
     false,
   );
   assertEquals(
-    profileUpdateDeletePendingKey("did:plc:alice") ===
-      profileUpdateDeletePendingKey("did:plc:bob"),
+    profileUpdateDeletePendingKey("did:plc:alice", APP_ID) ===
+      profileUpdateDeletePendingKey("did:plc:bob", APP_ID),
     false,
   );
   assertEquals(
-    profileUpdateResumeProofKey("did:plc:alice", "save") ===
-      profileUpdateResumeProofKey("did:plc:alice", "delete"),
+    profileUpdatePendingKey("did:plc:alice", APP_ID) ===
+      profileUpdatePendingKey("did:plc:alice", "another-app"),
     false,
   );
-  const pending = pendingProfileUpdateAction("did:plc:alice", draft);
   assertEquals(
-    pendingProfileUpdateDraftForDid(pending, "did:plc:alice"),
+    profileUpdateResumeProofKey("did:plc:alice", APP_ID, "save") ===
+      profileUpdateResumeProofKey("did:plc:alice", APP_ID, "delete"),
+    false,
+  );
+  const pending = pendingProfileUpdateAction(
+    "did:plc:alice",
+    APP_ID,
     draft,
   );
   assertEquals(
-    pendingProfileUpdateDraftForDid(pending, "did:plc:bob"),
+    pendingProfileUpdateDraftForDid(pending, "did:plc:alice", APP_ID),
+    draft,
+  );
+  assertEquals(
+    pendingProfileUpdateDraftForDid(pending, "did:plc:bob", APP_ID),
+    null,
+  );
+  assertEquals(
+    pendingProfileUpdateDraftForDid(
+      pending,
+      "did:plc:alice",
+      "another-app",
+    ),
     null,
   );
 });
@@ -67,6 +85,7 @@ Deno.test("profile update resume return preserves editor context", () => {
   const save = profileUpdateResumeReturnTo(
     "/apps/manage?app=grain.social#updates",
     "did:plc:alice",
+    APP_ID,
     "save",
   );
   const saveUrl = new URL(save, "https://example.test");
@@ -81,6 +100,7 @@ Deno.test("profile update resume return preserves editor context", () => {
   const deletion = profileUpdateResumeReturnTo(
     save,
     "did:plc:alice",
+    APP_ID,
     "delete",
   );
   const deleteUrl = new URL(deletion, "https://example.test");
@@ -96,39 +116,55 @@ Deno.test("profile update resumes only one exact action for its project DID", ()
     profileUpdateResumeReturnTo(
       "/apps/manage?app=grain.social#updates",
       "did:plc:alice",
+      APP_ID,
       "save",
     );
-  assertEquals(profileUpdateResumeLocation(href, "did:plc:alice"), {
+  assertEquals(profileUpdateResumeLocation(href, "did:plc:alice", APP_ID), {
     hadMarker: true,
     shouldResume: true,
     kind: "save",
     cleanLocation: "/apps/manage?app=grain.social#updates",
   });
-  assertEquals(profileUpdateResumeLocation(href, "did:plc:bob"), {
+  assertEquals(profileUpdateResumeLocation(href, "did:plc:bob", APP_ID), {
     hadMarker: true,
     shouldResume: false,
     kind: "save",
     cleanLocation: "/apps/manage?app=grain.social#updates",
   });
+  assertEquals(
+    profileUpdateResumeLocation(href, "did:plc:alice", "another-app"),
+    {
+      hadMarker: true,
+      shouldResume: false,
+      kind: "save",
+      cleanLocation: "/apps/manage?app=grain.social#updates",
+    },
+  );
 });
 
 Deno.test("duplicate or conflicting profile update markers never resume", () => {
   const duplicate =
     "/apps/manage?profile-update-resume=did%3Aplc%3Aalice&profile-update-resume=did%3Aplc%3Aalice&app=grain.social";
-  assertEquals(profileUpdateResumeLocation(duplicate, "did:plc:alice"), {
-    hadMarker: true,
-    shouldResume: false,
-    kind: null,
-    cleanLocation: "/apps/manage?app=grain.social",
-  });
+  assertEquals(
+    profileUpdateResumeLocation(duplicate, "did:plc:alice", APP_ID),
+    {
+      hadMarker: true,
+      shouldResume: false,
+      kind: null,
+      cleanLocation: "/apps/manage?app=grain.social",
+    },
+  );
   const conflicting =
     "/apps/manage?profile-update-resume=did%3Aplc%3Aalice&profile-update-delete-resume=did%3Aplc%3Aalice";
-  assertEquals(profileUpdateResumeLocation(conflicting, "did:plc:alice"), {
-    hadMarker: true,
-    shouldResume: false,
-    kind: null,
-    cleanLocation: "/apps/manage",
-  });
+  assertEquals(
+    profileUpdateResumeLocation(conflicting, "did:plc:alice", APP_ID),
+    {
+      hadMarker: true,
+      shouldResume: false,
+      kind: null,
+      cleanLocation: "/apps/manage",
+    },
+  );
 });
 
 Deno.test("profile update return helper rejects external destinations", () => {
@@ -141,20 +177,22 @@ Deno.test("profile update return helper rejects external destinations", () => {
 Deno.test("profile update deletion resumes only for its project account", () => {
   const pending = pendingProfileUpdateDeleteAction(
     "did:plc:alice",
+    APP_ID,
     "release-1",
   );
   assertEquals(
-    pendingProfileUpdateDeleteForDid(pending, "did:plc:alice"),
+    pendingProfileUpdateDeleteForDid(pending, "did:plc:alice", APP_ID),
     "release-1",
   );
   assertEquals(
-    pendingProfileUpdateDeleteForDid(pending, "did:plc:bob"),
+    pendingProfileUpdateDeleteForDid(pending, "did:plc:bob", APP_ID),
     null,
   );
   assertEquals(
     pendingProfileUpdateDeleteForDid(
       { projectDid: "did:plc:alice", rkey: " " },
       "did:plc:alice",
+      APP_ID,
     ),
     null,
   );
@@ -162,17 +200,27 @@ Deno.test("profile update deletion resumes only for its project account", () => 
 
 Deno.test("profile update resume rejects malformed drafts", () => {
   assertEquals(
-    pendingProfileUpdateDraftForDid({
-      projectDid: "did:plc:alice",
-      draft: { ...draft, body: 42 },
-    }, "did:plc:alice"),
+    pendingProfileUpdateDraftForDid(
+      {
+        projectDid: "did:plc:alice",
+        appId: APP_ID,
+        draft: { ...draft, body: 42 },
+      },
+      "did:plc:alice",
+      APP_ID,
+    ),
     null,
   );
   assertEquals(
-    pendingProfileUpdateDraftForDid({
-      projectDid: "did:plc:alice",
-      draft: { ...draft, rkey: undefined },
-    }, "did:plc:alice"),
+    pendingProfileUpdateDraftForDid(
+      {
+        projectDid: "did:plc:alice",
+        appId: APP_ID,
+        draft: { ...draft, rkey: undefined },
+      },
+      "did:plc:alice",
+      APP_ID,
+    ),
     null,
   );
 });

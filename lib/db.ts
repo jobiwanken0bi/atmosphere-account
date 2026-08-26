@@ -704,6 +704,19 @@ const SCHEMA_STATEMENTS: string[] = [
     indexed_at INTEGER NOT NULL,
     deleted_at INTEGER
   )`,
+  /** Stable publication identity for each app URL, including historical
+   * slugs. The URI uniqueness prevents one publication from being claimed by
+   * two listings while the composite key closes concurrent first-publish
+   * races for the same app URL. */
+  `CREATE TABLE IF NOT EXISTS app_standard_site_publication (
+    app_listing_id TEXT NOT NULL,
+    publication_url TEXT NOT NULL,
+    publication_uri TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(app_listing_id, publication_url),
+    FOREIGN KEY(app_listing_id) REFERENCES app_listing(id) ON DELETE CASCADE
+  )`,
   /**
    * One durable ATStore app record target per controlling DID. Legacy
    * duplicate listings remain untouched; this closes new concurrent creates.
@@ -958,7 +971,11 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS profile_type_takedown ON profile(profile_type, takedown_status)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS review_uri_unique ON review(review_uri) WHERE review_uri IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS profile_update_project_status_created ON profile_update(project_did, status, created_at)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS profile_update_project_rkey ON profile_update(project_did, rkey)`,
+  // URI is the record identity. Legacy Atmosphere and Standard.site records
+  // may legally use the same rkey in one repo, so remove the older cross-
+  // collection uniqueness constraint before replacing it with a lookup index.
+  `DROP INDEX IF EXISTS profile_update_project_rkey`,
+  `CREATE INDEX IF NOT EXISTS profile_update_project_rkey_lookup ON profile_update(project_did, rkey)`,
   `CREATE INDEX IF NOT EXISTS account_host_verification ON account_host(verification_status)`,
   `CREATE INDEX IF NOT EXISTS account_host_signup ON account_host(signup_status)`,
   `CREATE INDEX IF NOT EXISTS account_host_source ON account_host(source)`,

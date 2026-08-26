@@ -24,29 +24,42 @@ export interface ProfileUpdateDraft {
 
 export interface PendingProfileUpdateAction {
   projectDid: string;
+  appId: string;
   draft: ProfileUpdateDraft;
 }
 
 export interface PendingProfileUpdateDeleteAction {
   projectDid: string;
+  appId: string;
   rkey: string;
 }
 
-export function profileUpdatePendingKey(projectDid: string): string {
-  return `profile-update:save:${encodeURIComponent(projectDid)}`;
+export function profileUpdatePendingKey(
+  projectDid: string,
+  appId: string,
+): string {
+  return `profile-update:save:${encodeURIComponent(projectDid)}:${
+    encodeURIComponent(appId)
+  }`;
 }
 
-export function profileUpdateDeletePendingKey(projectDid: string): string {
-  return `profile-update:delete:${encodeURIComponent(projectDid)}`;
+export function profileUpdateDeletePendingKey(
+  projectDid: string,
+  appId: string,
+): string {
+  return `profile-update:delete:${encodeURIComponent(projectDid)}:${
+    encodeURIComponent(appId)
+  }`;
 }
 
 export function profileUpdateResumeProofKey(
   projectDid: string,
+  appId: string,
   kind: ProfileUpdateResumeKind,
 ): string {
   const pendingKey = kind === "save"
-    ? profileUpdatePendingKey(projectDid)
-    : profileUpdateDeletePendingKey(projectDid);
+    ? profileUpdatePendingKey(projectDid, appId)
+    : profileUpdateDeletePendingKey(projectDid, appId);
   return "atmosphere:browser-resume-marker:profile-update:" + kind + ":" +
     encodeURIComponent(pendingKey);
 }
@@ -64,12 +77,14 @@ export function profileUpdateReturnToWithoutResume(returnTo: string): string {
 export function profileUpdateResumeReturnTo(
   returnTo: string,
   projectDid: string,
+  appId: string,
   kind: ProfileUpdateResumeKind,
 ): string {
   const url = new URL(
     profileUpdateReturnToWithoutResume(returnTo),
     PARSE_ORIGIN,
   );
+  url.searchParams.set("app", appId);
   url.searchParams.set(
     kind === "save"
       ? PROFILE_UPDATE_RESUME_PARAM
@@ -91,6 +106,7 @@ export interface ProfileUpdateResumeLocation {
 export function profileUpdateResumeLocation(
   href: string,
   projectDid: string,
+  appId: string,
 ): ProfileUpdateResumeLocation {
   const url = new URL(href, PARSE_ORIGIN);
   const saveMarkers = url.searchParams.getAll(PROFILE_UPDATE_RESUME_PARAM);
@@ -107,7 +123,9 @@ export function profileUpdateResumeLocation(
   const marker = kind === "save" ? saveMarkers[0] : deleteMarkers[0];
   return {
     hadMarker: markerCount > 0,
-    shouldResume: kind !== null && marker === projectDid,
+    shouldResume: kind !== null && marker === projectDid &&
+      url.searchParams.getAll("app").length === 1 &&
+      url.searchParams.get("app") === appId,
     kind,
     cleanLocation: relativeLocation(url),
   };
@@ -115,16 +133,18 @@ export function profileUpdateResumeLocation(
 
 export function pendingProfileUpdateAction(
   projectDid: string,
+  appId: string,
   draft: ProfileUpdateDraft,
 ): PendingProfileUpdateAction {
-  return { projectDid, draft };
+  return { projectDid, appId, draft };
 }
 
 export function pendingProfileUpdateDeleteAction(
   projectDid: string,
+  appId: string,
   rkey: string,
 ): PendingProfileUpdateDeleteAction {
-  return { projectDid, rkey };
+  return { projectDid, appId, rkey };
 }
 
 /** Allocate the repository key before the first write so a PDS success
@@ -140,10 +160,11 @@ export function publishableProfileUpdateDraft(
 export function pendingProfileUpdateDraftForDid(
   value: unknown,
   projectDid: string,
+  appId: string,
 ): ProfileUpdateDraft | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const pending = value as Partial<PendingProfileUpdateAction>;
-  if (pending.projectDid !== projectDid) return null;
+  if (pending.projectDid !== projectDid || pending.appId !== appId) return null;
   const draft = pending.draft;
   if (!draft || typeof draft !== "object" || Array.isArray(draft)) return null;
   if (
@@ -165,10 +186,14 @@ export function pendingProfileUpdateDraftForDid(
 export function pendingProfileUpdateDeleteForDid(
   value: unknown,
   projectDid: string,
+  appId: string,
 ): string | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const pending = value as Partial<PendingProfileUpdateDeleteAction>;
-  if (pending.projectDid !== projectDid || typeof pending.rkey !== "string") {
+  if (
+    pending.projectDid !== projectDid || pending.appId !== appId ||
+    typeof pending.rkey !== "string"
+  ) {
     return null;
   }
   const rkey = pending.rkey.trim();

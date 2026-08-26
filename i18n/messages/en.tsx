@@ -799,9 +799,9 @@ const en = {
       },
       profileUpdates: {
         eyebrow: "What’s New",
-        title: "Project updates",
+        title: "App updates",
         body:
-          "Post release notes for your project page. Each update is saved as its own record on your project account.",
+          "Post release notes for your app. Updates use Standard.site records so they can appear here and in ATStore.",
         titleLabel: "Update title",
         titlePlaceholder: "e.g. New beta release",
         versionLabel: "Version (optional)",

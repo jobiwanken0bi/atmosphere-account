@@ -36,11 +36,19 @@ Deno.test("OAuth client metadata publishes the maximum, not a per-flow request",
   assertNotEquals(body.scope, scopeForCapabilities(["review"]));
   assertEquals(body.tos_uri, "https://atmosphereaccount.com/terms");
   assertEquals(body.policy_uri, "https://atmosphereaccount.com/privacy");
-  assertEquals(scopeTokens(body.scope).includes("blob:image/*"), true);
+  const publishedScopes = scopeTokens(body.scope);
+  assertEquals(publishedScopes.includes("blob:image/*"), true);
   assertEquals(
-    scopeTokens(body.scope).includes(
+    publishedScopes.includes(
       "repo:account.atmosphere.host.service",
     ),
     true,
+  );
+  assertEquals(
+    publishedScopes.some((scope) =>
+      scope.includes("com.atmosphereaccount.registry.update") ||
+      scope.includes("com.atmosphereaccount.registry.fullPermissions")
+    ),
+    false,
   );
 });

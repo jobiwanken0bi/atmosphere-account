@@ -13,6 +13,7 @@ import {
   shouldPersistOAuthSessionForTest,
   tokenResponseScopeForTest,
 } from "./oauth.ts";
+import { LEGACY_OAUTH_SCOPE, scopeForCapabilities } from "./oauth-scopes.ts";
 
 function session(scope?: string): SessionData {
   return {
@@ -62,6 +63,42 @@ Deno.test("scope replacement does not equate dynamic includes with direct grants
   );
   assertEquals(
     classifySessionScopeReplacementForTest(include, direct),
+    "conflict",
+  );
+});
+
+Deno.test("app update callback replaces the exact legacy grant without reviving deprecated scope", () => {
+  const incoming = scopeForCapabilities(["app_updates"], LEGACY_OAUTH_SCOPE);
+  assertEquals(
+    classifySessionScopeReplacementForTest(
+      LEGACY_OAUTH_SCOPE,
+      incoming,
+      ["app_updates"],
+    ),
+    "replace",
+  );
+  // The exception is migration-specific; other callbacks retain the existing
+  // dynamic permission-set protection.
+  assertEquals(
+    classifySessionScopeReplacementForTest(LEGACY_OAUTH_SCOPE, incoming),
+    "conflict",
+  );
+  const appIncoming = scopeForCapabilities(["app"], LEGACY_OAUTH_SCOPE);
+  assertEquals(
+    classifySessionScopeReplacementForTest(
+      LEGACY_OAUTH_SCOPE,
+      appIncoming,
+      ["app"],
+    ),
+    "replace",
+  );
+});
+
+Deno.test("app update callback still protects unrelated scopes gained concurrently", () => {
+  const incoming = scopeForCapabilities(["app_updates"], LEGACY_OAUTH_SCOPE);
+  const raced = `${LEGACY_OAUTH_SCOPE} repo:example.concurrent`;
+  assertEquals(
+    classifySessionScopeReplacementForTest(raced, incoming, ["app_updates"]),
     "conflict",
   );
 });

@@ -36,10 +36,16 @@ import {
   reviewUriForRkey,
 } from "../lib/reviews.ts";
 import {
-  markProfileUpdateRemovedByRkey,
+  markProfileUpdateRemovedByUri,
   updateUriForRkey,
   upsertProfileUpdate,
 } from "../lib/profile-updates.ts";
+import {
+  parseStandardSiteDocument,
+  STANDARD_SITE_DOCUMENT_NSID,
+  standardSiteDocumentUri,
+  standardSiteVersionFromTags,
+} from "../lib/standard-site-updates.ts";
 import { findPdsEndpoint, resolveDidDocument } from "../lib/identity.ts";
 import { getRecordPublic, PublicRecordFetchError } from "../lib/pds.ts";
 import { COMMUNITY_APP_LEXICON_ENABLED, JETSTREAM_URL } from "../lib/env.ts";
@@ -48,6 +54,7 @@ import {
   deleteAppFavorite,
   deleteAppRecord,
   deleteAppReview,
+  listManagedAppListingsByAccountDid,
   upsertAppFavorite,
   upsertAppRecordFromDraft,
   upsertAppReview,
@@ -370,6 +377,71 @@ function handleFromDidDocument(
   return aka ? aka.slice("at://".length) : null;
 }
 
+export function profileUpdateUriForCollection(
+  did: string,
+  collection: string,
+  rkey: string,
+): string | null {
+  if (collection === UPDATE_NSID) return updateUriForRkey(did, rkey);
+  if (collection !== STANDARD_SITE_DOCUMENT_NSID) return null;
+  try {
+    return standardSiteDocumentUri(did, rkey);
+  } catch {
+    return null;
+  }
+}
+
+export function managedListingsIncludeProductDid(
+  listings: ReadonlyArray<{ productDid: string | null }>,
+  did: string,
+): boolean {
+  return listings.some((listing) => listing.productDid === did);
+}
+
+export interface StandardSiteProfileUpdateProjection {
+  uri: string;
+  cid: string;
+  rkey: string;
+  projectDid: string;
+  title: string;
+  body: string;
+  version: string | null;
+  tangledCommitUrl: null;
+  tangledRepoUrl: null;
+  source: "standard_site";
+  createdAt: number;
+  updatedAt: number;
+}
+
+export function standardSiteProfileUpdateProjection(input: {
+  did: string;
+  rkey: string;
+  cid: string;
+  value: unknown;
+}): StandardSiteProfileUpdateProjection | null {
+  const record = parseStandardSiteDocument(input.value);
+  const uri = profileUpdateUriForCollection(
+    input.did,
+    STANDARD_SITE_DOCUMENT_NSID,
+    input.rkey,
+  );
+  if (!record || !uri) return null;
+  return {
+    uri,
+    cid: input.cid,
+    rkey: input.rkey,
+    projectDid: input.did,
+    title: record.title,
+    body: record.textContent ?? record.description ?? "",
+    version: standardSiteVersionFromTags(record.tags),
+    tangledCommitUrl: null,
+    tangledRepoUrl: null,
+    source: "standard_site",
+    createdAt: Date.parse(record.publishedAt),
+    updatedAt: Date.parse(record.updatedAt ?? record.publishedAt),
+  };
+}
+
 async function resolveIndexerIdentity(did: string): Promise<{
   pdsUrl: string;
   handle: string | null;
@@ -578,7 +650,12 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
   if (!commit) return;
 
   if (commit.operation === "delete") {
-    await markProfileUpdateRemovedByRkey(event.did, commit.rkey);
+    const uri = profileUpdateUriForCollection(
+      event.did,
+      UPDATE_NSID,
+      commit.rkey,
+    );
+    if (uri) await markProfileUpdateRemovedByUri(uri);
     recordIndexerSuccess("update_delete");
     return;
   }
@@ -622,6 +699,53 @@ async function handleUpdateEvent(event: JetstreamEvent): Promise<void> {
     createdAt: Date.parse(r.createdAt) || Date.now(),
     updatedAt: Date.parse(r.updatedAt ?? r.createdAt) || Date.now(),
   });
+  recordIndexerSuccess("update_upsert");
+}
+
+async function handleStandardSiteDocumentEvent(
+  event: JetstreamEvent,
+): Promise<void> {
+  const commit = event.commit;
+  if (!commit) return;
+  const uri = profileUpdateUriForCollection(
+    event.did,
+    STANDARD_SITE_DOCUMENT_NSID,
+    commit.rkey,
+  );
+  if (!uri) {
+    console.warn("[indexer] invalid Standard.site document key");
+    return;
+  }
+
+  if (commit.operation === "delete") {
+    await markProfileUpdateRemovedByUri(uri);
+    recordIndexerSuccess("update_delete");
+    return;
+  }
+
+  const listings = await listManagedAppListingsByAccountDid(event.did, {
+    syncLegacy: false,
+  });
+  if (!managedListingsIncludeProductDid(listings, event.did)) return;
+
+  const result = await fetchIndexerRecord(
+    event.did,
+    STANDARD_SITE_DOCUMENT_NSID,
+    commit.rkey,
+    commit.cid,
+  );
+  if (!result) return;
+  const update = standardSiteProfileUpdateProjection({
+    did: event.did,
+    rkey: commit.rkey,
+    cid: result.record.cid,
+    value: result.record.value,
+  });
+  if (!update) {
+    console.warn("[indexer] invalid Standard.site document");
+    return;
+  }
+  await upsertProfileUpdate(update);
   recordIndexerSuccess("update_upsert");
 }
 
@@ -855,6 +979,8 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
       await handleReviewEvent(event);
     } else if (collection === UPDATE_NSID) {
       await handleUpdateEvent(event);
+    } else if (collection === STANDARD_SITE_DOCUMENT_NSID) {
+      await handleStandardSiteDocumentEvent(event);
     } else if (collection === FEATURED_NSID) {
       await handleFeaturedEvent(event);
     } else if (
@@ -876,7 +1002,7 @@ async function processEvent(event: JetstreamEvent): Promise<void> {
   }
 }
 
-function buildJetstreamUrl(cursor: number | null): string {
+export function buildJetstreamUrl(cursor: number | null): string {
   const url = new URL(JETSTREAM_URL);
   for (const c of COLLECTIONS) {
     url.searchParams.append("wantedCollections", c);

@@ -259,6 +259,12 @@ export function scopeDescription(token: string): string {
       readableScopeName(token.slice("include:".length))
     } permission bundle.`;
   }
+  if (
+    token.split("?", 1)[0] ===
+      "repo:com.atmosphereaccount.registry.update"
+  ) {
+    return "Access legacy Atmosphere What’s New records for compatibility.";
+  }
   if (token.startsWith("repo:")) {
     return `Access ${scopeTarget(token, "repo:")} records in your account.`;
   }

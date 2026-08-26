@@ -45,6 +45,8 @@ const MAX_APPVIEW_HTML_BYTES = 4 * 1024 * 1024;
 const MAX_APPVIEW_JSON_BYTES = 4 * 1024 * 1024;
 const APPVIEW_ASSET_PROXY_PREFIX = "/_appview/assets/";
 const APPVIEW_ASSET_SOURCE_PREFIX = "/assets/";
+const STANDARD_SITE_PUBLICATION_WELL_KNOWN_PREFIX =
+  "/.well-known/site.standard.publication/";
 const DERIVED_MEDIA_REDIRECT_ORIGINS_ENV = "DERIVED_MEDIA_REDIRECT_ORIGINS";
 
 const APPVIEW_FETCH_TIMEOUT_MS = appviewFetchTimeoutMs(
@@ -183,7 +185,8 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
     pathname === "/api/atproto/blob" ||
     pathname === "/api/identity/preview" ||
-    pathname === "/api/me/avatar";
+    pathname === "/api/me/avatar" ||
+    pathname.startsWith(STANDARD_SITE_PUBLICATION_WELL_KNOWN_PREFIX);
 }
 
 /**

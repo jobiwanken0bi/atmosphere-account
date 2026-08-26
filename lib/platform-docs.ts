@@ -1311,6 +1311,7 @@ return Response.redirect(oauthUrl);`,
     summary: [
       "Community app profiles describe app identity and product metadata.",
       "ATStore listing records power discovery, reviews, and favorites today.",
+      "Standard.site publication and document records power interoperable What's New posts.",
       "Legacy Atmosphere app profile records should not be the active target for new app listings.",
       "This site merges duplicate records into one public app page.",
     ],
@@ -1359,6 +1360,11 @@ return Response.redirect(oauthUrl);`,
                 "Reviews, ratings, favorites, and trending inputs for apps with an ATStore listing URI.",
               ],
               [
+                "`site.standard.publication` / `document`",
+                "Interoperable product updates.",
+                "What's New posts shared with ATStore and other Standard.site consumers.",
+              ],
+              [
                 "`com.atmosphereaccount.registry.profile`",
                 "Legacy compatibility.",
                 "Read as a fallback while old Atmosphere-only listings migrate. New listings should publish shared app records instead.",
@@ -1396,6 +1402,11 @@ return Response.redirect(oauthUrl);`,
                 title: "Publish shared records",
                 body:
                   "This site writes an ATStore listing record for discovery and a community app profile for canonical app identity when the app is ready.",
+              },
+              {
+                title: "Publish product updates",
+                body:
+                  "What's New creates one Standard.site publication for the app page, then a Standard.site document for each update. Existing legacy Atmosphere update records remain visible but read-only.",
               },
               {
                 title: "Migrate legacy listings",

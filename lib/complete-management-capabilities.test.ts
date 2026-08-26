@@ -11,7 +11,6 @@ const APP_MANAGEMENT_SURFACES = [
   "../routes/apps/manage/host.tsx",
   "../routes/api/apps/migrate-atstore.ts",
   "../routes/api/registry/profile.ts",
-  "../routes/api/registry/profile/updates.ts",
 ] as const;
 
 const HOST_MANAGEMENT_SURFACES = [

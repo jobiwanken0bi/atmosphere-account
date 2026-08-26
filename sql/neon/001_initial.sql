@@ -225,7 +225,8 @@ CREATE TABLE IF NOT EXISTS profile_update (
 );
 
 CREATE INDEX IF NOT EXISTS profile_update_project_status_created ON profile_update(project_did, status, created_at);
-CREATE UNIQUE INDEX IF NOT EXISTS profile_update_project_rkey ON profile_update(project_did, rkey);
+DROP INDEX IF EXISTS profile_update_project_rkey;
+CREATE INDEX IF NOT EXISTS profile_update_project_rkey_lookup ON profile_update(project_did, rkey);
 
 CREATE TABLE IF NOT EXISTS account_host (
   host text PRIMARY KEY,
@@ -650,6 +651,15 @@ CREATE INDEX IF NOT EXISTS app_listing_trending ON app_listing(trending_score, u
 CREATE INDEX IF NOT EXISTS app_listing_public_trending ON app_listing(deleted_at, trending_score DESC, updated_at DESC, published_at DESC);
 CREATE INDEX IF NOT EXISTS app_listing_public_newest ON app_listing(deleted_at, published_at DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS app_listing_public_name ON app_listing(deleted_at, lower(name));
+
+CREATE TABLE IF NOT EXISTS app_standard_site_publication (
+  app_listing_id text NOT NULL REFERENCES app_listing(id) ON DELETE CASCADE,
+  publication_url text NOT NULL,
+  publication_uri text NOT NULL UNIQUE,
+  created_at bigint NOT NULL,
+  updated_at bigint NOT NULL,
+  PRIMARY KEY (app_listing_id, publication_url)
+);
 
 -- A client-stable record target closes concurrent second-app creates without
 -- collapsing grandfathered app_listing rows.
