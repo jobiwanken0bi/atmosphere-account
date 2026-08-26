@@ -33,6 +33,18 @@ Deno.test("OAuth defaults to identity-only while metadata advertises the maximum
     scopeTokens(OAUTH_CLIENT_METADATA_SCOPE).includes("blob:image/*"),
     true,
   );
+  for (
+    const scope of [
+      "repo:site.standard.publication?action=create&action=update",
+      "repo:site.standard.document?action=create&action=update&action=delete",
+    ]
+  ) {
+    assertEquals(
+      scopeTokens(OAUTH_CLIENT_METADATA_SCOPE).includes(scope),
+      true,
+      `missing staged OAuth scope ${scope}`,
+    );
+  }
 });
 
 Deno.test("capability parser rejects raw or unknown browser values", () => {

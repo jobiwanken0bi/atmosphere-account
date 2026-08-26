@@ -26,6 +26,13 @@ const REVIEW_MANAGE_SCOPE =
   "repo:fyi.atstore.listing.review?action=update&action=delete";
 const FAVORITE_SCOPE =
   "repo:fyi.atstore.listing.favorite?action=create&action=delete";
+// Stage the next capability in client metadata before any independently
+// deployed AppView starts requesting it. Authorization servers cache metadata
+// and require exact requested-token membership.
+const STANDARD_SITE_UPDATE_SCOPES = [
+  "repo:site.standard.publication?action=create&action=update",
+  "repo:site.standard.document?action=create&action=update&action=delete",
+] as const;
 
 const CAPABILITY_SCOPES: Record<OAuthCapability, readonly string[]> = {
   identity: [],
@@ -64,6 +71,7 @@ export const DEFAULT_OAUTH_SCOPE = IDENTITY_OAUTH_SCOPE;
 export const OAUTH_CLIENT_METADATA_SCOPE = unionScopeStrings(
   LEGACY_OAUTH_SCOPE,
   ...Object.values(CAPABILITY_SCOPES).map((tokens) => tokens.join(" ")),
+  STANDARD_SITE_UPDATE_SCOPES.join(" "),
 );
 
 export function isOAuthCapability(value: unknown): value is OAuthCapability {

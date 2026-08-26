@@ -43,4 +43,16 @@ Deno.test("OAuth client metadata publishes the maximum, not a per-flow request",
     ),
     true,
   );
+  assertEquals(
+    scopeTokens(body.scope).includes(
+      "repo:site.standard.publication?action=create&action=update",
+    ),
+    true,
+  );
+  assertEquals(
+    scopeTokens(body.scope).includes(
+      "repo:site.standard.document?action=create&action=update&action=delete",
+    ),
+    true,
+  );
 });
