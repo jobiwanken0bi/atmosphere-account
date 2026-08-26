@@ -52,6 +52,34 @@ Deno.test("OAuth login preserves repeated capability upgrades from forms", async
   });
 });
 
+Deno.test("OAuth login preserves repeated capability upgrades from GET navigation", async () => {
+  const input = await readLoginInputForTest(
+    new Request(
+      "https://atmosphereaccount.com/oauth/login?" +
+        new URLSearchParams([
+          ["handle", "riddims.app"],
+          ["next", "/apps/manage?new=1"],
+          ["intent", "project"],
+          ["capability", "app"],
+          ["capability", "media"],
+          ["action", "app"],
+          ["name", "your app"],
+        ]),
+    ),
+  );
+
+  assertEquals(input, {
+    handle: "riddims.app",
+    next: "/apps/manage?new=1",
+    intent: "project",
+    continuation: null,
+    chooseAnotherAccount: false,
+    capabilities: ["app", "media"],
+    action: "app",
+    targetName: "your app",
+  });
+});
+
 Deno.test("OAuth login accepts the explicit bodyless host-claim handoff", async () => {
   const url = "https://atmosphereaccount.com/oauth/login?" +
     "handle=did%3Aplc%3Acveom2iroj3mt747sd4qqnr2&" +

@@ -166,6 +166,44 @@ function clearFormError(form) {
   error?.remove();
 }
 
+function sameOriginLoginDestination(form) {
+  try {
+    const current = new URL(globalThis.location.href);
+    if (current.protocol !== "https:" && current.protocol !== "http:") {
+      return null;
+    }
+    const target = new URL("/oauth/login", current.origin);
+    for (const [name, value] of new FormData(form)) {
+      if (typeof value === "string") {
+        // append(), rather than set(), preserves repeated capability fields.
+        target.searchParams.append(name, value);
+      }
+    }
+    if (
+      target.origin !== current.origin || target.pathname !== "/oauth/login"
+    ) return null;
+    return target.toString();
+  } catch {
+    return null;
+  }
+}
+
+function renderAuthorizationLink(form, destination) {
+  renderFormError(form, "");
+  const error = form.querySelector("[data-signin-form-error]");
+  if (!(error instanceof HTMLElement)) return;
+  const fallback = document.createElement("a");
+  fallback.href = destination;
+  fallback.target = "_top";
+  fallback.textContent = "Continue to authorization";
+  error.replaceChildren(
+    document.createTextNode(
+      "Authorization is ready, but it did not open automatically. ",
+    ),
+    fallback,
+  );
+}
+
 function enhanceForm(form, index) {
   if (form.getAttribute(ENHANCED_ATTR) === "true") return;
   const input = form.querySelector("[data-signin-preview-input]");
@@ -343,7 +381,7 @@ function enhanceForm(form, index) {
   document.addEventListener("pointerdown", (event) => {
     if (!form.contains(event.target)) hide();
   });
-  form.addEventListener("submit", async (event) => {
+  form.addEventListener("submit", (event) => {
     if (!input.value.trim()) {
       event.preventDefault();
       input.focus();
@@ -355,23 +393,20 @@ function enhanceForm(form, index) {
       submitButton.disabled = true;
       submitButton.textContent = submittingLabel;
     }
-    try {
-      const res = await fetch(form.action || "/oauth/login", {
-        method: (form.method || "POST").toUpperCase(),
-        body: new FormData(form),
-        credentials: "same-origin",
-        headers: {
-          accept: "application/json",
-          "x-atmosphere-login": "1",
-        },
-      });
-      const body = await res.json().catch(() => null);
-      if (!res.ok || !body || typeof body.redirectUrl !== "string") {
-        throw new Error(errorLabel);
-      }
-      globalThis.location.assign(body.redirectUrl);
-    } catch {
+    const destination = sameOriginLoginDestination(form);
+    if (!destination) {
       renderFormError(form, errorLabel);
+      if (submitButton instanceof HTMLButtonElement) {
+        submitButton.disabled = false;
+        submitButton.textContent = submitLabel;
+      }
+      document.dispatchEvent(new CustomEvent("atmo:hide-page-skeleton"));
+      return;
+    }
+    try {
+      globalThis.location.assign(destination);
+    } catch {
+      renderAuthorizationLink(form, destination);
       if (submitButton instanceof HTMLButtonElement) {
         submitButton.disabled = false;
         submitButton.textContent = submitLabel;
