@@ -23,6 +23,7 @@ import {
   standardSiteVersionTag,
   validateStandardSiteDocument,
   validateStandardSitePublication,
+  verifiedStandardSiteWriteUri,
 } from "./standard-site-updates.ts";
 
 function assert(
@@ -80,6 +81,20 @@ Deno.test("Standard.site helpers create TID-keyed record identities", () => {
   assertThrows(
     () => standardSiteDocumentUri("did:plc:product", "legacy-update-key"),
     "TID",
+  );
+  const documentUri = standardSiteDocumentUri("did:plc:product", rkey);
+  assertEquals(verifiedStandardSiteWriteUri(documentUri, ""), documentUri);
+  assertEquals(
+    verifiedStandardSiteWriteUri(documentUri, documentUri),
+    documentUri,
+  );
+  assertThrows(
+    () =>
+      verifiedStandardSiteWriteUri(
+        documentUri,
+        standardSiteDocumentUri("did:plc:other", rkey),
+      ),
+    "mismatched",
   );
 });
 

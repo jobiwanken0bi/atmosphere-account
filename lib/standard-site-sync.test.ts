@@ -2,6 +2,7 @@ import {
   createCachedStandardSiteSync,
   STANDARD_SITE_DOCUMENT_SCAN_MAX_PAGES,
   STANDARD_SITE_SYNC_LIMIT,
+  STANDARD_SITE_UPDATE_SOURCE,
   type StandardSiteSyncDependencies,
   type StandardSiteSyncRecord,
   type StandardSiteUpdateUpsert,
@@ -151,6 +152,44 @@ Deno.test("sync gates PDS access on an exact managed product DID", async () => {
     recordsSkipped: 0,
   });
   assert(!resolved && !listed && !upserted, "ownership gate must run first");
+});
+
+Deno.test("sync never trusts a cross-repository publication envelope", async () => {
+  const rkey = createStandardSiteRkey(1_900_000_000_005);
+  const forgedPublicationUri = standardSitePublicationUri(
+    "did:plc:victim",
+    PUBLICATION_RKEY,
+  );
+  const document = documentEnvelope({ rkey, textContent: "Untrusted site" });
+  document.value = {
+    ...(document.value as Record<string, unknown>),
+    site: forgedPublicationUri,
+  };
+  let bindingLookedUp = false;
+  const writes: StandardSiteUpdateUpsert[] = [];
+  await syncStandardSiteDocumentsForProductCore(
+    PRODUCT_DID,
+    dependencies({
+      listRecords: (_pds, _did, collection) =>
+        Promise.resolve({
+          records: collection === STANDARD_SITE_PUBLICATION_NSID
+            ? [{ ...publicationEnvelope(), uri: forgedPublicationUri }]
+            : [document],
+        }),
+      getPublicationBindingByUri: () => {
+        bindingLookedUp = true;
+        return Promise.resolve(null);
+      },
+      upsertUpdate: (input) => {
+        writes.push(input);
+        return Promise.resolve();
+      },
+    }),
+  );
+  assertEquals(bindingLookedUp, false);
+  assertEquals(writes.map((write) => write.source), [
+    STANDARD_SITE_UPDATE_SOURCE,
+  ]);
 });
 
 Deno.test("sync maps newest Standard.site documents into profile updates", async () => {

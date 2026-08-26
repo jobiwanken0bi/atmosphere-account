@@ -130,6 +130,25 @@ export function standardSiteDocumentUri(did: string, rkey: string): string {
 }
 
 /**
+ * A self-hosted PDS response is not authoritative for the record identity we
+ * just addressed. Accept omitted/empty URIs for compatibility with older PDS
+ * implementations, reject any non-empty mismatch, and always persist the
+ * locally reconstructed DID/collection/rkey URI.
+ */
+export function verifiedStandardSiteWriteUri(
+  expectedUri: string,
+  returnedUri: unknown,
+): string {
+  if (
+    returnedUri !== undefined && returnedUri !== null && returnedUri !== "" &&
+    returnedUri !== expectedUri
+  ) {
+    throw new Error("PDS returned a mismatched Standard.site record URI");
+  }
+  return expectedUri;
+}
+
+/**
  * Public Atmosphere permalink used by ATStore for a What's New document.
  * Both dynamic values are encoded as URL components and the document key must
  * be a TID, matching the Standard.site lexicons' `key: tid` declaration.

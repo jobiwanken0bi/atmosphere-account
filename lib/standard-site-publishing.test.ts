@@ -1,4 +1,7 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assertEquals,
+  assertRejects,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   ensureStandardSitePublication,
   findStandardSitePublicationByUrl,
@@ -19,6 +22,14 @@ Deno.test("publication lookup matches the exact normalized app URL", async () =>
       assertEquals(collection, STANDARD_SITE_PUBLICATION_NSID);
       return Promise.resolve({
         records: [
+          {
+            uri: `at://did:plc:victim/${collection}/${TID}`,
+            cid: "bafy-forged",
+            value: {
+              url: "https://atmosphereaccount.com/apps/grain",
+              name: "Forged match",
+            },
+          },
           {
             uri: `at://${DID}/${collection}/3m4anotherxxx`,
             cid: "bafy-other",
@@ -66,5 +77,27 @@ Deno.test("publication creation is private to the Atmosphere app page", async ()
   assertEquals(
     (written as unknown as Record<string, unknown>).preferences,
     { showInDiscover: false },
+  );
+});
+
+Deno.test("publication creation rejects a forged response URI", async () => {
+  await assertRejects(
+    () =>
+      ensureStandardSitePublication({
+        did: DID,
+        pdsUrl: "https://pds.example",
+        url: "https://atmosphereaccount.com/apps/grain",
+        name: "Grain updates",
+      }, {
+        listRecords: () => Promise.resolve({ records: [] }),
+        createRkey: () => TID,
+        createRecord: () =>
+          Promise.resolve({
+            uri: `at://did:plc:victim/${STANDARD_SITE_PUBLICATION_NSID}/${TID}`,
+            cid: "bafy-forged",
+          }),
+      }),
+    Error,
+    "mismatched Standard.site record URI",
   );
 });

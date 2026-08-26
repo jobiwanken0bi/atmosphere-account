@@ -44,6 +44,7 @@ import {
   standardSitePublicationRkeyFromUri,
   standardSiteUpdatePath,
   standardSiteVersionFromTags,
+  verifiedStandardSiteWriteUri,
 } from "../../../../lib/standard-site-updates.ts";
 import {
   ensureStandardSitePublication,
@@ -131,6 +132,12 @@ export const handler = define.handlers({
         : null;
     } catch (error) {
       return upstreamReadError("document_record_read_failed", error);
+    }
+    if (remote && remote.uri !== uri) {
+      return upstreamReadError(
+        "document_record_read_failed",
+        new Error("PDS returned a mismatched Standard.site document URI"),
+      );
     }
     const existingRecord = parseStandardSiteDocument(remote?.value);
     if (remote && !existingRecord) {
@@ -241,8 +248,15 @@ export const handler = define.handlers({
       });
     }
 
+    let resultUri: string;
+    try {
+      resultUri = verifiedStandardSiteWriteUri(uri, result.uri);
+    } catch (error) {
+      return upstreamReadError("document_record_write_failed", error);
+    }
+
     const update = await upsertProfileUpdate({
-      uri: result.uri || uri,
+      uri: resultUri,
       cid: result.cid,
       rkey,
       projectDid: user.did,
@@ -300,6 +314,12 @@ export const handler = define.handlers({
       );
     } catch (error) {
       return upstreamReadError("document_record_read_failed", error);
+    }
+    if (remote && remote.uri !== uri) {
+      return upstreamReadError(
+        "document_record_read_failed",
+        new Error("PDS returned a mismatched Standard.site document URI"),
+      );
     }
     if (!remote) {
       if (
@@ -397,8 +417,12 @@ async function ensureBoundAppPublication(input: {
         value as unknown as Record<string, unknown>,
         rkey,
       );
+      const uri = verifiedStandardSiteWriteUri(
+        existingBinding.publicationUri,
+        created.uri,
+      );
       return {
-        uri: created.uri || existingBinding.publicationUri,
+        uri,
         cid: created.cid,
         rkey,
         value,
@@ -423,6 +447,7 @@ async function ensureBoundAppPublication(input: {
   });
   const binding = await claimStandardSitePublicationBinding({
     appListingId: input.app.id,
+    productDid: input.did,
     publicationUrl: input.publicationUrl,
     publicationUri: candidate.uri,
   });

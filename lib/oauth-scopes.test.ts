@@ -46,7 +46,19 @@ Deno.test("OAuth defaults to identity-only while metadata advertises the maximum
       token.includes("com.atmosphereaccount.registry.update") ||
       token.includes("com.atmosphereaccount.registry.fullPermissions")
     ),
+    true,
+    "the rollout ceiling must accept both independently deployed runtimes",
+  );
+  const currentUpdateRequest = scopeTokens(
+    scopeForCapabilities(["app_updates"]),
+  );
+  assertEquals(
+    currentUpdateRequest.some((token) =>
+      token.includes("com.atmosphereaccount.registry.update") ||
+      token.includes("com.atmosphereaccount.registry.fullPermissions")
+    ),
     false,
+    "current authorization requests must not revive retired permissions",
   );
 });
 
@@ -110,6 +122,14 @@ Deno.test("What's New upgrades translate deprecated legacy grants without losing
     true,
     "the metadata ceiling must cover every retained upgrade permission",
   );
+  const metadataTokens = new Set(scopeTokens(OAUTH_CLIENT_METADATA_SCOPE));
+  for (const token of tokens) {
+    assertEquals(
+      metadataTokens.has(token),
+      true,
+      `the authorization server requires exact metadata membership for ${token}`,
+    );
+  }
 
   assertEquals(
     tokens.some((token) =>

@@ -49,6 +49,14 @@ Deno.test("OAuth client metadata publishes the maximum, not a per-flow request",
       scope.includes("com.atmosphereaccount.registry.update") ||
       scope.includes("com.atmosphereaccount.registry.fullPermissions")
     ),
+    true,
+    "the temporary rollout ceiling must accept both runtime generations",
+  );
+  assertEquals(
+    scopeTokens(scopeForCapabilities(["app_updates"])).some((scope) =>
+      scope.includes("com.atmosphereaccount.registry.update") ||
+      scope.includes("com.atmosphereaccount.registry.fullPermissions")
+    ),
     false,
   );
 });

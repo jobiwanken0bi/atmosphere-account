@@ -23,7 +23,6 @@ export type OAuthCapability = typeof OAUTH_CAPABILITIES[number];
 export const IDENTITY_OAUTH_SCOPE = "atproto";
 
 const THIRD_PARTY_REVIEW_SCOPE = "include:fyi.atstore.authThirdPartyReviews";
-const INHERITED_ATSTORE_BASIC_SCOPE = "include:fyi.atstore.authBasic";
 const REVIEW_MANAGE_SCOPE =
   "repo:fyi.atstore.listing.review?action=update&action=delete";
 const FAVORITE_SCOPE =
@@ -74,14 +73,19 @@ export const LEGACY_OAUTH_SCOPE =
 /** Default for a flow with no action attached: identity authentication only. */
 export const DEFAULT_OAUTH_SCOPE = IDENTITY_OAUTH_SCOPE;
 
-/** Maximum current scope union advertised in the OAuth client metadata. */
+/**
+ * Maximum scope union advertised in the OAuth client metadata.
+ *
+ * The public shell and authoritative AppView deploy independently, and OAuth
+ * authorization servers cache this document. The expanded ceiling must go live
+ * before an AppView starts requesting the new tokens. Once it has converged,
+ * retaining the previous exact tokens keeps both AppView generations valid
+ * during the rest of the rollout. Contextual authorization requests still use
+ * only the current capability scopes, and inherited grants are sanitized by
+ * inheritedScopeForCapabilities().
+ */
 export const OAUTH_CLIENT_METADATA_SCOPE = unionScopeStrings(
-  IDENTITY_OAUTH_SCOPE,
-  // Existing grants can legitimately carry ATStore's basic permission set.
-  // Keep it in the advertised ceiling so a contextual upgrade can retain
-  // those unrelated permissions without reviving Atmosphere's retired update
-  // collection or full-permissions bundle.
-  INHERITED_ATSTORE_BASIC_SCOPE,
+  LEGACY_OAUTH_SCOPE,
   ...Object.values(CAPABILITY_SCOPES).map((tokens) => tokens.join(" ")),
 );
 

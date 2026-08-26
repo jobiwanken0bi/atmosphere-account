@@ -5,7 +5,9 @@ import {
   parseStandardSitePublication,
   STANDARD_SITE_PUBLICATION_NSID,
   type StandardSitePublicationRecord,
+  standardSitePublicationRkeyFromUri,
   standardSitePublicationUri,
+  verifiedStandardSiteWriteUri,
 } from "./standard-site-updates.ts";
 
 export interface StandardSitePublicationRef {
@@ -48,9 +50,14 @@ export async function findStandardSitePublicationByUrl(
     for (const row of page.records) {
       const value = parseStandardSitePublication(row.value);
       if (!value || value.url !== desired) continue;
-      const rkey = row.uri.split("/").at(-1) ?? "";
+      const rkey = standardSitePublicationRkeyFromUri(row.uri, input.did);
       if (!rkey) continue;
-      return { uri: row.uri, cid: row.cid, rkey, value };
+      return {
+        uri: standardSitePublicationUri(input.did, rkey),
+        cid: row.cid,
+        rkey,
+        value,
+      };
     }
     cursor = page.cursor;
     pages += 1;
@@ -79,6 +86,7 @@ export async function ensureStandardSitePublication(
     showInDiscover: false,
   });
   const rkey = (deps.createRkey ?? createStandardSiteRkey)();
+  const expectedUri = standardSitePublicationUri(input.did, rkey);
   const result = await (deps.createRecord ?? createRecord)(
     input.did,
     input.pdsUrl,
@@ -87,7 +95,7 @@ export async function ensureStandardSitePublication(
     rkey,
   );
   return {
-    uri: result.uri || standardSitePublicationUri(input.did, rkey),
+    uri: verifiedStandardSiteWriteUri(expectedUri, result.uri),
     cid: result.cid,
     rkey,
     value,

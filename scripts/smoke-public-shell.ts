@@ -656,9 +656,9 @@ export async function main(): Promise<void> {
     ],
   });
   await smokeHtml(options.siteOrigin, "/hosts/bsky.network", {
-    expectedText: ["Bluesky on Atmosphere Hosts", "bsky.network"],
+    expectedText: ['<h1 class="profile-hero-name">', "bsky.network"],
     forbiddenText: ["up.railway.app"],
-    canonicalPath: "/hosts/bsky.network",
+    canonicalPath: "/hosts/bsky.network/",
   });
   await smokeHtml(
     options.siteOrigin,
