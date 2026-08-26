@@ -27,7 +27,25 @@ Deno.test("sign-in preview exposes keyboard selection and associated errors", as
     "if (initialSavedAccount instanceof HTMLElement)",
   );
   assertStringIncludes(source, "initialSavedAccount.focus()");
-  assertStringIncludes(source, "throw new Error(errorLabel)");
+  assertStringIncludes(
+    source,
+    'form.addEventListener("submit", (event) => {',
+  );
+  assertStringIncludes(
+    source,
+    'const target = new URL("/oauth/login", current.origin)',
+  );
+  assertStringIncludes(source, "target.searchParams.append(name, value)");
+  assertStringIncludes(
+    source,
+    'target.origin !== current.origin || target.pathname !== "/oauth/login"',
+  );
+  assertStringIncludes(source, "globalThis.location.assign(destination)");
+  assertStringIncludes(source, "renderAuthorizationLink(form, destination)");
+  assertStringIncludes(source, 'fallback.target = "_top"');
+  assertEquals(source.includes('renderFormError(form, "")'), false);
+  assertEquals(source.includes('"x-atmosphere-login"'), false);
+  assertEquals(source.includes("fetch(form.action"), false);
   assertEquals(source.includes("body.error"), false);
   assertEquals(source.includes("String(err)"), false);
 });
