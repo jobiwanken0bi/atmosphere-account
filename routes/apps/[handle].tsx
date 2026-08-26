@@ -822,6 +822,15 @@ export function AppListingHero(
     isCompactAppAction(link.kind) &&
     !(link.kind === "scopes" && publicMetadata.scopes.length > 0)
   );
+  const profileLinks = compactLinks.filter((link) =>
+    isProfileAppAction(link.kind)
+  ).sort((a, b) => inlineAppActionRank(a.kind) - inlineAppActionRank(b.kind));
+  const policyLinks = compactLinks.filter((link) =>
+    isPolicyAppAction(link.kind)
+  ).sort((a, b) => inlineAppActionRank(a.kind) - inlineAppActionRank(b.kind));
+  const accessLinks = compactLinks.filter((link) => link.kind === "scopes");
+  const hasInlineActions = profileLinks.length > 0 || policyLinks.length > 0 ||
+    accessLinks.length > 0 || publicMetadata.scopes.length > 0;
   const hostHref = resolvedHostLink
     ? `/hosts/${encodeURIComponent(resolvedHostLink.host)}`
     : null;
@@ -864,19 +873,71 @@ export function AppListingHero(
                     <AtmosphereHandle handle={displayHost(app.primaryUrl)} />
                   </p>
                 )}
-                {(compactLinks.length > 0 ||
-                  publicMetadata.scopes.length > 0) && (
-                  <div
-                    class="app-detail-inline-actions"
-                    aria-label="App profiles, legal pages, and permissions"
-                  >
-                    {compactLinks.map(renderAppAction)}
-                    {publicMetadata.scopes.length > 0 && (
-                      <AppScopesPopover scopes={publicMetadata.scopes} />
-                    )}
-                  </div>
-                )}
               </div>
+              {hasInlineActions && (
+                <div
+                  class="app-detail-inline-actions"
+                  aria-label="App profiles, policies, and access"
+                >
+                  {profileLinks.length > 0 && (
+                    <div
+                      class="app-detail-inline-action-group app-detail-inline-action-group--profiles"
+                      role="group"
+                      aria-labelledby="app-profile-actions-label"
+                    >
+                      <span
+                        id="app-profile-actions-label"
+                        class="app-detail-inline-action-group-label"
+                      >
+                        Profiles
+                      </span>
+                      <div class="app-detail-inline-action-buttons">
+                        {profileLinks.map(renderAppAction)}
+                      </div>
+                    </div>
+                  )}
+                  {policyLinks.length > 0 && (
+                    <div
+                      class="app-detail-inline-action-group app-detail-inline-action-group--policies"
+                      role="group"
+                      aria-labelledby="app-policy-actions-label"
+                    >
+                      <span
+                        id="app-policy-actions-label"
+                        class="app-detail-inline-action-group-label"
+                      >
+                        Policies
+                      </span>
+                      <div class="app-detail-inline-action-buttons">
+                        {policyLinks.map(renderAppAction)}
+                      </div>
+                    </div>
+                  )}
+                  {(accessLinks.length > 0 ||
+                    publicMetadata.scopes.length > 0) && (
+                    <div
+                      class="app-detail-inline-action-group app-detail-inline-action-group--access"
+                      role="group"
+                      aria-labelledby="app-access-actions-label"
+                    >
+                      <span
+                        id="app-access-actions-label"
+                        class="app-detail-inline-action-group-label"
+                      >
+                        App access
+                      </span>
+                      <div class="app-detail-inline-action-buttons">
+                        {accessLinks.map(renderAppAction)}
+                        {publicMetadata.scopes.length > 0 && (
+                          <AppScopesPopover
+                            scopes={publicMetadata.scopes}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div class="app-detail-hero-side">
               {(hasDestinationLinks || storeLinks.length > 0) && (
@@ -932,27 +993,41 @@ export function AppListingHero(
 }
 
 function renderAppAction(link: AppActionLink) {
-  const compact = isCompactAppAction(link.kind);
+  const iconOnly = isProfileAppAction(link.kind);
+  const metadata = isPolicyAppAction(link.kind) || link.kind === "scopes";
   const storeIconOnly = link.kind === "ios" || link.kind === "android";
+  const actionLabel = link.kind === "scopes" ? "Permissions" : link.label;
   return (
     <a
       class={`profile-hero-action${
-        compact ? " profile-hero-action--icon-only" : ""
-      }${storeIconOnly ? " profile-hero-action--store-icon" : ""}`}
+        iconOnly ? " profile-hero-action--icon-only" : ""
+      }${metadata ? " profile-hero-action--metadata" : ""}${
+        storeIconOnly ? " profile-hero-action--store-icon" : ""
+      }`}
       href={link.uri}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={link.label}
-      title={link.label}
+      aria-label={actionLabel}
+      title={actionLabel}
       key={`${link.role ?? link.label ?? "link"}-${link.uri}`}
     >
       <span class="profile-hero-action-icon app-detail-link-icon">
         {renderAppActionIcon(link)}
       </span>
-      {!compact && (
+      {!iconOnly && (
         <>
-          {!storeIconOnly && <span>{link.label}</span>}
-          <span class="profile-hero-action-arrow" aria-hidden="true">↗</span>
+          {!storeIconOnly && (
+            <span
+              class={metadata ? "app-detail-metadata-action-label" : undefined}
+            >
+              {actionLabel}
+            </span>
+          )}
+          {!metadata && (
+            <span class="profile-hero-action-arrow" aria-hidden="true">
+              ↗
+            </span>
+          )}
         </>
       )}
     </a>
@@ -1006,6 +1081,22 @@ function isCompactAppAction(kind: AppActionLinkKind): boolean {
     kind === "terms" || kind === "scopes";
 }
 
+function isProfileAppAction(kind: AppActionLinkKind): boolean {
+  return kind === "bluesky" || kind === "tangled";
+}
+
+function isPolicyAppAction(kind: AppActionLinkKind): boolean {
+  return kind === "privacy" || kind === "terms";
+}
+
+function inlineAppActionRank(kind: AppActionLinkKind): number {
+  if (kind === "bluesky") return 0;
+  if (kind === "tangled") return 1;
+  if (kind === "privacy") return 2;
+  if (kind === "terms") return 3;
+  return 4;
+}
+
 function primaryAppActionRank(kind: AppActionLinkKind): number {
   if (kind === "website") return 0;
   if (kind === "ios") return 1;
@@ -1041,19 +1132,18 @@ function AppScopesPopover({ scopes }: { scopes: string[] }) {
   return (
     <details class="app-detail-metadata-popover">
       <summary
-        class="profile-hero-action profile-hero-action--icon-only"
-        role="button"
-        aria-label="Scopes"
-        aria-haspopup="dialog"
-        title="Scopes"
+        class="profile-hero-action profile-hero-action--metadata"
+        aria-label="Permissions"
+        title="Permissions"
       >
         <span class="profile-hero-action-icon app-detail-link-icon">
           <ScopesIcon class="profile-hero-action-icon-svg" />
         </span>
+        <span class="app-detail-metadata-action-label">Permissions</span>
       </summary>
       <div
         class="glass app-detail-scopes-popover"
-        role="dialog"
+        role="region"
         aria-labelledby="app-permissions-title"
       >
         <div class="app-detail-scopes-popover-heading">
