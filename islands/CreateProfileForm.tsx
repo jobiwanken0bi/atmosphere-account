@@ -1408,6 +1408,7 @@ export default function CreateProfileForm(
         publicPath?: string | null;
         slug?: string | null;
         atstoreListingUri?: string | null;
+        communityProfileUri?: string | null;
         writeTarget?: "atstore_listing" | "legacy_profile";
       };
       if (saved.ok !== true) {
@@ -1429,7 +1430,10 @@ export default function CreateProfileForm(
       clearAppProfileCreationRkey(did, baseReauthReturnTo);
       message.value = {
         kind: "ok",
-        text: saved.writeTarget === "atstore_listing"
+        text: saved.writeTarget === "atstore_listing" &&
+            saved.communityProfileUri === null
+          ? tManage.savedAtstorePartialToast
+          : saved.writeTarget === "atstore_listing"
           ? tManage.savedAtstoreToast
           : tManage.savedToast,
       };

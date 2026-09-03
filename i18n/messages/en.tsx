@@ -675,12 +675,14 @@ const en = {
       savingButton: "Publishing…",
       savedToast: "Saved. It’ll appear in Apps shortly.",
       savedAtstoreToast:
-        "Published as a shared ATStore app record. It’ll appear in Apps shortly.",
+        "Published to shared records and visible in Atmosphere Apps. Other directories index and review listings independently.",
+      savedAtstorePartialToast:
+        "Published in Atmosphere, but the companion community app profile could not be synced. Publish again to retry.",
       deleteButton: "Remove from Apps",
       deletingButton: "Removing…",
       deletedToast: "Removed from Apps.",
       statusLiveTitle: "Live in Apps",
-      statusLiveSub: "Your app listing is visible to everyone.",
+      statusLiveSub: "Your app listing is visible in Atmosphere Apps.",
       statusInactiveTitle: "Not listed yet",
       statusInactiveSub:
         "Publish to add this app listing to Apps. Nothing is shared until you do.",

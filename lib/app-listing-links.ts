@@ -6,6 +6,7 @@ import {
   getProfileMicroblogViewer,
 } from "./bsky-clients.ts";
 import { appMetadataLinkKind } from "./app-metadata-links.ts";
+import { appStorePlatformForUrl } from "./app-store-links.ts";
 
 export type AppActionLinkKind =
   | "website"
@@ -125,6 +126,8 @@ function hasEquivalentUrl(links: AppActionLink[], uri: string): boolean {
 export function appActionLinkKind(
   link: Pick<AppDirectoryLink, "uri" | "label" | "role">,
 ): AppActionLinkKind {
+  const storePlatform = appStorePlatformForUrl(link.uri);
+  if (storePlatform) return storePlatform;
   const metadataKind = appMetadataLinkKind(link);
   if (metadataKind === "privacy") return "privacy";
   if (metadataKind === "terms") return "terms";

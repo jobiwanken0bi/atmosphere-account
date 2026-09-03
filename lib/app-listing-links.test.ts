@@ -140,3 +140,43 @@ Deno.test("appActionLinkKind recognizes common ATStore link shapes", () => {
     "scopes",
   );
 });
+
+Deno.test("official store destinations override crossed link metadata", () => {
+  assertEquals(
+    appActionLinkKind({
+      uri: "https://play.google.com/store/apps/details?id=example",
+      label: "App Store",
+      role: "ios",
+    }),
+    "android",
+  );
+  assertEquals(
+    appActionLinkKind({
+      uri: "https://apps.apple.com/us/app/example/id123",
+      label: "Google Play",
+      role: "android",
+    }),
+    "ios",
+  );
+
+  const links = appActionLinks({
+    links: [
+      {
+        uri: "https://play.google.com/store/apps/details?id=example",
+        label: "App Store",
+        role: "ios",
+      },
+      {
+        uri: "https://apps.apple.com/us/app/example/id123",
+        label: "Google Play",
+        role: "android",
+      },
+    ],
+    primaryUrl: null,
+    productDid: null,
+  });
+  assertEquals(links.map((link) => [link.kind, link.label]), [
+    ["android", "Play Store"],
+    ["ios", "App Store"],
+  ]);
+});

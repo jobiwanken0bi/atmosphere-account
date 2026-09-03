@@ -1043,10 +1043,10 @@ function OwnerAppSummary(
   const state = atstoreListingUri
     ? {
       tone: "ok",
-      label: "Shows on ATStore",
+      label: "Shared record",
       title: "Shared app record active",
       body:
-        "Edits from this page update shared app records for interoperable discovery, reviews, and favorites.",
+        "Edits update interoperable records on this account. Other app directories index and moderate those records independently, so publication here does not guarantee immediate visibility on atstore.fyi.",
     }
     : remoteAtstoreListingUri
     ? {
@@ -1069,7 +1069,7 @@ function OwnerAppSummary(
       label: "New app listing",
       title: "Publishes shared records by default",
       body:
-        "When you publish, this site writes shared app records from this app account.",
+        "When you publish, Atmosphere writes both shared app records from this account. Other directories decide independently when to show them.",
     };
   return (
     <section class={`glass owner-app-summary owner-app-summary--${state.tone}`}>
