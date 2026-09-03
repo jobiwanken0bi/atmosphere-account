@@ -1417,6 +1417,13 @@ return Response.redirect(oauthUrl);`,
           },
           {
             type: "callout",
+            title: "Publication is not universal approval",
+            body:
+              "Each appview indexes and moderates shared records independently. A record can be live in Atmosphere while another directory is still processing or reviewing it, so protocol compatibility does not guarantee immediate visibility everywhere.",
+            tone: "amber",
+          },
+          {
+            type: "callout",
             title: "Regular reviewers are different",
             body:
               "A regular user leaving a review does not need an app or host profile record. Reviews use the signed-in Atmosphere account identity and, when needed, a minimal ATStore reviewer profile for display compatibility.",

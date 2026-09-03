@@ -780,7 +780,10 @@ export async function syncLoginAppProfileIdentityWithClient(
           AND COALESCE(app_profile_uri, '') = COALESCE(?, '')
           AND link_status = ?
           AND COALESCE(profile_identity_fingerprint, '') = COALESCE(?, '')
-          AND COALESCE(profile_identity_updated_at, -1) = COALESCE(?, -1)
+          AND COALESCE(
+            profile_identity_updated_at,
+            CAST(-1 AS BIGINT)
+          ) = COALESCE(?, CAST(-1 AS BIGINT))
           AND COALESCE(review_revision, '') = COALESCE(?, '')
           AND COALESCE(environment_revision, '') = COALESCE(?, '')
       `,

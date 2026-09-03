@@ -6,6 +6,7 @@ import { listRecordsPublic, putRecord } from "./pds.ts";
 import type { ProfileRow } from "./registry.ts";
 import { createAtprotoTid, isAtprotoTid } from "./tid.ts";
 import { reserveAppProfileTarget } from "./app-profile-cardinality.ts";
+import { normalizeAppStoreLinks } from "./app-store-links.ts";
 
 export interface AtstoreListingLink {
   type: string;
@@ -481,8 +482,9 @@ function directoryLinksFromParts(
   input: { handle: string; iosLink: string | null; androidLink: string | null },
 ): AtstoreListingLink[] {
   const out: AtstoreListingLink[] = [];
-  addLink(out, "ios", input.iosLink, "App Store");
-  addLink(out, "android", input.androidLink, "Google Play");
+  const stores = normalizeAppStoreLinks(input);
+  addLink(out, "ios", stores.iosLink, "App Store");
+  addLink(out, "android", stores.androidLink, "Google Play");
   for (const link of links) {
     const url = linkUrl(link, input.handle);
     if (!url) continue;

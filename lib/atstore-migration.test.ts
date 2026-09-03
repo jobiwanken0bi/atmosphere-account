@@ -186,6 +186,64 @@ Deno.test("additional ATStore apps can use a distinct public slug", () => {
   assertEquals(listing.productAccountDid, p.did);
 });
 
+Deno.test("shared app records correct crossed official store URLs", () => {
+  const p = profile();
+  const crossed = {
+    ...record(),
+    iosLink: "https://play.google.com/store/apps/details?id=reader",
+    androidLink: "https://apps.apple.com/app/reader/id123",
+  };
+  const atstore = buildAtstoreListingFromProfileRecord({
+    did: p.did,
+    handle: p.handle,
+    record: crossed,
+    now: new Date("2026-02-01T00:00:00.000Z"),
+  });
+  assertEquals(atstore.links?.slice(0, 2), [
+    {
+      type: "ios",
+      url: "https://apps.apple.com/app/reader/id123",
+      label: "App Store",
+    },
+    {
+      type: "android",
+      url: "https://play.google.com/store/apps/details?id=reader",
+      label: "Google Play",
+    },
+  ]);
+
+  const community = buildCommunityAppProfileFromProfileRecord({
+    did: p.did,
+    handle: p.handle,
+    record: crossed,
+    now: new Date("2026-02-01T00:00:00.000Z"),
+  });
+  assertEquals(community.links.slice(1, 3).map((link) => link.uri), [
+    "https://apps.apple.com/app/reader/id123",
+    "https://play.google.com/store/apps/details?id=reader",
+  ]);
+});
+
+Deno.test("community app platforms follow an official store URL rather than its crossed field", () => {
+  const p = profile();
+  const community = buildCommunityAppProfileFromProfileRecord({
+    did: p.did,
+    handle: p.handle,
+    record: {
+      ...record(),
+      mainLink: undefined,
+      iosLink: "https://play.google.com/store/apps/details?id=reader",
+      androidLink: undefined,
+    },
+    now: new Date("2026-02-01T00:00:00.000Z"),
+  });
+
+  assertEquals(community.platforms, [
+    "community.lexicon.app.defs#platformAndroid",
+  ]);
+  assertEquals(community.links.map((link) => link.label), ["Play Store"]);
+});
+
 Deno.test("buildCommunityAppProfileFromProfileRecord emits a parseable canonical app profile", () => {
   const p = profile();
   const communityProfile = buildCommunityAppProfileFromProfileRecord({

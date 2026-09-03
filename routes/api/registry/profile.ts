@@ -62,6 +62,7 @@ import {
   publishCommunityAppProfileFromProfileRecord,
 } from "../../../lib/community-app-profile.ts";
 import { resolveAppListingWriteTarget } from "../../../lib/app-listing-lifecycle.ts";
+import { normalizeAppStoreLinks } from "../../../lib/app-store-links.ts";
 import { appProfileWriteCapabilities } from "../../../lib/profile-write-capabilities.ts";
 import { isJsonMediaType, isSafeRelativePath } from "../../../lib/security.ts";
 import {
@@ -904,8 +905,10 @@ export const handler = define.handlers({
     );
 
     const mainLink = trimOrNull(body.mainLink);
-    const iosLink = trimOrNull(body.iosLink);
-    const androidLink = trimOrNull(body.androidLink);
+    const { iosLink, androidLink } = normalizeAppStoreLinks({
+      iosLink: trimOrNull(body.iosLink),
+      androidLink: trimOrNull(body.androidLink),
+    });
     if (!mainLink && !iosLink && !androidLink) {
       return new Response(
         "at least one Web, iOS, or Android link is required",
@@ -918,8 +921,8 @@ export const handler = define.handlers({
       name: trimOrNull(body.name) ?? "",
       description: trimOrNull(body.description) ?? "",
       mainLink,
-      iosLink,
-      androidLink,
+      iosLink: iosLink ?? undefined,
+      androidLink: androidLink ?? undefined,
       categories: normalizedCategories,
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
@@ -1024,14 +1027,15 @@ export const handler = define.handlers({
           createDistinctListing: body.createNewListing === true,
           rkeyOverride: publishRkey,
         });
-        const communityResult = body.createNewListing === true
-          ? null
-          : await tryPublishCommunityProfile({
-            did: user.did,
-            handle: user.handle,
-            pdsUrl: session.pdsUrl,
-            record: validation.value,
-          });
+        // New listings and updates publish the same interoperable record pair.
+        // Creation controls only the idempotent ATStore rkey and must not
+        // suppress the companion community app profile.
+        const communityResult = await tryPublishCommunityProfile({
+          did: user.did,
+          handle: user.handle,
+          pdsUrl: session.pdsUrl,
+          record: validation.value,
+        });
         return new Response(
           JSON.stringify({
             ok: true,

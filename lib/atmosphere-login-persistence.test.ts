@@ -427,6 +427,80 @@ Deno.test("profile synchronization accepts Postgres bigint timestamps returned a
   }
 });
 
+Deno.test("profile synchronization keeps millisecond bigint parameters out of Postgres integer inference", async () => {
+  const db = createClient({ url: "file::memory:" });
+  try {
+    await createLoginAppTable(db);
+    const client = db as unknown as DbClient;
+    const previousTimestamp = 1_785_367_862_706;
+    const nextTimestamp = previousTimestamp + 1;
+    await upsertLoginAppWithClient(client, ownerInput, previousTimestamp);
+    await db.execute({
+      sql:
+        `UPDATE login_app SET profile_identity_updated_at = ? WHERE client_id = ?`,
+      args: [previousTimestamp, ownerInput.clientId],
+    });
+    const stale = (await db.execute({
+      sql: `SELECT * FROM login_app WHERE client_id = ?`,
+      args: [ownerInput.clientId],
+    })).rows[0] as Record<string, unknown>;
+    stale.profile_identity_updated_at = String(
+      stale.profile_identity_updated_at,
+    );
+
+    let updateSql = "";
+    const postgresLikeClient: DbClient = {
+      async execute(query, args) {
+        const sql = typeof query === "string" ? query : query.sql;
+        if (/UPDATE\s+login_app/i.test(sql)) updateSql = sql;
+        const result = await client.execute(query, args);
+        if (!sql.includes("SELECT * FROM login_app")) return result;
+        return {
+          ...result,
+          rows: result.rows.map((row) => ({
+            ...row,
+            profile_identity_updated_at:
+              row.profile_identity_updated_at === null
+                ? null
+                : String(row.profile_identity_updated_at),
+          })),
+        };
+      },
+    };
+
+    const synced = await syncLoginAppProfileIdentityWithClient(
+      postgresLikeClient,
+      stale,
+      {
+        did: "did:plc:owner",
+        listingId: "app-example",
+        profileUri: ownerInput.appProfileUri,
+        slug: "example",
+        name: "Renamed App",
+        homepage: ownerInput.appUri,
+        logoUri: ownerInput.logoUri,
+        updatedAt: nextTimestamp,
+        loginAvailability: "available",
+        identityFingerprint: "profile-v2",
+      },
+      nextTimestamp,
+    );
+
+    if (!updateSql.includes("CAST(-1 AS BIGINT)")) {
+      throw new Error("Expected bigint-safe optimistic-lock parameters");
+    }
+    assertEquals({
+      appName: synced.app_name,
+      profileIdentityUpdatedAt: synced.profile_identity_updated_at,
+    }, {
+      appName: "Renamed App",
+      profileIdentityUpdatedAt: String(nextTimestamp),
+    });
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("profile identity synchronization cannot overwrite a concurrent block", async () => {
   const db = createClient({ url: "file::memory:" });
   try {

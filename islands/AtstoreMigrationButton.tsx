@@ -33,12 +33,16 @@ export default function AtstoreMigrationButton(
   const remoteRecordUri = useSignal(remoteUri);
   const message = useSignal<Message>(
     initialUri
-      ? { kind: "ok", text: "This app already has a shared ATStore listing." }
+      ? {
+        kind: "ok",
+        text:
+          "This app already has an ATStore-compatible record on its PDS. Directory visibility is managed independently.",
+      }
       : remoteUri
       ? {
         kind: "ok",
         text:
-          "A remote ATStore listing already exists. Sync it to use the shared record here.",
+          "An ATStore-compatible record exists on this account’s PDS. Sync it to use the shared record in Atmosphere.",
       }
       : null,
   );
@@ -88,8 +92,8 @@ export default function AtstoreMigrationButton(
       message.value = {
         kind: "ok",
         text: body.alreadyMigrated
-          ? "Shared app records synced and indexed."
-          : "Shared app records published and indexed.",
+          ? "Shared app records synced and indexed by Atmosphere. Other directories may require review before showing them."
+          : "Shared app records published and indexed by Atmosphere. Other directories may require review before showing them.",
       };
       const slug = typeof body.slug === "string" && body.slug.trim()
         ? body.slug.trim()
@@ -224,7 +228,8 @@ function migrationState(
       return {
         tone: "ok",
         label: "Shared records active",
-        body: "This listing is using shared app records for discovery.",
+        body:
+          "This listing uses shared records in Atmosphere. Other app directories decide independently when to show it.",
       };
     case "remote":
       return {
@@ -262,7 +267,7 @@ function migrationState(
       return {
         tone: "blocked",
         label: "Migration blocked",
-        body: "Fix the issues below before this app can move to ATStore.",
+        body: "Fix the issues below before this app can use shared records.",
       };
   }
 }
