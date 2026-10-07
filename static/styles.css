@@ -12162,12 +12162,24 @@ body {
   gap: 0.85rem;
   min-height: 4.45rem;
   padding: 0.9rem 1rem;
-  border-radius: inherit;
+  border-radius: 18px;
   color: #0e1428;
   font-size: 0.98rem;
   font-weight: 800;
   cursor: pointer;
   list-style: none;
+}
+
+.signin-account-entry[open] > summary {
+  border-radius: 18px 18px 0 0;
+}
+
+.login-picker-accounts > .signin-account-entry > summary {
+  border-radius: 0 0 20px 20px;
+}
+
+.login-picker-accounts > .signin-account-entry[open] > summary {
+  border-radius: 0;
 }
 
 .signin-account-entry > summary:hover,
