@@ -222,3 +222,29 @@ Deno.test("non-OAuth signup links are not decorated with Atmosphere permissions"
     "https://host.example/signup",
   );
 });
+
+Deno.test("prefilled inline account entry is the only preferred dialog focus", () => {
+  for (
+    const props of [{ initialHandle: "new.example" }, {
+      manualAccountEntry: true,
+    }]
+  ) {
+    const html = renderToString(
+      h(SignInForm, {
+        rememberedAccounts: [{ did: "did:plc:saved", handle: "saved.example" }],
+        ...props,
+      }),
+    );
+    assertEquals(
+      (html.match(/data-dialog-initial-focus="true"/g) ?? []).length,
+      1,
+    );
+    assertEquals(
+      html.includes(
+        'data-pending-label="Continuing…" data-dialog-initial-focus="true"',
+      ),
+      false,
+    );
+    assertStringIncludes(html, 'data-signin-disclosure="true" open');
+  }
+});

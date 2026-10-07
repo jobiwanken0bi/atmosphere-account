@@ -510,3 +510,35 @@ Deno.test("legacy picker sign-in links preserve binding in the single picker", (
     null,
   );
 });
+
+Deno.test("picker sign-in distinguishes failures from non-failure permission states", () => {
+  const next =
+    "/login/select?client_id=https%3A%2F%2Fapp.example&return_uri=https%3A%2F%2Fapp.example%2Fcallback&state=opaque";
+  for (
+    const [permission, expected] of [
+      ["failed", "authorization_failed"],
+      ["denied", "authorization_cancelled"],
+      ["required", null],
+      ["partial", null],
+      ["concurrent", null],
+      [null, null],
+    ]
+  ) {
+    const url = new URL("https://login.atmosphereaccount.com/signin");
+    url.search = new URLSearchParams({
+      next,
+      continuation: "login_selection",
+      capability: "identity",
+    }).toString();
+    if (permission) url.searchParams.set("permission", permission);
+    const redirect = new URL(
+      loginSelectionSignInRedirect(readSignInAuthorizationRequest(url))!,
+      url.origin,
+    );
+    assertEquals(redirect.searchParams.get("login_error"), expected);
+    assertEquals(
+      redirect.searchParams.get("entry"),
+      expected ? "manual" : null,
+    );
+  }
+});

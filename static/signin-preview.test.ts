@@ -20,7 +20,7 @@ Deno.test("sign-in preview exposes keyboard selection and associated errors", as
   assertEquals(source.includes("field.append(preview)"), false);
   assertStringIncludes(source, "event.preventDefault()");
   assertStringIncludes(source, 'event.key === "Escape" && !preview.hidden');
-  assertEquals(source.match(/event\.stopPropagation\(\)/g)?.length, 2);
+  assertEquals(source.match(/event\.stopPropagation\(\)/g)?.length, 4);
   assertStringIncludes(
     source,
     'form.addEventListener("submit", (event) => {',

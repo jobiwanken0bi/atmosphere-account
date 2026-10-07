@@ -1,4 +1,5 @@
 import { define, type State } from "../../utils.ts";
+import { normalizeSignInHandleHint } from "../../lib/signin-handle.ts";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
 import AccountEntryDisclosure from "../../components/AccountEntryDisclosure.tsx";
@@ -365,7 +366,9 @@ async function buildPickerPageProps(
       status: 200,
       accountEntryOpen: ctx.url.searchParams.get("entry") === "manual" ||
         !!ctx.url.searchParams.get("login_error"),
-      initialHandle: pickerInitialHandle(ctx.url),
+      initialHandle: normalizeSignInHandleHint(
+        ctx.url.searchParams.get("handle"),
+      ),
     };
   } catch (err) {
     const failure = safePickerFailure(err);
@@ -380,17 +383,6 @@ async function buildPickerPageProps(
       status: failure.status,
     };
   }
-}
-
-function pickerInitialHandle(url: URL): string | undefined {
-  const handle = url.searchParams.get("handle")?.trim().replace(/^@/, "")
-    .toLowerCase();
-  return handle && handle.length <= 253 &&
-      /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(
-        handle,
-      )
-    ? handle
-    : undefined;
 }
 
 function safePickerFailure(
@@ -579,7 +571,11 @@ function LoginPickerBody(
       {pickerAccounts.length > 0
         ? (
           <>
-            <div class="login-picker-account-list" aria-label="Saved accounts">
+            <div
+              class="login-picker-account-list"
+              role="group"
+              aria-label="Saved accounts"
+            >
               {pickerAccounts.map((account) => (
                 <a
                   href={account.selectionPath}

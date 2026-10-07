@@ -165,6 +165,18 @@ async function smokeInlineAccountEntry(browser, page) {
   const disclosure = page.locator("details.signin-account-entry");
   const summary = disclosure.locator("summary");
   const input = disclosure.locator("input[name=handle]");
+  let escapeReachedDialog = false;
+  await page.exposeFunction("reportPickerEscapeToDialog", () => {
+    escapeReachedDialog = true;
+  });
+  await page.evaluate(() => {
+    document.addEventListener("keydown", (event) => {
+      if (
+        event.key === "Escape" &&
+        event.target.closest("[data-signin-disclosure-body]")
+      ) globalThis.reportPickerEscapeToDialog();
+    });
+  });
   await disclosure.waitFor();
   await page.waitForFunction(() =>
     document.querySelector("[data-signin-disclosure]")?.dataset
@@ -201,10 +213,19 @@ async function smokeInlineAccountEntry(browser, page) {
     );
     await assertPageShell(page, "expanded picker");
     await assertMinimumTarget(page, "details.signin-account-entry summary", 44);
+    await input.dispatchEvent("keydown", { key: "Escape", isComposing: true });
+    if (!await disclosure.evaluate((node) => node.open)) {
+      throw new Error("IME Escape collapsed account entry");
+    }
     await input.press("Escape");
     await page.waitForFunction(() =>
       !document.querySelector("details.signin-account-entry").open
     );
+    if (escapeReachedDialog) {
+      throw new Error(
+        "disclosure Escape reached the surrounding dialog handler",
+      );
+    }
     await summary.press("Enter");
     await input.waitFor({ state: "visible" });
     await page.waitForFunction(() =>
@@ -284,6 +305,35 @@ async function smokeInlineAccountEntry(browser, page) {
   }
   await page.goto(pickerUrl, { waitUntil: "domcontentloaded" });
   await page.emulateMedia({ reducedMotion: null });
+
+  const direct = await browser.newPage();
+  try {
+    let composingEscapeReachedDialog = false;
+    await direct.exposeFunction("reportDirectImeEscape", () => {
+      composingEscapeReachedDialog = true;
+    });
+    await direct.goto(`${LOGIN_ORIGIN}/signin?choose=another&next=%2Faccount`);
+    await direct.waitForFunction(() =>
+      document.querySelector("form[data-signin-preview-enhanced=true]")
+    );
+    if (await direct.locator("details.signin-account-entry").count()) {
+      throw new Error("direct IME fixture unexpectedly has a disclosure");
+    }
+    await direct.evaluate(() => {
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") globalThis.reportDirectImeEscape();
+      });
+    });
+    await direct.locator("input[name=handle]").dispatchEvent("keydown", {
+      key: "Escape",
+      isComposing: true,
+    });
+    if (composingEscapeReachedDialog) {
+      throw new Error("direct handle IME Escape reached dialog handler");
+    }
+  } finally {
+    await direct.close();
+  }
 
   const delayed = await browser.newContext();
   try {

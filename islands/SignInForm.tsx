@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
 import AccountEntryDisclosure from "../components/AccountEntryDisclosure.tsx";
 import { useT } from "../i18n/mod.ts";
@@ -196,7 +197,11 @@ export default function SignInForm(
       <section>
         {hasRememberedAccounts && (
           <div class="signin-subview signin-saved-view">
-            <div class="signin-account-list" aria-label="Saved accounts">
+            <div
+              class="signin-account-list"
+              role="group"
+              aria-label="Saved accounts"
+            >
               <p class="signin-account-list-label">Saved accounts</p>
               {rememberedAccounts.map((account, index) => (
                 <form
@@ -249,7 +254,10 @@ export default function SignInForm(
                     type="submit"
                     class="signin-account-row"
                     data-pending-label="Continuing…"
-                    data-dialog-initial-focus={index === 0 ? "true" : undefined}
+                    data-dialog-initial-focus={index === 0 &&
+                        !manualInitiallyVisible
+                      ? "true"
+                      : undefined}
                   >
                     <span class="signin-account-avatar" aria-hidden="true">
                       <span class="signin-account-avatar-fallback">
@@ -397,7 +405,7 @@ export default function SignInForm(
 
 function ManualAccountEntry(
   { children, open, disclosure }: {
-    children: import("preact").ComponentChildren;
+    children: ComponentChildren;
     open: boolean;
     disclosure: boolean;
   },

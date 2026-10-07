@@ -347,6 +347,10 @@ function enhanceForm(form, index) {
     if (input.value.trim()) schedule(input.value);
   });
   input.addEventListener("keydown", (event) => {
+    if (event.isComposing) {
+      if (event.key === "Escape") event.stopPropagation();
+      return;
+    }
     if (event.key === "Escape" && !preview.hidden) {
       event.preventDefault();
       event.stopPropagation();
@@ -439,6 +443,10 @@ function enhanceDisclosure(details) {
     details.open = expanded;
     body.inert = !expanded;
     body.style.overflow = "";
+    const input = body.querySelector("input[name=handle]");
+    if (expanded && input === document.activeElement) {
+      input.scrollIntoView({ block: "nearest", behavior: "instant" });
+    }
     animation?.cancel();
     animation = null;
   }
@@ -477,6 +485,8 @@ function enhanceDisclosure(details) {
   });
   body.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.stopPropagation();
+    if (event.isComposing) return;
     event.preventDefault();
     setExpanded(false);
   });

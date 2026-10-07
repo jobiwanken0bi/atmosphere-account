@@ -1,4 +1,5 @@
 import { define } from "../utils.ts";
+import { normalizeSignInHandleHint } from "../lib/signin-handle.ts";
 import Nav from "../components/Nav.tsx";
 import Footer from "../components/Footer.tsx";
 import SignInForm, {
@@ -190,7 +191,9 @@ export function readSignInAuthorizationRequest(url: URL) {
     singleSearchValue(url.searchParams, "next"),
   );
   const rawHandle = singleSearchValue(url.searchParams, "handle");
-  const initialHandle = rawHandle === null ? undefined : safeHandle(rawHandle);
+  const initialHandle = rawHandle === null
+    ? undefined
+    : normalizeSignInHandleHint(rawHandle);
   if (rawHandle !== null && !initialHandle) {
     throw new InvalidOAuthRequestInputError();
   }
@@ -286,30 +289,24 @@ export function loginSelectionSignInRedirect(
     loginRequestToPath(readLoginRequest(source)),
     source.origin,
   );
-  picker.searchParams.set("entry", "manual");
+  if (
+    request.choosingAnotherAccount || request.manualAccountEntry ||
+    request.initialHandle || request.permissionState === "failed" ||
+    request.permissionState === "denied"
+  ) {
+    picker.searchParams.set("entry", "manual");
+  }
   if (request.initialHandle) {
     picker.searchParams.set("handle", request.initialHandle);
   }
   const error = source.searchParams.get("login_error") ??
     (request.permissionState === "denied"
       ? "authorization_cancelled"
-      : request.permissionState
+      : request.permissionState === "failed"
       ? "authorization_failed"
       : null);
   if (error) picker.searchParams.set("login_error", error);
   return `${picker.pathname}${picker.search}`;
-}
-
-function safeHandle(raw: string | null): string | undefined {
-  const handle = raw?.trim().replace(/^@/, "").toLowerCase();
-  if (
-    !handle ||
-    !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
-      .test(handle)
-  ) {
-    return undefined;
-  }
-  return handle;
 }
 
 function safeAuthAction(raw: string | null): OAuthAction {
