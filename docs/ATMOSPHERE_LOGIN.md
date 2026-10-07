@@ -53,7 +53,9 @@ An unregistered local metadata URL can return to the same origin, including the
 same port. For AT Protocol's special `http://localhost/` client ID (no port or
 path), the return URL must match a declared `redirect_uri`, with its port
 ignored. Without declarations, only `http://127.0.0.1/` and `http://[::1]/` are
-allowed, with any port. Include the selection callback path in the declaration:
+allowed, with any port. Declared callbacks for this special client ID must use a
+loopback IP (`127.0.0.1` or `[::1]`). Include the selection callback path in the
+declaration:
 
 ```ts
 const clientId = "http://localhost/?redirect_uri=" +
@@ -64,10 +66,13 @@ AtmosphereLogin.continue({
 });
 ```
 
-Registered environments always use their exact return-URL allow-list, including
-ports. Local environments remain labelled as development apps; HTTP loopback
-support does not confer production trust. The relying app still performs its own
-AT Protocol OAuth flow and validates the signed selection.
+Local clients use the hosted picker without registration, so shared localhost
+client IDs cannot be claimed by another developer. Hosted environment
+registration still requires public HTTPS URLs. Registered environments always
+use their exact return-URL allow-list, including ports. Local clients remain
+labelled as development apps; HTTP loopback support does not confer production
+trust. The relying app still performs its own AT Protocol OAuth flow and
+validates the signed selection.
 
 ## Launch Behavior
 

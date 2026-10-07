@@ -163,7 +163,7 @@ export const handler = define.handlers({
         token,
       });
       return browserDocument
-        ? browserHandoffDocument(redirectUrl)
+        ? browserHandoffDocument(redirectUrl, { allowLoopbackCallback: true })
         : browserHandoffResponse(redirectUrl, { json: wantsJson });
     } catch (err) {
       if (err instanceof RequestBodyTooLargeError) {
@@ -302,7 +302,7 @@ async function completePickerSelection(
     token,
   });
   return options.browserDocument
-    ? browserHandoffDocument(redirectUrl)
+    ? browserHandoffDocument(redirectUrl, { allowLoopbackCallback: true })
     : browserHandoffResponse(redirectUrl, { json: options.json });
 }
 

@@ -14,6 +14,7 @@ import {
 } from "./atmosphere-login-sdk.ts";
 import {
   clientId as atmosphereClientId,
+  IS_DEV,
   OAUTH_KID,
   OAUTH_PRIVATE_JWK,
   OAUTH_PUBLIC_JWK,
@@ -339,8 +340,12 @@ function isLoopbackHostname(hostname: string): boolean {
 
 // These URLs are browser handoff destinations, not server fetch targets. A
 // locally running app can use the hosted picker without relaxing fetch guards.
-function assertSafeWebUrl(url: URL, label: string): void {
-  if (isLoopbackHttpUrl(url)) return;
+function assertSafeWebUrl(
+  url: URL,
+  label: string,
+  allowLoopbackHttp = IS_DEV,
+): void {
+  if (allowLoopbackHttp && isLoopbackHttpUrl(url)) return;
   if (isPrivateNetworkHostname(url.hostname)) {
     throw new LoginRequestError(
       `${label} must use a public HTTPS host`,
@@ -397,7 +402,7 @@ function declaredLocalhostRedirectUris(client: URL): URL[] {
       const url = new URL(value);
       if (
         url.protocol === "http:" && !url.username && !url.password &&
-        isLoopbackHostname(url.hostname)
+        ["127.0.0.1", "[::1]"].includes(url.hostname)
       ) {
         urls.push(url);
       }
@@ -431,7 +436,7 @@ export function isUnregisteredDevLoginReturnAllowed(
 
 function appFromClientId(clientId: string): LoginApp {
   const client = parseAbsoluteUrl(clientId, "client_id");
-  assertSafeWebUrl(client, "client_id");
+  assertSafeWebUrl(client, "client_id", true);
   const isDev = client.protocol === "http:" &&
     isLoopbackHostname(client.hostname);
   const isReferenceApp = isExampleLoginClientId(clientId);
@@ -1987,6 +1992,8 @@ function normalizeRegistrationUrl(
   return normalizeHref(url);
 }
 
+export const normalizeLoginEnvironmentUrlForTest = normalizeRegistrationUrl;
+
 function normalizeAllowedReturnUris(values: string[]): string[] {
   if (values.length > MAX_ALLOWED_RETURN_URIS) {
     throw new LoginRequestError(
@@ -2009,7 +2016,7 @@ function defaultRegistrationStatus(
   allowedReturnUris: string[],
 ): LoginApp["status"] {
   const client = new URL(clientId);
-  const loopbackDev = client.protocol === "http:" &&
+  const loopbackDev = IS_DEV && client.protocol === "http:" &&
     isLoopbackHostname(client.hostname) &&
     allowedReturnUris.every((value) => {
       const url = new URL(value);
@@ -2566,8 +2573,8 @@ export async function resolveLoginAppForRequest(
   const returnUri = parseAbsoluteUrl(req.returnUri, "return_uri");
   const normalizedClientId = normalizeHref(client);
   const normalizedReturn = normalizeHref(returnUri);
-  assertSafeWebUrl(client, "client_id");
-  assertSafeWebUrl(returnUri, "return_uri");
+  assertSafeWebUrl(client, "client_id", true);
+  assertSafeWebUrl(returnUri, "return_uri", true);
 
   const foundApp = await (options.getLoginApp ?? getLoginApp)(
     normalizedClientId,

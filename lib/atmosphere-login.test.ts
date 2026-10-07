@@ -10,12 +10,14 @@ import {
   loginAppStatusAfterProfileIdentityChange,
   loginEnvironmentMatchesRegistrationForTest,
   LoginRequestError,
+  normalizeLoginEnvironmentUrlForTest,
   readLoginRequest,
   resolveLoginAppForRequest,
   resolveVerifiedPreferredAccountHost,
   verifyLoginAppDomainManifest,
   verifyPreferredAccountHostForOwner,
 } from "./atmosphere-login.ts";
+import { IS_DEV } from "./env.ts";
 import {
   type AccountHostClaim,
   listSeededAccountHostFallback,
@@ -870,4 +872,45 @@ Deno.test("hosted picker rejects unsafe local lookalikes before app lookup", asy
     assertEquals(rejected, true);
     assertEquals(lookedUp, false);
   }
+});
+
+Deno.test("local environment registration stays restricted to server development mode", () => {
+  for (const label of ["client ID", "return URI"]) {
+    for (
+      const url of [
+        "http://localhost/",
+        "http://localhost:5173/client.json",
+        "http://127.0.0.1:5173/selected",
+        "http://[::1]:5173/selected",
+      ]
+    ) {
+      if (IS_DEV) {
+        assertEquals(
+          normalizeLoginEnvironmentUrlForTest(url, label, true),
+          url,
+        );
+      } else {
+        let rejected = false;
+        try {
+          normalizeLoginEnvironmentUrlForTest(url, label, true);
+        } catch (error) {
+          if (!(error instanceof LoginRequestError)) throw error;
+          rejected = true;
+        }
+        assertEquals(rejected, true);
+      }
+    }
+  }
+});
+
+Deno.test("special localhost client declarations require loopback IP callbacks", () => {
+  const clientId = "http://localhost/?redirect_uri=" +
+    encodeURIComponent("http://localhost/selected");
+  assertEquals(
+    isUnregisteredDevLoginReturnAllowed(
+      clientId,
+      "http://localhost:5173/selected",
+    ),
+    false,
+  );
 });

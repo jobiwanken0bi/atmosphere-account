@@ -89,3 +89,13 @@ Deno.test("browser handoff errors match the requested response mode", async () =
     error: "Unable to continue. Return to the app and try again.",
   });
 });
+
+Deno.test("local callback bridge permission is explicit and disabled by default", async () => {
+  const callback = "http://127.0.0.1:5173/selected?state=one";
+  const generic = await browserHandoffDocument(callback).text();
+  const picker = await browserHandoffDocument(callback, {
+    allowLoopbackCallback: true,
+  }).text();
+  assertEquals(generic.includes('data-login-handoff-loopback="true"'), false);
+  assertEquals(picker.includes('data-login-handoff-loopback="true"'), true);
+});

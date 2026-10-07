@@ -6,7 +6,7 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
     throw new Error("Expected a scoped bridge target");
   }
   if (
-    !source.includes("safeNavigationDestination(target.href, true)") ||
+    !source.includes('target.dataset.loginHandoffLoopback === "true"') ||
     !source.includes("globalThis.location.replace(destination)")
   ) {
     throw new Error("Expected validated history-replacing browser navigation");
@@ -114,6 +114,32 @@ Deno.test("hosted browser handoff accepts local callbacks only for picker comple
       throw new Error(
         "Scoped picker completion accepted an unsafe destination",
       );
+    }
+  }
+});
+
+Deno.test("browser bridge enables local return only with the server marker", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./login-handoff.js", import.meta.url),
+  );
+  for (const allowed of [false, true]) {
+    const navigations: string[] = [];
+    class Anchor {
+      href = "http://127.0.0.1:5173/selected";
+      dataset = { loginHandoffLoopback: allowed ? "true" : undefined };
+    }
+    new Function("document", "HTMLAnchorElement", "globalThis", source)(
+      { querySelector: () => new Anchor(), addEventListener: () => {} },
+      Anchor,
+      {
+        location: {
+          href: "https://login.atmosphereaccount.com/login/select",
+          replace: (value: string) => navigations.push(value),
+        },
+      },
+    );
+    if (navigations.length !== (allowed ? 1 : 0)) {
+      throw new Error("Bridge did not enforce server callback permission");
     }
   }
 });

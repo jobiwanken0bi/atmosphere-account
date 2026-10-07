@@ -1,7 +1,10 @@
 const target = document.querySelector("[data-login-handoff-target]");
 
 if (target instanceof HTMLAnchorElement) {
-  const destination = safeNavigationDestination(target.href, true);
+  const destination = safeNavigationDestination(
+    target.href,
+    target.dataset.loginHandoffLoopback === "true",
+  );
   if (destination) globalThis.location.replace(destination);
 }
 
