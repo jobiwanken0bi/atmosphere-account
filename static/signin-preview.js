@@ -1,5 +1,4 @@
 const ENHANCED_ATTR = "data-signin-preview-enhanced";
-const FLOW_ENHANCED_ATTR = "data-signin-flow-enhanced";
 
 function cleanHandle(value) {
   return value.trim().replace(/^@/, "").toLowerCase();
@@ -348,6 +347,10 @@ function enhanceForm(form, index) {
     if (input.value.trim()) schedule(input.value);
   });
   input.addEventListener("keydown", (event) => {
+    if (event.isComposing) {
+      if (event.key === "Escape") event.stopPropagation();
+      return;
+    }
     if (event.key === "Escape" && !preview.hidden) {
       event.preventDefault();
       event.stopPropagation();
@@ -425,70 +428,93 @@ function enhanceForm(form, index) {
   }
 }
 
-function enhanceFlow(flow) {
-  if (flow.getAttribute(FLOW_ENHANCED_ATTR) === "true") return;
-  flow.setAttribute(FLOW_ENHANCED_ATTR, "true");
-  const showManualButtons = Array.from(
-    flow.querySelectorAll("[data-signin-show-manual]"),
-  );
-  const showSavedButtons = Array.from(
-    flow.querySelectorAll("[data-signin-show-saved]"),
-  );
-  const savedView = flow.querySelector("[data-signin-saved-view]");
-  const manualView = flow.querySelector("[data-signin-manual-view]");
-  const manualForm = flow.querySelector(
-    'form.signin-form[data-signin-preview="true"]',
-  );
+function enhanceDisclosure(details) {
+  if (details.dataset.signinDisclosureEnhanced === "true") return;
+  const summary = details.querySelector("summary");
+  const body = details.querySelector("[data-signin-disclosure-body]");
+  if (!(summary instanceof HTMLElement) || !(body instanceof HTMLElement)) {
+    return;
+  }
+  details.dataset.signinDisclosureEnhanced = "true";
+  let expanded = details.open;
+  let animation = null;
 
-  function setSigninView(view) {
-    if (savedView) savedView.hidden = view !== "saved";
-    if (manualView) manualView.hidden = view !== "manual";
+  function finish() {
+    details.open = expanded;
+    body.inert = !expanded;
+    body.style.overflow = "";
+    const input = body.querySelector("input[name=handle]");
+    if (expanded && input === document.activeElement) {
+      input.scrollIntoView({ block: "nearest", behavior: "instant" });
+    }
+    animation?.cancel();
+    animation = null;
   }
 
-  if (manualForm) {
-    for (const showManual of showManualButtons) {
-      showManual.addEventListener("click", (event) => {
-        if (!isPlainLinkActivation(event)) return;
-        event.preventDefault();
-        setSigninView("manual");
-        const input = manualForm.querySelector("[data-signin-preview-input]");
-        if (input instanceof HTMLInputElement) input.focus();
-      });
+  function setExpanded(next) {
+    const height = details.open ? body.getBoundingClientRect().height : 0;
+    animation?.cancel();
+    expanded = next;
+    if (!next && body.contains(document.activeElement)) summary.focus();
+    details.open = true;
+    body.inert = !next;
+    if (next) {
+      body.querySelector("input[name=handle]")?.focus({ preventScroll: true });
     }
-    for (const showSaved of showSavedButtons) {
-      showSaved.addEventListener("click", (event) => {
-        if (!isPlainLinkActivation(event)) return;
-        event.preventDefault();
-        setSigninView("saved");
-        const initialSavedAccount = savedView?.querySelector(
-          '[data-dialog-initial-focus="true"]',
-        );
-        if (initialSavedAccount instanceof HTMLElement) {
-          initialSavedAccount.focus();
-        }
-      });
+    if (
+      globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      typeof body.animate !== "function"
+    ) {
+      finish();
+      return;
     }
+    body.style.overflow = "hidden";
+    animation = body.animate(
+      [{ height: `${height}px`, opacity: next ? 0.4 : 1 }, {
+        height: `${next ? body.scrollHeight : 0}px`,
+        opacity: next ? 1 : 0,
+      }],
+      { duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)", fill: "forwards" },
+    );
+    animation.onfinish = finish;
   }
 
-  setSigninView(flow.getAttribute("data-initial-signin-view") || "manual");
-}
-
-function isPlainLinkActivation(event) {
-  return !event.defaultPrevented && event.button === 0 && !event.altKey &&
-    !event.ctrlKey && !event.metaKey && !event.shiftKey;
+  summary.addEventListener("click", (event) => {
+    event.preventDefault();
+    setExpanded(!expanded);
+  });
+  body.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.stopPropagation();
+    if (event.isComposing) return;
+    event.preventDefault();
+    setExpanded(false);
+  });
+  details.addEventListener("toggle", () => {
+    // Native/browser-driven toggles can happen before hydration or while a
+    // disclosure is idle. Keep the enhancer in sync with the actual element.
+    if (!animation || !details.open) {
+      animation?.cancel();
+      animation = null;
+      expanded = details.open;
+      body.inert = !expanded;
+      body.style.overflow = "";
+    }
+  });
+  body.inert = !expanded;
 }
 
 function hasSigninPreviewTargets() {
   return Boolean(
-    document.querySelector('[data-signin-flow="true"]') ||
+    document.querySelector('[data-signin-disclosure="true"]') ||
       document.querySelector('form.signin-form[data-signin-preview="true"]'),
   );
 }
 
 function bootSigninPreviews() {
   document
-    .querySelectorAll('[data-signin-flow="true"]')
-    .forEach((flow) => enhanceFlow(flow));
+    .querySelectorAll('[data-signin-disclosure="true"]')
+    .forEach((details) => enhanceDisclosure(details));
   document
     .querySelectorAll('form.signin-form[data-signin-preview="true"]')
     .forEach((form, index) => enhanceForm(form, index));

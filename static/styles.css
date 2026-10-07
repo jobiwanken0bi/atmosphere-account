@@ -10910,38 +10910,6 @@ body {
     hue-rotate(195deg) brightness(95%);
 }
 
-.signin-bluesky-note {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.7rem;
-  border: 1px solid rgba(17, 133, 254, 0.16);
-  border-radius: 16px;
-  padding: 0.72rem 0.8rem;
-  background: rgba(17, 133, 254, 0.07);
-}
-
-.signin-bluesky-note-icon {
-  display: inline-flex;
-  width: 1.65rem;
-  height: 1.65rem;
-  align-items: center;
-  justify-content: center;
-  color: #1185fe;
-}
-
-.signin-bluesky-note-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.signin-bluesky-note p {
-  margin: 0;
-  color: rgba(18, 26, 47, 0.68);
-  font-size: 0.84rem;
-  line-height: 1.45;
-}
-
 .signin-create-account-link {
   display: flex;
   min-height: 3.5rem;
@@ -11123,28 +11091,6 @@ body {
 
 .signin-subview[hidden] {
   display: none;
-}
-
-.signin-manual-back {
-  display: inline-flex;
-  align-items: center;
-  justify-self: start;
-  gap: 0.4rem;
-  margin: 0;
-  padding: 0.15rem 0;
-  border: 0;
-  background: transparent;
-  color: rgba(18, 26, 47, 0.68);
-  font: inherit;
-  font-size: 0.86rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.signin-manual-back:hover,
-.signin-manual-back:focus-visible {
-  color: #254a9e;
-  outline: none;
 }
 
 .signin-account-list {
@@ -12205,28 +12151,39 @@ body {
   gap: 0.42rem;
 }
 
-.login-picker-secondary-symbol {
-  font-size: 1.15em;
-  font-weight: 700;
-  line-height: 1;
+.signin-account-entry {
+  margin-top: 0.8rem;
 }
 
-.login-picker-add-account > summary {
+.signin-account-entry > summary {
   box-sizing: border-box;
   cursor: pointer;
   list-style: none;
 }
 
-.login-picker-add-account > summary::-webkit-details-marker {
+.signin-account-entry > summary::-webkit-details-marker {
   display: none;
 }
 
-.login-picker-add-account-body {
-  margin-top: 0.75rem;
-  border: 1px solid rgba(18, 26, 47, 0.08);
-  border-radius: 20px;
-  padding: clamp(0.8rem, 2vw, 1rem);
-  background: rgba(255, 255, 255, 0.28);
+.signin-account-entry-symbol {
+  font-size: 1.15em;
+  font-weight: 700;
+  line-height: 1;
+  transition: transform 220ms ease;
+}
+
+.signin-account-entry[open] .signin-account-entry-symbol {
+  transform: rotate(45deg);
+}
+
+.signin-account-entry-content {
+  padding-top: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signin-account-entry-symbol {
+    transition: none;
+  }
 }
 
 .login-picker-empty {
@@ -12266,16 +12223,10 @@ body {
 .dark-phase .signin-info-line,
 .dark-phase .signin-account-list-label,
 .dark-phase .signin-manual-label,
-.dark-phase .signin-manual-back,
 .dark-phase .signin-account-copy span,
 .dark-phase .signin-host-copy em,
 .dark-phase .signin-account-status {
   color: rgba(255, 255, 255, 0.62);
-}
-
-.dark-phase .signin-manual-back:hover,
-.dark-phase .signin-manual-back:focus-visible {
-  color: #fff;
 }
 
 .dark-phase .signin-tab.is-active,
@@ -12305,8 +12256,7 @@ body {
   background: transparent;
 }
 
-.dark-phase .signin-host-search input,
-.dark-phase .login-picker-add-account-body {
+.dark-phase .signin-host-search input {
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.07);
   color: #f3f5fb;

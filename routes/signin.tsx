@@ -1,4 +1,5 @@
 import { define } from "../utils.ts";
+import { normalizeSignInHandleHint } from "../lib/signin-handle.ts";
 import Nav from "../components/Nav.tsx";
 import Footer from "../components/Footer.tsx";
 import SignInForm, {
@@ -9,6 +10,7 @@ import { getAppUser } from "../lib/account-types.ts";
 import { listCreateAccountHostOptions } from "../lib/create-account-hosts.ts";
 import {
   type LoginApp,
+  loginRequestToPath,
   readLoginRequest,
   resolveLoginAppForRequest,
 } from "../lib/atmosphere-login.ts";
@@ -59,6 +61,13 @@ export const handler = define.handlers({
         "This sign-in link is invalid. Return to the previous page and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
+    }
+    const pickerRedirect = loginSelectionSignInRedirect(request);
+    if (pickerRedirect) {
+      return new Response(null, {
+        status: 303,
+        headers: { location: pickerRedirect, "cache-control": "no-store" },
+      });
     }
     const {
       next,
@@ -182,7 +191,9 @@ export function readSignInAuthorizationRequest(url: URL) {
     singleSearchValue(url.searchParams, "next"),
   );
   const rawHandle = singleSearchValue(url.searchParams, "handle");
-  const initialHandle = rawHandle === null ? undefined : safeHandle(rawHandle);
+  const initialHandle = rawHandle === null
+    ? undefined
+    : normalizeSignInHandleHint(rawHandle);
   if (rawHandle !== null && !initialHandle) {
     throw new InvalidOAuthRequestInputError();
   }
@@ -256,16 +267,46 @@ export function readSignInAuthorizationRequest(url: URL) {
   };
 }
 
-function safeHandle(raw: string | null): string | undefined {
-  const handle = raw?.trim().replace(/^@/, "").toLowerCase();
+/** Old picker sign-in links now return to the single inline account entry. */
+export function loginSelectionSignInRedirect(
+  request: ReturnType<typeof readSignInAuthorizationRequest>,
+): string | null {
   if (
-    !handle ||
-    !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
-      .test(handle)
+    request.requestedMode !== "signin" ||
+    request.continuation !== "login_selection"
+  ) return null;
+  if (
+    !hasValidLoginSelectionContinuationBinding(
+      request.next,
+      request.continuation,
+      request.intent ?? null,
+      request.action,
+      request.capabilities,
+    )
+  ) return null;
+  const source = new URL(request.next!, "https://login.invalid");
+  const picker = new URL(
+    loginRequestToPath(readLoginRequest(source)),
+    source.origin,
+  );
+  if (
+    request.choosingAnotherAccount || request.manualAccountEntry ||
+    request.initialHandle || request.permissionState === "failed" ||
+    request.permissionState === "denied"
   ) {
-    return undefined;
+    picker.searchParams.set("entry", "manual");
   }
-  return handle;
+  if (request.initialHandle) {
+    picker.searchParams.set("handle", request.initialHandle);
+  }
+  const error = source.searchParams.get("login_error") ??
+    (request.permissionState === "denied"
+      ? "authorization_cancelled"
+      : request.permissionState === "failed"
+      ? "authorization_failed"
+      : null);
+  if (error) picker.searchParams.set("login_error", error);
+  return `${picker.pathname}${picker.search}`;
 }
 
 function safeAuthAction(raw: string | null): OAuthAction {

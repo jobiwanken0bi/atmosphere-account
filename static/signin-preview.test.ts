@@ -18,15 +18,9 @@ Deno.test("sign-in preview exposes keyboard selection and associated errors", as
   );
   assertStringIncludes(source, "previewWrap.append(preview)");
   assertEquals(source.includes("field.append(preview)"), false);
-  assertStringIncludes(source, "if (!isPlainLinkActivation(event)) return");
   assertStringIncludes(source, "event.preventDefault()");
   assertStringIncludes(source, 'event.key === "Escape" && !preview.hidden');
-  assertEquals(source.match(/event\.stopPropagation\(\)/g)?.length, 2);
-  assertStringIncludes(
-    source,
-    "if (initialSavedAccount instanceof HTMLElement)",
-  );
-  assertStringIncludes(source, "initialSavedAccount.focus()");
+  assertEquals(source.match(/event\.stopPropagation\(\)/g)?.length, 4);
   assertStringIncludes(
     source,
     'form.addEventListener("submit", (event) => {',

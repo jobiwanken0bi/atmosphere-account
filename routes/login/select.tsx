@@ -1,6 +1,8 @@
 import { define, type State } from "../../utils.ts";
+import { normalizeSignInHandleHint } from "../../lib/signin-handle.ts";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
+import AccountEntryDisclosure from "../../components/AccountEntryDisclosure.tsx";
 import {
   appendSelectionToReturnUri,
   type LoginApp,
@@ -55,6 +57,8 @@ interface PickerPageProps {
   loginError: string | null;
   error: string | null;
   status: number;
+  accountEntryOpen?: boolean;
+  initialHandle?: string;
 }
 
 const MAX_PICKER_FORM_BYTES = 16_384;
@@ -360,6 +364,11 @@ async function buildPickerPageProps(
       ),
       error: null,
       status: 200,
+      accountEntryOpen: ctx.url.searchParams.get("entry") === "manual" ||
+        !!ctx.url.searchParams.get("login_error"),
+      initialHandle: normalizeSignInHandleHint(
+        ctx.url.searchParams.get("handle"),
+      ),
     };
   } catch (err) {
     const failure = safePickerFailure(err);
@@ -407,8 +416,11 @@ function pickerCancelHref(
 }
 
 function loginPickerErrorMessage(value: string | null): string | null {
-  return value === "authorization_cancelled"
-    ? "Login was cancelled at your account host. Nothing was shared; choose an account to try again."
+  if (value === "authorization_cancelled") {
+    return "Login was cancelled at your account host. Nothing was shared; continue with an account to try again.";
+  }
+  return value === "authorization_failed"
+    ? "Login could not be completed at your account host. Try again."
     : null;
 }
 
@@ -467,7 +479,7 @@ export function pickerAccountsForStateForTest(state: State): PickerAccount[] {
   return getPickerAccounts(state);
 }
 
-function LoginPickerPage(props: PickerPageProps) {
+export function LoginPickerPage(props: PickerPageProps) {
   const {
     app,
     request,
@@ -479,7 +491,7 @@ function LoginPickerPage(props: PickerPageProps) {
   } = props;
   return (
     <div id="page-top" class="login-picker-page">
-      <section class="signin-page-section login-picker-section">
+      <main id="main-content" class="signin-page-section login-picker-section">
         <div class="container signin-page-container login-picker-container">
           <p class="text-eyebrow">Account picker</p>
           <h1
@@ -506,22 +518,34 @@ function LoginPickerPage(props: PickerPageProps) {
                   pickerAccounts={pickerAccounts}
                   cancelHref={cancelHref}
                   loginError={loginError}
+                  accountEntryOpen={props.accountEntryOpen}
+                  initialHandle={props.initialHandle}
                 />
               )}
           </div>
         </div>
-      </section>
+      </main>
     </div>
   );
 }
 
 function LoginPickerBody(
-  { app, selectPath, pickerAccounts, cancelHref, loginError }: {
+  {
+    app,
+    selectPath,
+    pickerAccounts,
+    cancelHref,
+    loginError,
+    accountEntryOpen,
+    initialHandle,
+  }: {
     app: LoginApp;
     selectPath: string;
     pickerAccounts: PickerAccount[];
     cancelHref: string;
     loginError: string | null;
+    accountEntryOpen?: boolean;
+    initialHandle?: string;
   },
 ) {
   return (
@@ -547,7 +571,11 @@ function LoginPickerBody(
       {pickerAccounts.length > 0
         ? (
           <>
-            <div class="login-picker-account-list" aria-label="Saved accounts">
+            <div
+              class="login-picker-account-list"
+              role="group"
+              aria-label="Saved accounts"
+            >
               {pickerAccounts.map((account) => (
                 <a
                   href={account.selectionPath}
@@ -574,25 +602,19 @@ function LoginPickerBody(
                     </strong>
                     <span>Use this account with {app.appName}</span>
                   </span>
-                  <span class="login-picker-account-action">Choose</span>
+                  <span class="login-picker-account-action">Continue</span>
                 </a>
               ))}
             </div>
-            <details class="login-picker-add-account">
-              <summary class="profile-form-button-secondary login-picker-secondary">
-                <span class="login-picker-secondary-symbol" aria-hidden="true">
-                  +
-                </span>
-                Add another account
-              </summary>
-              <div class="login-picker-add-account-body">
-                <SignInForm
-                  returnTo={selectPath}
-                  rememberedAccounts={[]}
-                  rich
-                />
-              </div>
-            </details>
+            <AccountEntryDisclosure open={accountEntryOpen}>
+              <SignInForm
+                returnTo={selectPath}
+                rememberedAccounts={[]}
+                initialHandle={initialHandle}
+                chooseAnotherAccount
+                rich
+              />
+            </AccountEntryDisclosure>
           </>
         )
         : (
@@ -602,6 +624,8 @@ function LoginPickerBody(
                 <SignInForm
                   returnTo={selectPath}
                   rememberedAccounts={[]}
+                  initialHandle={initialHandle}
+                  chooseAnotherAccount
                   rich
                 />
               )

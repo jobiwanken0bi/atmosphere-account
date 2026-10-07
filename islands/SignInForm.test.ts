@@ -154,7 +154,8 @@ Deno.test("sign-in mode links to one canonical contextual create page", () => {
   assertEquals(url.searchParams.get("next"), "/apps/tangled?review=compose");
   assertEquals(url.searchParams.get("action"), "review");
   assertEquals(url.searchParams.getAll("capability"), ["review"]);
-  assertStringIncludes(html, "Already use Bluesky?");
+  assertEquals(html.includes("Already use Bluesky?"), false);
+  assertEquals(html.includes("Enter your account handle"), false);
   assertStringIncludes(html, "Login with Atmosphere");
   assertStringIncludes(html, 'data-submit-label="Continue"');
   assertStringIncludes(
@@ -220,4 +221,30 @@ Deno.test("non-OAuth signup links are not decorated with Atmosphere permissions"
     ),
     "https://host.example/signup",
   );
+});
+
+Deno.test("prefilled inline account entry is the only preferred dialog focus", () => {
+  for (
+    const props of [{ initialHandle: "new.example" }, {
+      manualAccountEntry: true,
+    }]
+  ) {
+    const html = renderToString(
+      h(SignInForm, {
+        rememberedAccounts: [{ did: "did:plc:saved", handle: "saved.example" }],
+        ...props,
+      }),
+    );
+    assertEquals(
+      (html.match(/data-dialog-initial-focus="true"/g) ?? []).length,
+      1,
+    );
+    assertEquals(
+      html.includes(
+        'data-pending-label="Continuing…" data-dialog-initial-focus="true"',
+      ),
+      false,
+    );
+    assertStringIncludes(html, 'data-signin-disclosure="true" open');
+  }
 });

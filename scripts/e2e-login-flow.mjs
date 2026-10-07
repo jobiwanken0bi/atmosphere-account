@@ -38,14 +38,17 @@ async function main() {
   });
   const server = spawn(
     "deno",
-    [
-      "task",
-      "dev",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(requestedPort),
-    ],
+    process.env.E2E_COMPILED === "1"
+      ? [
+        "serve",
+        "-A",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(requestedPort),
+        "_fresh/server.js",
+      ]
+      : ["task", "dev", "--host", "127.0.0.1", "--port", String(requestedPort)],
     {
       env: {
         ...process.env,
@@ -101,6 +104,7 @@ async function main() {
         }`,
       );
     }
+    await smokeInlineAccountEntry(browser, page);
     console.log("[e2e:login] picker loaded; selecting local account");
     const selectedAccount = page.locator("a.login-picker-account-row").filter({
       hasText: "local-picker.test",
@@ -154,6 +158,242 @@ async function main() {
     ]).catch(() => {});
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+async function smokeInlineAccountEntry(browser, page) {
+  const pickerUrl = page.url();
+  const disclosure = page.locator("details.signin-account-entry");
+  const summary = disclosure.locator("summary");
+  const input = disclosure.locator("input[name=handle]");
+  let escapeReachedDialog = false;
+  await page.exposeFunction("reportPickerEscapeToDialog", () => {
+    escapeReachedDialog = true;
+  });
+  await page.evaluate(() => {
+    document.addEventListener("keydown", (event) => {
+      if (
+        event.key === "Escape" &&
+        event.target.closest("[data-signin-disclosure-body]")
+      ) globalThis.reportPickerEscapeToDialog();
+    });
+  });
+  await disclosure.waitFor();
+  await page.waitForFunction(() =>
+    document.querySelector("[data-signin-disclosure]")?.dataset
+      .signinDisclosureEnhanced === "true"
+  );
+  if (
+    (await page.locator(".login-picker-account-action").allTextContents()).some(
+      (text) => text !== "Continue",
+    )
+  ) throw new Error("saved picker actions must say Continue");
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await summary.click();
+    await input.waitFor({ state: "visible" });
+    await page.waitForFunction(() =>
+      document.activeElement?.getAttribute("name") === "handle"
+    );
+    if (
+      new URL(page.url()).pathname !== "/login/select" ||
+      !await page.locator(".login-picker-account-row").first().isVisible()
+    ) {
+      throw new Error(
+        "inline entry replaced the saved accounts or navigated away",
+      );
+    }
+    if (
+      await page.getByText("Enter your account handle", { exact: true })
+        .count() ||
+      await page.getByText("Already use Bluesky?", { exact: true }).count()
+    ) throw new Error("redundant sign-in copy returned");
+    await page.waitForFunction(() =>
+      document.querySelector("[data-signin-disclosure-body]").getAnimations()
+        .length === 0
+    );
+    await assertPageShell(page, "expanded picker");
+    await assertMinimumTarget(page, "details.signin-account-entry summary", 44);
+    await input.dispatchEvent("keydown", { key: "Escape", isComposing: true });
+    if (!await disclosure.evaluate((node) => node.open)) {
+      throw new Error("IME Escape collapsed account entry");
+    }
+    await input.press("Escape");
+    await page.waitForFunction(() =>
+      !document.querySelector("details.signin-account-entry").open
+    );
+    if (escapeReachedDialog) {
+      throw new Error(
+        "disclosure Escape reached the surrounding dialog handler",
+      );
+    }
+    await summary.press("Enter");
+    await input.waitFor({ state: "visible" });
+    await page.waitForFunction(() =>
+      document.querySelector("[data-signin-disclosure-body]").getAnimations()
+        .length === 0
+    );
+    await summary.click();
+    await page.waitForFunction(() =>
+      !document.querySelector("details.signin-account-entry").open
+    );
+  }
+  await summary.click();
+  await summary.click();
+  await summary.click();
+  await page.waitForFunction(() =>
+    document.querySelector("details.signin-account-entry").open &&
+    document.querySelector("[data-signin-disclosure-body]").getAnimations()
+        .length === 0
+  );
+  await input.fill("interrupted.example");
+  await summary.click();
+  await page.waitForFunction(() =>
+    !document.querySelector("details.signin-account-entry").open
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await summary.click();
+  if (
+    await page.locator("[data-signin-disclosure-body]").evaluate((node) =>
+      node.getAnimations().length
+    ) !== 0
+  ) throw new Error("reduced motion animated disclosure");
+  await input.fill("new-account.example");
+  await summary.click();
+  await summary.click();
+  if (await input.inputValue() !== "new-account.example") {
+    throw new Error("disclosure cleared handle input");
+  }
+  const oauthRequest = page.waitForRequest((request) =>
+    new URL(request.url()).pathname === "/oauth/login"
+  );
+  await page.route(
+    "**/oauth/login?*",
+    (route) => route.fulfill({ status: 204 }),
+  );
+  await disclosure.getByRole("button", { name: "Continue", exact: true })
+    .click();
+  const started = new URL((await oauthRequest).url());
+  const original = new URL(pickerUrl);
+  const next = new URL(started.searchParams.get("next"), original.origin);
+  for (const key of ["client_id", "return_uri", "state", "scope"]) {
+    if (next.searchParams.get(key) !== original.searchParams.get(key)) {
+      throw new Error("inline handle entry changed picker binding");
+    }
+  }
+  if (
+    started.searchParams.get("continuation") !== "login_selection" ||
+    started.searchParams.getAll("capability").join() !== "identity" ||
+    started.searchParams.get("choose") !== "another" ||
+    started.searchParams.get("handle") !== "new-account.example"
+  ) throw new Error("inline entry lost identity-only another-account context");
+  await page.unroute("**/oauth/login?*");
+  const legacy = new URL("/signin", original.origin);
+  legacy.search = new URLSearchParams({
+    next: original.pathname + original.search,
+    continuation: "login_selection",
+    action: "account",
+    capability: "identity",
+    choose: "another",
+  });
+  await page.goto(legacy.href, { waitUntil: "domcontentloaded" });
+  if (
+    new URL(page.url()).pathname !== "/login/select" || !await input.isVisible()
+  ) {
+    throw new Error(
+      "legacy picker sign-in did not consolidate into expanded account entry",
+    );
+  }
+  await page.goto(pickerUrl, { waitUntil: "domcontentloaded" });
+  await page.emulateMedia({ reducedMotion: null });
+
+  const direct = await browser.newPage();
+  try {
+    let composingEscapeReachedDialog = false;
+    await direct.exposeFunction("reportDirectImeEscape", () => {
+      composingEscapeReachedDialog = true;
+    });
+    await direct.goto(`${LOGIN_ORIGIN}/signin?choose=another&next=%2Faccount`);
+    await direct.waitForFunction(() =>
+      document.querySelector("form[data-signin-preview-enhanced=true]")
+    );
+    if (await direct.locator("details.signin-account-entry").count()) {
+      throw new Error("direct IME fixture unexpectedly has a disclosure");
+    }
+    await direct.evaluate(() => {
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") globalThis.reportDirectImeEscape();
+      });
+    });
+    await direct.locator("input[name=handle]").dispatchEvent("keydown", {
+      key: "Escape",
+      isComposing: true,
+    });
+    if (composingEscapeReachedDialog) {
+      throw new Error("direct handle IME Escape reached dialog handler");
+    }
+  } finally {
+    await direct.close();
+  }
+
+  const delayed = await browser.newContext();
+  try {
+    const early = await delayed.newPage();
+    let releaseEnhancer;
+    const gate = new Promise((resolve) => {
+      releaseEnhancer = resolve;
+    });
+    await early.route("**/signin-preview.js*", async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await early.goto(`${ORIGIN}/dev/login-picker?current=local-picker.test`, {
+      waitUntil: "commit",
+    });
+    await early.locator("details.signin-account-entry summary").click();
+    releaseEnhancer();
+    await early.waitForFunction(() =>
+      document.querySelector("[data-signin-disclosure]")?.dataset
+        .signinDisclosureEnhanced === "true"
+    );
+    if (
+      !await early.locator("input[name=handle]").isVisible() ||
+      await early.locator("[data-signin-disclosure-body]").evaluate((node) =>
+        node.inert
+      )
+    ) throw new Error("enhancement lost a native disclosure open");
+    await early.locator("details.signin-account-entry summary").click();
+    await early.waitForFunction(() =>
+      !document.querySelector("details.signin-account-entry").open
+    );
+  } finally {
+    await delayed.close();
+  }
+
+  const noJs = await browser.newContext({ javaScriptEnabled: false });
+  try {
+    const native = await noJs.newPage();
+    await native.goto(`${ORIGIN}/dev/login-picker?current=local-picker.test`);
+    await native.locator("details.signin-account-entry summary").click();
+    if (!await native.locator("input[name=handle]").isVisible()) {
+      throw new Error("native disclosure failed without JavaScript");
+    }
+    // The local fixture uses separate public/login hostnames. Seed its
+    // fictional cookies on the login host to exercise the generic saved list.
+    const fixtureCookies = await noJs.cookies(ORIGIN);
+    await noJs.addCookies(
+      fixtureCookies.map((cookie) => ({ ...cookie, domain: "localhost" })),
+    );
+    await native.goto(`${LOGIN_ORIGIN}/signin?choose=another&next=%2Faccount`);
+    await native.locator("details.signin-account-entry summary").click();
+    if (!await native.locator("input[name=handle]").isVisible()) {
+      throw new Error("generic sign-in disclosure failed without JavaScript");
+    }
+  } finally {
+    await noJs.close();
+  }
+  console.log(
+    "[e2e:login] ok inline account entry, keyboard, phone/desktop, reduced motion, OAuth bindings, legacy consolidation and no-JS fallback",
+  );
 }
 
 async function smokePublicExperience(browser) {
