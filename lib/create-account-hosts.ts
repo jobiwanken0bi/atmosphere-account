@@ -45,7 +45,6 @@ interface ListCreateAccountHostOptions {
   includeOpen?: boolean;
   includeInvite?: boolean;
   app?: LoginApp | null;
-  pageSize?: number;
 }
 
 export async function listCreateAccountHostOptions(
@@ -57,9 +56,7 @@ export async function listCreateAccountHostOptions(
     includeInvite: options.includeInvite,
     clientId: options.app?.clientId,
   });
-  if (remote) {
-    return remote.slice(0, Math.min(72, Math.max(1, options.pageSize ?? 72)));
-  }
+  if (remote) return remote;
   const includeOpen = options.includeOpen !== false;
   const includeInvite = options.includeInvite !== false;
   const signupStatuses: ("open" | "invite_required")[] = [];
@@ -124,8 +121,7 @@ export async function listCreateAccountHostOptions(
       } satisfies CreateAccountHostOption,
     ];
   });
-  return sortCreateAccountHostOptions(choices, source)
-    .slice(0, Math.min(72, Math.max(1, options.pageSize ?? 72)));
+  return sortCreateAccountHostOptions(choices, source);
 }
 
 /** Open signup first, then popularity within each signup group. */
