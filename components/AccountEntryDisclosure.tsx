@@ -10,9 +10,16 @@ export default function AccountEntryDisclosure(
       data-signin-disclosure="true"
       open={open}
     >
-      <summary class="profile-form-button-secondary login-picker-secondary">
+      <summary class="signin-account-entry-toggle">
         <span class="signin-account-entry-symbol" aria-hidden="true">+</span>
-        Add another account
+        <span>Add another account</span>
+        <svg
+          class="signin-account-entry-chevron"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
       </summary>
       <div class="signin-account-entry-body" data-signin-disclosure-body="true">
         <div class="signin-account-entry-content">{children}</div>

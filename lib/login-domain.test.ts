@@ -44,6 +44,15 @@ Deno.test("login signup search stays on origin without admitting other login API
   assertEquals(isAllowedLoginHostPathForTest("/api/login/admin"), false);
 });
 
+Deno.test("login handle typeahead stays on origin with an exact public endpoint", () => {
+  assertEquals(isAllowedLoginHostPathForTest("/api/identity/preview"), true);
+  assertEquals(
+    isAllowedLoginHostPathForTest("/api/identity/preview/other"),
+    false,
+  );
+  assertEquals(isAllowedLoginHostPathForTest("/api/identity/admin"), false);
+});
+
 Deno.test("single-origin deployments do not enforce login-host routing", () => {
   assertEquals(
     usesSeparateLoginDomain(

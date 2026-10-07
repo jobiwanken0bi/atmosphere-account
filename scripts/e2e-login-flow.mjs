@@ -161,10 +161,45 @@ async function main() {
 }
 
 async function smokeInlineAccountEntry(browser, page) {
+  // Exercise the real login-domain router without an upstream search request.
+  // Browser response fixtures below must not conceal cross-origin redirects.
+  const previewEndpoint = `${LOGIN_ORIGIN}/api/identity/preview?handle=`;
+  const previewResponse = await page.request.get(previewEndpoint, {
+    maxRedirects: 0,
+  });
+  if (
+    previewResponse.status() !== 200 ||
+    (await previewResponse.json()).reason !== "invalid_handle"
+  ) {
+    throw new Error("login-origin handle typeahead is not served in place");
+  }
+  await page.route("**/api/identity/preview?*", async (route) => {
+    if (
+      new URL(route.request().url()).searchParams.get("handle")?.startsWith(
+        "delayed",
+      )
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        found: true,
+        matches: [{
+          did: "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+          handle: "preview-picker.test",
+          displayName: "Preview account",
+        }],
+      }),
+    }).catch(() => {});
+  });
   const pickerUrl = page.url();
   const disclosure = page.locator("details.signin-account-entry");
   const summary = disclosure.locator("summary");
-  const input = disclosure.locator("input[name=handle]");
+  const input = disclosure.getByRole("textbox", {
+    name: "Atmosphere handle",
+    exact: true,
+  });
   let escapeReachedDialog = false;
   await page.exposeFunction("reportPickerEscapeToDialog", () => {
     escapeReachedDialog = true;
@@ -187,7 +222,7 @@ async function smokeInlineAccountEntry(browser, page) {
       (text) => text !== "Continue",
     )
   ) throw new Error("saved picker actions must say Continue");
-  for (const width of [390, 1440]) {
+  for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await summary.click();
     await input.waitFor({ state: "visible" });
@@ -213,6 +248,104 @@ async function smokeInlineAccountEntry(browser, page) {
     );
     await assertPageShell(page, "expanded picker");
     await assertMinimumTarget(page, "details.signin-account-entry summary", 44);
+    const lastAccount = await page.locator(".login-picker-account-row").last()
+      .boundingBox();
+    const toggleBox = await summary.boundingBox();
+    const handleBox = await input.boundingBox();
+    const continueBox = await disclosure.getByRole("button", {
+      name: "Continue",
+      exact: true,
+    }).boundingBox();
+    const createBox = await disclosure.locator(".signin-create-account-link")
+      .boundingBox();
+    const labelBox = await disclosure.locator("label").boundingBox();
+    if (
+      Math.abs(toggleBox.y - (lastAccount.y + lastAccount.height)) > 2 ||
+      Math.abs(handleBox.y - continueBox.y) > 1 ||
+      continueBox.x < handleBox.x + handleBox.width ||
+      createBox.y - (handleBox.y + handleBox.height) < 8 ||
+      labelBox.width > 1 || labelBox.height > 1
+    ) {
+      throw new Error(
+        "picker entry has a row gap, visible label or stacked/touching actions: " +
+          JSON.stringify({
+            width,
+            lastAccount,
+            toggleBox,
+            handleBox,
+            continueBox,
+            createBox,
+            labelBox,
+          }),
+      );
+    }
+    await input.fill("preview");
+    const suggestion = disclosure.getByRole("button", {
+      name: /Preview account/,
+    });
+    await suggestion.waitFor({ state: "visible" });
+    const suggestionBox = await suggestion.boundingBox();
+    const unobstructed = await suggestion.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      return node.contains(
+        document.elementFromPoint(
+          box.x + box.width / 2,
+          box.y + box.height / 2,
+        ),
+      );
+    });
+    if (!unobstructed || suggestionBox.width < handleBox.width) {
+      throw new Error(
+        "picker typeahead is clipped or does not use the handle/action row",
+      );
+    }
+    await input.press("ArrowDown");
+    await suggestion.press("Enter");
+    if (await input.inputValue() !== "preview-picker.test") {
+      throw new Error("keyboard typeahead selection did not fill the handle");
+    }
+    await page.waitForTimeout(250);
+    if (await suggestion.isVisible()) {
+      throw new Error("typeahead reopened after selecting an account");
+    }
+    await disclosure.getByRole("button", { name: "Clear selected account" })
+      .click();
+    if (await input.inputValue()) {
+      throw new Error("selected account did not clear");
+    }
+    if (width === 390) {
+      for (const dismissal of ["escape", "outside"]) {
+        const pendingLookup = page.waitForRequest((request) =>
+          new URL(request.url()).searchParams.get("handle") ===
+            `delayed-${dismissal}`
+        );
+        await input.fill(`delayed-${dismissal}`);
+        await pendingLookup;
+        if (dismissal === "escape") await input.press("Escape");
+        else {await page.getByRole("heading", {
+            name: "Login with Atmosphere",
+            exact: true,
+          }).click();}
+        await page.waitForTimeout(500);
+        if (await disclosure.locator(".signin-form-preview").isVisible()) {
+          throw new Error("pending typeahead reopened after " + dismissal);
+        }
+      }
+      await input.fill("preview");
+      await suggestion.waitFor({ state: "visible" });
+      await input.press("ArrowDown");
+      await suggestion.press("Escape");
+      await page.waitForTimeout(250);
+      if (
+        await suggestion.isVisible() ||
+        !await input.evaluate((node) => node === document.activeElement)
+      ) {
+        throw new Error(
+          "suggestion Escape reopened lookup or lost input focus",
+        );
+      }
+      await input.fill("");
+    }
     await input.dispatchEvent("keydown", { key: "Escape", isComposing: true });
     if (!await disclosure.evaluate((node) => node.open)) {
       throw new Error("IME Escape collapsed account entry");
@@ -304,6 +437,7 @@ async function smokeInlineAccountEntry(browser, page) {
     );
   }
   await page.goto(pickerUrl, { waitUntil: "domcontentloaded" });
+  await page.unroute("**/api/identity/preview?*");
   await page.emulateMedia({ reducedMotion: null });
 
   const direct = await browser.newPage();

@@ -295,6 +295,25 @@ export async function main(): Promise<void> {
   }
   console.log("[smoke:picker-assets] signup search ok on picker origin");
 
+  const previewUrl = new URL(
+    "/api/identity/preview?handle=",
+    options.pickerOrigin,
+  );
+  const previewResponse = await fetch(previewUrl, {
+    redirect: "manual",
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  assertStatus(previewResponse, previewUrl);
+  assertContentType(previewResponse, previewUrl, "application/json");
+  const previewPayload = await previewResponse.json();
+  if (
+    previewPayload.found !== false || previewPayload.reason !== "invalid_handle"
+  ) {
+    throw new Error("picker handle typeahead returned unexpected JSON");
+  }
+  console.log("[smoke:picker-assets] handle typeahead ok on picker origin");
+
   const assets = extractHtmlAssetPaths(pickerHtml);
   if (assets.stylesheets.length === 0) {
     throw new Error("picker HTML did not include any stylesheets");

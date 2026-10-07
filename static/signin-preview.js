@@ -1,4 +1,6 @@
 const ENHANCED_ATTR = "data-signin-preview-enhanced";
+const enhancedForms = new WeakMap();
+const enhancedDisclosures = new WeakSet();
 
 function cleanHandle(value) {
   return value.trim().replace(/^@/, "").toLowerCase();
@@ -210,13 +212,30 @@ function renderAuthorizationLink(form, destination) {
 }
 
 function enhanceForm(form, index) {
-  if (form.getAttribute(ENHANCED_ATTR) === "true") return;
   const input = form.querySelector("[data-signin-preview-input]");
   if (!(input instanceof HTMLInputElement)) return;
   const previewWrap = form.querySelector(".signin-form-preview-wrap");
   if (!(previewWrap instanceof HTMLElement)) return;
+  const selectedBox = form.querySelector("[data-signin-selected]");
+  const existing = enhancedForms.get(form);
+  if (existing) {
+    if (
+      existing.input === input && existing.previewWrap === previewWrap &&
+      existing.selectedBox === selectedBox
+    ) {
+      // Hydration can remove runtime attributes and nodes while preserving
+      // the form/input. Restore the preview without binding a second handler.
+      form.setAttribute(ENHANCED_ATTR, "true");
+      if (existing.preview.parentNode !== previewWrap) {
+        previewWrap.append(existing.preview);
+      }
+      return;
+    }
+    existing.dispose();
+  }
 
   form.setAttribute(ENHANCED_ATTR, "true");
+  const bindings = new AbortController();
   const loadingLabel = form.dataset.previewLoading || "Searching…";
   const notFoundLabel = form.dataset.previewNotFound ||
     "No matching account found.";
@@ -225,7 +244,6 @@ function enhanceForm(form, index) {
   const errorLabel = form.dataset.errorLabel ||
     "Login with Atmosphere could not be started. Check the handle or try again shortly.";
   const submitButton = form.querySelector(".signin-form-submit");
-  const selectedBox = form.querySelector("[data-signin-selected]");
   const preview = document.createElement("div");
   preview.id = `signin-handle-preview-${index}`;
   preview.className = "signin-form-preview glass";
@@ -239,6 +257,7 @@ function enhanceForm(form, index) {
   let seq = 0;
   let selectedMatch = null;
   let activeController = null;
+  let suppressFocusLookup = false;
 
   function abortPreviewFetch() {
     if (!activeController) return;
@@ -252,6 +271,19 @@ function enhanceForm(form, index) {
 
   function hide() {
     preview.hidden = true;
+  }
+
+  function dismissPreview() {
+    clearTimeout(timer);
+    abortPreviewFetch();
+    seq++;
+    hide();
+  }
+
+  function restoreInputFocus() {
+    suppressFocusLookup = true;
+    input.focus();
+    suppressFocusLookup = false;
   }
 
   function clearSelected() {
@@ -279,6 +311,7 @@ function enhanceForm(form, index) {
     for (const match of matches) {
       if (!match || typeof match.handle !== "string") continue;
       list.append(matchButton(match, (selected) => {
+        dismissPreview();
         selectedMatch = selected;
         input.value = selected.handle;
         hide();
@@ -286,7 +319,8 @@ function enhanceForm(form, index) {
         renderSelected(selectedBox, selected, () => {
           input.value = "";
           clearSelected();
-          input.focus();
+          dismissPreview();
+          restoreInputFocus();
         });
       }));
     }
@@ -302,6 +336,7 @@ function enhanceForm(form, index) {
     const query = cleanHandle(value);
     clearTimeout(timer);
     abortPreviewFetch();
+    const mySeq = ++seq;
     if (!selectedMatch || selectedMatch.handle !== query) clearSelected();
     if (!query) {
       hide();
@@ -313,7 +348,6 @@ function enhanceForm(form, index) {
       preview.replaceChildren();
       return;
     }
-    const mySeq = ++seq;
     renderLoading();
     timer = setTimeout(async () => {
       const controller = new AbortController();
@@ -342,10 +376,14 @@ function enhanceForm(form, index) {
     }, 150);
   }
 
-  input.addEventListener("input", () => schedule(input.value));
-  input.addEventListener("focus", () => {
-    if (input.value.trim()) schedule(input.value);
+  input.addEventListener("input", () => schedule(input.value), {
+    signal: bindings.signal,
   });
+  input.addEventListener("focus", () => {
+    if (!suppressFocusLookup && input.value.trim() && !selectedMatch) {
+      schedule(input.value);
+    }
+  }, { signal: bindings.signal });
   input.addEventListener("keydown", (event) => {
     if (event.isComposing) {
       if (event.key === "Escape") event.stopPropagation();
@@ -354,7 +392,7 @@ function enhanceForm(form, index) {
     if (event.key === "Escape" && !preview.hidden) {
       event.preventDefault();
       event.stopPropagation();
-      hide();
+      dismissPreview();
       return;
     }
     if (event.key !== "ArrowDown" || preview.hidden) return;
@@ -363,7 +401,7 @@ function enhanceForm(form, index) {
       event.preventDefault();
       first.focus();
     }
-  });
+  }, { signal: bindings.signal });
   preview.addEventListener("keydown", (event) => {
     const options = Array.from(
       preview.querySelectorAll(".signin-form-preview-row"),
@@ -378,18 +416,18 @@ function enhanceForm(form, index) {
     else if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      hide();
-      input.focus();
+      dismissPreview();
+      restoreInputFocus();
       return;
     } else return;
     if (next >= 0 && options[next] instanceof HTMLButtonElement) {
       event.preventDefault();
       options[next].focus();
     }
-  });
+  }, { signal: bindings.signal });
   document.addEventListener("pointerdown", (event) => {
-    if (!form.contains(event.target)) hide();
-  });
+    if (!form.contains(event.target)) dismissPreview();
+  }, { signal: bindings.signal });
   form.addEventListener("submit", (event) => {
     if (!input.value.trim()) {
       event.preventDefault();
@@ -397,6 +435,7 @@ function enhanceForm(form, index) {
       return;
     }
     event.preventDefault();
+    dismissPreview();
     clearFormError(form);
     if (submitButton instanceof HTMLButtonElement) {
       submitButton.disabled = true;
@@ -422,6 +461,17 @@ function enhanceForm(form, index) {
       }
       document.dispatchEvent(new CustomEvent("atmo:hide-page-skeleton"));
     }
+  }, { signal: bindings.signal });
+  enhancedForms.set(form, {
+    input,
+    previewWrap,
+    selectedBox,
+    preview,
+    dispose() {
+      dismissPreview();
+      bindings.abort();
+      preview.remove();
+    },
   });
   if (submitButton instanceof HTMLButtonElement) {
     submitButton.textContent = submitLabel;
@@ -429,13 +479,17 @@ function enhanceForm(form, index) {
 }
 
 function enhanceDisclosure(details) {
-  if (details.dataset.signinDisclosureEnhanced === "true") return;
+  if (enhancedDisclosures.has(details)) {
+    details.dataset.signinDisclosureEnhanced = "true";
+    return;
+  }
   const summary = details.querySelector("summary");
   const body = details.querySelector("[data-signin-disclosure-body]");
   if (!(summary instanceof HTMLElement) || !(body instanceof HTMLElement)) {
     return;
   }
   details.dataset.signinDisclosureEnhanced = "true";
+  enhancedDisclosures.add(details);
   let expanded = details.open;
   let animation = null;
 
