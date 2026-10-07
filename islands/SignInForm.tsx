@@ -333,7 +333,10 @@ export default function SignInForm(
               <input type="hidden" name="capability" value={capability} />
             ))}
             <div class="signin-form-preview-wrap">
-              <label class="signin-form-label" for={handleId}>
+              <label
+                class={rich ? "sr-only" : "signin-form-label"}
+                for={handleId}
+              >
                 {rich ? "Atmosphere handle" : t.explore.create.signInLabel}
               </label>
               <div class="signin-form-row">

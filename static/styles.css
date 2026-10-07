@@ -11496,18 +11496,23 @@ body {
 }
 
 .signin-flow--rich .signin-form {
-  margin-top: 0.25rem;
+  margin: 0;
 }
 
 .signin-flow--rich .signin-form-row {
-  flex-direction: column;
-  gap: 0.75rem;
+  align-items: stretch;
+  min-width: 0;
 }
 
 .signin-flow--rich .signin-form-submit {
-  width: 100%;
+  flex: 0 0 auto;
   background: #254a9e;
   font-weight: 700;
+}
+
+.signin-manual-view {
+  display: grid;
+  gap: 0.75rem;
 }
 
 .signin-flow--rich .signin-form-submit:hover {
@@ -11935,11 +11940,14 @@ body {
   background: rgba(255, 247, 232, 0.72);
 }
 
-.login-picker-account-list {
-  overflow: hidden;
+.login-picker-accounts {
   border: 1px solid rgba(18, 26, 47, 0.08);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.46);
+}
+
+.login-picker-account-list > .login-picker-account-row:first-child {
+  border-radius: 20px 20px 0 0;
 }
 
 .login-picker-account-list form,
@@ -12142,23 +12150,45 @@ body {
   }
 }
 
-.login-picker-secondary {
-  display: inline-flex;
-  width: 100%;
-  min-height: 2.75rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.42rem;
-}
-
 .signin-account-entry {
   margin-top: 0.8rem;
+  border: 1px solid rgba(18, 26, 47, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.login-picker-accounts > .signin-account-entry {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid rgba(18, 26, 47, 0.07);
+  border-radius: 0 0 20px 20px;
+  background: transparent;
 }
 
 .signin-account-entry > summary {
   box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 4.45rem;
+  padding: 0.9rem 1rem;
+  border-radius: inherit;
+  color: #0e1428;
+  font-size: 0.98rem;
+  font-weight: 800;
   cursor: pointer;
   list-style: none;
+}
+
+.signin-account-entry > summary:hover,
+.signin-account-entry > summary:focus-visible {
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.signin-account-entry > summary:focus-visible {
+  outline: 3px solid rgba(42, 90, 168, 0.34);
+  outline-offset: -3px;
 }
 
 .signin-account-entry > summary::-webkit-details-marker {
@@ -12166,23 +12196,65 @@ body {
 }
 
 .signin-account-entry-symbol {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(42, 90, 168, 0.08);
+  color: #254a9e;
   font-size: 1.15em;
   font-weight: 700;
   line-height: 1;
+}
+
+.signin-account-entry-chevron {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   transition: transform 220ms ease;
 }
 
-.signin-account-entry[open] .signin-account-entry-symbol {
-  transform: rotate(45deg);
+.signin-account-entry[open] .signin-account-entry-chevron {
+  transform: rotate(180deg);
 }
 
 .signin-account-entry-content {
-  padding-top: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0 1rem 1rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .signin-account-entry-symbol {
+  .signin-account-entry-chevron {
     transition: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .signin-flow--rich .signin-form-submit {
+    padding-inline: 0.9rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .signin-account-entry > summary {
+    gap: 0.68rem;
+    min-height: 4.25rem;
+    padding: 0.8rem;
+    font-size: 0.94rem;
+  }
+  .signin-account-entry-symbol {
+    width: 2.45rem;
+    height: 2.45rem;
+  }
+  .signin-account-entry-content {
+    padding: 0 0.8rem 0.8rem;
   }
 }
 

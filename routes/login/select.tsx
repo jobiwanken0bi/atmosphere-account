@@ -570,7 +570,7 @@ function LoginPickerBody(
 
       {pickerAccounts.length > 0
         ? (
-          <>
+          <div class="login-picker-accounts">
             <div
               class="login-picker-account-list"
               role="group"
@@ -615,7 +615,7 @@ function LoginPickerBody(
                 rich
               />
             </AccountEntryDisclosure>
-          </>
+          </div>
         )
         : (
           <div class="login-picker-empty">
