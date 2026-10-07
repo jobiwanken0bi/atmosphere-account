@@ -21,7 +21,8 @@ function usage(exitCode = 2): never {
       "Usage: deno task smoke:picker-assets [options]",
       "",
       "Checks that the hosted picker HTML, CSS, static JS, and generated Fresh",
-      "assets load from the login and main Atmosphere domains.",
+      "assets load from the login and main Atmosphere domains, and signup search",
+      "returns JSON on the picker origin without a cross-origin redirect.",
       "",
       "Options:",
       "  --picker-origin=https://login.atmosphereaccount.com",
@@ -270,6 +271,29 @@ export async function main(): Promise<void> {
     "/app-icon.svg",
     "picker canonical app-profile identity",
   );
+
+  const hostSearchUrl = new URL(
+    "/api/login/account-hosts",
+    options.pickerOrigin,
+  );
+  hostSearchUrl.search = new URLSearchParams({
+    client_id: options.clientId,
+    q: "signup-smoke-no-matching-host",
+    open: "1",
+    invite: "1",
+  }).toString();
+  const hostSearchResponse = await fetch(hostSearchUrl, {
+    redirect: "manual",
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  assertStatus(hostSearchResponse, hostSearchUrl);
+  assertContentType(hostSearchResponse, hostSearchUrl, "application/json");
+  const hostSearchPayload = await hostSearchResponse.json();
+  if (!Array.isArray(hostSearchPayload.hosts) || hostSearchPayload.error) {
+    throw new Error("picker signup search returned an unavailable directory");
+  }
+  console.log("[smoke:picker-assets] signup search ok on picker origin");
 
   const assets = extractHtmlAssetPaths(pickerHtml);
   if (assets.stylesheets.length === 0) {

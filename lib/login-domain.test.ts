@@ -35,6 +35,15 @@ Deno.test("login domain still redirects ordinary app pages", () => {
   assertEquals(isAllowedLoginHostPathForTest("/privacy"), false);
 });
 
+Deno.test("login signup search stays on origin without admitting other login APIs", () => {
+  assertEquals(isAllowedLoginHostPathForTest("/api/login/account-hosts"), true);
+  assertEquals(
+    isAllowedLoginHostPathForTest("/api/login/account-hosts/other"),
+    false,
+  );
+  assertEquals(isAllowedLoginHostPathForTest("/api/login/admin"), false);
+});
+
 Deno.test("single-origin deployments do not enforce login-host routing", () => {
   assertEquals(
     usesSeparateLoginDomain(

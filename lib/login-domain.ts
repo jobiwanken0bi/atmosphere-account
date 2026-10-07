@@ -18,6 +18,7 @@ const LOGIN_HOST_PATHS = [
   "/oauth/switch",
   "/oauth/forget",
   "/api/login/selection",
+  "/api/login/account-hosts",
   "/api/locale",
   "/favicon.ico",
   "/union.svg",
