@@ -9,6 +9,10 @@
 import { define } from "../../utils.ts";
 import { getAccountHost } from "../../lib/account-hosts.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
+import {
+  accountCreationServiceEndpoint,
+  loadHostOAuthCreationEvidence,
+} from "../../lib/host-oauth-creation.ts";
 import { isCreateAccountHostEligible } from "../../lib/create-account-hosts.ts";
 import { oauthClientConfigForRequest } from "../../lib/atmosphere-origins.ts";
 import {
@@ -137,9 +141,15 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
     });
 
   const host = await getAccountHost(hostName).catch(() => null);
+  const evidence = host
+    ? (await loadHostOAuthCreationEvidence([host]).catch(() => new Map())).get(
+      host.host,
+    )
+    : undefined;
+  const serviceEndpoint = host ? accountCreationServiceEndpoint(host) : null;
   if (
-    !host || !host.serviceEndpoint || !host.signupUrl ||
-    !isCreateAccountHostEligible(host)
+    !host || !serviceEndpoint ||
+    !isCreateAccountHostEligible(host, Date.now(), evidence)
   ) {
     return new Response(null, {
       status: 303,
@@ -187,7 +197,7 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   try {
     const { redirectUrl, state, browserBinding } =
       await startHostAccountCreation(
-        host.serviceEndpoint,
+        serviceEndpoint,
         returnTo,
         intent,
         oauthOptions,

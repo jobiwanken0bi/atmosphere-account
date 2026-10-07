@@ -1,9 +1,24 @@
-import { listSeededAccountHostFallback } from "./account-hosts.ts";
+import {
+  type AccountHost,
+  listSeededAccountHostFallback,
+} from "./account-hosts.ts";
 import {
   HOST_CAPABILITY_OAUTH_ACCOUNT_CREATION,
-  isCreateAccountHostEligible,
+  isCreateAccountHostEligible as eligible,
   supportsOAuthAccountCreation,
 } from "./create-account-hosts.ts";
+
+function isCreateAccountHostEligible(host: AccountHost, at: number): boolean {
+  return eligible(host, at, {
+    host: host.host,
+    serviceEndpoint: "https://host.example.com",
+    supported: host.capabilitiesJson !== null,
+    signupStatus: null,
+    issuer: "https://host.example.com",
+    checkedAt: at,
+    expiresAt: at + 1000,
+  });
+}
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -15,6 +30,7 @@ Deno.test("create-account hosts must enable direct OAuth creation", () => {
   const now = 1_000_000_000;
   const base = {
     ...listSeededAccountHostFallback()[0],
+    host: "host.example.com",
     signupStatus: "open" as const,
     signupUrl: "https://host.example.com/signup",
     serviceEndpoint: "https://host.example.com",
@@ -51,12 +67,13 @@ Deno.test("create-account hosts must enable direct OAuth creation", () => {
     isCreateAccountHostEligible({ ...base, signupStatus: "closed" }, now),
     false,
   );
+  // Direct OAuth does not use this legacy signup link.
   assertEquals(
     isCreateAccountHostEligible({
       ...base,
       signupUrl: "http://host.example.com/signup",
     }, now),
-    false,
+    true,
   );
 });
 

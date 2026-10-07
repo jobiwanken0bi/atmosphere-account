@@ -335,6 +335,35 @@ export async function searchAppsFromAppview(input: {
   });
 }
 
+/** The anonymous shell must receive complete signup choices without a local DB. */
+export async function createAccountHostsFromAppview(input: {
+  query?: string;
+  includeOpen?: boolean;
+  includeInvite?: boolean;
+  clientId?: string;
+}): Promise<
+  import("./create-account-hosts.ts").CreateAccountHostOption[] | null
+> {
+  const remote = appviewBaseUrl();
+  if (!remote) return null;
+  const params = new URLSearchParams({
+    q: input.query ?? "",
+    open: input.includeOpen === false ? "0" : "1",
+    invite: input.includeInvite === false ? "0" : "1",
+  });
+  if (input.clientId) params.set("client_id", input.clientId);
+  const result = await fetchAppviewJson<
+    { hosts: import("./create-account-hosts.ts").CreateAccountHostOption[] }
+  >(
+    remote,
+    `/api/login/account-hosts?${params}`,
+  );
+  if (!Array.isArray(result.hosts)) {
+    throw new Error("invalid account host choices");
+  }
+  return result.hosts;
+}
+
 export async function listHostsFromAppview(
   input: AccountHostDirectoryOptions = {},
 ): Promise<AccountHostDirectoryResult> {

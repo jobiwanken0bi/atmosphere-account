@@ -1,10 +1,19 @@
 import {
   type AccountHost,
-  type HostSignupStatus,
   isAccountHostPubliclyListable,
   normalizeAccountHostPublicHttpsUrl,
 } from "./account-hosts.ts";
-import { listHostsFromAppview } from "./appview-client.ts";
+import {
+  accountCreationServiceEndpoint,
+  currentHostOAuthCreationEvidence,
+  type HostOAuthCreationEvidence,
+  isAccountCreationDiscoveryCandidate,
+  loadHostOAuthCreationEvidence,
+} from "./host-oauth-creation.ts";
+import {
+  createAccountHostsFromAppview,
+  listHostsFromAppview,
+} from "./appview-client.ts";
 import {
   type LoginApp,
   resolveVerifiedPreferredAccountHost,
@@ -42,42 +51,54 @@ interface ListCreateAccountHostOptions {
 export async function listCreateAccountHostOptions(
   options: ListCreateAccountHostOptions = {},
 ): Promise<CreateAccountHostOption[]> {
+  const remote = await createAccountHostsFromAppview({
+    query: options.query,
+    includeOpen: options.includeOpen,
+    includeInvite: options.includeInvite,
+    clientId: options.app?.clientId,
+  });
+  if (remote) {
+    return remote.slice(0, Math.min(72, Math.max(1, options.pageSize ?? 72)));
+  }
   const includeOpen = options.includeOpen !== false;
   const includeInvite = options.includeInvite !== false;
-  const signupStatuses: HostSignupStatus[] = [];
+  const signupStatuses: ("open" | "invite_required")[] = [];
   if (includeOpen) signupStatuses.push("open");
   if (includeInvite) signupStatuses.push("invite_required");
   if (signupStatuses.length === 0) return [];
 
   const query = options.query?.trim() ?? "";
   const [result, preferred] = await Promise.all([
-    listHostsFromAppview({
-      query,
-      signupStatuses,
-      hasSignupUrl: true,
-      trustedOnly: true,
-      sort: "recommended",
-      page: 1,
-      pageSize: Math.min(72, Math.max(1, options.pageSize ?? 72)),
-    }),
+    loadDirectoryCandidates(query),
     options.app
       ? resolveVerifiedPreferredAccountHost(options.app).catch(() => null)
       : Promise.resolve(null),
   ]);
 
   const preferredMatches = preferred &&
-    signupStatuses.includes(preferred.signupStatus) &&
     hostMatchesQuery(preferred, query);
-  const source = preferredMatches ? [preferred, ...result.hosts] : result.hosts;
+  const source = preferredMatches ? [preferred, ...result] : result;
+  const evidence = await loadHostOAuthCreationEvidence(source);
+  const at = Date.now();
   const seen = new Set<string>();
   return source.flatMap((host) => {
-    const signupUrl = normalizeAccountHostPublicHttpsUrl(host.signupUrl);
-    const oauthAccountCreation = supportsOAuthAccountCreation(host);
+    const detected = currentHostOAuthCreationEvidence(
+      host,
+      evidence.get(host.host),
+      at,
+    );
+    const signupStatus = host.signupStatus === "unknown"
+      ? detected?.signupStatus
+      : host.signupStatus;
+    const signupUrl = normalizeAccountHostPublicHttpsUrl(host.signupUrl) ??
+      accountCreationServiceEndpoint(host);
+    const oauthAccountCreation = detected !== null;
     if (
       seen.has(host.host) || !signupUrl ||
-      (host.signupStatus !== "open" &&
-        host.signupStatus !== "invite_required") ||
-      !oauthAccountCreation || !isCreateAccountHostEligible(host)
+      (signupStatus !== "open" && signupStatus !== "invite_required") ||
+      !signupStatuses.includes(signupStatus) ||
+      !oauthAccountCreation ||
+      !isCreateAccountHostEligible(host, at, detected ?? undefined)
     ) {
       return [];
     }
@@ -91,9 +112,9 @@ export async function listCreateAccountHostOptions(
         description: host.description || `Create an account with ${host.host}.`,
         location: host.dataLocation ?? host.inferredLocation,
         avatarUrl: host.avatarUrl,
-        signupStatus: host.signupStatus,
+        signupStatus,
         oauthAccountCreation,
-        statusLabel: host.signupStatus === "open"
+        statusLabel: signupStatus === "open"
           ? "Open signup"
           : "Invite required",
         recommended,
@@ -102,7 +123,27 @@ export async function listCreateAccountHostOptions(
           : null,
       } satisfies CreateAccountHostOption,
     ];
-  });
+  }).slice(0, Math.min(72, Math.max(1, options.pageSize ?? 72)));
+}
+
+export async function loadDirectoryCandidates(
+  query: string,
+  load = listHostsFromAppview,
+): Promise<AccountHost[]> {
+  const hosts: AccountHost[] = [];
+  for (let page = 1; page <= Math.ceil(1000 / 72); page++) {
+    const result = await load({
+      query,
+      sort: "recommended",
+      page,
+      pageSize: 72,
+    });
+    hosts.push(...result.hosts);
+    if (page * Math.max(1, result.pageSize) >= result.total) break;
+  }
+  return hosts.slice(0, 1000).filter((host) =>
+    isAccountCreationDiscoveryCandidate(host)
+  );
 }
 
 export function supportsOAuthAccountCreation(host: AccountHost): boolean {
@@ -127,13 +168,14 @@ export function supportsOAuthAccountCreation(host: AccountHost): boolean {
 export function isCreateAccountHostEligible(
   host: AccountHost,
   at = Date.now(),
+  evidence?: HostOAuthCreationEvidence,
 ): boolean {
-  const trusted = host.verificationStatus === "claimed" ||
-    host.verificationStatus === "verified" || host.source === "seeded";
-  const joinable = host.signupStatus === "open" ||
-    host.signupStatus === "invite_required";
-  return trusted && joinable && supportsOAuthAccountCreation(host) &&
-    normalizeAccountHostPublicHttpsUrl(host.signupUrl) !== null &&
+  const detected = currentHostOAuthCreationEvidence(host, evidence, at);
+  const signupStatus = host.signupStatus === "unknown"
+    ? detected?.signupStatus
+    : host.signupStatus;
+  return detected !== null &&
+    (signupStatus === "open" || signupStatus === "invite_required") &&
     isAccountHostPubliclyListable(host, at);
 }
 
