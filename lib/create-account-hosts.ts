@@ -81,7 +81,7 @@ export async function listCreateAccountHostOptions(
   const evidence = await loadHostOAuthCreationEvidence(source);
   const at = Date.now();
   const seen = new Set<string>();
-  return source.flatMap((host) => {
+  const choices = source.flatMap((host) => {
     const detected = currentHostOAuthCreationEvidence(
       host,
       evidence.get(host.host),
@@ -123,7 +123,25 @@ export async function listCreateAccountHostOptions(
           : null,
       } satisfies CreateAccountHostOption,
     ];
-  }).slice(0, Math.min(72, Math.max(1, options.pageSize ?? 72)));
+  });
+  return sortCreateAccountHostOptions(choices, source)
+    .slice(0, Math.min(72, Math.max(1, options.pageSize ?? 72)));
+}
+
+/** Open signup first, then popularity within each signup group. */
+export function sortCreateAccountHostOptions(
+  choices: CreateAccountHostOption[],
+  hosts: AccountHost[],
+): CreateAccountHostOption[] {
+  const accountCounts = new Map(
+    hosts.map((host) => [host.host, host.observedAccountCount]),
+  );
+  return [...choices].sort((a, b) =>
+    Number(a.signupStatus === "invite_required") -
+      Number(b.signupStatus === "invite_required") ||
+    (accountCounts.get(b.host) ?? 0) - (accountCounts.get(a.host) ?? 0) ||
+    a.host.localeCompare(b.host)
+  );
 }
 
 export async function loadDirectoryCandidates(

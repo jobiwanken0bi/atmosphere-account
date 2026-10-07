@@ -5,6 +5,7 @@ import {
 import {
   HOST_CAPABILITY_OAUTH_ACCOUNT_CREATION,
   isCreateAccountHostEligible as eligible,
+  sortCreateAccountHostOptions,
   supportsOAuthAccountCreation,
 } from "./create-account-hosts.ts";
 
@@ -110,4 +111,38 @@ Deno.test("selfhosted.social advertises direct OAuth account creation", () => {
   assertEquals(!!host, true);
   assertEquals(host?.signupUrl, "https://selfhosted.social/signup");
   assertEquals(supportsOAuthAccountCreation(host!), true);
+});
+
+Deno.test("signup choices put popular open hosts before invite hosts, including app recommendations", () => {
+  const base = listSeededAccountHostFallback()[0];
+  const hosts = [
+    { ...base, host: "invite-big.example", observedAccountCount: 1000 },
+    { ...base, host: "open-small.example", observedAccountCount: 10 },
+    { ...base, host: "invite-small.example", observedAccountCount: 2 },
+    { ...base, host: "open-big.example", observedAccountCount: 100 },
+  ];
+  const choices = hosts.map((host) => ({
+    name: host.host,
+    host: host.host,
+    href: `https://${host.host}/signup`,
+    description: "Test host",
+    location: null,
+    avatarUrl: null,
+    signupStatus: host.host.startsWith("open")
+      ? "open" as const
+      : "invite_required" as const,
+    oauthAccountCreation: true,
+    statusLabel: "",
+    recommended: host.host === "invite-big.example",
+    recommendationLabel: host.host === "invite-big.example"
+      ? "Recommended by Test app"
+      : null,
+  }));
+  const sorted = sortCreateAccountHostOptions(choices, hosts);
+  assertEquals(
+    sorted.map((host) => host.host).join(","),
+    "open-big.example,open-small.example,invite-big.example,invite-small.example",
+  );
+  assertEquals(sorted[2].recommendationLabel, "Recommended by Test app");
+  assertEquals(choices[0].host, "invite-big.example");
 });

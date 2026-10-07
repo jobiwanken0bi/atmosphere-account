@@ -737,9 +737,6 @@ function CreateAccountHostChooser(
             );
         })}
       </div>
-      <p class="signin-host-privacy-note">
-        Passwords and invite codes stay with the account host you choose.
-      </p>
     </div>
   );
 }
