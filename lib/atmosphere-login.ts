@@ -1395,7 +1395,7 @@ export async function upsertLoginAppWithClient(
           )
         )
           AND (
-            ? IS NULL OR
+            CAST(? AS TEXT) IS NULL OR
             COALESCE(login_app.environment_revision, '') = COALESCE(?, '')
           )
           AND ? = 0
