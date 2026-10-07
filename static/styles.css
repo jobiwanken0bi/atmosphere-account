@@ -10912,39 +10912,28 @@ body {
 
 .signin-create-account-link {
   display: flex;
-  min-height: 3.5rem;
+  min-height: 2.75rem;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  border: 1px solid rgba(42, 90, 168, 0.15);
-  border-radius: 16px;
-  padding: 0.75rem 0.85rem;
-  background: rgba(42, 90, 168, 0.06);
+  justify-content: center;
+  border-radius: 8px;
+  padding: 0.5rem;
   color: #254a9e;
-  text-decoration: none;
-}
-
-.signin-create-account-link > span:first-child {
-  display: grid;
-  gap: 0.12rem;
-}
-
-.signin-create-account-link strong {
   font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 74, 158, 0.35);
+  text-underline-offset: 0.2em;
 }
 
-.signin-create-account-link small {
-  color: rgba(18, 26, 47, 0.58);
-  font-size: 0.76rem;
-  line-height: 1.35;
+.signin-create-account-link:hover {
+  text-decoration-color: currentColor;
 }
 
-.signin-create-account-link:hover,
 .signin-create-account-link:focus-visible {
-  border-color: rgba(42, 90, 168, 0.38);
-  background: rgba(42, 90, 168, 0.1);
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(42, 90, 168, 0.12);
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .signin-create-explainer {
