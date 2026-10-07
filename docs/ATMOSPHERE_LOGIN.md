@@ -105,11 +105,13 @@ offered. Directory maintenance discovers and caches this support independently
 of host-owned profile/capability records. Public reads use cached evidence only;
 `deno task host:signup:discover --force` refreshes it explicitly. Evidence is
 bound to the exact current service endpoint, rechecked daily, and expires after
-48 hours. Open signup and invite-required status come from directory enrollment
-metadata (or `describeServer` for otherwise unknown trusted hosts), never from
-`prompt=create` alone. Login with Atmosphere starts OAuth from that host with
-`prompt=create`; the host owns signup, invite-code entry, credentials, and
-recovery, then returns the new account to the picker. The picker immediately
+48 hours; negative results retry after 15 minutes. The background discovery step
+has a separate 45-second budget and non-abort failures do not prevent existing
+profile maintenance. Open signup and invite-required status come from directory
+enrollment metadata (or `describeServer` for otherwise unknown trusted hosts),
+never from `prompt=create` alone. Login with Atmosphere starts OAuth from that
+host with `prompt=create`; the host owns signup, invite-code entry, credentials,
+and recovery, then returns the new account to the picker. The picker immediately
 hands the account back to the requesting app, which starts its own AT Protocol
 OAuth flow. Login with Atmosphere requests only the authentication-level
 `atproto` scope for this picker leg. Picker results must also be recently active

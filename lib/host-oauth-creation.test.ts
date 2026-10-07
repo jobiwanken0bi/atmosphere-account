@@ -17,6 +17,7 @@ import {
   listAccountCreationCandidates,
   loadHostOAuthCreationEvidence,
   refreshHostOAuthCreationEvidence,
+  refreshHostOAuthCreationForMaintenance,
 } from "./host-oauth-creation.ts";
 import {
   isCreateAccountHostEligible,
@@ -425,4 +426,31 @@ Deno.test({
       await closePostgresExecuteClient(db);
     }
   },
+});
+
+Deno.test("signup discovery failure cannot prevent other directory maintenance", async () => {
+  assertEquals(
+    await refreshHostOAuthCreationForMaintenance(
+      {},
+      () => Promise.reject(new Error("private error details")),
+    ),
+    { candidates: 0, checked: 0, supported: 0, error: "Error" },
+  );
+  const controller = new AbortController();
+  await assertRejects(() =>
+    refreshHostOAuthCreationForMaintenance(
+      { signal: controller.signal },
+      () => {
+        controller.abort();
+        return Promise.reject(new Error("cancelled"));
+      },
+    )
+  );
+  assertEquals(
+    await refreshHostOAuthCreationForMaintenance({}, (options) => {
+      if (!options?.signal) throw new Error("missing bounded discovery signal");
+      return Promise.resolve({ candidates: 1, checked: 1, supported: 1 });
+    }),
+    { candidates: 1, checked: 1, supported: 1 },
+  );
 });

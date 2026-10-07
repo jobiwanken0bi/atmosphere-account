@@ -239,3 +239,30 @@ export async function refreshHostOAuthCreationEvidence(options: {
   }
   return summary;
 }
+
+/** Isolate optional discovery failures and reserve time for existing maintenance. */
+export async function refreshHostOAuthCreationForMaintenance(
+  options: { signal?: AbortSignal } = {},
+  refresh = refreshHostOAuthCreationEvidence,
+): Promise<
+  { candidates: number; checked: number; supported: number; error?: string }
+> {
+  options.signal?.throwIfAborted();
+  const deadline = AbortSignal.timeout(45_000);
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, deadline])
+    : deadline;
+  try {
+    return await refresh({ signal });
+  } catch (error) {
+    options.signal?.throwIfAborted();
+    return {
+      candidates: 0,
+      checked: 0,
+      supported: 0,
+      error: deadline.aborted
+        ? "deadline_exceeded"
+        : (error instanceof Error ? error.name : "discovery_unavailable"),
+    };
+  }
+}

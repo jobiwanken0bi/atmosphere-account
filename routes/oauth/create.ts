@@ -142,7 +142,9 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
 
   const host = await getAccountHost(hostName).catch(() => null);
   const evidence = host
-    ? (await loadHostOAuthCreationEvidence([host])).get(host.host)
+    ? (await loadHostOAuthCreationEvidence([host]).catch(() => new Map())).get(
+      host.host,
+    )
     : undefined;
   const serviceEndpoint = host ? accountCreationServiceEndpoint(host) : null;
   if (
