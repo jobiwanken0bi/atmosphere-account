@@ -9,6 +9,7 @@ import { getAppUser } from "../lib/account-types.ts";
 import { listCreateAccountHostOptions } from "../lib/create-account-hosts.ts";
 import {
   type LoginApp,
+  loginRequestToPath,
   readLoginRequest,
   resolveLoginAppForRequest,
 } from "../lib/atmosphere-login.ts";
@@ -59,6 +60,13 @@ export const handler = define.handlers({
         "This sign-in link is invalid. Return to the previous page and try again.",
         { status: 400, headers: { "cache-control": "no-store" } },
       );
+    }
+    const pickerRedirect = loginSelectionSignInRedirect(request);
+    if (pickerRedirect) {
+      return new Response(null, {
+        status: 303,
+        headers: { location: pickerRedirect, "cache-control": "no-store" },
+      });
     }
     const {
       next,
@@ -254,6 +262,42 @@ export function readSignInAuthorizationRequest(url: URL) {
     permissionState,
     createError: isAccountCreationError(createErrorRaw) ? createErrorRaw : null,
   };
+}
+
+/** Old picker sign-in links now return to the single inline account entry. */
+export function loginSelectionSignInRedirect(
+  request: ReturnType<typeof readSignInAuthorizationRequest>,
+): string | null {
+  if (
+    request.requestedMode !== "signin" ||
+    request.continuation !== "login_selection"
+  ) return null;
+  if (
+    !hasValidLoginSelectionContinuationBinding(
+      request.next,
+      request.continuation,
+      request.intent ?? null,
+      request.action,
+      request.capabilities,
+    )
+  ) return null;
+  const source = new URL(request.next!, "https://login.invalid");
+  const picker = new URL(
+    loginRequestToPath(readLoginRequest(source)),
+    source.origin,
+  );
+  picker.searchParams.set("entry", "manual");
+  if (request.initialHandle) {
+    picker.searchParams.set("handle", request.initialHandle);
+  }
+  const error = source.searchParams.get("login_error") ??
+    (request.permissionState === "denied"
+      ? "authorization_cancelled"
+      : request.permissionState
+      ? "authorization_failed"
+      : null);
+  if (error) picker.searchParams.set("login_error", error);
+  return `${picker.pathname}${picker.search}`;
 }
 
 function safeHandle(raw: string | null): string | undefined {

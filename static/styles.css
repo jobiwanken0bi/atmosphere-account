@@ -12205,28 +12205,39 @@ body {
   gap: 0.42rem;
 }
 
-.login-picker-secondary-symbol {
-  font-size: 1.15em;
-  font-weight: 700;
-  line-height: 1;
+.signin-account-entry {
+  margin-top: 0.8rem;
 }
 
-.login-picker-add-account > summary {
+.signin-account-entry > summary {
   box-sizing: border-box;
   cursor: pointer;
   list-style: none;
 }
 
-.login-picker-add-account > summary::-webkit-details-marker {
+.signin-account-entry > summary::-webkit-details-marker {
   display: none;
 }
 
-.login-picker-add-account-body {
-  margin-top: 0.75rem;
-  border: 1px solid rgba(18, 26, 47, 0.08);
-  border-radius: 20px;
-  padding: clamp(0.8rem, 2vw, 1rem);
-  background: rgba(255, 255, 255, 0.28);
+.signin-account-entry-symbol {
+  font-size: 1.15em;
+  font-weight: 700;
+  line-height: 1;
+  transition: transform 220ms ease;
+}
+
+.signin-account-entry[open] .signin-account-entry-symbol {
+  transform: rotate(45deg);
+}
+
+.signin-account-entry-content {
+  padding-top: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signin-account-entry-symbol {
+    transition: none;
+  }
 }
 
 .login-picker-empty {
@@ -12305,8 +12316,7 @@ body {
   background: transparent;
 }
 
-.dark-phase .signin-host-search input,
-.dark-phase .login-picker-add-account-body {
+.dark-phase .signin-host-search input {
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.07);
   color: #f3f5fb;

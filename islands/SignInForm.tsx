@@ -1,5 +1,5 @@
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
-import BskyIcon from "../components/icons/BskyIcon.tsx";
+import AccountEntryDisclosure from "../components/AccountEntryDisclosure.tsx";
 import { useT } from "../i18n/mod.ts";
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 import type { CreateAccountHostOption } from "../lib/create-account-hosts.ts";
@@ -86,8 +86,6 @@ export default function SignInForm(
     rememberedAccounts.length > 0;
   const manualInitiallyVisible = !hasRememberedAccounts || !!initialHandle ||
     manualAccountEntry;
-  const enhanceFlow = mode === "signin" && (rich || hasRememberedAccounts);
-  const initialSigninView = manualInitiallyVisible ? "manual" : "saved";
   const continueLabel = submitLabel ?? "Continue";
   const normalizedAction = action ?? "account";
   const canCreateAccount = allowAccountCreation &&
@@ -115,25 +113,6 @@ export default function SignInForm(
   const createAccountHref = canCreateAccount
     ? accountCreationFallbackHref(loginHref)
     : null;
-  const savedAccountsHref = signinFallbackHref({
-    returnTo,
-    intent,
-    capabilities,
-    action,
-    targetName,
-    continuation: loginSelectionContinuation,
-    chooseAnotherAccount,
-  });
-  const anotherAccountHref = signinFallbackHref({
-    returnTo,
-    intent,
-    capabilities,
-    action,
-    targetName,
-    continuation: loginSelectionContinuation,
-    chooseAnotherAccount: true,
-    manualAccountEntry: true,
-  });
 
   if (mode === "create") {
     return (
@@ -210,34 +189,13 @@ export default function SignInForm(
   return (
     <div
       class={`signin-flow ${rich ? "signin-flow--rich" : ""}`}
-      data-signin-flow={enhanceFlow ? "true" : undefined}
-      data-initial-mode="signin"
-      data-initial-signin-view={initialSigninView}
       data-remembered-count={String(
         hasRememberedAccounts ? rememberedAccounts.length : 0,
       )}
     >
       <section>
         {hasRememberedAccounts && (
-          <div
-            class="signin-subview signin-saved-view"
-            data-signin-saved-view="true"
-            hidden={manualInitiallyVisible}
-          >
-            {rich && (
-              <div class="signin-rich-header">
-                <h2>
-                  {chooseAnotherAccount
-                    ? "Choose another account"
-                    : "Connect your Atmosphere account"}
-                </h2>
-                <p>
-                  {chooseAnotherAccount
-                    ? "Continue with another account saved on this device, or use a different account."
-                    : "Choose an account saved on this device, or add another Atmosphere account."}
-                </p>
-              </div>
-            )}
+          <div class="signin-subview signin-saved-view">
             <div class="signin-account-list" aria-label="Saved accounts">
               <p class="signin-account-list-label">Saved accounts</p>
               {rememberedAccounts.map((account, index) => (
@@ -324,64 +282,14 @@ export default function SignInForm(
                   </button>
                 </form>
               ))}
-              <a
-                href={anotherAccountHref}
-                class="signin-account-row signin-account-row--other"
-                data-signin-show-manual="true"
-              >
-                <span
-                  class="signin-account-avatar signin-account-avatar--plus"
-                  aria-hidden="true"
-                >
-                  +
-                </span>
-                <span class="signin-account-copy">
-                  <strong>Use another account</strong>
-                  <span>Enter its Atmosphere handle</span>
-                </span>
-                <span class="signin-account-status">Continue</span>
-              </a>
             </div>
           </div>
         )}
 
-        <div
-          class="signin-subview signin-manual-view"
-          data-signin-manual-view="true"
-          hidden={!manualInitiallyVisible}
+        <ManualAccountEntry
+          open={manualInitiallyVisible}
+          disclosure={hasRememberedAccounts}
         >
-          {hasRememberedAccounts && (
-            <a
-              href={savedAccountsHref}
-              class="signin-manual-back"
-              data-signin-show-saved="true"
-            >
-              <span aria-hidden="true">←</span> Saved accounts
-            </a>
-          )}
-          {rich && (
-            <div class="signin-rich-header">
-              <h2>
-                {hasRememberedAccounts
-                  ? "Choose another account"
-                  : "Enter your account handle"}
-              </h2>
-              <p>
-                Enter your Atmosphere handle — the same one you use with Bluesky
-                or other apps in the Atmosphere.
-              </p>
-            </div>
-          )}
-          <div class="signin-bluesky-note">
-            <span class="signin-bluesky-note-icon" aria-hidden="true">
-              <BskyIcon />
-            </span>
-            <p>
-              <strong>Already use Bluesky?</strong>{" "}
-              You already have an Atmosphere account. Enter your Bluesky handle
-              below.
-            </p>
-          </div>
           <form
             method="POST"
             action="/oauth/login"
@@ -481,10 +389,22 @@ export default function SignInForm(
               <span aria-hidden="true">→</span>
             </a>
           )}
-        </div>
+        </ManualAccountEntry>
       </section>
     </div>
   );
+}
+
+function ManualAccountEntry(
+  { children, open, disclosure }: {
+    children: import("preact").ComponentChildren;
+    open: boolean;
+    disclosure: boolean;
+  },
+) {
+  return disclosure
+    ? <AccountEntryDisclosure open={open}>{children}</AccountEntryDisclosure>
+    : <div class="signin-manual-view">{children}</div>;
 }
 
 function isLoginSelectionReturnTo(returnTo?: string): boolean {

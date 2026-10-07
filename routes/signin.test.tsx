@@ -11,6 +11,7 @@ import {
   authMediaContext,
   AuthorizationExitLink,
   contextualAuthorizationBackNavigation,
+  loginSelectionSignInRedirect,
   permissionStatusCopy,
   PermissionUpgradeForm,
   readSignInAuthorizationRequest,
@@ -399,7 +400,8 @@ Deno.test("another-account mode keeps the current session out of the chooser dec
     oauthConfigured: true,
   }));
 
-  assertStringIncludes(html, "Enter your account handle");
+  assertStringIncludes(html, 'name="handle"');
+  assertEquals(html.includes("Enter your account handle"), false);
   assertStringIncludes(html, "Not now");
   assertStringIncludes(html, 'role="alert"');
   assertEquals(html.includes("Currently signed in"), false);
@@ -439,12 +441,12 @@ Deno.test("another-account mode lists only other saved accounts before manual en
     oauthConfigured: true,
   }));
 
-  assertStringIncludes(html, 'data-initial-signin-view="saved"');
+  assertStringIncludes(html, 'data-signin-disclosure="true"');
   assertStringIncludes(html, 'name="did" value="did:plc:bob"');
   assertEquals(html.includes('name="did" value="did:plc:alice"'), false);
-  assertStringIncludes(html, "Choose another account");
-  assertStringIncludes(html, "Use another account");
-  assertStringIncludes(html, "entry=manual");
+  assertEquals(html.includes("Choose another account"), false);
+  assertStringIncludes(html, "Add another account");
+  assertEquals(html.includes("data-signin-show-manual"), false);
   assertStringIncludes(html, 'href="/hosts/pds.example.com/claim"');
   assertStringIncludes(html, "← Back to claim");
   assertStringIncludes(html, 'data-submit-once="true"');
@@ -454,3 +456,57 @@ Deno.test("another-account mode lists only other saved accounts before manual en
 function count(value: string, needle: string): number {
   return value.split(needle).length - 1;
 }
+
+Deno.test("legacy picker sign-in links preserve binding in the single picker", () => {
+  const next =
+    "/login/select?client_id=https%3A%2F%2Fapp.example%2Fclient.json&return_uri=https%3A%2F%2Fapp.example%2Fcallback&state=opaque&scope=atproto&selection=old-intent";
+  const signin = new URL("https://login.atmosphereaccount.com/signin");
+  signin.search = new URLSearchParams({
+    next,
+    continuation: "login_selection",
+    action: "account",
+    capability: "identity",
+    choose: "another",
+    handle: "@Alice.Example",
+    permission: "failed",
+  }).toString();
+  const request = readSignInAuthorizationRequest(signin);
+  const target = new URL(loginSelectionSignInRedirect(request)!, signin.origin);
+  assertEquals(target.pathname, "/login/select");
+  for (const key of ["client_id", "return_uri", "state", "scope"]) {
+    assertEquals(
+      target.searchParams.get(key),
+      new URL(next, signin.origin).searchParams.get(key),
+    );
+  }
+  assertEquals(target.searchParams.get("entry"), "manual");
+  assertEquals(target.searchParams.get("handle"), "alice.example");
+  assertEquals(target.searchParams.get("login_error"), "authorization_failed");
+  assertEquals(target.searchParams.has("selection"), false);
+  assertEquals(
+    loginSelectionSignInRedirect({ ...request, requestedMode: "create" }),
+    null,
+  );
+  assertEquals(
+    loginSelectionSignInRedirect({
+      ...request,
+      capabilities: ["app", "media"],
+    }),
+    null,
+  );
+  assertEquals(
+    loginSelectionSignInRedirect({
+      ...request,
+      next: "https://evil.example/login/select",
+    }),
+    null,
+  );
+  assertEquals(
+    loginSelectionSignInRedirect(
+      readSignInAuthorizationRequest(
+        new URL("https://atmosphereaccount.com/signin?next=%2Faccount"),
+      ),
+    ),
+    null,
+  );
+});

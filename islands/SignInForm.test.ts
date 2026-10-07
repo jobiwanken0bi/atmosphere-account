@@ -154,7 +154,8 @@ Deno.test("sign-in mode links to one canonical contextual create page", () => {
   assertEquals(url.searchParams.get("next"), "/apps/tangled?review=compose");
   assertEquals(url.searchParams.get("action"), "review");
   assertEquals(url.searchParams.getAll("capability"), ["review"]);
-  assertStringIncludes(html, "Already use Bluesky?");
+  assertEquals(html.includes("Already use Bluesky?"), false);
+  assertEquals(html.includes("Enter your account handle"), false);
   assertStringIncludes(html, "Login with Atmosphere");
   assertStringIncludes(html, 'data-submit-label="Continue"');
   assertStringIncludes(
