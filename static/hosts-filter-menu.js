@@ -11,6 +11,13 @@ document.addEventListener("pointerdown", (event) => {
   closeMenus();
 });
 
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeMenus();
-});
+for (const menu of menus) {
+  menu.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !menu.hasAttribute("open")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    menu.removeAttribute("open");
+    menu.querySelector("summary")?.focus();
+  });
+  menu.setAttribute("data-filter-keyboard-ready", "true");
+}

@@ -151,14 +151,17 @@ export default function AdminReviewReportRow(p: Props) {
           : `${"★".repeat(p.rating!)} ${p.body || "(no text)"}`}
       </p>
       <div class="admin-report-actions">
-        <input
-          type="text"
-          class="admin-report-notes-input"
-          placeholder={p.copy.notePlaceholder}
-          value={notes.value}
-          onInput={(e) =>
-            notes.value = (e.currentTarget as HTMLInputElement).value}
-        />
+        <label class="admin-report-notes-field">
+          <span>{p.copy.notePlaceholder}</span>
+          <input
+            type="text"
+            class="admin-report-notes-input"
+            placeholder={p.copy.notePlaceholder}
+            value={notes.value}
+            onInput={(e) =>
+              notes.value = (e.currentTarget as HTMLInputElement).value}
+          />
+        </label>
         <button
           type="button"
           class="profile-form-button-primary"

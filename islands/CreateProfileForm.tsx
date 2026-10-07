@@ -1546,7 +1546,7 @@ export default function CreateProfileForm(
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
-                  hidden
+                  class="sr-only"
                   onChange={onBannerChange}
                 />
               </label>
@@ -1556,7 +1556,7 @@ export default function CreateProfileForm(
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
-                    hidden
+                    class="sr-only"
                     onChange={onBannerChange}
                   />
                 </label>
@@ -1578,7 +1578,7 @@ export default function CreateProfileForm(
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
-                  hidden
+                  class="sr-only"
                   onChange={onBannerChange}
                 />
               </label>
@@ -1613,7 +1613,7 @@ export default function CreateProfileForm(
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
-              hidden
+              class="sr-only"
               onChange={onAvatarChange}
             />
           </label>
@@ -1857,7 +1857,7 @@ export default function CreateProfileForm(
                       type="file"
                       accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
                       multiple
-                      hidden
+                      class="sr-only"
                       onChange={onScreenshotsChange}
                     />
                   </label>
@@ -1879,7 +1879,7 @@ export default function CreateProfileForm(
                   type="file"
                   accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
                   multiple
-                  hidden
+                  class="sr-only"
                   onChange={onScreenshotsChange}
                 />
               </label>

@@ -474,13 +474,19 @@ function CreateAccountHostChooser(
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") menu.open = false;
+      if (event.key !== "Escape" || !menu.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      menu.open = false;
+      menu.querySelector("summary")?.focus();
     };
     document.addEventListener("pointerdown", closeOnPointerDown);
-    document.addEventListener("keydown", closeOnEscape);
+    menu.addEventListener("keydown", closeOnEscape);
+    menu.setAttribute("data-filter-keyboard-ready", "true");
     return () => {
       document.removeEventListener("pointerdown", closeOnPointerDown);
-      document.removeEventListener("keydown", closeOnEscape);
+      menu.removeEventListener("keydown", closeOnEscape);
+      menu.removeAttribute("data-filter-keyboard-ready");
     };
   }, []);
 
@@ -620,6 +626,7 @@ function CreateAccountHostChooser(
               onClick={() => {
                 setSignupFilter(draftSignupFilter);
                 filterMenuRef.current?.removeAttribute("open");
+                filterMenuRef.current?.querySelector("summary")?.focus();
               }}
             >
               Apply

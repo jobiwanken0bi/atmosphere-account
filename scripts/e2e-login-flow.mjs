@@ -78,6 +78,8 @@ async function main() {
       timeout: 15_000,
     });
     await smokePublicExperience(browser);
+    await smokeDocsAccessibility(browser);
+    await smokeEarlyAvatarFailure(browser);
     console.log("[e2e:login] Chromium launched; opening picker");
     const page = await browser.newPage();
     page.setDefaultTimeout(10_000);
@@ -595,7 +597,124 @@ async function smokePublicExperience(browser) {
       throw new Error("universal login heading is not canonical");
     }
     await assertMinimumTarget(page, ".signin-form-submit", 44);
+    for (const path of ["/apps/all", "/hosts"]) {
+      await openSuccessfulPage(page, `${ORIGIN}${path}`);
+      await assertFilterEscapeFocus(page, ".hosts-filter-menu");
+    }
+    await openSuccessfulPage(page, createUrl.href);
+    await assertFilterEscapeFocus(page, ".signin-host-filter-menu");
   } finally {
+    await page.close();
+  }
+}
+
+async function assertFilterEscapeFocus(page, selector) {
+  console.log(
+    `[e2e:login] checking filter focus at ${new URL(page.url()).pathname}`,
+  );
+  const menu = page.locator(selector);
+  await page.locator(`${selector}[data-filter-keyboard-ready="true"]`)
+    .waitFor();
+  const summary = menu.locator("summary");
+  await summary.press("Enter");
+  const field = menu.locator("select").first();
+  await field.waitFor({ state: "visible" });
+  await field.press("Escape");
+  await page.waitForFunction((selector) => {
+    const menu = document.querySelector(selector);
+    return !menu.open &&
+      document.activeElement === menu.querySelector("summary");
+  }, selector);
+}
+
+async function smokeDocsAccessibility(browser) {
+  const page = await browser.newPage();
+  page.setDefaultTimeout(10_000);
+  try {
+    for (const width of [320, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (
+        const path of ["/docs", "/docs/atmosphere-login", "/docs/reference"]
+      ) {
+        await openSuccessfulPage(page, `${ORIGIN}${path}`);
+        await assertPageShell(page, `${path} ${width}px`);
+        await assertMinimumTarget(page, ".docs-toc-summary", 44);
+        await assertMinimumTarget(page, ".nav-logo", 44);
+        const undersizedActions = await page.locator(".docs-hero-cta")
+          .evaluateAll((nodes) =>
+            nodes.some((node) => {
+              const box = node.getBoundingClientRect();
+              return box.height < 43.5 || box.width < 43.5;
+            })
+          );
+        if (undersizedActions) throw new Error("docs hero action is too small");
+        if (await page.locator(".docs-table-wrap").count()) {
+          const table = page.locator(".docs-table-wrap").first();
+          await table.press("ArrowRight");
+          await page.waitForFunction(() => {
+            const table = document.querySelector(".docs-table-wrap");
+            return document.activeElement === table &&
+              (table.scrollWidth <= table.clientWidth || table.scrollLeft > 0);
+          });
+        }
+        if (await page.locator(".docs-code pre").count()) {
+          const code = page.locator(".docs-code pre").first();
+          const copyTargets = await page.locator(".docs-code-copy").evaluateAll(
+            (buttons) =>
+              buttons.every((button) => {
+                const box = button.getBoundingClientRect();
+                return box.width >= 44 && box.height >= 44;
+              }),
+          );
+          if (!copyTargets) {
+            throw new Error("code-copy targets are smaller than 44px");
+          }
+          if (!await code.getAttribute("aria-label")) {
+            throw new Error("scrolling code example has no accessible name");
+          }
+          await code.press("ArrowRight");
+          await page.waitForFunction(() => {
+            const code = document.querySelector(".docs-code pre");
+            return document.activeElement === code &&
+              (code.scrollWidth <= code.clientWidth || code.scrollLeft > 0);
+          });
+        }
+      }
+    }
+    console.log(
+      "[e2e:login] ok docs reflow, touch targets and keyboard code scrolling",
+    );
+  } finally {
+    await page.close();
+  }
+}
+
+async function smokeEarlyAvatarFailure(browser) {
+  const page = await browser.newPage();
+  let releaseScripts;
+  const scriptsReady = new Promise((resolve) => releaseScripts = resolve);
+  try {
+    await page.goto(`${ORIGIN}/dev/login-picker?current=local-picker.test`);
+    await page.route(
+      "**/api/me/avatar*",
+      (route) => route.fulfill({ status: 404, body: "No avatar" }),
+    );
+    await page.route(/\.js(?:\?|$)/, async (route) => {
+      await scriptsReady;
+      await route.continue();
+    });
+    await page.goto(`${ORIGIN}/docs`, { waitUntil: "commit" });
+    await page.waitForFunction(() => {
+      const image = document.querySelector(".account-menu-avatar img");
+      return image?.complete && image.naturalWidth === 0;
+    });
+    releaseScripts();
+    await page.locator(".account-menu-avatar-initial").waitFor({
+      state: "visible",
+    });
+    console.log("[e2e:login] ok avatar failure before hydration uses initials");
+  } finally {
+    releaseScripts();
     await page.close();
   }
 }

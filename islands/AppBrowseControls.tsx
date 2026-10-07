@@ -38,14 +38,21 @@ export default function AppBrowseControls(
     }
 
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") closeMenu();
+      if (event.key !== "Escape" || !menuRef.current?.open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+      menuRef.current.querySelector("summary")?.focus();
     }
 
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
+    const menu = menuRef.current;
+    menu?.addEventListener("keydown", onKey);
+    menu?.setAttribute("data-filter-keyboard-ready", "true");
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
+      menu?.removeEventListener("keydown", onKey);
+      menu?.removeAttribute("data-filter-keyboard-ready");
     };
   }, []);
 

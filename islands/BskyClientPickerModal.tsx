@@ -1,5 +1,6 @@
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
+import { createPortal } from "preact/compat";
 import { BSKY_CLIENTS } from "../lib/bsky-clients.ts";
 import { useT } from "../i18n/mod.ts";
 import { useDialog } from "../lib/use-dialog.ts";
@@ -35,7 +36,7 @@ export default function BskyClientPickerModal(
   // Esc to close, focus trap, and focus restore.
   const dialogRef = useDialog<HTMLDivElement>(open, onClose);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
   const toggle = (id: string) => {
     const cur = draft.value;
@@ -44,7 +45,7 @@ export default function BskyClientPickerModal(
 
   const empty = draft.value.length === 0;
 
-  return (
+  return createPortal(
     <div
       class="modal-backdrop"
       onClick={(e) => {
@@ -63,7 +64,7 @@ export default function BskyClientPickerModal(
           <h2 id="bsky-picker-title" class="modal-title">{t.title}</h2>
           <p class="modal-body-text">{t.body}</p>
         </header>
-        <ul class="bsky-client-list" role="listbox" aria-multiselectable="true">
+        <ul class="bsky-client-list">
           {BSKY_CLIENTS.map((c) => {
             const isSel = draft.value.includes(c.id);
             return (
@@ -113,6 +114,7 @@ export default function BskyClientPickerModal(
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

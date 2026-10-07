@@ -514,6 +514,12 @@ interface AvatarProps {
 
 function Avatar({ url, handle }: AvatarProps) {
   const failed = useSignal(false);
+  const imageRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const image = imageRef.current;
+    // An SSR image can fail before hydration attaches its error listener.
+    failed.value = !!url && !!image?.complete && image.naturalWidth === 0;
+  }, [url]);
   const initial = handle?.[0]?.toUpperCase() ?? "?";
   const showImage = !!url && !failed.value;
   return (
@@ -521,6 +527,7 @@ function Avatar({ url, handle }: AvatarProps) {
       {showImage
         ? (
           <img
+            ref={imageRef}
             src={url!}
             alt=""
             loading="eager"

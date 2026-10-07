@@ -279,7 +279,8 @@ h1, h2, h3, h4 {
   gap: 0.5rem;
   text-decoration: none;
   color: #0e1428;
-  min-width: 0;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
 }
 
 .nav-logo img {
@@ -3973,6 +3974,7 @@ h1, h2, h3, h4 {
 }
 
 .badge-download-btn {
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4189,6 +4191,14 @@ h1, h2, h3, h4 {
   max-width: 36rem;
 }
 
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
 .footer-quote {
   font-style: italic;
   color: rgba(18, 26, 47, 0.58);
@@ -4200,13 +4210,14 @@ h1, h2, h3, h4 {
 a.back-to-top {
   display: inline-flex;
   align-items: center;
+  min-height: 2.75rem;
   gap: 0.4rem;
   margin-top: 2rem;
   padding: 0.5rem 1.1rem;
   font-family: inherit;
   font-size: 0.8rem;
   font-weight: 500;
-  color: rgba(18, 26, 47, 0.46);
+  color: rgba(18, 26, 47, 0.68);
   text-decoration: none;
   background: none;
   border: 1px solid rgba(18, 26, 47, 0.12);
@@ -4826,6 +4837,9 @@ body {
   display: inline;
 }
 .text-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
   background: none;
   border: 0;
   padding: 0;
@@ -4869,7 +4883,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.42rem;
-  min-height: 2.25rem;
+  min-height: 44px;
   padding: 0.44rem 0.88rem;
   border-radius: 999px;
   background: rgba(42, 90, 168, 0.08);
@@ -4923,7 +4937,7 @@ body {
 }
 .explore-search-input {
   flex: 1;
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   border: 0;
   background: transparent;
   font: inherit;
@@ -4932,6 +4946,7 @@ body {
   color: #0e1428;
 }
 .explore-search-submit {
+  min-height: 44px;
   border: 0;
   border-radius: 999px;
   padding: 0.55rem 1.1rem;
@@ -4976,7 +4991,7 @@ body {
 .app-browse-search-input {
   flex: 1;
   min-width: 0;
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   border: 0;
   background: transparent;
   color: #0e1428;
@@ -5667,7 +5682,7 @@ body {
   box-sizing: border-box;
   flex: 0 0 auto;
   min-width: 4.85rem;
-  min-height: 2.2rem;
+  min-height: 2.75rem;
   padding: 0.4rem 0.86rem;
   border-radius: 999px;
   color: #254a9e;
@@ -7200,6 +7215,7 @@ body {
 .profile-hero-action {
   display: flex;
   align-items: center;
+  min-height: 2.75rem;
   gap: 0.65rem;
   padding: 0.75rem 0.85rem;
   border-radius: 15px;
@@ -7947,7 +7963,7 @@ body {
 .app-review-sort-link {
   display: inline-flex;
   align-items: center;
-  min-height: 1.82rem;
+  min-height: 44px;
   padding: 0 0.65rem;
   border-radius: 999px;
   color: rgba(18, 26, 47, 0.64);
@@ -7982,7 +7998,7 @@ body {
 }
 
 .app-detail-review-actions .explore-cta-primary {
-  min-height: 2.2rem;
+  min-height: 44px;
   padding: 0.42rem 0.9rem;
   font-size: 0.86rem;
   line-height: 1.1;
@@ -7998,7 +8014,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.2rem;
+  min-height: 44px;
   padding: 0.42rem 0.82rem;
   gap: 0.42rem;
   font-size: 0.86rem;
@@ -8583,6 +8599,7 @@ body {
 }
 
 .owner-app-requirement--link {
+  min-height: 44px;
   color: #254a9e;
 }
 
@@ -8765,6 +8782,14 @@ body {
 }
 .profile-form-banner-thumb-label:hover .profile-form-banner-thumb-overlay {
   opacity: 1;
+}
+
+.profile-form-banner-thumb-label:focus-within,
+.profile-form-button-secondary:has(input[type="file"]):focus-within,
+.profile-screenshot-dropzone:focus-within,
+.profile-screenshot-add-tile:focus-within {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .profile-form-banner-thumb-actions {
   display: flex;
@@ -9516,6 +9541,7 @@ body {
   color: rgba(18, 26, 47, 0.9);
 }
 .profile-form-handle-signout {
+  min-height: 44px;
   background: transparent;
   border: 1px solid rgba(18, 26, 47, 0.18);
   border-radius: 999px;
@@ -9671,6 +9697,7 @@ body {
   border-color: rgba(20, 26, 50, 1);
 }
 .profile-form-field {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -11738,8 +11765,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 0;
   border-radius: 50%;
   background: rgba(18, 26, 47, 0.07);
@@ -12015,6 +12042,7 @@ body {
 }
 
 .login-picker-cancel {
+  min-height: 44px;
   justify-self: center;
   color: rgba(18, 26, 47, 0.62);
   font-size: 0.84rem;
@@ -13928,6 +13956,7 @@ form[data-submit-once-pending="true"] button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  min-height: 44px;
   margin-top: 0.75rem;
   color: #1f4f96;
   font-weight: 800;
@@ -15279,7 +15308,7 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .hosts-search-form .explore-search-submit {
-  min-height: 2.5rem;
+  min-height: 44px;
 }
 
 .hosts-filter-apply {
@@ -16456,6 +16485,7 @@ form[data-submit-once-pending="true"] button:disabled {
 
 .host-manage-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   margin-top: 1.5rem;
 }
@@ -16557,7 +16587,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .host-manage-nav a {
   display: inline-flex;
   align-items: center;
-  min-height: 2.25rem;
+  min-height: 44px;
   border: 1px solid rgba(18, 26, 47, 0.12);
   border-radius: 999px;
   padding: 0.35rem 0.72rem;
@@ -17975,6 +18005,8 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .api-playground-copy {
+  min-height: 44px;
+  min-width: 44px;
   padding: 0.3rem 0.7rem;
   border-radius: 999px;
   border: 1px solid rgba(42, 90, 168, 0.28);
@@ -18047,7 +18079,7 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .login-console-mode-option {
-  min-height: 2rem;
+  min-height: 44px;
   border: 0;
   border-radius: 999px;
   padding: 0.42rem 0.72rem;
@@ -18681,7 +18713,7 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .svg-download-zip {
-  min-height: 2.4rem;
+  min-height: 44px;
 }
 
 /* Color / B/W toggle. Sits between the search input and the ZIP
@@ -18695,6 +18727,8 @@ form[data-submit-once-pending="true"] button:disabled {
   border: 1px solid rgba(14, 20, 40, 0.08);
 }
 .svg-download-tab {
+  min-height: 44px;
+  min-width: 44px;
   appearance: none;
   border: 0;
   background: transparent;
@@ -19535,10 +19569,17 @@ form[data-submit-once-pending="true"] button:disabled {
 .admin-report-meta strong {
   color: rgba(18, 26, 47, 0.95);
 }
+
+.admin-report-meta a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
 .admin-report-details {
   margin: 0;
   font-size: 0.85rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .admin-report-actions {
   display: flex;
@@ -19546,8 +19587,17 @@ form[data-submit-once-pending="true"] button:disabled {
   gap: 0.5rem;
   align-items: center;
 }
-.admin-report-notes-input {
+.admin-report-notes-field {
   flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+.admin-report-notes-input {
+  width: 100%;
+  min-height: 2.75rem;
   border: 1px solid rgba(18, 26, 47, 0.15);
   border-radius: 0.5rem;
   padding: 0.5rem 0.6rem;
@@ -19613,6 +19663,8 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 .profile-whats-new-copy {
   min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .profile-whats-new-heading-row {
   display: flex;
@@ -19659,6 +19711,9 @@ form[data-submit-once-pending="true"] button:disabled {
   display: none;
 }
 .profile-whats-new-details summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   align-self: flex-start;
   margin-top: 0.55rem;
   list-style: none;
@@ -19704,8 +19759,8 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 .profile-whats-new-icon-button,
 .profile-whats-new-history-button {
-  width: 2.15rem;
-  height: 2.15rem;
+  width: 2.75rem;
+  height: 2.75rem;
 }
 .profile-whats-new-icon-button {
   position: relative;
@@ -19756,9 +19811,12 @@ form[data-submit-once-pending="true"] button:disabled {
   margin-top: 0.25rem;
   color: rgba(18, 26, 47, 0.7);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 0.88rem;
 }
 .profile-version-history-commit {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   gap: 0.25rem;
   margin-top: 0.55rem;
   padding: 0.32rem 0.55rem;
@@ -19837,6 +19895,7 @@ form[data-submit-once-pending="true"] button:disabled {
   gap: 0.75rem;
 }
 .profile-review-write-button {
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -20537,6 +20596,7 @@ form[data-submit-once-pending="true"] button:disabled {
  * ================================================================== */
 
 .admin-report-takedown-button {
+  min-height: 44px;
   background: rgba(194, 80, 72, 0.12);
   border: 1px solid rgba(194, 80, 72, 0.4);
   color: #c25048;
@@ -20640,7 +20700,7 @@ form[data-submit-once-pending="true"] button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   padding: 0.25rem 0.55rem;
   border-radius: 12px;
   color: #0e1428;
@@ -20679,7 +20739,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .docs-toc a {
   display: flex;
   align-items: center;
-  min-height: 2.05rem;
+  min-height: 2.75rem;
   border-radius: 10px;
   color: rgba(18, 26, 47, 0.68);
   text-decoration: none;
@@ -20798,7 +20858,7 @@ form[data-submit-once-pending="true"] button:disabled {
 
 .docs-hero-cta {
   display: inline-flex;
-  min-height: 2.7rem;
+  min-height: 2.75rem;
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
@@ -20855,7 +20915,7 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .docs-hero-actions .docs-hero-cta {
-  min-height: 2.65rem;
+  min-height: 44px;
 }
 
 .docs-content-grid {
@@ -20895,7 +20955,7 @@ form[data-submit-once-pending="true"] button:disabled {
 
 .docs-section-intro,
 .docs-paragraph {
-  max-width: 720px;
+  max-width: 75ch;
   color: rgba(18, 26, 47, 0.7);
   line-height: 1.65;
 }
@@ -21105,7 +21165,8 @@ form[data-submit-once-pending="true"] button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2rem;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
   border-radius: 999px;
   padding: 0.3rem 0.72rem;
   border: 1px solid rgba(18, 26, 47, 0.08);
@@ -21336,8 +21397,11 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .docs-toc-summary {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
   margin: 0 0 0.35rem;
-  color: rgba(18, 26, 47, 0.5);
+  color: rgba(18, 26, 47, 0.7);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
   font-weight: 800;
@@ -21364,7 +21428,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .docs-toc a {
   position: relative;
   margin-left: -0.5rem;
-  min-height: 1.9rem;
+  min-height: 2.75rem;
   border-radius: 10px;
   padding: 0.2rem 0.5rem;
   font-size: 0.82rem;
@@ -21575,7 +21639,7 @@ form[data-submit-once-pending="true"] button:disabled {
   }
 
   .docs-sidebar-home {
-    min-height: 2.55rem;
+    min-height: 2.75rem;
     border-radius: 14px;
     padding: 0.45rem 0.7rem;
   }
@@ -21605,7 +21669,7 @@ form[data-submit-once-pending="true"] button:disabled {
 
   .docs-nav-group a {
     flex: 0 0 auto;
-    min-height: 2.25rem;
+    min-height: 2.75rem;
     border: 1px solid rgba(18, 26, 47, 0.06);
     border-radius: 999px;
     padding: 0.35rem 0.7rem;

@@ -134,9 +134,12 @@ function initDocsNavPosition() {
   if (!nav || !active) return;
 
   function scrollActiveIntoView() {
-    active.scrollIntoView({
-      block: "nearest",
-      inline: "center",
+    if (nav.scrollWidth <= nav.clientWidth) return;
+    const navBox = nav.getBoundingClientRect();
+    const activeBox = active.getBoundingClientRect();
+    nav.scrollTo({
+      left: nav.scrollLeft + activeBox.left - navBox.left -
+        (nav.clientWidth - activeBox.width) / 2,
       behavior: "auto",
     });
   }

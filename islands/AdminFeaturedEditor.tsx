@@ -216,14 +216,17 @@ export default function AdminFeaturedEditor(
 
         <div class="admin-featured-column">
           <h2>{copy.candidatesHeading}</h2>
-          <input
-            type="text"
-            class="admin-featured-filter"
-            placeholder={copy.filterPlaceholder}
-            value={filter.value}
-            onInput={(e) =>
-              filter.value = (e.currentTarget as HTMLInputElement).value}
-          />
+          <label class="profile-form-field">
+            <span class="profile-form-label">{copy.filterPlaceholder}</span>
+            <input
+              type="text"
+              class="admin-featured-filter"
+              placeholder={copy.filterPlaceholder}
+              value={filter.value}
+              onInput={(e) =>
+                filter.value = (e.currentTarget as HTMLInputElement).value}
+            />
+          </label>
           {filteredCandidates.value.length === 0
             ? <p class="admin-empty">{copy.empty}</p>
             : (

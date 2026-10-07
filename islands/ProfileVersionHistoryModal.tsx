@@ -1,4 +1,7 @@
 import { useSignal } from "@preact/signals";
+import { createPortal } from "preact/compat";
+import { useId } from "preact/hooks";
+import { useDialog } from "../lib/use-dialog.ts";
 import type { ProfileUpdateRow } from "../lib/profile-updates.ts";
 import TangledIcon from "../components/icons/TangledIcon.tsx";
 
@@ -31,6 +34,10 @@ function UpdateMeta({ update }: { update: ProfileUpdateRow }) {
 
 export default function ProfileVersionHistoryModal({ updates, copy }: Props) {
   const open = useSignal(false);
+  const titleId = useId();
+  const dialogRef = useDialog<HTMLDivElement>(open.value, () => {
+    open.value = false;
+  });
   if (updates.length === 0) return null;
 
   return (
@@ -44,19 +51,23 @@ export default function ProfileVersionHistoryModal({ updates, copy }: Props) {
       >
         <span aria-hidden="true">↺</span>
       </button>
-      {open.value && (
+      {open.value && typeof document !== "undefined" && createPortal(
         <div
           class="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="profile-version-history-title"
           onClick={(event) => {
             if (event.target === event.currentTarget) open.value = false;
           }}
         >
-          <div class="modal-card profile-version-history-modal">
+          <div
+            class="modal-card profile-version-history-modal"
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            tabIndex={-1}
+          >
             <header class="modal-header">
-              <h2 id="profile-version-history-title" class="modal-title">
+              <h2 id={titleId} class="modal-title">
                 {copy.versionHistory}
               </h2>
             </header>
@@ -91,7 +102,8 @@ export default function ProfileVersionHistoryModal({ updates, copy }: Props) {
               </button>
             </footer>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
