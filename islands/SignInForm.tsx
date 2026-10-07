@@ -393,11 +393,7 @@ export default function SignInForm(
                 if (isPlainLinkActivation(event)) onAuthorizationStart?.();
               }}
             >
-              <span>
-                <strong>Create an Atmosphere account</strong>
-                <small>Choose a host and return to this exact action.</small>
-              </span>
-              <span aria-hidden="true">→</span>
+              Create an Atmosphere account
             </a>
           )}
         </ManualAccountEntry>
