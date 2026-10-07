@@ -120,7 +120,19 @@ jobs:
         run: deno install --frozen
 
       - name: Install Chromium
-        run: npx --yes playwright@1.61.1 install --with-deps chromium
+        run: |
+          # The runner's regional HTTP mirror can stall apt during browser setup.
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          sources = [Path("/etc/apt/sources.list")]
+          sources += list(Path("/etc/apt/sources.list.d").glob("*.list"))
+          sources += list(Path("/etc/apt/sources.list.d").glob("*.sources"))
+          for path in sources:
+              if path.is_file():
+                  text = path.read_text()
+                  path.write_text(text.replace("http://azure.archive.ubuntu.com/ubuntu", "https://archive.ubuntu.com/ubuntu"))
+          PY
+          npx --yes playwright@1.61.1 install --with-deps chromium
 
       - name: Exercise picker, verification, and OAuth handoff
         run: deno task e2e:login
