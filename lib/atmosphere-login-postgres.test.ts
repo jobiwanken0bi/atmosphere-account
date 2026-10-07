@@ -5,6 +5,7 @@ import {
 } from "./postgres.ts";
 
 const databaseUrl = Deno.env.get("TEST_POSTGRES_DATABASE_URL");
+const isCI = Boolean(Deno.env.get("CI"));
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -17,48 +18,34 @@ function assertEquals(actual: unknown, expected: unknown): void {
 Deno.test({
   name:
     "Postgres login environment saves preserve revision, ownership, and trust guards",
-  ignore: !databaseUrl,
+  ignore: !databaseUrl && !isCI,
   async fn() {
-    const db = createPostgresExecuteClient(databaseUrl!);
+    if (!databaseUrl) {
+      throw new Error("TEST_POSTGRES_DATABASE_URL is required in CI");
+    }
+    const schema = await Deno.readTextFile(
+      new URL("../sql/neon/001_initial.sql", import.meta.url),
+    );
+    const db = createPostgresExecuteClient(databaseUrl);
     try {
       if (!db.withTransaction) throw new Error("Postgres transaction required");
       await db.withTransaction(async (client) => {
         // Temporary tables stay on this connection and disappear at commit.
         // No persistent app data is read or modified, even with a wrong test URL.
-        await client.execute(`CREATE TEMP TABLE login_app (
-          client_id TEXT PRIMARY KEY,
-          app_name TEXT NOT NULL,
-          app_uri TEXT,
-          logo_uri TEXT,
-          allowed_return_uris TEXT NOT NULL DEFAULT '[]',
-          allowed_origins TEXT NOT NULL DEFAULT '[]',
-          status TEXT NOT NULL DEFAULT 'unverified',
-          contact_did TEXT,
-          app_did TEXT,
-          app_profile_uri TEXT,
-          link_status TEXT NOT NULL DEFAULT 'relink_required',
-          profile_identity_fingerprint TEXT,
-          profile_identity_updated_at BIGINT,
-          review_revision TEXT,
-          environment_revision TEXT,
-          preferred_account_host TEXT,
-          review_status TEXT NOT NULL DEFAULT 'none',
-          review_requested_at BIGINT,
-          review_notes TEXT,
-          review_decision_at BIGINT,
-          review_decision_by TEXT,
-          review_decision_reason TEXT,
-          created_at BIGINT NOT NULL,
-          updated_at BIGINT NOT NULL
-        ) ON COMMIT DROP`);
-        await client.execute(`CREATE TEMP TABLE app_listing (
-          canonical_uri TEXT PRIMARY KEY,
-          product_did TEXT,
-          profile_did TEXT,
-          legacy_profile_did TEXT,
-          updated_at BIGINT NOT NULL,
-          deleted_at BIGINT
-        ) ON COMMIT DROP`);
+        for (const table of ["login_app", "app_listing"]) {
+          const statement = schema.match(
+            new RegExp(
+              `CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?\\n\\);`,
+            ),
+          )?.[0];
+          if (!statement) throw new Error(`Missing baseline table ${table}`);
+          await client.execute(
+            statement.replace(
+              `CREATE TABLE IF NOT EXISTS ${table}`,
+              `CREATE TEMP TABLE ${table}`,
+            ).replace(/\);$/, ") ON COMMIT DROP;"),
+          );
+        }
         const now = 1_791_345_600_000;
         const owner = {
           clientId: "https://app.example/client.json",
@@ -75,18 +62,24 @@ Deno.test({
           environmentRevision: "environment-v1",
           reviewRevision: "review-v1",
         };
-        await client.execute({
-          sql: `INSERT INTO app_listing (canonical_uri, product_did, updated_at)
-            VALUES (?, ?, ?), (?, ?, ?)`,
-          args: [
-            owner.appProfileUri,
-            owner.appDid,
-            now,
-            "at://did:plc:attacker/app.profile/example",
-            "did:plc:attacker",
-            now,
-          ],
-        });
+        for (
+          const [id, did, uri] of [
+            ["owner", owner.appDid, owner.appProfileUri],
+            [
+              "attacker",
+              "did:plc:attacker",
+              "at://did:plc:attacker/app.profile/example",
+            ],
+          ]
+        ) {
+          await client.execute({
+            sql: `INSERT INTO app_listing (
+              id, slug, name, canonical_source, canonical_uri,
+              product_did, updated_at, indexed_at
+            ) VALUES (?, ?, ?, 'atstore', ?, ?, ?, ?)`,
+            args: [id, id, id, uri, did, now, now],
+          });
+        }
         const save = (input: Parameters<typeof upsertLoginAppWithClient>[1]) =>
           upsertLoginAppWithClient(client, input, now + 1);
         const read = async () =>
