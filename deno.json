@@ -83,8 +83,8 @@
     "pg": "npm:pg@^8.16.3",
     "@types/pg": "npm:@types/pg@^8.15.6",
     "nanoid": "npm:nanoid@3.3.18",
-    "postcss": "npm:postcss@8.5.26",
-    "sharp": "npm:sharp@0.35.3",
+    "postcss": "npm:postcss@8.5.29",
+    "sharp": "npm:sharp@0.35.5",
     "playwright": "npm:playwright@1.61.1",
     "ws": "npm:ws@8.21.3"
   },
