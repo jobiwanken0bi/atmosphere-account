@@ -214,7 +214,6 @@ Deno.test("selection verifier CORS rejects sibling origins and unregistered prod
       "https://app.example.com",
       input,
       null,
-      { dev: false },
     ),
     false,
   );
@@ -299,7 +298,6 @@ Deno.test("selection verifier CORS permits loopback-only unregistered dev apps",
         expectedState: "state-123",
       },
       null,
-      { dev: true },
     ),
     true,
   );
@@ -348,4 +346,71 @@ Deno.test("selectionCorsHeaders does not expose actual responses to mismatched o
   });
   assertEquals(headers.get("access-control-allow-origin"), null);
   assertEquals(headers.get("vary"), "origin");
+});
+
+Deno.test("hosted local selection verification requires allowed callback and exact CORS origin", async () => {
+  const input = {
+    token: "token",
+    expectedIssuer: null,
+    expectedState: "state",
+    expectedClientId: "http://localhost/?redirect_uri=" +
+      encodeURIComponent("http://127.0.0.1/selected"),
+    expectedReturnUri: "http://127.0.0.1:5173/selected",
+  };
+  assertEquals(canAppVerifySelection(input, null), true);
+  assertEquals(
+    canOriginReadSelectionVerification("http://127.0.0.1:5173", input, null),
+    true,
+  );
+  assertEquals(
+    canOriginReadSelectionVerification("http://127.0.0.1:5174", input, null),
+    false,
+  );
+  assertEquals(
+    canOriginReadSelectionVerification("http://localhost:5173", input, null),
+    false,
+  );
+  assertEquals(
+    canAppVerifySelection({
+      ...input,
+      expectedReturnUri: "http://localhost/anything",
+    }, null),
+    false,
+  );
+  assertEquals(
+    canAppVerifySelection({
+      ...input,
+      expectedReturnUri: "http://127.0.0.1:5173/other",
+    }, null),
+    false,
+  );
+  const headers = await selectionCorsHeaders(
+    new Request("https://login.atmosphereaccount.com/api/login/selection", {
+      method: "POST",
+      headers: { origin: "http://127.0.0.1:5173" },
+    }),
+    input,
+    { getLoginApp: () => Promise.resolve(null) },
+  );
+  assertEquals(
+    headers.get("access-control-allow-origin"),
+    "http://127.0.0.1:5173",
+  );
+  const registered = app({
+    clientId: input.expectedClientId,
+    status: "development",
+    allowedReturnUris: [input.expectedReturnUri],
+  });
+  assertEquals(canAppVerifySelection(input, registered), true);
+  assertEquals(
+    canAppVerifySelection({
+      ...input,
+      expectedReturnUri: "http://127.0.0.1:5174/selected",
+    }, registered),
+    false,
+  );
+  assertEquals(
+    canAppVerifySelection(input, { ...registered, status: "blocked" }),
+    false,
+  );
 });

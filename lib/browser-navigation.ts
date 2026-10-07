@@ -45,10 +45,11 @@ function isObviouslyPrivateHostname(hostname: string): boolean {
 
 /** Validate a server-provided browser destination before assigning it to
  * location. Production handoffs may legitimately leave this origin, but only
- * for public HTTPS. Local HTTP is limited to loopback development. */
+ * for public HTTPS. Validated picker callbacks may also target HTTP loopback. */
 export function safeBrowserNavigationUrl(
   value: unknown,
   currentHref: string,
+  options: { allowLoopbackCallback?: boolean } = {},
 ): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   let current: URL;
@@ -68,6 +69,10 @@ export function safeBrowserNavigationUrl(
   if (
     target.protocol === "https:" &&
     !isObviouslyPrivateHostname(target.hostname)
+  ) return target.toString();
+  if (
+    options.allowLoopbackCallback && target.protocol === "http:" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname)
   ) return target.toString();
   if (
     target.protocol === "http:" && isLoopbackHostname(current.hostname) &&

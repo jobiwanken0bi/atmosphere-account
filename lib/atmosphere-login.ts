@@ -14,7 +14,6 @@ import {
 } from "./atmosphere-login-sdk.ts";
 import {
   clientId as atmosphereClientId,
-  IS_DEV,
   OAUTH_KID,
   OAUTH_PRIVATE_JWK,
   OAUTH_PUBLIC_JWK,
@@ -338,21 +337,16 @@ function isLoopbackHostname(hostname: string): boolean {
     host === "[::1]";
 }
 
+// These URLs are browser handoff destinations, not server fetch targets. A
+// locally running app can use the hosted picker without relaxing fetch guards.
 function assertSafeWebUrl(url: URL, label: string): void {
+  if (isLoopbackHttpUrl(url)) return;
   if (isPrivateNetworkHostname(url.hostname)) {
-    if (
-      IS_DEV && url.protocol === "http:" && isLoopbackHostname(url.hostname)
-    ) {
-      return;
-    }
     throw new LoginRequestError(
       `${label} must use a public HTTPS host`,
     );
   }
   if (url.protocol === "https:") return;
-  if (IS_DEV && url.protocol === "http:" && isLoopbackHostname(url.hostname)) {
-    return;
-  }
   throw new LoginRequestError(`${label} must use HTTPS`);
 }
 
@@ -369,17 +363,17 @@ function sameOrigin(a: URL, b: URL): boolean {
 function loopbackDevClientAllowsReturn(
   client: URL,
   returnUri: URL,
-  dev = IS_DEV,
 ): boolean {
   if (
-    !dev || client.protocol !== "http:" || returnUri.protocol !== "http:" ||
+    client.protocol !== "http:" || returnUri.protocol !== "http:" ||
     !isLoopbackHostname(client.hostname) ||
     !isLoopbackHostname(returnUri.hostname)
   ) {
     return false;
   }
-  if (sameOrigin(client, returnUri)) return true;
-  if (!isAtprotoLocalhostClientId(client)) return false;
+  if (!isAtprotoLocalhostClientId(client)) {
+    return sameOrigin(client, returnUri);
+  }
   return declaredLocalhostRedirectUris(client).some((declared) =>
     loopbackRedirectUriMatches(declared, returnUri)
   );
@@ -424,13 +418,11 @@ function loopbackRedirectUriMatches(declared: URL, actual: URL): boolean {
 export function isUnregisteredDevLoginReturnAllowed(
   clientId: string,
   returnUri: string,
-  options: { dev?: boolean } = {},
 ): boolean {
   try {
     return loopbackDevClientAllowsReturn(
       parseAbsoluteUrl(clientId, "client_id"),
       parseAbsoluteUrl(returnUri, "return_uri"),
-      options.dev ?? IS_DEV,
     );
   } catch {
     return false;
@@ -2017,7 +2009,7 @@ function defaultRegistrationStatus(
   allowedReturnUris: string[],
 ): LoginApp["status"] {
   const client = new URL(clientId);
-  const loopbackDev = IS_DEV && client.protocol === "http:" &&
+  const loopbackDev = client.protocol === "http:" &&
     isLoopbackHostname(client.hostname) &&
     allowedReturnUris.every((value) => {
       const url = new URL(value);

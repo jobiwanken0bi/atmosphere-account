@@ -326,14 +326,13 @@ export function canOriginReadSelectionVerification(
   origin: string | null,
   input: SelectionVerificationInput,
   app: LoginApp | null,
-  options: { dev?: boolean } = {},
 ): boolean {
   const normalizedOrigin = normalizeOrigin(origin);
   const clientId = normalizeUrl(input.expectedClientId);
   const returnUri = normalizeUrl(input.expectedReturnUri);
   if (!normalizedOrigin || !clientId || !returnUri) return false;
   if (normalizeOrigin(returnUri) !== normalizedOrigin) return false;
-  return canAppVerifySelection(input, app, options);
+  return canAppVerifySelection(input, app);
 }
 
 /**
@@ -344,7 +343,6 @@ export function canOriginReadSelectionVerification(
 export function canAppVerifySelection(
   input: SelectionVerificationInput,
   app: LoginApp | null,
-  options: { dev?: boolean } = {},
 ): boolean {
   const clientId = normalizeUrl(input.expectedClientId);
   const returnUri = normalizeUrl(input.expectedReturnUri);
@@ -355,9 +353,7 @@ export function canAppVerifySelection(
       app.clientId === clientId &&
       registeredAppAllowsReturnUri(app, returnUri);
   }
-  return isUnregisteredDevLoginReturnAllowed(clientId, returnUri, {
-    dev: options.dev,
-  });
+  return isUnregisteredDevLoginReturnAllowed(clientId, returnUri);
 }
 
 export async function selectionCorsHeaders(
@@ -365,7 +361,6 @@ export async function selectionCorsHeaders(
   input: SelectionVerificationInput | null,
   options: {
     getLoginApp?: typeof getLoginApp;
-    dev?: boolean;
   } = {},
 ): Promise<Headers> {
   const headers = new Headers();
@@ -386,7 +381,7 @@ export async function selectionCorsHeaders(
   const app = clientId
     ? await (options.getLoginApp ?? getLoginApp)(clientId)
     : null;
-  if (canOriginReadSelectionVerification(origin, input, app, options)) {
+  if (canOriginReadSelectionVerification(origin, input, app)) {
     headers.set("access-control-allow-origin", origin);
   }
   return headers;

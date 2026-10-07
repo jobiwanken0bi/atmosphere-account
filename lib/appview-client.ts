@@ -959,7 +959,10 @@ function rewriteAppviewUrl(
     const candidate = target.origin === remoteUrl.origin
       ? `${currentUrl.origin}${target.pathname}${target.search}${target.hash}`
       : target.toString();
-    return safeBrowserNavigationUrl(candidate, currentUrl.toString());
+    return safeBrowserNavigationUrl(candidate, currentUrl.toString(), {
+      // AppView validates the app and callback before completing selection.
+      allowLoopbackCallback: currentUrl.pathname === "/login/select",
+    });
   } catch {
     return null;
   }

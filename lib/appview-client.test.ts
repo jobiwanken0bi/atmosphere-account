@@ -938,3 +938,44 @@ Deno.test("media redirects preserve only allowlisted signed object URLs", () => 
     null,
   );
 });
+
+Deno.test("AppView preserves local callbacks only on the validated picker route", () => {
+  const remote = "https://appview.internal";
+  for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+    const callback = `http://${host}:5173/selected?state=one`;
+    assertEquals(
+      rewriteAppviewUrlForTest(
+        callback,
+        remote,
+        new URL("https://login.atmosphereaccount.com/login/select"),
+      ),
+      callback,
+    );
+    for (const path of ["/oauth/callback", "/api/media/blob", "/account"]) {
+      assertEquals(
+        rewriteAppviewUrlForTest(
+          callback,
+          remote,
+          new URL(`https://atmosphereaccount.com${path}`),
+        ),
+        null,
+      );
+    }
+  }
+  for (
+    const callback of [
+      "http://10.0.0.1/",
+      "http://app.localhost/",
+      "https://127.0.0.1/",
+    ]
+  ) {
+    assertEquals(
+      rewriteAppviewUrlForTest(
+        callback,
+        remote,
+        new URL("https://login.atmosphereaccount.com/login/select"),
+      ),
+      null,
+    );
+  }
+});

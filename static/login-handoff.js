@@ -1,7 +1,7 @@
 const target = document.querySelector("[data-login-handoff-target]");
 
 if (target instanceof HTMLAnchorElement) {
-  const destination = safeNavigationDestination(target.href);
+  const destination = safeNavigationDestination(target.href, true);
   if (destination) globalThis.location.replace(destination);
 }
 
@@ -58,7 +58,7 @@ function isPrivateNavigationHost(hostname) {
     /^fe[89ab]/.test(host) || host.startsWith("ff");
 }
 
-function safeNavigationDestination(value) {
+function safeNavigationDestination(value, allowLoopbackCallback = false) {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const current = new URL(globalThis.location.href);
@@ -74,6 +74,10 @@ function safeNavigationDestination(value) {
     ) {
       return target.toString();
     }
+    if (
+      allowLoopbackCallback && target.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname)
+    ) return target.toString();
     if (
       target.protocol === "http:" &&
       isLoopbackNavigationHost(current.hostname) &&
@@ -166,7 +170,12 @@ document.addEventListener("submit", async (event) => {
       signal: controller.signal,
     });
     const body = await response.json().catch(() => null);
-    let destination = body ? safeNavigationDestination(body.redirectUrl) : null;
+    let destination = body
+      ? safeNavigationDestination(
+        body.redirectUrl,
+        action.pathname === "/login/select",
+      )
+      : null;
     if (
       destination && form.dataset.loginHandoffNextCurrent === "true" &&
       globalThis.location.hash

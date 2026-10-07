@@ -6,7 +6,7 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
     throw new Error("Expected a scoped bridge target");
   }
   if (
-    !source.includes("safeNavigationDestination(target.href)") ||
+    !source.includes("safeNavigationDestination(target.href, true)") ||
     !source.includes("globalThis.location.replace(destination)")
   ) {
     throw new Error("Expected validated history-replacing browser navigation");
@@ -45,7 +45,7 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
     throw new Error("Expected a bounded browser handoff");
   }
   if (
-    !source.includes("safeNavigationDestination(body.redirectUrl)") ||
+    !source.includes("body.redirectUrl,") ||
     !source.includes("globalThis.location.assign(destination)")
   ) {
     throw new Error(
@@ -70,6 +70,50 @@ Deno.test("login handoff replaces the bridge document with its target", async ()
   for (const suffix of [".test", ".invalid", ".example", ".onion"]) {
     if (!source.includes(`host.endsWith("${suffix}")`)) {
       throw new Error(`Expected special-use navigation guard: ${suffix}`);
+    }
+  }
+});
+
+Deno.test("hosted browser handoff accepts local callbacks only for picker completion", async () => {
+  const source = await Deno.readTextFile(
+    new URL("./login-handoff.js", import.meta.url),
+  );
+  const navigation = new Function(
+    "document",
+    "HTMLAnchorElement",
+    "globalThis",
+    `${source}; return safeNavigationDestination;`,
+  )(
+    { querySelector: () => null, addEventListener: () => {} },
+    class {},
+    { location: { href: "https://login.atmosphereaccount.com/login/select" } },
+  );
+  for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+    const callback = `http://${host}:5173/selected?state=one`;
+    if (
+      navigation(callback) !== null || navigation(callback, true) !== callback
+    ) {
+      throw new Error(
+        "Local picker callback did not require scoped permission",
+      );
+    }
+  }
+  for (
+    const target of [
+      "http://10.0.0.1/selected",
+      "http://0.0.0.0/selected",
+      "http://app.localhost/selected",
+      "http://127.0.0.2/selected",
+      "https://localhost/selected",
+      "http://user:secret@localhost/selected",
+      "http://example.com/selected",
+      "javascript:alert(1)",
+    ]
+  ) {
+    if (navigation(target, true) !== null) {
+      throw new Error(
+        "Scoped picker completion accepted an unsafe destination",
+      );
     }
   }
 });

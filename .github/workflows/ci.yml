@@ -79,6 +79,15 @@ jobs:
       - name: Test
         run: deno task test
 
+      - name: Test hosted localhost login
+        env:
+          DENO_ENV: production
+          SESSION_SECRET: localhost-regression-test-only-session-secret
+        run: >-
+          deno test -A lib/atmosphere-login.test.ts
+          routes/api/login/selection.test.ts lib/browser-navigation.test.ts
+          lib/appview-client.test.ts static/login-handoff.test.ts
+
       - name: Smoke host conformance
         run: deno task host:conformance:smoke
 
