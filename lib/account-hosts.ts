@@ -5101,6 +5101,7 @@ export interface AccountHostDirectoryMaintenanceResult {
   profilesConsidered: number;
   profilesAttempted: number;
   profilesUpdated: number;
+  oauthCreation: { candidates: number; checked: number; supported: number };
 }
 
 /** Apply curated seed additions/upgrades outside request handling. Safe to
@@ -5138,11 +5139,16 @@ export async function maintainAccountHostDirectory(
     );
   });
   signal?.throwIfAborted();
+  const { refreshHostOAuthCreationEvidence } = await import(
+    "./host-oauth-creation.ts"
+  );
+  const oauthCreation = await refreshHostOAuthCreationEvidence({ signal });
   const refreshed = await refreshAccountHostProfiles(hosts, signal);
   return {
     seededHosts,
     profilesConsidered: hosts.length,
     profilesAttempted: refreshed.attempted,
     profilesUpdated: refreshed.updated,
+    oauthCreation,
   };
 }

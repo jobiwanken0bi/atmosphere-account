@@ -45,6 +45,7 @@
     "migrate:atstore": "deno run -A scripts/migrate-atmosphere-apps-to-atstore.ts",
     "rescore:app-trending": "deno run -A scripts/rescore-app-trending.ts",
     "publish:featured": "deno run -A scripts/publish-featured.ts",
+    "host:signup:discover": "deno run -A scripts/discover-host-signup.ts",
     "host:dashboard:check": "deno run -A scripts/check-host-dashboard.ts",
     "host:conformance": "deno run -A scripts/check-host-conformance.ts",
     "host:conformance:smoke": "deno run -A scripts/smoke-host-conformance.ts",

@@ -470,6 +470,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS account_host_claim_recovery_pending_host
 CREATE INDEX IF NOT EXISTS account_host_claim_recovery_audit_recovery
   ON account_host_claim_recovery_audit(recovery_id, occurred_at);
 
+CREATE TABLE IF NOT EXISTS host_oauth_creation (
+  host text PRIMARY KEY REFERENCES account_host(host) ON DELETE CASCADE,
+  service_endpoint text NOT NULL,
+  supported integer NOT NULL,
+  signup_status text,
+  issuer text,
+  checked_at bigint NOT NULL,
+  expires_at bigint NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS host_conformance (
   host text PRIMARY KEY REFERENCES account_host(host) ON DELETE CASCADE,
   status text NOT NULL,

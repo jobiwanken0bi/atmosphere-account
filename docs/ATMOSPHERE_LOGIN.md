@@ -100,15 +100,38 @@ open the picker.
 picker, so the requesting app and return path remain in place. Its Create
 Account tab searches the grouped account-host directory by host name, domain,
 description, or location. Only hosts that explicitly advertise direct OAuth
-account creation are offered. Login with Atmosphere starts OAuth from that host
-with `prompt=create`; the host owns signup, invite-code entry, credentials, and
+account creation in their standard OAuth `prompt_values_supported` metadata are
+offered. Directory maintenance discovers and caches this support independently
+of host-owned profile/capability records. Public reads use cached evidence only;
+`deno task host:signup:discover --force` refreshes it explicitly. Evidence is
+bound to the exact current service endpoint, rechecked daily, and expires after
+48 hours. Open signup and invite-required status come from directory enrollment
+metadata (or `describeServer` for otherwise unknown trusted hosts), never from
+`prompt=create` alone. Login with Atmosphere starts OAuth from that host with
+`prompt=create`; the host owns signup, invite-code entry, credentials, and
 recovery, then returns the new account to the picker. The picker immediately
 hands the account back to the requesting app, which starts its own AT Protocol
 OAuth flow. Login with Atmosphere requests only the authentication-level
 `atproto` scope for this picker leg. Picker results must also be recently active
-or directly reachable, claimed, verified, or seeded, and backed by a safe public
-HTTPS signup URL. Raw relay-observed personal PDSes are never offered as
-account-creation providers.
+or directly reachable and independently public: claimed, verified, seeded, or
+backed by fresh detected public enrollment intent. A separate signup URL or an
+Atmosphere-specific capability declaration is not required. Operator opt-out,
+closed enrollment, endpoint changes, expired evidence, and unsupported metadata
+remove a provider from the direct creation choices. Raw relay-observed personal
+PDSes without public enrollment evidence are never offered.
+
+Host-first signup also supports authorization-server-only entryways such as
+`https://bsky.social`: after a protected-resource 404, creation discovery checks
+AS metadata at that same origin. Malformed metadata, redirects, and outages do
+not trigger this fallback. Callback verification still resolves the returned DID
+to its actual PDS and checks the authorization-server issuer.
+
+Creating an account authenticates that identity to the picker and resumes the
+original app request automatically. It does not grant the destination app any
+PDS permissions. The app completes its own OAuth authorization with its own
+client ID and scopes; the host may reuse its newly established login session, so
+another handle/password entry is usually unnecessary. Tokens issued to the
+picker are never passed to the destination app.
 
 ## App-owned login environments
 

@@ -24,6 +24,7 @@ import {
 } from "./jose.ts";
 import {
   type AuthServerMetadata,
+  discoverAccountCreationAuthServer,
   discoverAuthServer,
   normalizeServiceEndpoint,
   resolveIdentity,
@@ -790,7 +791,7 @@ export async function startHostAccountCreation(
     DEFAULT_OAUTH_SCOPE;
   const config = oauthClientConfig({ ...options, scope: requestedScope });
   const pdsUrl = normalizeServiceEndpoint(serviceEndpoint);
-  const asMeta = await discoverAuthServer(pdsUrl);
+  const asMeta = await discoverAccountCreationAuthServer(pdsUrl);
   if (!asMeta.prompt_values_supported?.includes("create")) {
     throw new OAuthAccountCreationUnsupportedError(
       new URL(pdsUrl).hostname,

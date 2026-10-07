@@ -558,6 +558,16 @@ const SCHEMA_STATEMENTS: string[] = [
       'notification_unavailable', 'finalized', 'expired', 'invalidated'
     ))
   )`,
+  `CREATE TABLE IF NOT EXISTS host_oauth_creation (
+    host TEXT PRIMARY KEY,
+    service_endpoint TEXT NOT NULL,
+    supported INTEGER NOT NULL,
+    signup_status TEXT,
+    issuer TEXT,
+    checked_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
+  )`,
   `CREATE TABLE IF NOT EXISTS host_conformance (
     host TEXT PRIMARY KEY,
     status TEXT NOT NULL,

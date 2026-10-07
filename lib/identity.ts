@@ -718,6 +718,26 @@ function parseAuthServerMetadata(
   };
 }
 
+/** Host-first signup supports PDS and entryway origins; production probes are IP-pinned. */
+export function discoverAccountCreationAuthServer(
+  hostUrl: string,
+  options: { fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
+): Promise<AuthServerMetadata> {
+  const fetchImpl = options.fetchImpl ??
+    (IS_DEV
+      ? fetch
+      : ((input, init) =>
+        fetchPinnedPublicHttps(String(input), init, {
+          maxBodyBytes: MAX_IDENTITY_JSON_BYTES,
+          timeoutMs: 6000,
+        })));
+  return discoverAuthServer(hostUrl, {
+    ...options,
+    fetchImpl,
+    allowAuthorizationServer: true,
+  });
+}
+
 /**
  * Discover the authorization server for a PDS. Per the OAuth spec, the
  * PDS publishes a protected-resource metadata file pointing at one or
@@ -725,17 +745,48 @@ function parseAuthServerMetadata(
  */
 export async function discoverAuthServer(
   pdsUrl: string,
+  options: {
+    allowAuthorizationServer?: boolean;
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<AuthServerMetadata> {
   const pdsOrigin = new URL(normalizeServiceEndpoint(pdsUrl)).origin;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const signal = () =>
+    options.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(6000)])
+      : AbortSignal.timeout(6000);
   if (!IS_DEV) await assertPublicDnsHostname(new URL(pdsOrigin).hostname);
-  const prRes = await fetch(
+  const prRes = await fetchImpl(
     `${pdsOrigin}/.well-known/oauth-protected-resource`,
     {
       headers: { accept: "application/json" },
       redirect: "manual",
-      signal: AbortSignal.timeout(6000),
+      signal: signal(),
     },
   );
+  // A host-first flow may start at an entryway (e.g. bsky.social), which
+  // publishes only AS metadata. Never mask malformed PR metadata or outages.
+  if (prRes.status === 404 && options.allowAuthorizationServer) {
+    await prRes.body?.cancel().catch(() => {});
+    const asRes = await fetchImpl(
+      `${pdsOrigin}/.well-known/oauth-authorization-server`,
+      {
+        headers: { accept: "application/json" },
+        redirect: "manual",
+        signal: signal(),
+      },
+    );
+    if (asRes.status !== 200) {
+      await asRes.body?.cancel().catch(() => {});
+      throw new Error("could not fetch host authorization server metadata");
+    }
+    return parseAuthServerMetadata(
+      await readBoundedJson(asRes, MAX_IDENTITY_JSON_BYTES),
+      pdsOrigin,
+    );
+  }
   if (prRes.status !== 200) {
     await prRes.body?.cancel().catch(() => {});
     throw new Error("could not fetch protected-resource metadata");
@@ -765,15 +816,16 @@ export async function discoverAuthServer(
     throw new Error("authorization server identifier must be an origin");
   }
   if (!IS_DEV) await assertPublicDnsHostname(new URL(asOrigin).hostname);
-  const asRes = await fetch(
+  const asRes = await fetchImpl(
     `${asOrigin}/.well-known/oauth-authorization-server`,
     {
       headers: { accept: "application/json" },
       redirect: "manual",
-      signal: AbortSignal.timeout(6000),
+      signal: signal(),
     },
   );
   if (asRes.status !== 200) {
+    await asRes.body?.cancel().catch(() => {});
     throw new Error(
       `could not fetch authorization server metadata at ${asOrigin}`,
     );
