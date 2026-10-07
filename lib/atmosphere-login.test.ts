@@ -10,12 +10,14 @@ import {
   loginAppStatusAfterProfileIdentityChange,
   loginEnvironmentMatchesRegistrationForTest,
   LoginRequestError,
+  normalizeLoginEnvironmentUrlForTest,
   readLoginRequest,
   resolveLoginAppForRequest,
   resolveVerifiedPreferredAccountHost,
   verifyLoginAppDomainManifest,
   verifyPreferredAccountHostForOwner,
 } from "./atmosphere-login.ts";
+import { IS_DEV } from "./env.ts";
 import {
   type AccountHostClaim,
   listSeededAccountHostFallback,
@@ -443,7 +445,6 @@ Deno.test("isUnregisteredDevLoginReturnAllowed keeps same-origin loopback metada
     isUnregisteredDevLoginReturnAllowed(
       "http://127.0.0.1:5173/examples/atmosphere-login/client-metadata.json",
       "http://127.0.0.1:5173/examples/atmosphere-login/callback",
-      { dev: true },
     ),
     true,
   );
@@ -454,7 +455,6 @@ Deno.test("isUnregisteredDevLoginReturnAllowed supports ATProto localhost client
     isUnregisteredDevLoginReturnAllowed(
       "http://localhost/?redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback",
       "http://127.0.0.1:5173/callback",
-      { dev: true },
     ),
     true,
   );
@@ -465,18 +465,6 @@ Deno.test("isUnregisteredDevLoginReturnAllowed rejects undeclared localhost call
     isUnregisteredDevLoginReturnAllowed(
       "http://localhost/",
       "http://127.0.0.1:5173/callback",
-      { dev: true },
-    ),
-    false,
-  );
-});
-
-Deno.test("isUnregisteredDevLoginReturnAllowed is off outside dev", () => {
-  assertEquals(
-    isUnregisteredDevLoginReturnAllowed(
-      "http://localhost/?redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback",
-      "http://127.0.0.1:5173/callback",
-      { dev: false },
     ),
     false,
   );
@@ -722,4 +710,207 @@ Deno.test("resolveLoginAppForRequest rejects registered callbacks with mismatche
     );
     assertEquals(err.status, 403);
   }
+});
+
+Deno.test("hosted picker accepts same-origin local metadata without fetching it", async () => {
+  for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+    const origin = `http://${host}:5173`;
+    const { app: resolved, returnUri } = await resolveLoginAppForRequest({
+      clientId: `${origin}/client-metadata.json`,
+      returnUri: `${origin}/selected`,
+      state: "state",
+      scope: null,
+    }, { getLoginApp: () => Promise.resolve(null) });
+    assertEquals(resolved.status, "development");
+    assertEquals(resolved.registered, false);
+    assertEquals(returnUri.toString(), `${origin}/selected`);
+    assertEquals(loginAppManifestUrl(resolved), null);
+    const manifest = await verifyLoginAppDomainManifest(resolved, {
+      fetchImpl: () => {
+        throw new Error("Local metadata must not be fetched");
+      },
+    });
+    assertEquals(manifest.status, "warn");
+  }
+});
+
+Deno.test("hosted picker special localhost client obeys declarations and ignores callback port", async () => {
+  const clientId = "http://localhost/?redirect_uri=" +
+    encodeURIComponent("http://127.0.0.1/selected?flow=one");
+  const { returnUri } = await resolveLoginAppForRequest({
+    clientId,
+    returnUri: "http://127.0.0.1:5173/selected?flow=one",
+    state: "state",
+    scope: null,
+  }, { getLoginApp: () => Promise.resolve(null) });
+  assertEquals(returnUri.toString(), "http://127.0.0.1:5173/selected?flow=one");
+  for (
+    const forbidden of [
+      "http://localhost/anything",
+      "http://localhost/selected?flow=one",
+      "http://127.0.0.1:5173/other?flow=one",
+      "http://127.0.0.1:5173/selected?flow=two",
+      "http://127.0.0.1:5173/selected",
+    ]
+  ) {
+    assertEquals(
+      isUnregisteredDevLoginReturnAllowed(clientId, forbidden),
+      false,
+    );
+  }
+  assertEquals(
+    isUnregisteredDevLoginReturnAllowed(
+      "http://localhost/",
+      "http://127.0.0.1:5173/",
+    ),
+    true,
+  );
+  assertEquals(
+    isUnregisteredDevLoginReturnAllowed(
+      "http://localhost/",
+      "http://[::1]:5173/",
+    ),
+    true,
+  );
+  assertEquals(
+    isUnregisteredDevLoginReturnAllowed(
+      "http://localhost/",
+      "http://localhost/anything",
+    ),
+    false,
+  );
+});
+
+Deno.test("local metadata return rules reject cross-origin ports, credentials and unsafe hosts", () => {
+  const client = "http://localhost:5173/client.json";
+  for (
+    const forbidden of [
+      "http://localhost:5174/selected",
+      "http://127.0.0.1:5173/selected",
+      "http://user:secret@localhost:5173/selected",
+      "http://10.0.0.1/selected",
+      "http://0.0.0.0/selected",
+      "http://app.localhost/selected",
+      "http://127.0.0.2/selected",
+      "https://localhost:5173/selected",
+      "http://example.com/selected",
+      "javascript:alert(1)",
+    ]
+  ) assertEquals(isUnregisteredDevLoginReturnAllowed(client, forbidden), false);
+});
+
+Deno.test("hosted picker keeps registered local callbacks exact and respects blocked apps", async () => {
+  const clientId = "http://localhost:5173/client.json";
+  const registered = app({
+    clientId,
+    status: "development",
+    allowedReturnUris: ["http://localhost:5173/selected"],
+  });
+  const input = {
+    clientId,
+    returnUri: "http://localhost:5173/selected",
+    state: "state",
+    scope: null,
+  };
+  const valid = await resolveLoginAppForRequest(input, {
+    getLoginApp: () => Promise.resolve(registered),
+  });
+  assertEquals(valid.app.registered, true);
+  for (
+    const [returnUri, candidate] of [
+      ["http://localhost:5173/other", registered],
+      ["http://localhost:5174/selected", registered],
+      [input.returnUri, { ...registered, status: "blocked" }],
+      [input.returnUri, { ...registered, identityAvailable: false }],
+    ] as [string, LoginApp][]
+  ) {
+    let rejected = false;
+    try {
+      await resolveLoginAppForRequest({ ...input, returnUri }, {
+        getLoginApp: () => Promise.resolve(candidate),
+      });
+    } catch (error) {
+      if (!(error instanceof LoginRequestError)) throw error;
+      assertEquals(error.status, 403);
+      rejected = true;
+    }
+    assertEquals(rejected, true);
+  }
+});
+
+Deno.test("hosted picker rejects unsafe local lookalikes before app lookup", async () => {
+  for (
+    const clientId of [
+      "http://10.0.0.1/client.json",
+      "http://0.0.0.0/client.json",
+      "http://127.0.0.2/client.json",
+      "http://app.localhost/client.json",
+      "https://localhost/client.json",
+      "http://user:secret@localhost/client.json",
+      "http://example.com/client.json",
+      "javascript:alert(1)",
+    ]
+  ) {
+    let lookedUp = false;
+    let rejected = false;
+    try {
+      await resolveLoginAppForRequest({
+        clientId,
+        returnUri: "http://localhost:5173/selected",
+        state: "state",
+        scope: null,
+      }, {
+        getLoginApp: () => {
+          lookedUp = true;
+          return Promise.resolve(null);
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof LoginRequestError)) throw error;
+      rejected = true;
+    }
+    assertEquals(rejected, true);
+    assertEquals(lookedUp, false);
+  }
+});
+
+Deno.test("local environment registration stays restricted to server development mode", () => {
+  for (const label of ["client ID", "return URI"]) {
+    for (
+      const url of [
+        "http://localhost/",
+        "http://localhost:5173/client.json",
+        "http://127.0.0.1:5173/selected",
+        "http://[::1]:5173/selected",
+      ]
+    ) {
+      if (IS_DEV) {
+        assertEquals(
+          normalizeLoginEnvironmentUrlForTest(url, label, true),
+          url,
+        );
+      } else {
+        let rejected = false;
+        try {
+          normalizeLoginEnvironmentUrlForTest(url, label, true);
+        } catch (error) {
+          if (!(error instanceof LoginRequestError)) throw error;
+          rejected = true;
+        }
+        assertEquals(rejected, true);
+      }
+    }
+  }
+});
+
+Deno.test("special localhost client declarations require loopback IP callbacks", () => {
+  const clientId = "http://localhost/?redirect_uri=" +
+    encodeURIComponent("http://localhost/selected");
+  assertEquals(
+    isUnregisteredDevLoginReturnAllowed(
+      clientId,
+      "http://localhost:5173/selected",
+    ),
+    false,
+  );
 });

@@ -57,3 +57,36 @@ Deno.test("browser navigation permits loopback HTTP only from loopback dev", () 
     null,
   );
 });
+
+Deno.test("hosted navigation allows only canonical local picker callbacks with opt-in", () => {
+  const current = "https://login.atmosphereaccount.com/login/select";
+  for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+    const callback = `http://${host}:5173/selected?state=one`;
+    assertEquals(safeBrowserNavigationUrl(callback, current), null);
+    assertEquals(
+      safeBrowserNavigationUrl(callback, current, {
+        allowLoopbackCallback: true,
+      }),
+      callback,
+    );
+  }
+  for (
+    const callback of [
+      "http://10.0.0.1/selected",
+      "http://0.0.0.0/selected",
+      "http://app.localhost/selected",
+      "http://127.0.0.2/selected",
+      "https://localhost/selected",
+      "http://user:secret@localhost/selected",
+      "http://example.com/selected",
+      "javascript:alert(1)",
+    ]
+  ) {
+    assertEquals(
+      safeBrowserNavigationUrl(callback, current, {
+        allowLoopbackCallback: true,
+      }),
+      null,
+    );
+  }
+});

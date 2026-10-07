@@ -22,8 +22,14 @@ export function browserHandoffResponse(
   return new Response(null, { status: 303, headers });
 }
 
-export function browserHandoffDocument(redirectUrl: string): Response {
+export function browserHandoffDocument(
+  redirectUrl: string,
+  options: { allowLoopbackCallback?: boolean } = {},
+): Response {
   const href = escapeHtmlAttribute(redirectUrl);
+  const localCallbackMarker = options.allowLoopbackCallback
+    ? ' data-login-handoff-loopback="true"'
+    : "";
   const stylesheetHref = asset("/styles.css");
   const handoffScriptSrc = asset("/login-handoff.js");
   const logoSrc = asset("/union.svg");
@@ -43,7 +49,7 @@ export function browserHandoffDocument(redirectUrl: string): Response {
     <main class="login-handoff-page">
       <img src="${logoSrc}" alt="" width="36" height="36">
       <p>Returning you to the app</p>
-      <a data-login-handoff-target href="${href}">Continue</a>
+      <a data-login-handoff-target${localCallbackMarker} href="${href}">Continue</a>
     </main>
   </body>
 </html>`,

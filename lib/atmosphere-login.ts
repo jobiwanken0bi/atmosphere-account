@@ -338,21 +338,20 @@ function isLoopbackHostname(hostname: string): boolean {
     host === "[::1]";
 }
 
-function assertSafeWebUrl(url: URL, label: string): void {
+// These URLs are browser handoff destinations, not server fetch targets. A
+// locally running app can use the hosted picker without relaxing fetch guards.
+function assertSafeWebUrl(
+  url: URL,
+  label: string,
+  allowLoopbackHttp = IS_DEV,
+): void {
+  if (allowLoopbackHttp && isLoopbackHttpUrl(url)) return;
   if (isPrivateNetworkHostname(url.hostname)) {
-    if (
-      IS_DEV && url.protocol === "http:" && isLoopbackHostname(url.hostname)
-    ) {
-      return;
-    }
     throw new LoginRequestError(
       `${label} must use a public HTTPS host`,
     );
   }
   if (url.protocol === "https:") return;
-  if (IS_DEV && url.protocol === "http:" && isLoopbackHostname(url.hostname)) {
-    return;
-  }
   throw new LoginRequestError(`${label} must use HTTPS`);
 }
 
@@ -369,17 +368,17 @@ function sameOrigin(a: URL, b: URL): boolean {
 function loopbackDevClientAllowsReturn(
   client: URL,
   returnUri: URL,
-  dev = IS_DEV,
 ): boolean {
   if (
-    !dev || client.protocol !== "http:" || returnUri.protocol !== "http:" ||
+    client.protocol !== "http:" || returnUri.protocol !== "http:" ||
     !isLoopbackHostname(client.hostname) ||
     !isLoopbackHostname(returnUri.hostname)
   ) {
     return false;
   }
-  if (sameOrigin(client, returnUri)) return true;
-  if (!isAtprotoLocalhostClientId(client)) return false;
+  if (!isAtprotoLocalhostClientId(client)) {
+    return sameOrigin(client, returnUri);
+  }
   return declaredLocalhostRedirectUris(client).some((declared) =>
     loopbackRedirectUriMatches(declared, returnUri)
   );
@@ -403,7 +402,7 @@ function declaredLocalhostRedirectUris(client: URL): URL[] {
       const url = new URL(value);
       if (
         url.protocol === "http:" && !url.username && !url.password &&
-        isLoopbackHostname(url.hostname)
+        ["127.0.0.1", "[::1]"].includes(url.hostname)
       ) {
         urls.push(url);
       }
@@ -424,13 +423,11 @@ function loopbackRedirectUriMatches(declared: URL, actual: URL): boolean {
 export function isUnregisteredDevLoginReturnAllowed(
   clientId: string,
   returnUri: string,
-  options: { dev?: boolean } = {},
 ): boolean {
   try {
     return loopbackDevClientAllowsReturn(
       parseAbsoluteUrl(clientId, "client_id"),
       parseAbsoluteUrl(returnUri, "return_uri"),
-      options.dev ?? IS_DEV,
     );
   } catch {
     return false;
@@ -439,7 +436,7 @@ export function isUnregisteredDevLoginReturnAllowed(
 
 function appFromClientId(clientId: string): LoginApp {
   const client = parseAbsoluteUrl(clientId, "client_id");
-  assertSafeWebUrl(client, "client_id");
+  assertSafeWebUrl(client, "client_id", true);
   const isDev = client.protocol === "http:" &&
     isLoopbackHostname(client.hostname);
   const isReferenceApp = isExampleLoginClientId(clientId);
@@ -1995,6 +1992,8 @@ function normalizeRegistrationUrl(
   return normalizeHref(url);
 }
 
+export const normalizeLoginEnvironmentUrlForTest = normalizeRegistrationUrl;
+
 function normalizeAllowedReturnUris(values: string[]): string[] {
   if (values.length > MAX_ALLOWED_RETURN_URIS) {
     throw new LoginRequestError(
@@ -2574,8 +2573,8 @@ export async function resolveLoginAppForRequest(
   const returnUri = parseAbsoluteUrl(req.returnUri, "return_uri");
   const normalizedClientId = normalizeHref(client);
   const normalizedReturn = normalizeHref(returnUri);
-  assertSafeWebUrl(client, "client_id");
-  assertSafeWebUrl(returnUri, "return_uri");
+  assertSafeWebUrl(client, "client_id", true);
+  assertSafeWebUrl(returnUri, "return_uri", true);
 
   const foundApp = await (options.getLoginApp ?? getLoginApp)(
     normalizedClientId,

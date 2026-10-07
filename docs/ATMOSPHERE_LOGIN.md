@@ -42,6 +42,38 @@ Optional options:
 - `closePopupOnComplete`: close an SDK-opened popup after a valid selection
   message. Defaults to `true`.
 
+## Local development with the hosted picker
+
+The hosted picker accepts HTTP client IDs and return URLs on `localhost`,
+`127.0.0.1`, and `[::1]`. These are browser handoff URLs; Atmosphere never
+fetches local client metadata. Other HTTP hosts and private-network HTTPS URLs
+remain unsupported.
+
+An unregistered local metadata URL can return to the same origin, including the
+same port. For AT Protocol's special `http://localhost/` client ID (no port or
+path), the return URL must match a declared `redirect_uri`, with its port
+ignored. Without declarations, only `http://127.0.0.1/` and `http://[::1]/` are
+allowed, with any port. Declared callbacks for this special client ID must use a
+loopback IP (`127.0.0.1` or `[::1]`). Include the selection callback path in the
+declaration:
+
+```ts
+const clientId = "http://localhost/?redirect_uri=" +
+  encodeURIComponent("http://127.0.0.1/selected");
+AtmosphereLogin.continue({
+  clientId,
+  returnUri: "http://127.0.0.1:5173/selected",
+});
+```
+
+Local clients use the hosted picker without registration, so shared localhost
+client IDs cannot be claimed by another developer. Hosted environment
+registration still requires public HTTPS URLs. Registered environments always
+use their exact return-URL allow-list, including ports. Local clients remain
+labelled as development apps; HTTP loopback support does not confer production
+trust. The relying app still performs its own AT Protocol OAuth flow and
+validates the signed selection.
+
 ## Launch Behavior
 
 Redirect mode navigates the app's existing browser tab to the picker and returns
