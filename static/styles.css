@@ -21604,37 +21604,6 @@ form[data-submit-once-pending="true"] button:disabled {
     overflow: visible;
     overscroll-behavior: auto;
     padding-right: 0;
-  }
-
-  .docs-nav {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
-    gap: 1rem;
-    overflow: visible;
-  }
-
-  .docs-nav-group {
-    min-width: 0;
-  }
-
-  .docs-summary-grid,
-  .docs-steps {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .docs-shell-section {
-    padding-top: 5.65rem;
-    padding-bottom: 2.5rem;
-  }
-
-  .docs-shell {
-    gap: 0.85rem;
-    padding-inline: 1rem;
-  }
-
-  .docs-sidebar {
     gap: 0.55rem;
   }
 
@@ -21680,6 +21649,23 @@ form[data-submit-once-pending="true"] button:disabled {
   .docs-nav-group a.is-active {
     background: rgba(255, 255, 255, 0.76);
     border-color: rgba(255, 255, 255, 0.78);
+  }
+
+  .docs-summary-grid,
+  .docs-steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .docs-shell-section {
+    padding-top: 5.65rem;
+    padding-bottom: 2.5rem;
+  }
+
+  .docs-shell {
+    gap: 0.85rem;
+    padding-inline: 1rem;
   }
 
   .docs-hero {

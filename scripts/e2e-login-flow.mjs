@@ -631,15 +631,34 @@ async function smokeDocsAccessibility(browser) {
   const page = await browser.newPage();
   page.setDefaultTimeout(10_000);
   try {
-    for (const width of [320, 768, 1440]) {
+    for (const width of [320, 640, 641, 700, 760, 761, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       for (
         const path of ["/docs", "/docs/atmosphere-login", "/docs/reference"]
       ) {
+        console.log(`[e2e:login] checking docs ${path} at ${width}px`);
         await openSuccessfulPage(page, `${ORIGIN}${path}`);
         await assertPageShell(page, `${path} ${width}px`);
         await assertMinimumTarget(page, ".docs-toc-summary", 44);
         await assertMinimumTarget(page, ".nav-logo", 44);
+        if (width <= 760) {
+          const compactNavigation = await page.locator(".docs-sidebar")
+            .evaluate((sidebar) => {
+              const nav = sidebar.querySelector(".docs-nav");
+              const links = [...nav.querySelectorAll("a")];
+              const first = links[0].getBoundingClientRect();
+              return getComputedStyle(nav).display === "flex" &&
+                sidebar.getBoundingClientRect().height < 120 &&
+                links.every((link) => {
+                  const box = link.getBoundingClientRect();
+                  return box.height >= 43.5 && box.height < 60 &&
+                    Math.abs(box.top - first.top) < 1;
+                });
+            });
+          if (!compactNavigation) {
+            throw new Error(`docs navigation stretched at ${width}px`);
+          }
+        }
         const undersizedActions = await page.locator(".docs-hero-cta")
           .evaluateAll((nodes) =>
             nodes.some((node) => {
@@ -677,6 +696,20 @@ async function smokeDocsAccessibility(browser) {
             const code = document.querySelector(".docs-code pre");
             return document.activeElement === code &&
               (code.scrollWidth <= code.clientWidth || code.scrollLeft > 0);
+          }).catch(async (error) => {
+            const metrics = await code.evaluate((node) => ({
+              focused: document.activeElement === node,
+              scrollWidth: node.scrollWidth,
+              clientWidth: node.clientWidth,
+              scrollLeft: node.scrollLeft,
+              boxWidth: node.getBoundingClientRect().width,
+            }));
+            throw new Error(
+              `code scrolling failed at ${path} ${width}px: ${
+                JSON.stringify(metrics)
+              }`,
+              { cause: error },
+            );
           });
         }
       }
