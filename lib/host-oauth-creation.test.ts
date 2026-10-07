@@ -346,13 +346,13 @@ Deno.test("anonymous shell reads complete signup choices from AppView without a 
     globalThis.fetch = async (input) => {
       const url = new URL(String(input));
       if (url.pathname !== '/api/login/account-hosts' || url.searchParams.get('q') !== 'Eurosky') throw new Error('wrong projection request');
-      return Response.json({hosts: [{host:'eurosky.social', oauthAccountCreation:true}]});
+      return Response.json({hosts: Array.from({length:100}, (_,i) => ({host:'eurosky-'+i+'.social', oauthAccountCreation:true, signupStatus:i < 80 ? 'open' : 'invite_required'}))});
     };
     const {listCreateAccountHostOptions} = await import(${
     JSON.stringify(new URL("./create-account-hosts.ts", import.meta.url).href)
   });
     const choices = await listCreateAccountHostOptions({query:'Eurosky'});
-    if (choices.length !== 1 || choices[0].host !== 'eurosky.social') throw new Error('remote signup choice lost');
+    if (choices.length !== 100 || choices[0].host !== 'eurosky-0.social' || choices[99].signupStatus !== 'invite_required') throw new Error('remote signup choices truncated or invite hosts lost');
   `;
   const command = new Deno.Command(Deno.execPath(), {
     args: ["eval", code],
