@@ -127,6 +127,7 @@ jobs:
           sources = [Path("/etc/apt/sources.list")]
           sources += list(Path("/etc/apt/sources.list.d").glob("*.list"))
           sources += list(Path("/etc/apt/sources.list.d").glob("*.sources"))
+          sources += list(Path("/etc/apt").glob("*mirrors*.txt"))
           for path in sources:
               if path.is_file():
                   text = path.read_text()
