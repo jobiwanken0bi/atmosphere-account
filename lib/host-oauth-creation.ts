@@ -107,14 +107,17 @@ export async function loadHostOAuthCreationEvidence(
 /** Paginate before filtering: unsupported providers must not hide later ones. */
 export async function listAccountCreationCandidates(
   load = listPublicAccountHosts,
+  signal?: AbortSignal,
 ): Promise<AccountHost[]> {
   const hosts: AccountHost[] = [];
   for (let page = 1; page <= Math.ceil(MAX_CANDIDATES / 72); page++) {
+    signal?.throwIfAborted();
     const result = await load({
       page,
       pageSize: 72,
       sort: "recommended",
     });
+    signal?.throwIfAborted();
     hosts.push(...result.hosts);
     if (page * Math.max(1, result.pageSize) >= result.total) break;
   }
@@ -133,10 +136,13 @@ export async function refreshHostOAuthCreationEvidence(options: {
 } = {}): Promise<{ candidates: number; checked: number; supported: number }> {
   options.signal?.throwIfAborted();
   const checkedAt = options.now ?? Date.now();
-  const hosts = (options.hosts ?? await listAccountCreationCandidates())
+  const hosts = (options.hosts ??
+    await listAccountCreationCandidates(undefined, options.signal))
     .filter((host) => isAccountCreationDiscoveryCandidate(host, checkedAt))
     .slice(0, MAX_CANDIDATES);
+  options.signal?.throwIfAborted();
   const previous = await loadHostOAuthCreationEvidence(hosts, options.client);
+  options.signal?.throwIfAborted();
   const candidates = hosts.filter((host) => {
     const old = previous.get(host.host);
     return options.force || !old ||
@@ -242,18 +248,21 @@ export async function refreshHostOAuthCreationEvidence(options: {
 
 /** Isolate optional discovery failures and reserve time for existing maintenance. */
 export async function refreshHostOAuthCreationForMaintenance(
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
   refresh = refreshHostOAuthCreationEvidence,
 ): Promise<
   { candidates: number; checked: number; supported: number; error?: string }
 > {
   options.signal?.throwIfAborted();
-  const deadline = AbortSignal.timeout(45_000);
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.min(45_000, Math.max(1, Math.floor(options.timeoutMs!)))
+    : 45_000;
+  const deadline = AbortSignal.timeout(timeoutMs);
   const signal = options.signal
     ? AbortSignal.any([options.signal, deadline])
     : deadline;
   try {
-    return await refresh({ signal });
+    return await discoveryWithinDeadline(refresh({ signal }), signal);
   } catch (error) {
     options.signal?.throwIfAborted();
     return {
@@ -265,4 +274,26 @@ export async function refreshHostOAuthCreationForMaintenance(
         : (error instanceof Error ? error.name : "discovery_unavailable"),
     };
   }
+}
+
+function discoveryWithinDeadline<T>(
+  work: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    const abort = () => {
+      cleanup();
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    work.then((value) => {
+      cleanup();
+      resolve(value);
+    }, (error) => {
+      cleanup();
+      reject(error);
+    });
+    if (signal.aborted) abort();
+  });
 }

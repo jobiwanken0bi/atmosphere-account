@@ -454,3 +454,32 @@ Deno.test("signup discovery failure cannot prevent other directory maintenance",
     { candidates: 1, checked: 1, supported: 1 },
   );
 });
+
+Deno.test("optional discovery deadline releases maintenance even when work ignores cancellation", async () => {
+  const result = await refreshHostOAuthCreationForMaintenance(
+    { timeoutMs: 5 },
+    () => new Promise(() => {}),
+  );
+  assertEquals(result, {
+    candidates: 0,
+    checked: 0,
+    supported: 0,
+    error: "deadline_exceeded",
+  });
+  const controller = new AbortController();
+  let pages = 0;
+  await assertRejects(() =>
+    listAccountCreationCandidates(() => {
+      pages++;
+      controller.abort();
+      return Promise.resolve({
+        hosts: [],
+        total: 1000,
+        page: 1,
+        pageSize: 72,
+        sort: "recommended",
+      });
+    }, controller.signal)
+  );
+  assertEquals(pages, 1);
+});
