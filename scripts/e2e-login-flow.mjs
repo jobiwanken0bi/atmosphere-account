@@ -79,6 +79,7 @@ async function main() {
     });
     await smokePublicExperience(browser);
     await smokeDocsAccessibility(browser);
+    await smokeActionHoverColors(browser);
     await smokeEarlyAvatarFailure(browser);
     console.log("[e2e:login] Chromium launched; opening picker");
     const page = await browser.newPage();
@@ -717,6 +718,84 @@ async function smokeDocsAccessibility(browser) {
     console.log(
       "[e2e:login] ok docs reflow, touch targets and keyboard code scrolling",
     );
+  } finally {
+    await page.close();
+  }
+}
+
+async function smokeActionHoverColors(browser) {
+  const page = await browser.newPage();
+  try {
+    await page.setContent(`
+      <link rel="stylesheet" href="${ORIGIN}/styles.css">
+      <main style="padding:24px;background:#e8f0fe">
+        <a id="docs-primary" class="docs-hero-cta docs-hero-cta--primary" href="#">Docs action</a>
+        <a id="linked-primary" class="profile-form-button-primary" href="#">Linked form action</a>
+        <a id="dashboard-primary" class="account-dashboard-button account-dashboard-button--primary" href="#">Account action</a>
+        <div class="account-product-actions"><a id="product-primary" class="account-product-action--primary" href="#">Listing action</a></div>
+        <a id="plain-link" href="#">Plain link</a>
+        <div class="dark-phase" style="padding:24px;background:#14213f">
+          <a id="dark-action" class="explore-cta-primary" href="#">Themed action</a>
+          <a id="dark-menu" class="account-menu-item" href="#">Themed menu action</a>
+          <a id="dark-link" href="#">Plain themed link</a>
+        </div>
+      </main>
+    `);
+    const expectedColors = {
+      "docs-primary": "rgb(255, 255, 255)",
+      "linked-primary": "rgb(255, 255, 255)",
+      "dashboard-primary": "rgb(255, 255, 255)",
+      "product-primary": "rgb(255, 255, 255)",
+      "dark-action": "rgb(240, 244, 255)",
+      "dark-menu": "rgb(243, 245, 251)",
+      "plain-link": "rgb(15, 45, 82)",
+      "dark-link": "rgb(212, 236, 252)",
+    };
+    for (const [id, expected] of Object.entries(expectedColors)) {
+      const action = page.locator(`#${id}`);
+      await action.hover();
+      await action.evaluate((node) =>
+        Promise.all(node.getAnimations().map((animation) => animation.finished))
+      );
+      const color = await action.evaluate((node) =>
+        getComputedStyle(node).color
+      );
+      if (color !== expected) {
+        throw new Error(
+          `${id} hover foreground is ${color}, expected ${expected}`,
+        );
+      }
+    }
+    const primary = page.locator("#docs-primary");
+    for (const state of ["normal", "hover"]) {
+      if (state === "hover") await primary.hover();
+      else await page.mouse.move(0, 0);
+      await primary.evaluate((node) =>
+        Promise.all(node.getAnimations().map((animation) => animation.finished))
+      );
+      const contrast = await primary.evaluate((node) => {
+        const luminance = (color) => {
+          const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number)
+            .map((value) => value / 255)
+            .map((value) =>
+              value <= 0.04045
+                ? value / 12.92
+                : ((value + 0.055) / 1.055) ** 2.4
+            );
+          return channels[0] * 0.2126 + channels[1] * 0.7152 +
+            channels[2] * 0.0722;
+        };
+        const style = getComputedStyle(node);
+        const foreground = luminance(style.color);
+        const background = luminance(style.backgroundColor);
+        return (Math.max(foreground, background) + 0.05) /
+          (Math.min(foreground, background) + 0.05);
+      });
+      if (contrast < 4.5) {
+        throw new Error(`docs primary ${state} contrast is ${contrast}`);
+      }
+    }
+    console.log("[e2e:login] ok action hover colors and docs button contrast");
   } finally {
     await page.close();
   }

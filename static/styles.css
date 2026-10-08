@@ -42,7 +42,8 @@ a {
   transition: color 0.2s;
 }
 
-a:hover {
+/* Text-link hover defaults must not override component-owned foregrounds. */
+a:where(:hover) {
   color: #0f2d52;
 }
 
@@ -4466,7 +4467,7 @@ body {
   color: #a8d4f8;
 }
 
-.dark-phase a:hover {
+.dark-phase a:where(:hover) {
   color: #d4ecfc;
 }
 
@@ -20886,8 +20887,8 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .docs-hero-cta--primary {
-  background: #1677ff;
-  border: 1px solid rgba(22, 119, 255, 0.9);
+  background: #126de5;
+  border: 1px solid rgba(18, 109, 229, 0.9);
   color: #fff;
   box-shadow: 0 13px 28px rgba(22, 119, 255, 0.18);
 }
@@ -20904,8 +20905,8 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 
 .docs-hero-cta--primary:hover {
-  background: #0f6ee9;
-  border-color: rgba(15, 110, 233, 0.95);
+  background: #0f5ecc;
+  border-color: rgba(15, 94, 204, 0.95);
   box-shadow: 0 16px 34px rgba(22, 119, 255, 0.24);
 }
 
