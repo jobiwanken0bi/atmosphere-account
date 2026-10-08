@@ -626,6 +626,18 @@ async function assertFilterEscapeFocus(page, selector) {
     return !menu.open &&
       document.activeElement === menu.querySelector("summary");
   }, selector);
+  // Mouse-opened native disclosures may leave focus on the page body.
+  await summary.click();
+  await menu.locator(".hosts-filter-popover").click({
+    position: { x: 100, y: 6 },
+  });
+  await page.waitForFunction(() => document.activeElement === document.body);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction((selector) => {
+    const menu = document.querySelector(selector);
+    return !menu.open &&
+      document.activeElement === menu.querySelector("summary");
+  }, selector);
 }
 
 async function smokeDocsAccessibility(browser) {
@@ -715,8 +727,17 @@ async function smokeDocsAccessibility(browser) {
         }
       }
     }
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await openSuccessfulPage(page, `${ORIGIN}/docs/reference`);
+    await page.waitForFunction(() => {
+      const sidebar = document.querySelector(".docs-sidebar");
+      const active = sidebar.querySelector("a.is-active")
+        .getBoundingClientRect();
+      const box = sidebar.getBoundingClientRect();
+      return active.top >= box.top - 1 && active.bottom <= box.bottom + 1;
+    });
     console.log(
-      "[e2e:login] ok docs reflow, touch targets and keyboard code scrolling",
+      "[e2e:login] ok docs reflow, touch targets, active sidebar and keyboard code scrolling",
     );
   } finally {
     await page.close();
@@ -733,20 +754,33 @@ async function smokeActionHoverColors(browser) {
         <a id="linked-primary" class="profile-form-button-primary" href="#">Linked form action</a>
         <a id="dashboard-primary" class="account-dashboard-button account-dashboard-button--primary" href="#">Account action</a>
         <div class="account-product-actions"><a id="product-primary" class="account-product-action--primary" href="#">Listing action</a></div>
+        <p>Contact: <a id="inline-contact" class="text-link-button text-link-button--inline" href="#">contact@example.test</a></p>
         <a id="plain-link" href="#">Plain link</a>
         <div class="dark-phase" style="padding:24px;background:#14213f">
           <a id="dark-action" class="explore-cta-primary" href="#">Themed action</a>
+          <a id="dark-owned" class="profile-form-button-primary" href="#">Themed primary</a>
           <a id="dark-menu" class="account-menu-item" href="#">Themed menu action</a>
           <a id="dark-link" href="#">Plain themed link</a>
         </div>
       </main>
     `);
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const inline = await page.locator("#inline-contact").evaluate((node) => {
+        const style = getComputedStyle(node);
+        return style.display === "inline" && style.minHeight === "0px";
+      });
+      if (!inline) {
+        throw new Error(`inline contact inflated prose at ${width}px`);
+      }
+    }
     const expectedColors = {
       "docs-primary": "rgb(255, 255, 255)",
       "linked-primary": "rgb(255, 255, 255)",
       "dashboard-primary": "rgb(255, 255, 255)",
       "product-primary": "rgb(255, 255, 255)",
       "dark-action": "rgb(240, 244, 255)",
+      "dark-owned": "rgb(255, 255, 255)",
       "dark-menu": "rgb(243, 245, 251)",
       "plain-link": "rgb(15, 45, 82)",
       "dark-link": "rgb(212, 236, 252)",

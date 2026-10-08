@@ -134,6 +134,15 @@ function initDocsNavPosition() {
   if (!nav || !active) return;
 
   function scrollActiveIntoView() {
+    const sidebar = nav.closest(".docs-sidebar");
+    if (sidebar && sidebar.scrollHeight > sidebar.clientHeight) {
+      const box = sidebar.getBoundingClientRect();
+      const item = active.getBoundingClientRect();
+      if (item.top < box.top) sidebar.scrollTop += item.top - box.top;
+      else if (item.bottom > box.bottom) {
+        sidebar.scrollTop += item.bottom - box.bottom;
+      }
+    }
     if (nav.scrollWidth <= nav.clientWidth) return;
     const navBox = nav.getBoundingClientRect();
     const activeBox = active.getBoundingClientRect();
@@ -166,5 +175,6 @@ if (document.readyState === "loading") {
   });
 } else {
   initTocScrollSpy();
+  initTocDisclosure();
   initDocsNavPosition();
 }

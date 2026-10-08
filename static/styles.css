@@ -4463,11 +4463,11 @@ body {
   color: rgba(255, 255, 255, 0.76);
 }
 
-.dark-phase a {
+:where(.dark-phase) a {
   color: #a8d4f8;
 }
 
-.dark-phase a:where(:hover) {
+:where(.dark-phase) a:where(:hover) {
   color: #d4ecfc;
 }
 
@@ -4848,6 +4848,13 @@ body {
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
+}
+
+/* Preserve normal line boxes for actions embedded in prose. */
+.inline-form .text-link-button,
+.text-link-button.text-link-button--inline {
+  display: inline;
+  min-height: 0;
 }
 
 .explore-hero {
@@ -8785,10 +8792,10 @@ body {
   opacity: 1;
 }
 
-.profile-form-banner-thumb-label:focus-within,
-.profile-form-button-secondary:has(input[type="file"]):focus-within,
-.profile-screenshot-dropzone:focus-within,
-.profile-screenshot-add-tile:focus-within {
+.profile-form-banner-thumb-label:has(input:focus-visible),
+.profile-form-button-secondary:has(input[type="file"]:focus-visible),
+.profile-screenshot-dropzone:has(input:focus-visible),
+.profile-screenshot-add-tile:has(input:focus-visible) {
   outline: var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
@@ -19586,7 +19593,7 @@ form[data-submit-once-pending="true"] button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  align-items: center;
+  align-items: flex-end;
 }
 .admin-report-notes-field {
   flex: 1 1 200px;
@@ -21873,7 +21880,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .explore-category-tab:focus-visible,
 .profile-hero-action:focus-visible,
 .profile-form-button-secondary:focus-visible,
-.profile-form-button-secondary:focus-within,
+.profile-form-button-secondary:has(input:focus-visible),
 .directory-register-button:focus-visible,
 .text-link-button:focus-visible,
 .explore-search-submit:focus-visible,

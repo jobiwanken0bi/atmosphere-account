@@ -40,7 +40,7 @@ export default function LinkUrlOverrideModal(
 ) {
   const draft = useSignal<string>(value);
   const titleId = useId();
-  const dialogRef = useDialog<HTMLDivElement>(open, onClose);
+  const dialogRef = useDialog<HTMLFormElement>(open, onClose);
 
   useEffect(() => {
     if (open) draft.value = value;
@@ -55,8 +55,13 @@ export default function LinkUrlOverrideModal(
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
+      <form
         class="modal-card"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm(draft.value.trim());
+        }}
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
@@ -105,14 +110,13 @@ export default function LinkUrlOverrideModal(
             {labels.cancel}
           </button>
           <button
-            type="button"
+            type="submit"
             class="profile-form-button-primary"
-            onClick={() => onConfirm(draft.value.trim())}
           >
             {labels.save}
           </button>
         </footer>
-      </div>
+      </form>
     </div>,
     document.body,
   );

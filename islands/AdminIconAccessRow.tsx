@@ -114,7 +114,7 @@ export default function AdminIconAccessRow(p: Props) {
               href={`/apps/${encodeURIComponent(p.handle)}`}
               target="_blank"
               rel="noopener noreferrer"
-              class="text-link-button"
+              class="text-link-button text-link-button--inline"
             >
               @{p.handle} ↗
             </a>
@@ -125,7 +125,12 @@ export default function AdminIconAccessRow(p: Props) {
         </p>
         <p class="admin-icon-row-uploaded">
           <strong>{p.copy.emailLabel}:</strong>{" "}
-          <a href={`mailto:${p.email}`} class="text-link-button">{p.email}</a>
+          <a
+            href={`mailto:${p.email}`}
+            class="text-link-button text-link-button--inline"
+          >
+            {p.email}
+          </a>
         </p>
         <p class="admin-icon-row-uploaded">
           {p.copy.requestedAtLabel} {requested}

@@ -1545,6 +1545,7 @@ export default function CreateProfileForm(
                 </span>
                 <input
                   type="file"
+                  tabIndex={-1}
                   accept="image/png,image/jpeg,image/webp"
                   class="sr-only"
                   onChange={onBannerChange}

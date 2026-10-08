@@ -474,18 +474,23 @@ function CreateAccountHostChooser(
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !menu.open) return;
+      if (event.key !== "Escape" || event.defaultPrevented || !menu.open) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const restoreFocus = menu.contains(document.activeElement) ||
+        document.activeElement === document.body;
       event.preventDefault();
       event.stopPropagation();
       menu.open = false;
-      menu.querySelector("summary")?.focus();
+      if (restoreFocus) menu.querySelector("summary")?.focus();
     };
     document.addEventListener("pointerdown", closeOnPointerDown);
-    menu.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", closeOnEscape);
     menu.setAttribute("data-filter-keyboard-ready", "true");
     return () => {
       document.removeEventListener("pointerdown", closeOnPointerDown);
-      menu.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", closeOnEscape);
       menu.removeAttribute("data-filter-keyboard-ready");
     };
   }, []);

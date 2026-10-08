@@ -12,12 +12,15 @@ document.addEventListener("pointerdown", (event) => {
 });
 
 for (const menu of menus) {
-  menu.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || !menu.hasAttribute("open")) return;
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || !menu.open) return;
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+    const restoreFocus = menu.contains(document.activeElement) ||
+      document.activeElement === document.body;
     event.preventDefault();
     event.stopPropagation();
     menu.removeAttribute("open");
-    menu.querySelector("summary")?.focus();
+    if (restoreFocus) menu.querySelector("summary")?.focus();
   });
   menu.setAttribute("data-filter-keyboard-ready", "true");
 }
