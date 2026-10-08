@@ -197,7 +197,11 @@ function DocsBlockView(
               Copy
             </button>
           </figcaption>
-          <pre><code>{block.code}</code></pre>
+          <pre
+            tabIndex={0}
+            role="region"
+            aria-label={`${block.caption ?? block.language} code example`}
+          ><code>{block.code}</code></pre>
         </figure>
       );
     case "list":
@@ -269,7 +273,12 @@ function DocsBlockView(
       );
     case "table":
       return (
-        <div class="docs-table-wrap">
+        <div
+          class="docs-table-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label={`Table: ${block.columns.join(", ")}`}
+        >
           <table class="docs-table">
             <thead>
               <tr>

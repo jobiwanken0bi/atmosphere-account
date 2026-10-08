@@ -212,7 +212,7 @@ function AdminAppDirectoryPage(
                     name="action"
                     value="rescore_trending"
                   />
-                  <button class="button-primary" type="submit">
+                  <button class="profile-form-button-primary" type="submit">
                     Rescore trending
                   </button>
                 </form>

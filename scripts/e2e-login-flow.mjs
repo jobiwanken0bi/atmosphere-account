@@ -78,6 +78,9 @@ async function main() {
       timeout: 15_000,
     });
     await smokePublicExperience(browser);
+    await smokeDocsAccessibility(browser);
+    await smokeActionHoverColors(browser);
+    await smokeEarlyAvatarFailure(browser);
     console.log("[e2e:login] Chromium launched; opening picker");
     const page = await browser.newPage();
     page.setDefaultTimeout(10_000);
@@ -595,7 +598,270 @@ async function smokePublicExperience(browser) {
       throw new Error("universal login heading is not canonical");
     }
     await assertMinimumTarget(page, ".signin-form-submit", 44);
+    for (const path of ["/apps/all", "/hosts"]) {
+      await openSuccessfulPage(page, `${ORIGIN}${path}`);
+      await assertFilterEscapeFocus(page, ".hosts-filter-menu");
+    }
+    await openSuccessfulPage(page, createUrl.href);
+    await assertFilterEscapeFocus(page, ".signin-host-filter-menu");
   } finally {
+    await page.close();
+  }
+}
+
+async function assertFilterEscapeFocus(page, selector) {
+  console.log(
+    `[e2e:login] checking filter focus at ${new URL(page.url()).pathname}`,
+  );
+  const menu = page.locator(selector);
+  await page.locator(`${selector}[data-filter-keyboard-ready="true"]`)
+    .waitFor();
+  const summary = menu.locator("summary");
+  await summary.press("Enter");
+  const field = menu.locator("select").first();
+  await field.waitFor({ state: "visible" });
+  await field.press("Escape");
+  await page.waitForFunction((selector) => {
+    const menu = document.querySelector(selector);
+    return !menu.open &&
+      document.activeElement === menu.querySelector("summary");
+  }, selector);
+  // Mouse-opened native disclosures may leave focus on the page body.
+  await summary.click();
+  await menu.locator(".hosts-filter-popover").click({
+    position: { x: 100, y: 6 },
+  });
+  await page.waitForFunction(() => document.activeElement === document.body);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction((selector) => {
+    const menu = document.querySelector(selector);
+    return !menu.open &&
+      document.activeElement === menu.querySelector("summary");
+  }, selector);
+}
+
+async function smokeDocsAccessibility(browser) {
+  const page = await browser.newPage();
+  page.setDefaultTimeout(10_000);
+  try {
+    for (const width of [320, 640, 641, 700, 760, 761, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (
+        const path of ["/docs", "/docs/atmosphere-login", "/docs/reference"]
+      ) {
+        console.log(`[e2e:login] checking docs ${path} at ${width}px`);
+        await openSuccessfulPage(page, `${ORIGIN}${path}`);
+        await assertPageShell(page, `${path} ${width}px`);
+        await assertMinimumTarget(page, ".docs-toc-summary", 44);
+        await assertMinimumTarget(page, ".nav-logo", 44);
+        if (width <= 760) {
+          const compactNavigation = await page.locator(".docs-sidebar")
+            .evaluate((sidebar) => {
+              const nav = sidebar.querySelector(".docs-nav");
+              const links = [...nav.querySelectorAll("a")];
+              const first = links[0].getBoundingClientRect();
+              return getComputedStyle(nav).display === "flex" &&
+                sidebar.getBoundingClientRect().height < 120 &&
+                links.every((link) => {
+                  const box = link.getBoundingClientRect();
+                  return box.height >= 43.5 && box.height < 60 &&
+                    Math.abs(box.top - first.top) < 1;
+                });
+            });
+          if (!compactNavigation) {
+            throw new Error(`docs navigation stretched at ${width}px`);
+          }
+        }
+        const undersizedActions = await page.locator(".docs-hero-cta")
+          .evaluateAll((nodes) =>
+            nodes.some((node) => {
+              const box = node.getBoundingClientRect();
+              return box.height < 43.5 || box.width < 43.5;
+            })
+          );
+        if (undersizedActions) throw new Error("docs hero action is too small");
+        if (await page.locator(".docs-table-wrap").count()) {
+          const table = page.locator(".docs-table-wrap").first();
+          await table.press("ArrowRight");
+          await page.waitForFunction(() => {
+            const table = document.querySelector(".docs-table-wrap");
+            return document.activeElement === table &&
+              (table.scrollWidth <= table.clientWidth || table.scrollLeft > 0);
+          });
+        }
+        if (await page.locator(".docs-code pre").count()) {
+          const code = page.locator(".docs-code pre").first();
+          const copyTargets = await page.locator(".docs-code-copy").evaluateAll(
+            (buttons) =>
+              buttons.every((button) => {
+                const box = button.getBoundingClientRect();
+                return box.width >= 44 && box.height >= 44;
+              }),
+          );
+          if (!copyTargets) {
+            throw new Error("code-copy targets are smaller than 44px");
+          }
+          if (!await code.getAttribute("aria-label")) {
+            throw new Error("scrolling code example has no accessible name");
+          }
+          await code.press("ArrowRight");
+          await page.waitForFunction(() => {
+            const code = document.querySelector(".docs-code pre");
+            return document.activeElement === code &&
+              (code.scrollWidth <= code.clientWidth || code.scrollLeft > 0);
+          }).catch(async (error) => {
+            const metrics = await code.evaluate((node) => ({
+              focused: document.activeElement === node,
+              scrollWidth: node.scrollWidth,
+              clientWidth: node.clientWidth,
+              scrollLeft: node.scrollLeft,
+              boxWidth: node.getBoundingClientRect().width,
+            }));
+            throw new Error(
+              `code scrolling failed at ${path} ${width}px: ${
+                JSON.stringify(metrics)
+              }`,
+              { cause: error },
+            );
+          });
+        }
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await openSuccessfulPage(page, `${ORIGIN}/docs/reference`);
+    await page.waitForFunction(() => {
+      const sidebar = document.querySelector(".docs-sidebar");
+      const active = sidebar.querySelector("a.is-active")
+        .getBoundingClientRect();
+      const box = sidebar.getBoundingClientRect();
+      return active.top >= Math.max(0, box.top - 1) &&
+        active.bottom <= Math.min(innerHeight, box.bottom + 1);
+    });
+    console.log(
+      "[e2e:login] ok docs reflow, touch targets, active sidebar and keyboard code scrolling",
+    );
+  } finally {
+    await page.close();
+  }
+}
+
+async function smokeActionHoverColors(browser) {
+  const page = await browser.newPage();
+  try {
+    await page.setContent(`
+      <link rel="stylesheet" href="${ORIGIN}/styles.css">
+      <main style="padding:24px;background:#e8f0fe">
+        <a id="docs-primary" class="docs-hero-cta docs-hero-cta--primary" href="#">Docs action</a>
+        <a id="linked-primary" class="profile-form-button-primary" href="#">Linked form action</a>
+        <a id="dashboard-primary" class="account-dashboard-button account-dashboard-button--primary" href="#">Account action</a>
+        <div class="account-product-actions"><a id="product-primary" class="account-product-action--primary" href="#">Listing action</a></div>
+        <p>Contact: <a id="inline-contact" class="text-link-button text-link-button--inline" href="#">contact@example.test</a></p>
+        <a id="plain-link" href="#">Plain link</a>
+        <div class="dark-phase" style="padding:24px;background:#14213f">
+          <a id="dark-action" class="explore-cta-primary" href="#">Themed action</a>
+          <a id="dark-owned" class="profile-form-button-primary" href="#">Themed primary</a>
+          <a id="dark-menu" class="account-menu-item" href="#">Themed menu action</a>
+          <a id="dark-link" href="#">Plain themed link</a>
+        </div>
+      </main>
+    `);
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const inline = await page.locator("#inline-contact").evaluate((node) => {
+        const style = getComputedStyle(node);
+        return style.display === "inline" && style.minHeight === "0px";
+      });
+      if (!inline) {
+        throw new Error(`inline contact inflated prose at ${width}px`);
+      }
+    }
+    const expectedColors = {
+      "docs-primary": "rgb(255, 255, 255)",
+      "linked-primary": "rgb(255, 255, 255)",
+      "dashboard-primary": "rgb(255, 255, 255)",
+      "product-primary": "rgb(255, 255, 255)",
+      "dark-action": "rgb(240, 244, 255)",
+      "dark-owned": "rgb(255, 255, 255)",
+      "dark-menu": "rgb(243, 245, 251)",
+      "plain-link": "rgb(15, 45, 82)",
+      "dark-link": "rgb(212, 236, 252)",
+    };
+    for (const [id, expected] of Object.entries(expectedColors)) {
+      const action = page.locator(`#${id}`);
+      await action.hover();
+      await action.evaluate((node) =>
+        Promise.all(node.getAnimations().map((animation) => animation.finished))
+      );
+      const color = await action.evaluate((node) =>
+        getComputedStyle(node).color
+      );
+      if (color !== expected) {
+        throw new Error(
+          `${id} hover foreground is ${color}, expected ${expected}`,
+        );
+      }
+    }
+    const primary = page.locator("#docs-primary");
+    for (const state of ["normal", "hover"]) {
+      if (state === "hover") await primary.hover();
+      else await page.mouse.move(0, 0);
+      await primary.evaluate((node) =>
+        Promise.all(node.getAnimations().map((animation) => animation.finished))
+      );
+      const contrast = await primary.evaluate((node) => {
+        const luminance = (color) => {
+          const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number)
+            .map((value) => value / 255)
+            .map((value) =>
+              value <= 0.04045
+                ? value / 12.92
+                : ((value + 0.055) / 1.055) ** 2.4
+            );
+          return channels[0] * 0.2126 + channels[1] * 0.7152 +
+            channels[2] * 0.0722;
+        };
+        const style = getComputedStyle(node);
+        const foreground = luminance(style.color);
+        const background = luminance(style.backgroundColor);
+        return (Math.max(foreground, background) + 0.05) /
+          (Math.min(foreground, background) + 0.05);
+      });
+      if (contrast < 4.5) {
+        throw new Error(`docs primary ${state} contrast is ${contrast}`);
+      }
+    }
+    console.log("[e2e:login] ok action hover colors and docs button contrast");
+  } finally {
+    await page.close();
+  }
+}
+
+async function smokeEarlyAvatarFailure(browser) {
+  const page = await browser.newPage();
+  let releaseScripts;
+  const scriptsReady = new Promise((resolve) => releaseScripts = resolve);
+  try {
+    await page.goto(`${ORIGIN}/dev/login-picker?current=local-picker.test`);
+    await page.route(
+      "**/api/me/avatar*",
+      (route) => route.fulfill({ status: 404, body: "No avatar" }),
+    );
+    await page.route(/\.js(?:\?|$)/, async (route) => {
+      await scriptsReady;
+      await route.continue();
+    });
+    await page.goto(`${ORIGIN}/docs`, { waitUntil: "commit" });
+    await page.waitForFunction(() => {
+      const image = document.querySelector(".account-menu-avatar img");
+      return image?.complete && image.naturalWidth === 0;
+    });
+    releaseScripts();
+    await page.locator(".account-menu-avatar-initial").waitFor({
+      state: "visible",
+    });
+    console.log("[e2e:login] ok avatar failure before hydration uses initials");
+  } finally {
+    releaseScripts();
     await page.close();
   }
 }

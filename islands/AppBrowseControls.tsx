@@ -28,6 +28,9 @@ export default function AppBrowseControls(
 
   useEffect(() => {
     function closeMenu() {
+      // Native details can open before its asynchronous toggle event updates
+      // the signal. Close the element too, even if the signal is still false.
+      if (menuRef.current) menuRef.current.open = false;
       menuOpen.value = false;
     }
 
@@ -38,14 +41,30 @@ export default function AppBrowseControls(
     }
 
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") closeMenu();
+      const menu = menuRef.current;
+      if (event.key !== "Escape" || event.defaultPrevented || !menu?.open) {
+        return;
+      }
+      if (
+        [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')]
+          .some((dialog) => dialog.getClientRects().length > 0)
+      ) return;
+      const restoreFocus = menu.contains(document.activeElement) ||
+        document.activeElement === document.body;
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+      if (restoreFocus) menu.querySelector("summary")?.focus();
     }
 
     document.addEventListener("pointerdown", onPointerDown);
+    const menu = menuRef.current;
     document.addEventListener("keydown", onKey);
+    menu?.setAttribute("data-filter-keyboard-ready", "true");
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKey);
+      menu?.removeAttribute("data-filter-keyboard-ready");
     };
   }, []);
 

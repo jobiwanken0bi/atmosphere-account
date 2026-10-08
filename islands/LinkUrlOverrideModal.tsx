@@ -1,5 +1,7 @@
-import { useEffect } from "preact/hooks";
+import { useEffect, useId } from "preact/hooks";
 import { useSignal } from "@preact/signals";
+import { createPortal } from "preact/compat";
+import { useDialog } from "../lib/use-dialog.ts";
 
 interface Props {
   open: boolean;
@@ -37,35 +39,37 @@ export default function LinkUrlOverrideModal(
   { open, serviceName, defaultUrl, value, onConfirm, onClose, labels }: Props,
 ) {
   const draft = useSignal<string>(value);
+  const titleId = useId();
+  const dialogRef = useDialog<HTMLFormElement>(open, onClose);
 
   useEffect(() => {
     if (open) draft.value = value;
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    globalThis.addEventListener("keydown", handler);
-    return () => globalThis.removeEventListener("keydown", handler);
-  }, [open]);
+  if (!open || typeof document === "undefined") return null;
 
-  if (!open) return null;
-
-  return (
+  return createPortal(
     <div
       class="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="link-override-title"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div class="modal-card">
+      <form
+        class="modal-card"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm(draft.value.trim());
+        }}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
         <header class="modal-header">
-          <h2 id="link-override-title" class="modal-title">
+          <h2 id={titleId} class="modal-title">
             {labels.title(serviceName)}
           </h2>
           <p class="modal-body-text">
@@ -106,14 +110,14 @@ export default function LinkUrlOverrideModal(
             {labels.cancel}
           </button>
           <button
-            type="button"
+            type="submit"
             class="profile-form-button-primary"
-            onClick={() => onConfirm(draft.value.trim())}
           >
             {labels.save}
           </button>
         </footer>
-      </div>
-    </div>
+      </form>
+    </div>,
+    document.body,
   );
 }
