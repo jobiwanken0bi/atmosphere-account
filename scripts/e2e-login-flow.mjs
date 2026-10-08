@@ -734,7 +734,8 @@ async function smokeDocsAccessibility(browser) {
       const active = sidebar.querySelector("a.is-active")
         .getBoundingClientRect();
       const box = sidebar.getBoundingClientRect();
-      return active.top >= box.top - 1 && active.bottom <= box.bottom + 1;
+      return active.top >= Math.max(0, box.top - 1) &&
+        active.bottom <= Math.min(innerHeight, box.bottom + 1);
     });
     console.log(
       "[e2e:login] ok docs reflow, touch targets, active sidebar and keyboard code scrolling",

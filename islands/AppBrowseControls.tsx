@@ -45,7 +45,10 @@ export default function AppBrowseControls(
       if (event.key !== "Escape" || event.defaultPrevented || !menu?.open) {
         return;
       }
-      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (
+        [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')]
+          .some((dialog) => dialog.getClientRects().length > 0)
+      ) return;
       const restoreFocus = menu.contains(document.activeElement) ||
         document.activeElement === document.body;
       event.preventDefault();

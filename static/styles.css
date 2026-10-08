@@ -21880,7 +21880,7 @@ form[data-submit-once-pending="true"] button:disabled {
 .explore-category-tab:focus-visible,
 .profile-hero-action:focus-visible,
 .profile-form-button-secondary:focus-visible,
-.profile-form-button-secondary:has(input:focus-visible),
+:is(.profile-form-button-secondary:has(input:focus-visible)),
 .directory-register-button:focus-visible,
 .text-link-button:focus-visible,
 .explore-search-submit:focus-visible,
