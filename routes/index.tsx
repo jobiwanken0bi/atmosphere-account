@@ -9,9 +9,12 @@ import BlueskySection from "../components/BlueskySection.tsx";
 import CrossPollination from "../components/CrossPollination.tsx";
 import YourChoice from "../components/ModerationAndAlgorithms.tsx";
 import Footer from "../components/Footer.tsx";
+import JoinAtmosphere from "../islands/JoinAtmosphere.tsx";
+import { getJazAccountCount } from "../lib/jaz-account-count.ts";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 
-export default define.page(function Home(ctx) {
+export default define.page(async function Home(ctx) {
+  const accountCount = await getJazAccountCount({ waitForInitial: false });
   return (
     <div id="page-top">
       <GlassClouds />
@@ -25,6 +28,7 @@ export default define.page(function Home(ctx) {
           <BlueskySection />
           <CrossPollination />
           <YourChoice />
+          <JoinAtmosphere initialSnapshot={accountCount} />
         </main>
         <Footer />
       </div>
