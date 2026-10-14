@@ -4171,6 +4171,104 @@ h1, h2, h3, h4 {
 }
 
 /* ================================
+   Closing account invitation
+   ================================ */
+
+.landing-join {
+  position: relative;
+  isolation: isolate;
+  padding: clamp(3.5rem, 8vw, 6rem) 0 clamp(4rem, 9vw, 7rem);
+  text-align: center;
+}
+
+.landing-join::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 40% 55% at 50% 48%,
+    rgba(255, 255, 255, 0.48),
+    transparent 100%
+  );
+}
+
+.landing-join-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.landing-join-heading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: clamp(10rem, 20vw, 13rem);
+  gap: 0.6rem;
+  font-weight: 500;
+}
+
+.landing-join-lead,
+.landing-join-tail,
+.landing-join-fallback {
+  font-size: clamp(1.2rem, 2.5vw, 1.75rem);
+  letter-spacing: -0.035em;
+}
+
+.landing-join-lead {
+  color: rgba(18, 26, 47, 0.7);
+}
+
+a.landing-join-count {
+  color: inherit;
+  font-size: clamp(2.25rem, 9.2vw, 5rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.065em;
+  line-height: 1.2;
+}
+
+a.landing-join-count:hover {
+  color: inherit;
+}
+
+a.landing-join-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  min-height: 3.4rem;
+  padding: 0.9rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.landing-join-button svg {
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.landing-join-button:hover svg {
+  transform: translateX(3px);
+}
+
+.landing-join-count:focus-visible,
+.landing-join-button:focus-visible {
+  outline: 3px solid #254a9e;
+  outline-offset: 5px;
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a.landing-join-button,
+  .landing-join-button svg {
+    transition: none;
+  }
+}
+
+/* ================================
    Footer
    ================================ */
 

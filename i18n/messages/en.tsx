@@ -345,6 +345,14 @@ const en = {
       "Account ownership, moderation, and algorithmic choice — the system is locked open by design.",
   },
 
+  join: {
+    lead: "Join",
+    tail: "others and counting.",
+    fallback: "Join the Atmosphere.",
+    createAccount: "Create an account",
+    countSource: "Account count from Jaz’s tracker",
+  },
+
   footer: {
     logoAlt: "Atmosphere",
     tagline: "Building a better internet for everyone.",
