@@ -350,7 +350,7 @@ const en = {
     tail: "others and counting.",
     fallback: "Join the Atmosphere.",
     createAccount: "Create an account",
-    countSource: "Account count from Jaz’s tracker",
+    countSource: "Account count from Jaz’s tracker (opens in a new tab)",
   },
 
   footer: {

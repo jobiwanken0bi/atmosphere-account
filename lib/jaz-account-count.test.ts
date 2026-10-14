@@ -17,6 +17,85 @@ function source(count = 47_008_258, at = START) {
   });
 }
 
+// Let an intentionally detached refresh finish its response/body microtasks.
+function finishBackgroundRefresh() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+Deno.test("warm requests return immediately while a tracker refresh is hanging", async () => {
+  let clock = START;
+  let requests = 0;
+  let resolveRefresh!: (response: Response) => void;
+  const counter = createJazAccountCounter({
+    now: () => clock,
+    request: () => {
+      requests++;
+      return requests === 1
+        ? Promise.resolve(source())
+        : new Promise<Response>((resolve) => {
+          resolveRefresh = resolve;
+        });
+    },
+  });
+  const initial = await counter();
+  clock += ACCOUNT_COUNT_REFRESH_MS;
+  for (let i = 0; i < 3; i++) {
+    assertEquals(
+      await Promise.race([counter(), Promise.resolve("pending")]),
+      initial,
+    );
+  }
+  assertEquals(requests, 2);
+  resolveRefresh(source(47_008_300, clock));
+  await finishBackgroundRefresh();
+  assertEquals((await counter())?.count, 47_008_300);
+});
+
+Deno.test("cold page requests do not wait and the API can share their pending fetch", async () => {
+  let requests = 0;
+  let resolveInitial!: (response: Response) => void;
+  const counter = createJazAccountCounter({
+    now: () => START,
+    request: () => {
+      requests++;
+      return new Promise<Response>((resolve) => {
+        resolveInitial = resolve;
+      });
+    },
+  });
+  assertEquals(
+    await Promise.race([
+      counter({ waitForInitial: false }),
+      Promise.resolve("pending"),
+    ]),
+    null,
+  );
+  const api = counter();
+  assertEquals(requests, 1);
+  resolveInitial(source());
+  assertEquals((await api)?.count, 47_008_258);
+});
+
+Deno.test("failed tracker responses cancel their unread bodies", async () => {
+  let cancelled = false;
+  const counter = createJazAccountCounter({
+    now: () => START,
+    request: () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 503 },
+        ),
+      ),
+  });
+  assertEquals(await counter(), null);
+  assertEquals(cancelled, true);
+});
+
 Deno.test("Jaz requests are coalesced and cached across visitors", async () => {
   let requests = 0;
   let clock = START;
@@ -39,6 +118,7 @@ Deno.test("Jaz requests are coalesced and cached across visitors", async () => {
   clock++;
   await counter();
   assertEquals(requests, 2);
+  await finishBackgroundRefresh();
 });
 
 Deno.test("Jaz outage retains the last verified count and throttles retries", async () => {
@@ -58,6 +138,7 @@ Deno.test("Jaz outage retains the last verified count and throttles retries", as
   assertEquals(await counter(), initial);
   assertEquals(await counter(), initial);
   assertEquals(requests, 2);
+  await finishBackgroundRefresh();
   clock += 8 * 24 * 60 * 60 * 1000;
   assertEquals(await counter(), null);
 });
@@ -105,6 +186,7 @@ Deno.test("malformed, stale and oversized Jaz data cannot replace a verified cou
     const initial = await counter();
     clock += ACCOUNT_COUNT_REFRESH_MS;
     assertEquals(await counter(), initial);
+    await finishBackgroundRefresh();
   }
 });
 
@@ -122,9 +204,13 @@ Deno.test("new snapshots can decrease the count but older snapshots cannot regre
   });
   await counter();
   clock += ACCOUNT_COUNT_REFRESH_MS;
+  await counter();
+  await finishBackgroundRefresh();
   const next = await counter();
   assertEquals(next?.count, 47_008_000);
   clock += ACCOUNT_COUNT_REFRESH_MS;
+  assertEquals(await counter(), next);
+  await finishBackgroundRefresh();
   assertEquals(await counter(), next);
 });
 

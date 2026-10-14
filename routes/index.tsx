@@ -14,7 +14,7 @@ import { getJazAccountCount } from "../lib/jaz-account-count.ts";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
 
 export default define.page(async function Home(ctx) {
-  const accountCount = await getJazAccountCount();
+  const accountCount = await getJazAccountCount({ waitForInitial: false });
   return (
     <div id="page-top">
       <GlassClouds />

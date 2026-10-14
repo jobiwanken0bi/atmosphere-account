@@ -89,6 +89,9 @@ export default function JoinAtmosphere(
                   target="_blank"
                   rel="noopener noreferrer"
                   title={t.countSource}
+                  aria-label={`${
+                    snapshot.count.toLocaleString(locale)
+                  }. ${t.countSource}`}
                 >
                   {snapshot.count.toLocaleString(locale)}
                 </a>{" "}

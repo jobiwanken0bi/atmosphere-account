@@ -28,7 +28,10 @@ export function createJazAccountCounter(
         signal: AbortSignal.timeout(timeoutMs),
         redirect: "error",
       });
-      if (!response.ok) throw new Error("Account count unavailable");
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        throw new Error("Account count unavailable");
+      }
       // The stats endpoint also includes historical series (~250 KB today).
       const body = await readResponseTextWithLimit(response, 1_048_576);
       if (!body.ok) throw new Error("Invalid account count response");
@@ -60,17 +63,19 @@ export function createJazAccountCounter(
     return isAccountCountSnapshot(snapshot, now()) ? snapshot : null;
   }
 
-  return function getAccountCount(): Promise<AccountCountSnapshot | null> {
-    if (pending) return pending;
-    if (now() < refreshAt) {
-      return Promise.resolve(
-        isAccountCountSnapshot(snapshot, now()) ? snapshot : null,
-      );
+  return function getAccountCount(
+    { waitForInitial = true }: { waitForInitial?: boolean } = {},
+  ): Promise<AccountCountSnapshot | null> {
+    const cached = isAccountCountSnapshot(snapshot, now()) ? snapshot : null;
+    if (!pending && now() >= refreshAt) {
+      pending = refresh().finally(() => {
+        pending = null;
+      });
     }
-    pending = refresh().finally(() => {
-      pending = null;
-    });
-    return pending;
+    // A warm page never waits on the tracker, even during a hanging refresh.
+    // Pages can also skip the cold wait; the island's API request waits for it.
+    if (cached || !waitForInitial) return Promise.resolve(cached);
+    return pending ?? Promise.resolve(null);
   };
 }
 
