@@ -20273,6 +20273,9 @@ form[data-submit-once-pending="true"] button:disabled {
   .profile-review-header {
     flex-direction: column;
   }
+  .profile-review-author-row {
+    align-self: stretch;
+  }
 }
 
 /* Account type onboarding + user review management */
