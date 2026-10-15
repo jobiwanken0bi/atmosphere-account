@@ -20089,10 +20089,20 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 .profile-review-author-row {
   display: flex;
+  flex: 1;
+  min-width: 0;
   gap: 0.65rem;
   align-items: flex-start;
   color: inherit;
   text-decoration: none;
+}
+.profile-review-author-meta {
+  display: grid;
+  grid-template-columns: fit-content(70%) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
 }
 .profile-review-avatar {
   display: inline-flex;
@@ -20121,13 +20131,16 @@ form[data-submit-once-pending="true"] button:disabled {
 }
 .profile-review-author {
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
 .profile-review-handle {
-  margin: 0.1rem 0 0;
+  min-width: 0;
+  margin: 0;
   font-size: 0.78rem;
   color: rgba(18, 26, 47, 0.55);
 }
 .profile-review-date {
+  grid-column: 1 / -1;
   margin-top: 0.15rem;
   font-size: 0.78rem;
   color: rgba(18, 26, 47, 0.55);
@@ -20259,6 +20272,9 @@ form[data-submit-once-pending="true"] button:disabled {
   }
   .profile-review-header {
     flex-direction: column;
+  }
+  .profile-review-author-row {
+    align-self: stretch;
   }
 }
 

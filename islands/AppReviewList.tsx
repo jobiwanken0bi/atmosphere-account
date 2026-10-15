@@ -142,7 +142,7 @@ function AppReviewCard(
                 </span>
               )}
           </span>
-          <div>
+          <div class="profile-review-author-meta">
             <p class="profile-review-author">
               {reviewer}
             </p>
