@@ -481,6 +481,20 @@ OAuth lifecycle itself:
 deno task db:maintain
 ```
 
+New OAuth login attempts also prune up to 1,000 expired flow-state rows once per
+minute per runtime. This keeps abandoned attempts from accumulating between
+maintenance runs; active flows and refresh sessions are preserved. The expiry
+index already exists, so this change needs no schema migration.
+
+For a large existing OAuth-state backlog on Postgres, run
+`scripts/prune-expired-oauth-state.sql` through `psql` with autocommit enabled.
+It commits batches of at most 1,000 expired rows, stops after 250 batches, and
+runs ordinary `VACUUM (ANALYZE)` afterward. Its timeouts limit lock waits and
+execution time. If a timeout stops the script, earlier batches stay committed;
+rerun it to finish cleanup and vacuum. Rerun if its final count still shows
+expired rows. Ordinary vacuum makes deleted space reusable; container memory can
+remain elevated until the OS reclaims filesystem cache.
+
 Backfill ATStore listings and configured review/favorite repos:
 
 ```sh
