@@ -1,3 +1,8 @@
+import {
+  normalizePublicHosting,
+  type PublicHosting,
+} from "./artifact-digest-expectation.ts";
+
 interface Options {
   pickerOrigin: string;
   assetOrigins: string[];
@@ -5,6 +10,7 @@ interface Options {
   returnUri: string;
   state: string;
   requireProxyHeaders: boolean;
+  publicHosting: PublicHosting;
 }
 
 const DEFAULT_PICKER_ORIGIN = "https://login.atmosphereaccount.com";
@@ -25,6 +31,7 @@ function usage(exitCode = 2): never {
       "returns JSON on the picker origin without a cross-origin redirect.",
       "",
       "Options:",
+      "  --public-hosting=deno-deploy|railway",
       "  --picker-origin=https://login.atmosphereaccount.com",
       "  --asset-origin=https://login.atmosphereaccount.com  Repeatable.",
       "  --client-id=https://atmosphereaccount.com/examples/atmosphere-login/client-metadata.json",
@@ -96,6 +103,10 @@ function parseOptions(): Options {
     : [DEFAULT_PICKER_ORIGIN, DEFAULT_PRIMARY_ORIGIN];
 
   return {
+    publicHosting: normalizePublicHosting(
+      readFlag(args, "--public-hosting") ??
+        Deno.env.get("SMOKE_PUBLIC_HOSTING"),
+    ),
     pickerOrigin,
     assetOrigins: uniqueAssetOrigins,
     clientId: readFlag(args, "--client-id") ??
@@ -210,10 +221,28 @@ async function smokePath(
   return text;
 }
 
+export function assertPickerAssetHosting(
+  response: Response,
+  publicHosting: PublicHosting,
+): void {
+  const proxy = response.headers.get("x-atmosphere-appview-asset-proxy");
+  if (publicHosting === "deno-deploy" && proxy !== "1") {
+    throw new Error(
+      `${response.url} did not include appview asset proxy header`,
+    );
+  }
+  if (publicHosting === "railway" && proxy !== null) {
+    throw new Error(
+      `${response.url} unexpectedly used the appview asset proxy`,
+    );
+  }
+}
+
 async function smokeGeneratedAssets(
   origin: string,
   initialPaths: string[],
   requireProxyHeaders: boolean,
+  publicHosting: PublicHosting,
 ): Promise<number> {
   const queue = [...new Set(initialPaths)];
   const seen = new Set<string>();
@@ -226,12 +255,7 @@ async function smokeGeneratedAssets(
     const { response, text } = await fetchText(url);
     assertStatus(response, url);
     assertContentType(response, url, "javascript");
-    if (
-      requireProxyHeaders &&
-      response.headers.get("x-atmosphere-appview-asset-proxy") !== "1"
-    ) {
-      throw new Error(`${url} did not include appview asset proxy header`);
-    }
+    if (requireProxyHeaders) assertPickerAssetHosting(response, publicHosting);
     for (const importedPath of extractJsImports(text, url)) {
       if (!seen.has(importedPath)) queue.push(importedPath);
     }
@@ -341,6 +365,7 @@ export async function main(): Promise<void> {
       origin,
       assets.generatedAssets,
       options.requireProxyHeaders,
+      options.publicHosting,
     );
     console.log(
       `[smoke:picker-assets] ok origin=${origin} generatedAssets=${generatedCount}`,

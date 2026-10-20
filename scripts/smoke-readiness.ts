@@ -1,8 +1,11 @@
 import {
+  appviewReadinessPayload,
   ARTIFACT_DIGEST_PATTERN,
   assertExpectedArtifactDigest,
   assertExpectedReleaseTopology,
   normalizeExpectedArtifactDigest,
+  normalizePublicHosting,
+  type PublicHosting,
 } from "./artifact-digest-expectation.ts";
 import {
   assertAllowedReleaseSha,
@@ -80,6 +83,7 @@ export function validateReadinessPayload(
   expectedArtifactDigest: string,
   expectedAppviewSha: string | null = null,
   allowedAppviewShas: readonly string[] = [],
+  publicHosting: PublicHosting = "deno-deploy",
 ): ReadinessSummary {
   const expectedDigest = normalizeExpectedArtifactDigest(
     expectedArtifactDigest,
@@ -108,12 +112,15 @@ export function validateReadinessPayload(
     throw new Error("indexer lease must be present and fresh");
   }
   const shell = release(body.release, "readiness.release");
-  const appviewBody = object(body.appview, "readiness.appview");
+  const appviewBody = object(
+    appviewReadinessPayload(body, publicHosting),
+    "readiness.appview",
+  );
   if (appviewBody.ok !== true) {
     throw new Error("readiness.appview.ok must be true");
   }
   const appview = release(appviewBody.release, "readiness.appview.release");
-  assertExpectedReleaseTopology(shell, appview);
+  assertExpectedReleaseTopology(shell, appview, publicHosting);
   assertExpectedArtifactDigest(
     shell.artifactDigest,
     expectedDigest,
@@ -152,7 +159,7 @@ export async function main(): Promise<void> {
   const args = Deno.args.filter((arg) => arg !== "--");
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "Usage: deno task smoke:readiness [--site-origin=URL] --expected-artifact-digest=DIGEST [--expected-appview-sha=FULL_SHA | --allowed-appview-shas=FULL_SHA,...]",
+      "Usage: deno task smoke:readiness [--site-origin=URL] [--public-hosting=deno-deploy|railway] --expected-artifact-digest=DIGEST [--expected-appview-sha=FULL_SHA | --allowed-appview-shas=FULL_SHA,...]",
     );
     return;
   }
@@ -207,6 +214,10 @@ export async function main(): Promise<void> {
     expectedArtifactDigest,
     explicitAppviewSha,
     allowedAppviewShas,
+    normalizePublicHosting(
+      readFlag(args, "--public-hosting") ??
+        Deno.env.get("SMOKE_PUBLIC_HOSTING"),
+    ),
   );
   console.log(JSON.stringify({
     event: "production_readiness_ok",

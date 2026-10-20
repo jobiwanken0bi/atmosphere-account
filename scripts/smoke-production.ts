@@ -19,6 +19,7 @@ if (Deno.args.includes("--help") || Deno.args.includes("-h")) {
       "  - smoke:picker-assets",
       "",
       "Common options:",
+      "  --public-hosting=deno-deploy|railway",
       "  --expected-artifact-digest=<web-source-v1:sha256:...>",
       "  --expected-appview-sha=<full-git-sha>",
       "  --allowed-appview-shas=<full-git-sha,...>",

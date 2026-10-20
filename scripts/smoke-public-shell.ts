@@ -1,8 +1,11 @@
 import {
+  appviewReadinessPayload,
   ARTIFACT_DIGEST_PATTERN,
   assertExpectedArtifactDigest,
   assertExpectedReleaseTopology,
   normalizeExpectedArtifactDigest,
+  normalizePublicHosting,
+  type PublicHosting,
 } from "./artifact-digest-expectation.ts";
 import {
   assertAllowedReleaseSha,
@@ -15,6 +18,7 @@ interface Options {
   siteOrigin: string;
   loginOrigin: string;
   requireAppview: boolean;
+  publicHosting: PublicHosting;
   expectedArtifactDigest: string;
   expectedAppviewSha: string | null;
   allowedAppviewShas: string[];
@@ -46,6 +50,7 @@ function usage(exitCode = 2): never {
       "release metadata, core HTML pages, and standalone SDK assets.",
       "",
       "Options:",
+      "  --public-hosting=deno-deploy|railway",
       "  --site-origin=https://atmosphereaccount.com",
       "  --login-origin=https://login.atmosphereaccount.com",
       "  --expected-artifact-digest=<web-source-v1:sha256:...>",
@@ -117,6 +122,10 @@ function parseOptions(): Options {
     );
   }
   return {
+    publicHosting: normalizePublicHosting(
+      readFlag(args, "--public-hosting") ??
+        Deno.env.get("SMOKE_PUBLIC_HOSTING"),
+    ),
     siteOrigin: normalizeOrigin(
       readFlag(args, "--site-origin") ??
         Deno.env.get("SMOKE_SITE_ORIGIN") ??
@@ -401,6 +410,7 @@ async function smokeReadiness(
   expectedArtifactDigest: string,
   expectedAppviewSha: string | null,
   allowedAppviewShas: readonly string[],
+  publicHosting: PublicHosting,
 ): Promise<
   { shellRelease: SmokeRelease; appviewRelease: SmokeRelease | null }
 > {
@@ -436,7 +446,7 @@ async function smokeReadiness(
   );
   let appviewRelease: SmokeRelease | null = null;
   if (requireAppview) {
-    const appview = body.appview;
+    const appview = appviewReadinessPayload(body, publicHosting);
     if (!appview || typeof appview !== "object" || Array.isArray(appview)) {
       throw new Error(`${url} must include appview readiness`);
     }
@@ -449,7 +459,7 @@ async function smokeReadiness(
       (appview as Record<string, unknown>).release,
       `${url} appview.release`,
     );
-    assertExpectedReleaseTopology(shellRelease, appviewRelease);
+    assertExpectedReleaseTopology(shellRelease, appviewRelease, publicHosting);
     assertExpectedReleaseArtifact(
       appviewRelease,
       expectedArtifactDigest,
@@ -622,6 +632,7 @@ export async function main(): Promise<void> {
     options.expectedArtifactDigest,
     options.expectedAppviewSha,
     options.allowedAppviewShas,
+    options.publicHosting,
   );
   assertMatchingReleaseArtifacts(
     healthRelease,
@@ -646,7 +657,7 @@ export async function main(): Promise<void> {
   await smokeHydrationAssets(
     options.siteOrigin,
     "/apps/bluesky/",
-    "/_appview/assets/",
+    options.publicHosting === "railway" ? "/assets/" : "/_appview/assets/",
   );
   await smokeHtml(options.siteOrigin, "/hosts", {
     expectedText: ["Account hosts", "bsky.network"],

@@ -1,5 +1,9 @@
 # Railway Appview Migration
 
+For the October 2026 public website and login cutover, follow
+[Public hosting migration to Railway](./RAILWAY_PUBLIC_HOSTING.md). This older
+guide covers the database/appview migration and its split-provider transition.
+
 Atmosphere Account now has a Railway project for the always-on Jetstream indexer
 and Railway Postgres appview database. The public web/client layer can continue
 to run on Deno Deploy after the appview boundary is explicit, but any DB-backed

@@ -1,8 +1,10 @@
 import {
+  assertPickerAssetHosting,
   extractHtmlAssetPaths,
   extractJsImports,
   isGeneratedPickerAssetPath,
 } from "./smoke-picker-assets.ts";
+import { assertThrows } from "jsr:@std/assert@1";
 
 function assertEquals(actual: unknown, expected: unknown): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -11,6 +13,25 @@ function assertEquals(actual: unknown, expected: unknown): void {
     );
   }
 }
+
+Deno.test("picker assets must match the explicitly selected public host", () => {
+  const direct = new Response("javascript");
+  const proxied = new Response("javascript", {
+    headers: { "x-atmosphere-appview-asset-proxy": "1" },
+  });
+  assertPickerAssetHosting(direct, "railway");
+  assertPickerAssetHosting(proxied, "deno-deploy");
+  assertThrows(
+    () => assertPickerAssetHosting(direct, "deno-deploy"),
+    Error,
+    "did not include appview asset proxy header",
+  );
+  assertThrows(
+    () => assertPickerAssetHosting(proxied, "railway"),
+    Error,
+    "unexpectedly used the appview asset proxy",
+  );
+});
 
 Deno.test("picker smoke recognizes direct and appview-namespaced assets", () => {
   const html = [

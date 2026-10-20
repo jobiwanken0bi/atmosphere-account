@@ -16,6 +16,8 @@ permissions:
 
 env:
   DENO_VERSION: 2.8.3
+  # Flip only after the canonical DNS records have moved to Railway.
+  SMOKE_PUBLIC_HOSTING: ${{ vars.SMOKE_PUBLIC_HOSTING || 'deno-deploy' }}
 
 jobs:
   readiness:

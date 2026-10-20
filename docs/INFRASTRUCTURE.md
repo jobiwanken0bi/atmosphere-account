@@ -1,5 +1,12 @@
 # Infrastructure
 
+October 2026 direction: move the public website and login to the existing
+Railway web service, then evaluate a separate Node.js runtime migration. DNS is
+still on Deno Deploy while access and certificate verification are pending.
+Follow [Public hosting migration](./RAILWAY_PUBLIC_HOSTING.md) for the approved
+target, DNS records, monitoring switch, acceptance checks, and rollback. The
+split-provider setup below describes the current transition and fallback.
+
 Atmosphere Account is an AT Protocol appview plus a public web app. Production
 is intentionally split into a public shell, an appview/API runtime, an indexer,
 and a relational Postgres store for appview data plus off-protocol control-plane
@@ -30,10 +37,9 @@ interop, host claims, moderation, jobs, and admin observability.
 
 Recommended target:
 
-- **Public client/web shell:** Deno Deploy can continue to serve mostly static
-  public pages, docs, and the standalone picker surface. If Deno remains in the
-  architecture, it should call a Railway appview API for DB-backed data rather
-  than connecting directly to Railway Postgres over a public TCP proxy.
+- **Public web and login:** the existing Railway web service serves the full
+  Fresh app under the existing public domains. Deno Deploy remains a temporary
+  fallback during the hosting move, with its appview proxy configuration intact.
 - **Appview runtime:** Railway. DB-backed routes for apps, hosts, login state,
   developer registration, admin jobs, and account surfaces should run in Railway
   when they need direct database access. This lets Postgres traffic stay on
@@ -57,10 +63,9 @@ Recommended target:
 
 Railway migration state lives in [RAILWAY_MIGRATION.md](./RAILWAY_MIGRATION.md).
 
-Do not point `atmosphereaccount.com` at Railway until the intended public web
-hosting model is confirmed. A Railway web/appview service can be used as the
-server-side runtime, while Deno Deploy can remain the client/docs/picker host
-after the appview boundary is made explicit.
+The owner has confirmed Railway as the public web hosting target. Use the linked
+cutover runbook before changing DNS; the monitoring topology must switch with
+the public domains.
 
 Why Railway Postgres now:
 

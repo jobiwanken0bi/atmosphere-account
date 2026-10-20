@@ -1,5 +1,10 @@
 # Deno Deploy Migration
 
+Historical deployment guide and temporary rollback configuration. The approved
+October 2026 direction is to leave Deno Deploy; follow
+[Public hosting migration to Railway](./RAILWAY_PUBLIC_HOSTING.md). The DNS and
+target-runtime guidance below describes the prior split-provider architecture.
+
 Atmosphere Account keeps the public web app and hosted sign-in picker on Deno
 Deploy. Production was deployed to the new Deno Deploy app on June 22, 2026.
 

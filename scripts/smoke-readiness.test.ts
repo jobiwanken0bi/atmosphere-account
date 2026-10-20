@@ -202,3 +202,63 @@ Deno.test("cheap readiness rejects any reported degradation", () => {
     "readiness.degraded must be false",
   );
 });
+
+function directRailwayPayload() {
+  const body = payload();
+  body.release = {
+    ...body.release,
+    runtime: "railway",
+    deploymentId: "railway-deploy",
+    gitSha: APPVIEW_SHA,
+  };
+  const { appview: _appview, ...direct } = body;
+  return direct;
+}
+
+Deno.test("direct Railway readiness verifies the same release and dependency freshness", () => {
+  const body = directRailwayPayload();
+  const result = validateReadinessPayload(
+    body,
+    DIGEST,
+    APPVIEW_SHA,
+    [],
+    "railway",
+  );
+  assertEquals(result.shell, result.appview);
+  assertEquals(result.appview.gitSha, APPVIEW_SHA);
+  assertThrows(
+    () => validateReadinessPayload(body, DIGEST, OTHER_SHA, [], "railway"),
+    Error,
+    "expected appview",
+  );
+  assertThrows(
+    () =>
+      validateReadinessPayload(body, OTHER_DIGEST, APPVIEW_SHA, [], "railway"),
+    Error,
+    "artifactDigest expected",
+  );
+  assertThrows(
+    () =>
+      validateReadinessPayload(payload(), DIGEST, APPVIEW_SHA, [], "railway"),
+    Error,
+    "local readiness",
+  );
+  assertThrows(
+    () => validateReadinessPayload(body, DIGEST, APPVIEW_SHA),
+    Error,
+    "must be an object",
+  );
+  body.indexer.fresh = false;
+  assertThrows(
+    () => validateReadinessPayload(body, DIGEST, APPVIEW_SHA, [], "railway"),
+    Error,
+    "indexer lease must be present and fresh",
+  );
+  body.indexer.fresh = true;
+  body.pdsInventory.fresh = false;
+  assertThrows(
+    () => validateReadinessPayload(body, DIGEST, APPVIEW_SHA, [], "railway"),
+    Error,
+    "PDS inventory must be present and fresh",
+  );
+});
