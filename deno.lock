@@ -37,7 +37,7 @@
     "npm:@opentelemetry/api@^1.9.0": "1.9.1",
     "npm:@preact/signals@^2.5.0": "2.11.0_preact@10.29.8__preact-render-to-string@6.7.0_preact-render-to-string@6.7.0__preact@10.29.8",
     "npm:@preact/signals@^2.5.1": "2.11.0_preact@10.29.8__preact-render-to-string@6.7.0_preact-render-to-string@6.7.0__preact@10.29.8",
-    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.8__preact-render-to-string@6.7.0_vite@7.3.6__@types+node@22.19.17_preact-render-to-string@6.7.0__preact@10.29.8",
+    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.8__preact-render-to-string@6.7.0_vite@7.3.7__@types+node@22.19.17_@types+node@22.19.17",
     "npm:@remix-run/node-fetch-server@0.12": "0.12.0",
     "npm:@types/babel__core@^7.20.5": "7.20.5",
     "npm:@types/node@^22.15.30": "22.19.17",
@@ -61,8 +61,8 @@
     "npm:preact@^10.29.1": "10.29.8_preact-render-to-string@6.7.0",
     "npm:rollup@^4.55.1": "4.62.4",
     "npm:sharp@0.35.5": "0.35.5",
-    "npm:vite@^7.1.4": "7.3.6_@types+node@22.19.17",
-    "npm:vite@^7.3.6": "7.3.6_@types+node@22.19.17",
+    "npm:vite@^7.1.4": "7.3.7_@types+node@22.19.17",
+    "npm:vite@^7.3.7": "7.3.7_@types+node@22.19.17",
     "npm:ws@8.21.3": "8.21.3"
   },
   "jsr": {
@@ -1091,7 +1091,7 @@
     "@prefresh/utils@1.2.1": {
       "integrity": "sha512-vq/sIuN5nYfYzvyayXI4C2QkprfNaHUQ9ZX+3xLD8nL3rWyzpxOm1+K7RtMbhd+66QcaISViK7amjnheQ/4WZw=="
     },
-    "@prefresh/vite@2.4.12_preact@10.29.8__preact-render-to-string@6.7.0_vite@7.3.6__@types+node@22.19.17_preact-render-to-string@6.7.0__preact@10.29.8": {
+    "@prefresh/vite@2.4.12_preact@10.29.8__preact-render-to-string@6.7.0_vite@7.3.7__@types+node@22.19.17_@types+node@22.19.17": {
       "integrity": "sha512-FY1fzXpUjiuosznMV0YM7XAOPZjB5FIdWS0W24+XnlxYkt9hNAwwsiKYn+cuTEoMtD/ZVazS5QVssBr9YhpCQA==",
       "dependencies": [
         "@babel/core",
@@ -1792,8 +1792,8 @@
       ],
       "bin": true
     },
-    "vite@7.3.6_@types+node@22.19.17": {
-      "integrity": "sha512-4XP60spRGjSZFf1qYH+dJIkK2znL3zQfl9KkOV9MkkRR/3Dls0dxaBsQPTloEc5BLXWPL9vsOxopxyKoMmDueg==",
+    "vite@7.3.7_@types+node@22.19.17": {
+      "integrity": "sha512-AHEzTORMbi7/7aXp7w7KZ5+DCUdSeLsJz0grY8xHpc9DHdYb0vQu6DqJfm2tOw3gDExNgPgnJTXxM6syYFHaCA==",
       "dependencies": [
         "@types/node",
         "esbuild@0.28.1",
@@ -1903,7 +1903,7 @@
       "npm:postcss@8.5.29",
       "npm:preact@^10.27.2",
       "npm:sharp@0.35.5",
-      "npm:vite@^7.3.6",
+      "npm:vite@^7.3.7",
       "npm:ws@8.21.3"
     ]
   }

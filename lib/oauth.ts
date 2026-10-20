@@ -51,11 +51,13 @@ import {
 import type { OAuthAction } from "./oauth-action.ts";
 import { hasValidLoginSelectionContinuationBinding } from "./oauth-continuation.ts";
 import { readResponseTextWithLimit } from "./security.ts";
+import { OAuthStateCleanup } from "./oauth-state-cleanup.ts";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
 const IDENTITY_RECHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MAX_OAUTH_SERVER_RESPONSE_BYTES = 64 * 1024;
+const oauthStateCleanup = new OAuthStateCleanup();
 
 export class OAuthNotConfiguredError extends Error {
   constructor() {
@@ -340,6 +342,7 @@ async function saveFlowState(state: FlowState): Promise<void> {
            expires_at = excluded.expires_at`,
       args: [state.state, JSON.stringify(state), Date.now() + STATE_TTL_MS],
     });
+    await oauthStateCleanup.run(c);
   });
 }
 
