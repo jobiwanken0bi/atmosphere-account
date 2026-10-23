@@ -306,3 +306,19 @@ Porkbun’s existing records were saved before any edits. Railway ownership TXT
 records have been added and resolve publicly; routing still points to Deno while
 release validation completes. Mail, AT Protocol records, and nameservers are
 unchanged. Final cutover acceptance follows `RAILWAY_PUBLIC_HOSTING.md`.
+
+The integrated browser rehearsal exposed an additional current-main canonical
+HTML redirect loop behind Railway TLS termination. The canonical browser guard
+now shares the exact configured-host recovery helper used by OAuth. Requests for
+unknown hosts and mismatched ports still canonicalize. The staging smoke now
+sends browser HTML headers and verifies each service’s native deployment ID and
+the expected shared artifact digest. API-only probes did not expose this
+browser-navigation failure.
+
+The Railway dashboard confirms PITR coverage through the current day and
+scheduled daily, weekly and monthly volume backups (latest daily: October 23).
+The provider’s October 21 security incident is still under investigation; its
+preliminary report says attacker access was closed October 22 at 03:32 UTC and
+builds are restored. It recommends rotating secrets stored before October 21.
+Credential rotation is a separate operation from this hosting cutover; no
+production auth key has been changed by this release.

@@ -52,6 +52,12 @@ async function main() {
   const site = rehearsalOrigin(option("--site-origin"));
   const login = rehearsalOrigin(option("--login-origin"));
   const release = option("--expected-release-id");
+  const loginRelease =
+    Deno.args.find((arg) => arg.startsWith("--expected-login-release-id="))
+      ?.slice("--expected-login-release-id=".length) ?? release;
+  const artifact = Deno.args.find((arg) =>
+    arg.startsWith("--expected-artifact-digest=")
+  )?.slice("--expected-artifact-digest=".length);
   assert(site !== login, "Rehearse with separate site and login origins");
   const expectedHost = Deno.args.find((arg) =>
     arg.startsWith("--expected-host=")
@@ -67,8 +73,16 @@ async function main() {
       assert(body.ok === true, `${origin}: health failed`);
       assert(body.release?.runtime === "railway", `${origin}: wrong runtime`);
       assert(
-        body.release?.deploymentId === release,
+        body.release?.deploymentId ===
+          (origin === login ? loginRelease : release),
         `${origin}: wrong rehearsal release`,
+      );
+    }
+    if (artifact) {
+      assert(
+        health.release?.artifactDigest === artifact &&
+          ready.release?.artifactDigest === artifact,
+        `${origin}: wrong artifact digest`,
       );
     }
     assert(ready.database?.ok === true, `${origin}: database unavailable`);
@@ -114,7 +128,9 @@ async function main() {
       );
     }
 
-    const page = await request(origin, "/signin?mode=create");
+    const page = await request(origin, "/signin?mode=create", {
+      headers: { accept: "text/html", "sec-fetch-dest": "document" },
+    });
     const html = await page.text();
     assert(page.status === 200, `${origin}: create account page failed`);
     assert(
