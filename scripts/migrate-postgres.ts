@@ -133,7 +133,23 @@ export async function migratePostgresSchema(
   const started = performance.now();
   const db = createPostgresExecuteClient();
   try {
-    const schema = await Deno.readTextFile(schemaPath);
+    let schema = await Deno.readTextFile(schemaPath);
+    if (/^CREATE EXTENSION IF NOT EXISTS pg_trgm;$/m.test(schema)) {
+      const extension = await db.execute({
+        sql:
+          "SELECT 1 AS installed FROM pg_extension WHERE extname = 'pg_trgm'",
+        args: [],
+      });
+      if (extension.rows.length !== 1) {
+        throw new Error(
+          "pg_trgm must be installed by the database operator before deploying",
+        );
+      }
+      schema = schema.replace(
+        /^CREATE EXTENSION IF NOT EXISTS pg_trgm;$/m,
+        "-- pg_trgm installation verified before migration.",
+      );
+    }
     const migrationSql = withPostgresSchemaMigrationLock(schema);
     const statements = splitSqlStatements(schema)
       .filter((stmt) => !/^(BEGIN|COMMIT|ROLLBACK)$/i.test(stmt.trim()));

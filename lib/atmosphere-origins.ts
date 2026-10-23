@@ -85,6 +85,16 @@ export function trustedRequestOrigin(url: URL, headers?: Headers): string {
     }
   }
   if (normalized && isTrustedAtmosphereOrigin(normalized)) return normalized;
+  // Railway terminates TLS at its edge, so Deno sees an HTTP request URL.
+  // Recover HTTPS only for an exact configured host (including its port).
+  // Arbitrary forwarded-host/proto headers must not choose an OAuth origin.
+  if (url.protocol === "http:") {
+    const configured = trustedAtmosphereOrigins().find((origin) => {
+      const publicUrl = new URL(origin);
+      return publicUrl.protocol === "https:" && publicUrl.host === url.host;
+    });
+    if (configured) return configured;
+  }
   const forwarded = forwardedTrustedOrigin(headers);
   if (forwarded) return forwarded;
   return siteOrigin();

@@ -1,5 +1,9 @@
 import type { ComponentChildren } from "preact";
 import AtmosphereHandle from "../components/AtmosphereHandle.tsx";
+import AccountHostDetailsDialog, {
+  AccountHostMark,
+  AccountHostMetadata,
+} from "../components/hosts/AccountHostDetailsDialog.tsx";
 import AccountEntryDisclosure from "../components/AccountEntryDisclosure.tsx";
 import { useT } from "../i18n/mod.ts";
 import { useEffect, useId, useRef, useState } from "preact/hooks";
@@ -459,6 +463,10 @@ function CreateAccountHostChooser(
     "all",
   );
   const [hosts, setHosts] = useState(initialHosts);
+  const [hostDetails, setHostDetails] = useState<
+    { host: CreateAccountHostOption; href: string } | null
+  >(null);
+  const t = useT().accountHostChooser;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(!!initialError);
   const [retryKey, setRetryKey] = useState(0);
@@ -676,78 +684,105 @@ function CreateAccountHostChooser(
             targetName,
             continuation,
           );
-          const className = `signin-host-row${
-            host.recommended ? " is-recommended" : ""
-          }${host.oauthAccountCreation ? " is-direct" : ""}`;
-          const content = (
-            <>
-              <span class="signin-host-mark" aria-hidden="true">
-                {host.name.slice(0, 1)}
-                {host.avatarUrl && (
-                  <img
-                    src={host.avatarUrl}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    referrerpolicy="no-referrer"
-                    onError={(event) => event.currentTarget.remove()}
-                  />
+          return (
+            <div
+              key={host.host}
+              class={`signin-host-option${disabled ? " is-disabled" : ""}${
+                host.recommended ? " is-recommended" : ""
+              }`}
+            >
+              {disabled
+                ? (
+                  <div
+                    class="signin-host-row is-disabled"
+                    role="link"
+                    aria-disabled="true"
+                  >
+                    <AccountHostMark host={host} />
+                    <span class="signin-host-copy">
+                      <span class="signin-host-identity">
+                        <strong>
+                          <span class="signin-host-name">{host.name}</span>
+                        </strong>
+                        <span class="signin-host-domain">{host.host}</span>
+                      </span>
+                    </span>
+                  </div>
+                )
+                : (
+                  <a
+                    class={`signin-host-row${
+                      host.oauthAccountCreation ? " is-direct" : ""
+                    }`}
+                    href={href}
+                    target={host.oauthAccountCreation ? undefined : "_blank"}
+                    rel={host.oauthAccountCreation
+                      ? "nofollow"
+                      : "noopener noreferrer"}
+                    onClick={(event) => {
+                      if (
+                        !host.oauthAccountCreation ||
+                        !isPlainLinkActivation(event)
+                      ) return;
+                      onAuthorizationStart?.();
+                    }}
+                  >
+                    <AccountHostMark host={host} />
+                    <span class="signin-host-copy">
+                      <span class="signin-host-identity">
+                        <strong>
+                          <span class="signin-host-name">{host.name}</span>
+                        </strong>
+                        <span class="signin-host-domain" title={host.host}>
+                          {host.host}
+                        </span>
+                      </span>
+                    </span>
+                    <span
+                      class="signin-account-status signin-host-action"
+                      aria-hidden="true"
+                    >
+                      <svg
+                        class="signin-host-action-arrow"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14m-6-6 6 6-6 6" />
+                      </svg>
+                    </span>
+                  </a>
                 )}
-              </span>
-              <span class="signin-host-copy">
-                <strong>
-                  <span class="signin-host-name">{host.name}</span>
-                  <span class="signin-host-domain">{host.host}</span>
-                </strong>
-                {host.recommendationLabel && (
-                  <span class="signin-host-recommendation">
-                    {host.recommendationLabel}
-                  </span>
-                )}
-                <em>
-                  {host.description}
-                  {host.location ? ` · ${host.location}` : ""}
-                </em>
-              </span>
-              <span class="signin-account-status">
-                {host.signupStatus === "invite_required"
-                  ? "Invite required"
-                  : "Open signup"}
-              </span>
-            </>
-          );
-          return disabled
-            ? (
-              <div
-                key={host.host}
-                class={`${className} is-disabled`}
-                role="link"
-                aria-disabled="true"
-              >
-                {content}
+              <div class="signin-host-option-footer">
+                <AccountHostMetadata host={host} />
+                <button
+                  type="button"
+                  disabled={disabled}
+                  class="signin-host-info-button"
+                  aria-label={t.aboutHost(host.name)}
+                  aria-haspopup="dialog"
+                  onClick={() => setHostDetails({ host, href })}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 11v6m0-10v.01" />
+                  </svg>
+                </button>
               </div>
-            )
-            : (
-              <a
-                key={host.host}
-                class={className}
-                href={href}
-                target={host.oauthAccountCreation ? undefined : "_blank"}
-                rel={host.oauthAccountCreation
-                  ? "nofollow"
-                  : "noopener noreferrer"}
-                onClick={(event) => {
-                  if (
-                    host.oauthAccountCreation &&
-                    isPlainLinkActivation(event)
-                  ) onAuthorizationStart?.();
-                }}
-              >
-                {content}
-              </a>
-            );
+            </div>
+          );
         })}
       </div>
+      {hostDetails && (
+        <AccountHostDetailsDialog
+          host={hostDetails.host}
+          href={hostDetails.href}
+          onClose={() => setHostDetails(null)}
+          onAuthorizationStart={() => {
+            setHostDetails(null);
+            onAuthorizationStart?.();
+          }}
+        />
+      )}
     </div>
   );
 }

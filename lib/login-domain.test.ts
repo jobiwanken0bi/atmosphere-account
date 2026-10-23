@@ -69,3 +69,9 @@ Deno.test("single-origin deployments do not enforce login-host routing", () => {
     true,
   );
 });
+
+Deno.test("login domain exposes only the public health endpoints", () => {
+  assertEquals(isAllowedLoginHostPathForTest("/api/health"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/api/health/ready"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/api/health/internal"), false);
+});

@@ -146,7 +146,7 @@ Deno.test("sign-in mode links to one canonical contextual create page", () => {
     targetName: "Tangled",
   }));
   const rawHref = html.match(
-    /class="signin-create-account-link" href="([^"]+)"/,
+    /<a\b(?=[^>]*class="signin-create-account-link")(?=[^>]*href="([^"]+)")[^>]*>/,
   )?.[1]?.replaceAll("&amp;", "&");
   const url = new URL(rawHref ?? "", "https://atmosphereaccount.com");
   assertEquals(url.pathname, "/signin");
@@ -247,4 +247,33 @@ Deno.test("prefilled inline account entry is the only preferred dialog focus", (
     );
     assertStringIncludes(html, 'data-signin-disclosure="true" open');
   }
+});
+
+Deno.test("host information has a separate control from starting signup", () => {
+  const host = {
+    ...directHost,
+    description:
+      "A detailed description shown only after opening host details.",
+    location: "Europe",
+  };
+  const html = renderToString(h(SignInForm, {
+    rich: true,
+    mode: "create",
+    createAccountHosts: [host],
+    returnTo: "/account",
+  }));
+  const signupLink = html.match(
+    /<a\b[^>]*\bclass="signin-host-row[^"]*"[^>]*>[\s\S]*?<\/a>/,
+  )?.[0] ?? "";
+
+  assertStringIncludes(signupLink, 'href="/oauth/create?host=host.example');
+  assertStringIncludes(signupLink, "next=%2Faccount");
+  assertStringIncludes(signupLink, "Example Host");
+  assertEquals(signupLink.includes("<button"), false);
+  assertStringIncludes(html, 'aria-label="About Example Host"');
+  assertStringIncludes(html, 'aria-haspopup="dialog"');
+  assertStringIncludes(html, "Open signup");
+  assertStringIncludes(html, "Europe");
+  assertEquals(html.includes(host.description), false);
+  assertEquals(html.includes('role="dialog"'), false);
 });

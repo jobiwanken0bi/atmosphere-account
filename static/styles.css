@@ -11259,8 +11259,8 @@ body {
 
 .signin-account-row:hover,
 .signin-account-row:focus-visible,
-.signin-host-row:hover,
-.signin-host-row:focus-visible {
+.signin-host-option:has(> .signin-host-row:hover),
+.signin-host-option:has(> .signin-host-row:focus-visible) {
   background: rgba(255, 255, 255, 0.5);
   color: inherit;
   outline: none;
@@ -11343,33 +11343,30 @@ body {
 }
 
 .signin-host-domain {
-  display: inline-flex;
-  border-radius: 999px;
-  padding: 0.13rem 0.45rem;
-  background: rgba(42, 90, 168, 0.1);
-  color: rgba(42, 90, 168, 0.82);
+  display: block;
+  min-width: 0;
+  color: #536782;
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.62rem;
-  font-weight: 700;
-  max-width: min(50%, 14rem);
+  font-size: 0.7rem;
+  font-weight: 500;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .signin-host-copy .signin-host-name {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  overflow-wrap: anywhere;
   padding: 0;
   background: transparent;
   color: inherit;
   font-family: inherit;
   font-size: inherit;
   font-weight: inherit;
-  text-overflow: ellipsis;
   text-transform: none;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .signin-host-chooser {
@@ -11447,26 +11444,225 @@ body {
   overscroll-behavior: contain;
 }
 
-.signin-host-row.is-recommended {
+.signin-host-option {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  border-top: 1px solid rgba(18, 26, 47, 0.07);
+  transition: background 0.16s ease;
+}
+
+.signin-host-option.is-disabled {
+  opacity: 0.58;
+}
+.signin-host-info-button:disabled {
+  cursor: not-allowed;
+}
+
+.signin-host-option.is-recommended {
   background: rgba(42, 90, 168, 0.075);
 }
 
-.signin-host-row.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
+.signin-host-row {
+  position: static;
+  align-items: flex-start;
+  border-top: 0;
+  padding: 1rem 1rem 0.35rem;
 }
 
-.signin-host-row > .signin-account-status {
+.signin-host-row::after {
+  /* Stretch the native link over the row's metadata and empty space. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.signin-host-row:focus-visible {
+  outline: none;
+}
+
+.signin-host-row:focus-visible::after {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+
+.signin-host-option-footer {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 1rem;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0 1rem 0.5rem;
+}
+
+.signin-host-option-footer .signin-host-meta {
+  grid-column: 2 / -1;
+  grid-row: 1;
+}
+
+.signin-host-info-button {
+  position: relative;
+  z-index: 1;
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: #536782;
+  cursor: pointer;
+}
+
+.signin-host-info-button:hover,
+.signin-host-info-button:focus-visible {
+  background: rgba(42, 90, 168, 0.09);
+  color: #254a9e;
+}
+
+.signin-host-info-button:focus-visible,
+.signin-host-details-continue:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.signin-host-info-button svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.signin-host-mark {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.7rem;
+  font-size: 1rem;
+}
+
+.signin-host-copy {
+  gap: 0.35rem;
+}
+
+.signin-host-copy strong {
+  line-height: 1.35;
+}
+
+.signin-host-identity {
+  min-width: 0;
+}
+
+.signin-host-identity .signin-host-domain {
+  margin-top: 0.2rem;
+}
+
+.signin-host-row > .signin-host-action {
+  display: inline-flex;
+  align-self: center;
   margin-left: auto;
   margin-right: 0.25rem;
+}
+
+.signin-host-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.signin-host-signup-status,
+.signin-host-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.signin-host-signup-status {
+  background: rgba(44, 136, 84, 0.1);
+  color: #2c7650;
   white-space: nowrap;
+}
+
+.signin-host-signup-status--invite_required {
+  background: rgba(180, 121, 29, 0.12);
+  color: #875811;
+}
+
+.signin-host-location {
+  border-radius: 999px;
+  background: rgba(42, 90, 168, 0.065);
+  color: #536782;
+  font-weight: 500;
+}
+
+.signin-host-location svg {
+  flex: 0 0 auto;
+  width: 0.8rem;
+  height: 0.8rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.signin-host-location span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dark-phase .signin-host-domain,
+.dark-phase .signin-host-location {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.dark-phase .signin-host-location {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dark-phase .signin-host-signup-status {
+  background: rgba(77, 185, 126, 0.14);
+  color: #8cd5ad;
+}
+
+.dark-phase .signin-host-signup-status--invite_required {
+  background: rgba(224, 168, 73, 0.14);
+  color: #edc582;
+}
+
+.signin-host-action-arrow {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .signin-host-recommendation {
   width: max-content;
   max-width: 100%;
   overflow: hidden;
-  margin: 0.16rem 0 0.1rem;
+  margin: 0;
   border-radius: 999px;
   padding: 0.12rem 0.45rem;
   background: rgba(44, 136, 84, 0.12);
@@ -11490,6 +11686,93 @@ body {
   color: rgba(18, 26, 47, 0.58);
   font-size: 0.8rem;
   line-height: 1.5;
+}
+
+.signin-host-details-backdrop {
+  z-index: 340;
+}
+
+.signin-host-details-dialog {
+  display: grid;
+  gap: 1rem;
+  padding: 1.4rem;
+}
+
+.signin-host-details-header {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 2.75rem;
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.signin-host-details-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.signin-host-details-header .signin-host-domain {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.signin-host-details-close {
+  top: 0;
+  right: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.signin-host-details-description {
+  margin: 0;
+  color: #536078;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.signin-host-details-continue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 3rem;
+  border-radius: 999px;
+  padding: 0.85rem 1rem;
+  background: #254a9e;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.signin-host-details-continue span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.signin-host-details-continue svg {
+  flex: 0 0 auto;
+}
+
+.signin-host-details-continue:hover {
+  background: #1c3a7e;
+  color: #fff;
+}
+
+.dark-phase .signin-host-info-button,
+.dark-phase .signin-host-details-description {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.dark-phase .signin-host-details-continue,
+.dark-phase .signin-host-details-continue:hover {
+  color: #fff;
 }
 
 .signin-account-status {
@@ -12454,8 +12737,8 @@ body {
 .dark-phase .signin-tab.is-active,
 .dark-phase .signin-account-row:hover,
 .dark-phase .signin-account-row:focus-visible,
-.dark-phase .signin-host-row:hover,
-.dark-phase .signin-host-row:focus-visible {
+.dark-phase .signin-host-option:has(> .signin-host-row:hover),
+.dark-phase .signin-host-option:has(> .signin-host-row:focus-visible) {
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -12490,12 +12773,66 @@ body {
     display: none;
   }
 
-  .signin-host-row > .signin-account-status {
-    display: inline-flex;
+  .signin-page-card:has(.signin-host-chooser) {
+    padding: 1rem;
   }
 
-  .signin-account-copy span,
-  .signin-host-copy em {
+  .signin-host-row {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr) 1rem;
+    align-items: start;
+    gap: 0.6rem;
+    padding: 0.85rem 0.75rem 0.25rem;
+  }
+
+  .signin-host-row .signin-host-mark {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .signin-host-row .signin-host-copy {
+    display: contents;
+  }
+
+  .signin-host-identity {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .signin-host-row > .signin-host-action {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    display: inline-flex;
+    margin: 0;
+  }
+
+  .signin-host-option-footer {
+    gap: 0.6rem;
+    padding: 0 0.75rem 0.35rem;
+  }
+
+  .signin-host-info-button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .signin-host-details-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .signin-host-details-dialog {
+    width: 100%;
+    max-height: calc(100vh - 1rem);
+    max-height: calc(100dvh - 1rem);
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding: 1.25rem max(1.25rem, env(safe-area-inset-right))
+      max(1.25rem, env(safe-area-inset-bottom))
+      max(1.25rem, env(safe-area-inset-left));
+  }
+
+  .signin-account-copy span {
     white-space: normal;
   }
 }
