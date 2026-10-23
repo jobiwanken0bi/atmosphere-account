@@ -170,3 +170,36 @@ Deno.test("canonical browser routing runs before CSRF", async () => {
   const csrf = source.indexOf("app.use(csrfMiddleware)");
   assertEquals(canonical >= 0 && csrf >= 0 && canonical < csrf, true);
 });
+
+Deno.test("canonical HTML requests survive exact-host TLS termination", () => {
+  for (const origin of [SITE, LOGIN]) {
+    for (const method of ["GET", "HEAD", "POST"]) {
+      assertEquals(
+        redirect(
+          request(
+            `${origin.replace("https:", "http:")}/signin?mode=create`,
+            method,
+          ),
+        ),
+        null,
+      );
+    }
+  }
+  for (
+    const origin of [
+      "http://login.atmosphereaccount.com.attacker.test",
+      "http://login.atmosphereaccount.com:12345",
+    ]
+  ) {
+    assertEquals(
+      redirect(
+        request(`${origin}/signin`, "GET", {
+          accept: "text/html",
+          "x-forwarded-host": "login.atmosphereaccount.com",
+          "x-forwarded-proto": "https",
+        }),
+      )?.status,
+      308,
+    );
+  }
+});

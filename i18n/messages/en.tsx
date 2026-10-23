@@ -218,6 +218,12 @@ const en = {
     },
   },
 
+  accountHostChooser: {
+    aboutHost: (name: string): string => `About ${name}`,
+    closeDetails: "Close host details",
+    continueLabel: "Continue",
+  },
+
   hostsDirectory: {
     metaTitle: "Account hosts",
     metaDescription: "Where your account lives.",

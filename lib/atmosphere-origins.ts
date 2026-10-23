@@ -67,6 +67,19 @@ function forwardedTrustedOrigin(headers?: Headers): string | null {
     : null;
 }
 
+/** Railway terminates TLS at its edge. Match only an exact configured host
+ * (including port); arbitrary forwarding headers never choose the origin. */
+export function configuredHttpsOriginForHttpRequest(
+  url: URL,
+  origins: readonly string[] = trustedAtmosphereOrigins(),
+): string | null {
+  if (url.protocol !== "http:") return null;
+  return origins.find((origin) => {
+    const publicUrl = new URL(origin);
+    return publicUrl.protocol === "https:" && publicUrl.host === url.host;
+  }) ?? null;
+}
+
 export function trustedRequestOrigin(url: URL, headers?: Headers): string {
   const normalized = normalizeOrigin(url.origin);
   if (normalized && IS_DEV) {
@@ -85,6 +98,8 @@ export function trustedRequestOrigin(url: URL, headers?: Headers): string {
     }
   }
   if (normalized && isTrustedAtmosphereOrigin(normalized)) return normalized;
+  const configured = configuredHttpsOriginForHttpRequest(url);
+  if (configured) return configured;
   const forwarded = forwardedTrustedOrigin(headers);
   if (forwarded) return forwarded;
   return siteOrigin();

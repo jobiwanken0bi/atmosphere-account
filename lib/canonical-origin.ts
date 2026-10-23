@@ -1,5 +1,8 @@
 import { define } from "../utils.ts";
-import { isTrustedAtmosphereOrigin } from "./atmosphere-origins.ts";
+import {
+  configuredHttpsOriginForHttpRequest,
+  isTrustedAtmosphereOrigin,
+} from "./atmosphere-origins.ts";
 import { IS_DEV, loginOrigin, siteOrigin } from "./env.ts";
 import { readProxyClientKey } from "./proxy-client-key.ts";
 
@@ -67,6 +70,9 @@ export function canonicalBrowserRedirect(
   const site = (options.site ?? siteOrigin()).replace(/\/$/, "");
   const login = (options.login ?? loginOrigin()).replace(/\/$/, "");
   if (matchesConfiguredOrigin(url.origin, site, login)) return null;
+  // The edge already served HTTPS; redirecting this internal HTTP request
+  // back to the same public URL would loop on every browser navigation.
+  if (configuredHttpsOriginForHttpRequest(url, [site, login])) return null;
   if (!isBrowserDocumentRequest(req)) return null;
 
   const verifiedProxyOrigin = options.verifiedProxyOrigin
