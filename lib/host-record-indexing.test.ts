@@ -291,8 +291,11 @@ Deno.test("seeded service projection fails closed when live authority is unavail
   );
 });
 
-Deno.test("contact-email owner supersedes a seeded social DID for record projection", async () => {
-  async function projectsAccountHost(repoDid: string): Promise<boolean> {
+Deno.test("verified email and DNS owners supersede a seeded social DID", async () => {
+  async function projectsAccountHost(
+    repoDid: string,
+    method: "pds_contact_email" | "dns_txt",
+  ): Promise<boolean> {
     const queries: string[] = [];
     const client: DbClient = {
       execute(query) {
@@ -301,8 +304,8 @@ Deno.test("contact-email owner supersedes a seeded social DID for record project
         if (/SELECT claimant_did, method FROM account_host_claim/i.test(sql)) {
           return Promise.resolve({
             rows: [{
-              claimant_did: "did:plc:email-operator",
-              method: "pds_contact_email",
+              claimant_did: "did:plc:verified-operator",
+              method,
             }],
             rowsAffected: 0,
           });
@@ -319,7 +322,7 @@ Deno.test("contact-email owner supersedes a seeded social DID for record project
         collection: HOST_SERVICE_NSID,
         repoDid,
         rkey: "pckt.cafe",
-        authorHandle: repoDid === "did:plc:email-operator"
+        authorHandle: repoDid === "did:plc:verified-operator"
           ? "operator.example"
           : "pckt.blog",
         value: {
@@ -341,8 +344,16 @@ Deno.test("contact-email owner supersedes a seeded social DID for record project
     return queries.some((sql) => /INSERT INTO account_host\s*\(/i.test(sql));
   }
 
-  assertEquals(await projectsAccountHost("did:plc:email-operator"), true);
-  assertEquals(await projectsAccountHost("did:plc:pinned-social"), false);
+  for (const method of ["pds_contact_email", "dns_txt"] as const) {
+    assertEquals(
+      await projectsAccountHost("did:plc:verified-operator", method),
+      true,
+    );
+    assertEquals(
+      await projectsAccountHost("did:plc:pinned-social", method),
+      false,
+    );
+  }
 });
 
 Deno.test("poisoned legacy claims cannot project seeded profile metadata", async () => {

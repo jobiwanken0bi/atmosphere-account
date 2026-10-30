@@ -88,6 +88,20 @@ Deno.test("saved and manual account views have no-JS links", () => {
   assertStringIncludes(manualHtml, 'href="/signin?next=%2Faccount');
 });
 
+Deno.test("account creation preserves an add-account registration context", () => {
+  const href = accountCreationFallbackHref(
+    "/oauth/add-account?next=%2Fapps%2Fmanage%3Fnew%3D1&intent=project&action=app&name=a+different+app&capability=app",
+  );
+  const url = new URL(href, "https://atmosphereaccount.com");
+
+  assertEquals(url.pathname, "/signin");
+  assertEquals(url.searchParams.get("next"), "/apps/manage?new=1");
+  assertEquals(url.searchParams.get("choose"), "another");
+  assertEquals(url.searchParams.get("mode"), "create");
+  assertEquals(url.searchParams.get("action"), "app");
+  assertEquals(url.searchParams.getAll("capability"), ["app"]);
+});
+
 Deno.test("create-account mode opens the host chooser with plain-language copy", () => {
   const html = renderToString(h(SignInForm, {
     rich: true,
@@ -121,6 +135,35 @@ Deno.test("empty account-host chooser explains the unavailable state", () => {
   assertStringIncludes(html, 'placeholder="Search hosts…"');
   assertStringIncludes(html, "No account hosts are available right now.");
   assertEquals(html.includes("match those filters"), false);
+});
+
+Deno.test("host information has a separate control from starting signup", () => {
+  const host = {
+    ...directHost,
+    description:
+      "A detailed description shown only after opening host details.",
+    location: "Europe",
+  };
+  const html = renderToString(h(SignInForm, {
+    rich: true,
+    initialMode: "create",
+    createAccountHosts: [host],
+    returnTo: "/account",
+  }));
+  const signupLink = html.match(
+    /<a\b[^>]*\bclass="signin-host-row[^"]*"[^>]*>[\s\S]*?<\/a>/,
+  )?.[0] ?? "";
+
+  assertStringIncludes(signupLink, 'href="/oauth/create?host=host.example');
+  assertStringIncludes(signupLink, "next=%2Faccount");
+  assertStringIncludes(signupLink, "Example Host");
+  assertEquals(signupLink.includes("<button"), false);
+  assertStringIncludes(html, 'aria-label="About Example Host"');
+  assertStringIncludes(html, 'aria-haspopup="dialog"');
+  assertStringIncludes(html, "Open signup");
+  assertStringIncludes(html, "Europe");
+  assertEquals(html.includes(host.description), false);
+  assertEquals(html.includes('role="dialog"'), false);
 });
 
 Deno.test("account-creation fallback keeps action context and opens create mode", () => {
@@ -172,11 +215,11 @@ Deno.test("sign-in mode tabs remain usable without JavaScript", () => {
       returnTo: "/apps/manage?new=1",
       intent: "project",
       action: "app",
-      capabilities: ["app", "media"],
+      capabilities: ["app"],
       targetName: "Example",
       initialHandle: "example.test",
     }),
-    "/signin?next=%2Fapps%2Fmanage%3Fnew%3D1&intent=project&action=app&name=Example&capability=app&capability=media&handle=example.test&mode=create",
+    "/signin?next=%2Fapps%2Fmanage%3Fnew%3D1&intent=project&action=app&name=Example&capability=app&handle=example.test&mode=create",
   );
   const html = renderToString(h(SignInForm, {
     rich: true,
@@ -205,7 +248,7 @@ Deno.test("saved and manual account paths retain complete action context", () =>
   const html = renderToString(h(SignInForm, {
     returnTo: "/apps/example?review=compose#reviews",
     intent: "project",
-    capabilities: ["app", "media"],
+    capabilities: ["app"],
     action: "app",
     targetName: "Example App",
     initialHandle: "alice.example",
@@ -225,14 +268,14 @@ Deno.test("saved and manual account paths retain complete action context", () =>
   assertEquals((html.match(/name="capability" value="app"/g) ?? []).length, 2);
   assertEquals(
     (html.match(/name="capability" value="media"/g) ?? []).length,
-    2,
+    0,
   );
 });
 
 Deno.test("forced reauthorization sends remembered accounts through fresh OAuth", () => {
   const html = renderToString(h(SignInForm, {
     returnTo: "/hosts/pds.example/manage?resume_host_profile=1",
-    capabilities: ["host", "media"],
+    capabilities: ["host"],
     action: "host_manage",
     targetName: "Example PDS",
     rememberedAccounts: [{
@@ -261,16 +304,16 @@ Deno.test("forced reauthorization sends remembered accounts through fresh OAuth"
   );
   assertEquals(
     (html.match(/name="capability" value="media"/g) ?? []).length,
-    2,
+    0,
   );
 });
 
 Deno.test("DID-owned reauthorization stays on its current account", () => {
   const html = renderToString(h(SignInForm, {
-    returnTo: "/account",
-    capabilities: ["profile"],
-    action: "profile",
-    targetName: "Alice",
+    returnTo: "/hosts/example.test/manage",
+    capabilities: ["host"],
+    action: "host_manage",
+    targetName: "Example Host",
     initialHandle: "alice.example",
     initialDid: "did:plc:alice",
     rememberedAccounts: [{
@@ -378,10 +421,10 @@ Deno.test("direct account creation preserves contextual capability upgrades", ()
       directHost,
       "/apps/create?new=1",
       "project",
-      ["app", "media"],
+      ["app"],
       "app",
     ),
-    "/oauth/create?host=host.example&next=%2Fapps%2Fcreate%3Fnew%3D1&intent=project&capability=app&capability=media&action=app",
+    "/oauth/create?host=host.example&next=%2Fapps%2Fcreate%3Fnew%3D1&intent=project&capability=app&action=app",
   );
 });
 

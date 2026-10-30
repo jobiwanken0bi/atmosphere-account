@@ -301,7 +301,6 @@ export default function ReportReviewButton(
           action="report_review"
           targetName={targetName}
           rememberedAccounts={rememberedAccounts}
-          closeLabel={copy.cancel}
           onClose={() => authOpen.value = false}
         />
       )}
@@ -432,7 +431,6 @@ export default function ReportReviewButton(
           currentDid={currentDid}
           currentHandle={currentHandle}
           rememberedAccounts={rememberedAccounts}
-          closeLabel={copy.cancel}
           restrictToCurrentAccount
           onClose={() => {
             clearDraft();

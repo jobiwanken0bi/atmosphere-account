@@ -139,22 +139,23 @@ not the scope sent with every authorization request. Each flow requests the
 smallest allowlisted capability bundle needed by the action that opened it (see
 `lib/oauth-scopes.ts`):
 
-| Action                         | Requested permission                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------ |
-| Use Login with Atmosphere      | `atproto` only                                                                             |
-| Write a new shared review      | `include:fyi.atstore.authThirdPartyReviews`                                                |
-| Edit or delete a shared review | `repo:fyi.atstore.listing.review?action=update&action=delete`                              |
-| Favorite or unfavorite an app  | `repo:fyi.atstore.listing.favorite?action=create&action=delete`                            |
-| Manage an app                  | the community app profile, ATStore profile/detail, and transitional legacy app collections |
-| Manage a host                  | `repo:account.atmosphere.host.profile` and `repo:account.atmosphere.host.service`          |
-| Upload imagery                 | `blob:image/*`, added only when the action actually uses image blobs                       |
+| Action                         | Requested permission                                                        |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| Use Login with Atmosphere      | `atproto` only                                                              |
+| Write a new shared review      | `include:fyi.atstore.authThirdPartyReviews`                                 |
+| Edit or delete a shared review | `repo:fyi.atstore.listing.review?action=update&action=delete`               |
+| Favorite or unfavorite an app  | `repo:fyi.atstore.listing.favorite?action=create&action=delete`             |
+| Manage an app                  | the app profile/listing collections and `blob:image/*`                      |
+| Claim or manage a host         | the host profile/service collections and `blob:image/*`                     |
+| Edit a personal profile        | the profile collection, with `blob:image/*` added only for an avatar upload |
 
 Every action bundle also includes `atproto`. When an already-authorized account
 adds a capability, Atmosphere requests the union of its existing grant and the
 new bundle. App and host management are independent capabilities; their union is
-requested only for an explicit combined app-and-host action. Browser input may
-name only the capabilities allowlisted in `lib/oauth-scopes.ts`; arbitrary raw
-scope strings are rejected.
+requested only for an explicit combined app-and-host action. App and host
+management each include their images so those complete jobs never cause a second
+authorization screen. Browser input may name only the capabilities allowlisted
+in `lib/oauth-scopes.ts`; arbitrary raw scope strings are rejected.
 
 The metadata maximum temporarily retains the pre-progressive broad scope union,
 including `include:com.atmosphereaccount.registry.fullPermissions` and
@@ -162,6 +163,27 @@ including `include:com.atmosphereaccount.registry.fullPermissions` and
 while they age out. New ordinary flows do not request that maximum. This
 distinction matters when reviewing consent screens: inspect the authorization
 request, not only the client metadata document.
+
+### Host ownership and managing accounts
+
+Each account host has exactly one managing DID. OAuth permission lets this site
+publish that host's records and images from the selected DID's repository; it
+does not prove that the person controls the host domain. Initial production
+claims therefore require a separate, exact 24-hour DNS TXT challenge. Email,
+social handles, and self-published host records are not accepted as alternate
+ownership proofs.
+
+Previously completed contact-email claims remain operational during the policy
+transition, but no new email claim can be started or completed. Every manager
+change requires a fresh DNS challenge from the target managing account.
+
+A manager change is explicitly started by the current managing DID. The target
+DID receives the complete host capability and must complete a fresh DNS proof.
+The database replaces the owner with an old-owner compare-and-swap in the same
+transaction that consumes the DNS challenge. Until that transaction succeeds,
+the original manager remains in control. Afterward, repository pointers are
+cleared for republishing and claimed app connections require the new host
+manager's approval.
 
 `blob:image/*` remains a top-level scope because the atproto permission spec
 [explicitly disallows `blob` permissions inside permission

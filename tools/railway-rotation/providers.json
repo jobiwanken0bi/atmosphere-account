@@ -1,0 +1,172 @@
+[
+  {
+    "id": "railway-monitor",
+    "label": "Railway backup-monitor project token",
+    "project": "ATM Moderation",
+    "environment": "staging",
+    "fields": [
+      "MODERATION_BACKUP_MONITOR_TOKEN"
+    ],
+    "url": "https://railway.com/project/44972f5a-10c7-4f8b-a650-b853afab2384/settings/tokens?environmentId=ff542951-d0a1-434d-b156-d040e99b3bf8",
+    "hint": "Create the prepared token scoped ONLY to ATM Moderation / staging. Verify the replacement deployment and retire the exposed token promptly."
+  },
+  {
+    "id": "openai",
+    "label": "OpenAI moderation",
+    "project": "ATM Moderation",
+    "environment": "staging",
+    "fields": [
+      "OPENAI_API_KEY"
+    ],
+    "url": "https://platform.openai.com/api-keys",
+    "hint": "Create a replacement in the same OpenAI project with the same required moderation permissions.",
+    "pattern": "sk-[A-Za-z0-9_\\-]+"
+  },
+  {
+    "id": "photodna",
+    "label": "Microsoft PhotoDNA moderation",
+    "project": "ATM Moderation",
+    "environment": "staging",
+    "fields": [
+      "PHOTODNA_API_KEY"
+    ],
+    "url": "https://portal.azure.com/",
+    "hint": "Use the same PhotoDNA resource. Switch to its valid secondary key before regenerating the exposed key, if supported."
+  },
+  {
+    "id": "resend-moderation",
+    "label": "Resend moderation email",
+    "project": "ATM Moderation",
+    "environment": "staging",
+    "fields": [
+      "RESEND_API_KEY"
+    ],
+    "url": "https://resend.com/api-keys",
+    "hint": "Create a sending-only replacement restricted to the same sender domain.",
+    "pattern": "re_[A-Za-z0-9_\\-]+"
+  },
+  {
+    "id": "draft-alerts",
+    "label": "Draft-storage email provider key",
+    "project": "Supper AppView",
+    "environment": "production",
+    "fields": [
+      "DRAFT_STORAGE_ALERT_API_KEY"
+    ],
+    "url": null,
+    "hint": "Create the replacement in the current alert-email provider with the same sender permissions; provider identity still needs confirmation."
+  },
+  {
+    "id": "comail",
+    "label": "Comail email",
+    "project": "Atmosphere Account",
+    "environment": "production",
+    "fields": [
+      "COMAIL_API_KEY"
+    ],
+    "url": null,
+    "hint": "Create a replacement in the existing Comail account with the same permissions."
+  },
+  {
+    "id": "turso",
+    "label": "Legacy Turso database API token",
+    "project": "Atmosphere Account",
+    "environment": "production",
+    "fields": [
+      "TURSO_AUTH_TOKEN"
+    ],
+    "url": "https://app.turso.tech/",
+    "hint": "Create a database-scoped token for atmosphere-account-jobiwanken0bi. Do NOT invalidate all database tokens yet: Deno and other consumers also need updating."
+  },
+  {
+    "id": "stripe",
+    "label": "Stripe API key",
+    "project": "atcash",
+    "environment": "production",
+    "fields": [
+      "STRIPE_SECRET_KEY"
+    ],
+    "url": "https://dashboard.stripe.com/apikeys",
+    "hint": "Create or roll a key for the SAME Stripe account and mode. Use only the short overlap needed for verification, then revoke the exposed key promptly.",
+    "pattern": "(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+"
+  },
+  {
+    "id": "stripe-connect",
+    "label": "Stripe Link OAuth client secret (crypto onramp)",
+    "project": "atcash",
+    "environment": "production",
+    "fields": [
+      "STRIPE_LINK_OAUTH_CLIENT_SECRET"
+    ],
+    "url": null,
+    "hint": "Confirm the issuer and rotation procedure for the existing Link/onramp OAuth client before replacing this secret. This is separate from Stripe Connect and the ordinary Stripe API key."
+  },
+  {
+    "id": "privy-production",
+    "label": "Privy production app secret",
+    "project": "atcash",
+    "environment": "production",
+    "fields": [
+      "PRIVY_APP_SECRET"
+    ],
+    "url": "https://dashboard.privy.io/",
+    "hint": "Use the same production Privy app. Minimize overlap and revoke the old secret promptly after verification."
+  },
+  {
+    "id": "privy-sandbox",
+    "label": "Privy hackathon sandbox app secret",
+    "project": "atcash",
+    "environment": "hackathon-sandbox",
+    "fields": [
+      "PRIVY_APP_SECRET"
+    ],
+    "url": "https://dashboard.privy.io/",
+    "hint": "Use the hackathon sandbox Privy app. This is separate from the production app."
+  },
+  {
+    "id": "bridge",
+    "label": "Bridge API key",
+    "project": "atcash",
+    "environment": "production",
+    "fields": [
+      "BRIDGE_API_KEY"
+    ],
+    "url": "https://dashboard.bridge.xyz/",
+    "hint": "Create a replacement for the same Bridge account and environment."
+  },
+  {
+    "id": "expo",
+    "label": "Expo access token",
+    "project": "atcash",
+    "environment": "production",
+    "fields": [
+      "EXPO_ACCESS_TOKEN"
+    ],
+    "url": "https://expo.dev/settings/access-tokens",
+    "hint": "Create a replacement access token with the same required organization/project access."
+  },
+  {
+    "id": "r2-read",
+    "label": "Cloudflare R2 reader credentials",
+    "project": "Supper AppView",
+    "environment": "production",
+    "fields": [
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY"
+    ],
+    "url": "https://dash.cloudflare.com/",
+    "hint": "Create an R2 S3 credential pair with the current reader permissions for the same bucket. Both known consumers update together."
+  },
+  {
+    "id": "r2-operator",
+    "label": "Cloudflare R2 operator credentials",
+    "project": "Supper AppView",
+    "environment": "production",
+    "fields": [
+      "R2_OPERATOR_ACCESS_KEY_ID",
+      "R2_OPERATOR_SECRET_ACCESS_KEY"
+    ],
+    "url": "https://dash.cloudflare.com/",
+    "hint": "Create a separate R2 S3 credential pair with the current operator permissions restricted to the same bucket."
+  }
+]

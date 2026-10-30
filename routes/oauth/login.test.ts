@@ -28,7 +28,7 @@ Deno.test("OAuth login defaults browser requests to identity-only", async () => 
   });
 });
 
-Deno.test("OAuth login preserves repeated capability upgrades from forms", async () => {
+Deno.test("OAuth login preserves complete app capability context", async () => {
   const input = await readLoginInputForTest(
     new Request("https://atmosphereaccount.com/oauth/login", {
       method: "POST",
@@ -38,7 +38,6 @@ Deno.test("OAuth login preserves repeated capability upgrades from forms", async
         ["next", "/apps/create?new=1"],
         ["intent", "project"],
         ["capability", "app"],
-        ["capability", "media"],
         ["action", "app"],
         ["name", "Example App"],
       ]),
@@ -51,7 +50,7 @@ Deno.test("OAuth login preserves repeated capability upgrades from forms", async
     intent: "project",
     continuation: null,
     chooseAnotherAccount: false,
-    capabilities: ["app", "media"],
+    capabilities: ["app"],
     action: "app",
     targetName: "Example App",
   });

@@ -8,7 +8,26 @@ import {
   HOST_PROFILE_NSID,
   HOST_SERVICE_NSID,
 } from "./lexicons.ts";
-import { putRecord, type PutRecordResult } from "./pds.ts";
+import {
+  getRecordPublic,
+  PdsRecordWriteError,
+  putRecord,
+  type PutRecordOptions,
+  type PutRecordResult,
+} from "./pds.ts";
+
+const HOST_PROFILE_MAX_SERVICE_REFS = 32;
+const HOST_PROFILE_CAS_ATTEMPTS = 4;
+const HOST_PROFILE_MANAGED_FIELDS = new Set([
+  "$type",
+  "name",
+  "description",
+  "serviceRefs",
+  "images",
+  "links",
+  "createdAt",
+  "updatedAt",
+]);
 
 export const HOST_LINK_ROLE_HOMEPAGE =
   "account.atmosphere.host.defs#linkRoleHomepage";
@@ -67,6 +86,15 @@ export interface HostRecordInput {
 export interface HostRecordPublishResult {
   service: PutRecordResult;
   profile?: PutRecordResult;
+}
+
+export class HostProfileServiceRefsLimitError extends Error {
+  constructor() {
+    super(
+      `Host profile already contains the maximum of ${HOST_PROFILE_MAX_SERVICE_REFS} service references`,
+    );
+    this.name = "HostProfileServiceRefsLimitError";
+  }
 }
 
 export function hostServiceRkey(host: string): string {
@@ -155,12 +183,229 @@ export async function publishHostProfileRecord(
   input: HostRecordInput,
   serviceRecordUri: string,
 ): Promise<PutRecordResult> {
-  return await putRecord(
-    user.did,
+  return await publishHostProfileRecordWithIo(
+    user,
     pdsUrl,
-    HOST_PROFILE_NSID,
-    "self",
-    buildHostProfileRecord(input, serviceRecordUri),
+    input,
+    serviceRecordUri,
+    {
+      readRecord: getRecordPublic,
+      writeRecord: putRecord,
+    },
+  );
+}
+
+interface HostProfileRecordIo {
+  readRecord: (
+    pdsUrl: string,
+    did: string,
+    collection: string,
+    rkey: string,
+  ) => Promise<{ uri: string; cid: string; value: unknown } | null>;
+  writeRecord: (
+    did: string,
+    pdsUrl: string,
+    collection: string,
+    rkey: string,
+    record: Record<string, unknown>,
+    options?: PutRecordOptions,
+  ) => Promise<PutRecordResult>;
+}
+
+async function publishHostProfileRecordWithIo(
+  user: { did: string },
+  pdsUrl: string,
+  input: HostRecordInput,
+  serviceRecordUri: string,
+  io: HostProfileRecordIo,
+): Promise<PutRecordResult> {
+  let lastConflict: PdsRecordWriteError | null = null;
+  for (let attempt = 0; attempt < HOST_PROFILE_CAS_ATTEMPTS; attempt++) {
+    const existing = await io.readRecord(
+      pdsUrl,
+      user.did,
+      HOST_PROFILE_NSID,
+      "self",
+    );
+    const record = mergeHostProfileRecord(
+      existing?.value,
+      user.did,
+      input,
+      serviceRecordUri,
+    );
+    try {
+      return await io.writeRecord(
+        user.did,
+        pdsUrl,
+        HOST_PROFILE_NSID,
+        "self",
+        record,
+        { swapRecord: existing?.cid ?? null },
+      );
+    } catch (err) {
+      if (
+        !isInvalidSwapError(err) || attempt === HOST_PROFILE_CAS_ATTEMPTS - 1
+      ) {
+        throw err;
+      }
+      lastConflict = err;
+    }
+  }
+  throw lastConflict ?? new Error("Host profile update did not complete");
+}
+
+function mergeHostProfileRecord(
+  existing: unknown,
+  ownerDid: string,
+  input: HostRecordInput,
+  serviceRecordUri: string,
+): Record<string, unknown> {
+  const next = buildHostProfileRecord(input, serviceRecordUri);
+  const preserved = compatibleExistingProfileFields(existing);
+  return {
+    ...preserved,
+    ...next,
+    serviceRefs: mergeHostServiceRefs(
+      isObjectRecord(existing) ? existing.serviceRefs : undefined,
+      ownerDid,
+      hostServiceRkey(input.host),
+      serviceRecordUri,
+    ),
+  };
+}
+
+function compatibleExistingProfileFields(
+  existing: unknown,
+): Record<string, unknown> {
+  if (!isObjectRecord(existing)) return {};
+  const preserved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(existing)) {
+    if (HOST_PROFILE_MANAGED_FIELDS.has(key) || value === undefined) continue;
+    preserved[key] = value;
+  }
+  return preserved;
+}
+
+function mergeHostServiceRefs(
+  existing: unknown,
+  ownerDid: string,
+  targetHost: string,
+  targetUri: string,
+): Array<Record<string, unknown>> {
+  const parsedTarget = parseOwnedHostServiceUri(targetUri, ownerDid);
+  if (!parsedTarget || parsedTarget.host !== targetHost) {
+    throw new Error("PDS returned an invalid host service record URI");
+  }
+
+  const refs: Array<Record<string, unknown>> = [];
+  const seenUris = new Set<string>();
+  const seenHosts = new Set<string>();
+  let insertedTarget = false;
+
+  for (const item of Array.isArray(existing) ? existing : []) {
+    if (!isObjectRecord(item)) continue;
+    const parsed = parseOwnedHostServiceUri(item.uri, ownerDid);
+    if (!parsed || seenUris.has(parsed.uri) || seenHosts.has(parsed.host)) {
+      continue;
+    }
+    seenUris.add(parsed.uri);
+    seenHosts.add(parsed.host);
+
+    const isTarget = parsed.uri === parsedTarget.uri ||
+      parsed.host === targetHost;
+    const ref = {
+      ...item,
+      uri: isTarget ? parsedTarget.uri : parsed.uri,
+      host: isTarget ? targetHost : parsed.host,
+    };
+    if (isTarget) insertedTarget = true;
+    refs.push(ref);
+    if (refs.length > HOST_PROFILE_MAX_SERVICE_REFS) {
+      throw new HostProfileServiceRefsLimitError();
+    }
+  }
+
+  if (!insertedTarget) {
+    if (refs.length >= HOST_PROFILE_MAX_SERVICE_REFS) {
+      throw new HostProfileServiceRefsLimitError();
+    }
+    refs.push({ uri: parsedTarget.uri, host: targetHost });
+  }
+  return refs;
+}
+
+function parseOwnedHostServiceUri(
+  value: unknown,
+  ownerDid: string,
+): { uri: string; host: string } | null {
+  if (typeof value !== "string") return null;
+  const uri = value.trim();
+  if (!uri.startsWith("at://") || uri.length > 2048) return null;
+  const segments = uri.slice("at://".length).split("/");
+  if (
+    segments.length !== 3 || segments[0] !== ownerDid ||
+    segments[1] !== HOST_SERVICE_NSID
+  ) {
+    return null;
+  }
+  const host = normalizeServiceRefHost(segments[2]);
+  return host ? { uri, host } : null;
+}
+
+function normalizeServiceRefHost(value: string): string | null {
+  const host = value.trim().toLowerCase().replace(/\.$/, "");
+  if (!host || host.length > 253) return null;
+  if (
+    !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+      .test(host)
+  ) {
+    return null;
+  }
+  return host;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isInvalidSwapError(value: unknown): value is PdsRecordWriteError {
+  if (
+    !(value instanceof PdsRecordWriteError) || value.operation !== "putRecord"
+  ) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(value.body || "null") as
+      | { error?: unknown }
+      | null;
+    return parsed?.error === "InvalidSwap";
+  } catch {
+    return false;
+  }
+}
+
+export function mergeHostProfileRecordForTest(
+  existing: unknown,
+  ownerDid: string,
+  input: HostRecordInput,
+  serviceRecordUri: string,
+): Record<string, unknown> {
+  return mergeHostProfileRecord(existing, ownerDid, input, serviceRecordUri);
+}
+
+export async function publishHostProfileRecordWithIoForTest(
+  user: { did: string },
+  pdsUrl: string,
+  input: HostRecordInput,
+  serviceRecordUri: string,
+  io: HostProfileRecordIo,
+): Promise<PutRecordResult> {
+  return await publishHostProfileRecordWithIo(
+    user,
+    pdsUrl,
+    input,
+    serviceRecordUri,
+    io,
   );
 }
 

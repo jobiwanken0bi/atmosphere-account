@@ -72,8 +72,6 @@
     "@neon/serverless": "jsr:@neon/serverless@^1.0.1",
     "pg": "npm:pg@^8.16.3",
     "@types/pg": "npm:@types/pg@^8.15.6",
-    "@simplewebauthn/browser": "npm:@simplewebauthn/browser@13.3.0",
-    "@simplewebauthn/server": "npm:@simplewebauthn/server@13.3.2",
     "nanoid": "npm:nanoid@3.3.18",
     "postcss": "npm:postcss@8.5.26",
     "sharp": "npm:sharp@0.35.3",
@@ -114,3 +112,4 @@
     "app": "atmosphere-account"
   }
 }
+

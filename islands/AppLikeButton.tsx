@@ -196,7 +196,6 @@ export default function AppLikeButton(
             action="favorite"
             targetName={targetName}
             rememberedAccounts={rememberedAccounts}
-            closeLabel={copy.cancel}
             onAuthorizationStart={() => armResume("save", null)}
             onClose={() => authOpen.value = false}
           />
@@ -302,7 +301,6 @@ export default function AppLikeButton(
           currentHandle={currentHandle}
           rememberedAccounts={rememberedAccounts}
           restrictToCurrentAccount
-          closeLabel={copy.cancel}
           onAuthorizationStart={() =>
             armResume(authorizationIntent.value, currentDid)}
           onClose={() => reauthorization.value = null}

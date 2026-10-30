@@ -3,6 +3,5 @@ import { oauthRecoveryModeForPrompt } from "./oauth.ts";
 
 Deno.test("only denied account creation returns to create mode", () => {
   assertEquals(oauthRecoveryModeForPrompt("create"), "create");
-  assertEquals(oauthRecoveryModeForPrompt("login"), undefined);
   assertEquals(oauthRecoveryModeForPrompt(undefined), undefined);
 });

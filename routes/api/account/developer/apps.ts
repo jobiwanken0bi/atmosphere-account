@@ -5,8 +5,8 @@ import { listLoginAppsForOwner } from "../../../../lib/atmosphere-login.ts";
 export const handler = define.handlers({
   async GET(ctx) {
     const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
-      (err) => {
-        console.error("[appview] developer apps API proxy failed:", err);
+      () => {
+        console.error("[appview] developer apps API proxy failed");
         return json({ error: "appview_unavailable" }, 503);
       },
     );

@@ -1,8 +1,11 @@
 import { define } from "../../utils.ts";
 import Nav from "../../components/Nav.tsx";
 import Footer from "../../components/Footer.tsx";
+import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
+import OwnerManagementLink from "../../components/OwnerManagementLink.tsx";
 import CreateProfileForm from "../../islands/CreateProfileForm.tsx";
 import AtstoreMigrationButton from "../../islands/AtstoreMigrationButton.tsx";
+import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
 import { getMessages } from "../../i18n/mod.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
@@ -14,6 +17,10 @@ import {
   getRecordPublic,
 } from "../../lib/pds.ts";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
+import {
+  type AccountHost,
+  listManagedAccountHosts,
+} from "../../lib/account-hosts.ts";
 import { getEffectiveAccountType } from "../../lib/account-types.ts";
 import { bskyCdnAvatarUrl } from "../../lib/avatar.ts";
 import ShareButton from "../../islands/ShareButton.tsx";
@@ -28,8 +35,11 @@ import {
   type AppListing,
   getAppListingById,
   getAppListingByIdentifier,
+  getManagedAppListingByAccountDid,
 } from "../../lib/app-directory.ts";
+import { appManagementHref } from "../../lib/app-management-navigation.ts";
 import { ATSTORE_LISTING_NSID } from "../../lib/app-lexicons.ts";
+import { appStorePlatformForUrl } from "../../lib/app-store-links.ts";
 import type { AccountIndicator, LexiconInterop } from "../../lib/lexicons.ts";
 import type { BlobRef, LinkEntry } from "../../lib/lexicons.ts";
 import {
@@ -38,6 +48,7 @@ import {
 } from "../../lib/collection-catalog.ts";
 import { userControlsAppListing } from "../../lib/directory-entity-links.ts";
 import { oauthSigninUrl } from "../../lib/oauth-action.ts";
+import { oauthAddAccountHref } from "../hosts/oauth-entry.ts";
 
 export function isEditableRequestedApp(
   app: AppListing,
@@ -72,12 +83,33 @@ export const handler = define.handlers({
         },
       });
     }
-    const accountType = await getEffectiveAccountType(user.did).catch(() =>
-      null
-    );
+    let existingManagedApp: AppListing | null;
+    let accountType: Awaited<ReturnType<typeof getEffectiveAccountType>>;
+    try {
+      [accountType, existingManagedApp] = await Promise.all([
+        getEffectiveAccountType(user.did).catch(() => null),
+        getManagedAppListingByAccountDid(user.did),
+      ]);
+    } catch (error) {
+      return appviewUnavailable("app ownership", error);
+    }
+    if (creatingAdditionalApp && existingManagedApp) {
+      const appAuthorized = Boolean(
+        await getSessionForCapabilities(user.did, ["app"], { quiet: true })
+          .catch(() => null),
+      );
+      return ctx.render(
+        <ExistingAppRegistrationPage
+          user={user}
+          account={buildAccountMenuProps(ctx.state, existingManagedApp.slug)}
+          app={existingManagedApp}
+          appAuthorized={appAuthorized}
+        />,
+      );
+    }
     // `project` remains a compatibility marker for the one legacy app record,
-    // not an authorization role. Any Atmosphere account can create another
-    // ATStore app or manage a listing it owns without converting account type.
+    // not an authorization role. A DID without an app can register one, while
+    // an existing app remains bound to the account that represents it.
     if (
       accountType !== "project" && !creatingAdditionalApp && !requestedAppId
     ) {
@@ -352,9 +384,13 @@ export const handler = define.handlers({
     );
     const managedAppListing = creatingAdditionalApp
       ? null
-      : selectedManagedApp ?? await getAppListingByIdentifier(user.did, {
-        syncLegacy: false,
-      }).catch(() => null);
+      : selectedManagedApp ?? existingManagedApp ??
+        await getAppListingByIdentifier(user.did, {
+          syncLegacy: false,
+        }).catch(() => null);
+    const managedAccountHosts = await listManagedAccountHosts(user.did).catch(
+      () => [],
+    );
     return ctx.render(
       <ManagePage
         user={user}
@@ -378,6 +414,8 @@ export const handler = define.handlers({
         migrationFocus={ctx.url.searchParams.get("migrate") ===
           "shared-records"}
         managedAppListingId={managedAppListing?.id ?? null}
+        connectedAccountHost={managedAppListing?.accountHost ?? null}
+        managedAccountHosts={managedAccountHosts}
         createNewListing={creatingAdditionalApp}
         reauthReturnTo={next}
         takedown={takedown}
@@ -396,6 +434,95 @@ function appviewUnavailable(scope: string, err: unknown): Response {
       "content-type": "text/plain; charset=utf-8",
     },
   });
+}
+
+interface ExistingAppRegistrationPageProps {
+  user: { did: string; handle: string };
+  account: ReturnType<typeof buildAccountMenuProps>;
+  app: AppListing;
+  appAuthorized: boolean;
+}
+
+export function ExistingAppRegistrationPage(
+  { user, account, app, appAuthorized }: ExistingAppRegistrationPageProps,
+) {
+  const manageHref = appManagementHref(app, user.did);
+  const anotherAccountHref = differentAppAccountHref();
+  const otherRememberedAccounts = differentAppRememberedAccounts(
+    account.rememberedAccounts,
+    user.did,
+  );
+  return (
+    <div id="page-top">
+      <div class="content-layer">
+        <Nav account={account} active="apps" />
+        <section class="signin-page-section">
+          <div class="container signin-page-container">
+            <a href="/apps" class="text-link-button">
+              ← Back
+            </a>
+            <div class="glass signin-page-card">
+              <p class="text-eyebrow">App profile</p>
+              <h1 class="host-claim-title">
+                This account already has an app
+              </h1>
+              <p class="text-body host-claim-copy">
+                <AtmosphereHandle handle={user.handle} /> represents{" "}
+                {app.name}. Each app uses its own Atmosphere account.
+              </p>
+              <div class="directory-register-cta">
+                <OwnerManagementLink
+                  authorized={appAuthorized}
+                  kind="app"
+                  destinationHref={manageHref}
+                  targetName={app.name}
+                  label="Manage your app"
+                  className="directory-register-button"
+                  leadingIcon="edit"
+                  rememberedAccounts={account.rememberedAccounts}
+                  initialHandle={user.handle}
+                />
+                <ContextualSignInLink
+                  href={anotherAccountHref}
+                  returnTo="/apps/manage?new=1"
+                  intent="project"
+                  action="app"
+                  capabilities={["app"]}
+                  targetName="a different app"
+                  label="Use another account"
+                  className="profile-form-button-secondary profile-form-button-secondary--lg"
+                  rememberedAccounts={otherRememberedAccounts}
+                  chooseAnotherAccount
+                />
+              </div>
+              <p class="profile-form-hint">
+                To register a different app, choose the account that represents
+                it—or create that account first.
+              </p>
+            </div>
+          </div>
+        </section>
+        <Footer variant="compact" />
+      </div>
+    </div>
+  );
+}
+
+export function differentAppAccountHref(): string {
+  return oauthAddAccountHref(oauthSigninUrl({
+    next: "/apps/manage?new=1",
+    intent: "project",
+    action: "app",
+    capabilities: ["app"],
+    name: "a different app",
+  }));
+}
+
+export function differentAppRememberedAccounts(
+  accounts: Array<{ did: string; handle: string }>,
+  currentDid: string,
+): Array<{ did: string; handle: string }> {
+  return accounts.filter((account) => account.did !== currentDid);
 }
 
 interface AtstoreInitialState {
@@ -533,11 +660,13 @@ function linksFromAtstore(
     const url = httpUrl(row.url);
     if (!url) continue;
     const type = str(row.type, 32)?.toLowerCase() ?? "other";
-    if (type === "ios" && !iosLink) {
+    const storePlatform = appStorePlatformForUrl(url) ??
+      (type === "ios" || type === "android" ? type : null);
+    if (storePlatform === "ios" && !iosLink) {
       iosLink = url;
       continue;
     }
-    if (type === "android" && !androidLink) {
+    if (storePlatform === "android" && !androidLink) {
       androidLink = url;
       continue;
     }
@@ -644,6 +773,8 @@ interface ManagePageProps {
   showAtstoreMigration: boolean;
   migrationFocus: boolean;
   managedAppListingId: string | null;
+  connectedAccountHost: string | null;
+  managedAccountHosts: AccountHost[];
   createNewListing: boolean;
   reauthReturnTo: string;
   takedown: { reason: string; at: number | null } | null;
@@ -670,6 +801,8 @@ function ManagePage(
     showAtstoreMigration,
     migrationFocus,
     managedAppListingId,
+    connectedAccountHost,
+    managedAccountHosts,
     createNewListing,
     reauthReturnTo,
     takedown,
@@ -689,12 +822,12 @@ function ManagePage(
               <div>
                 <h1 class="text-section">
                   {createNewListing
-                    ? "Register another app"
+                    ? "Register your app"
                     : explore.manage.headline}
                 </h1>
                 <p class="text-body mt-2">
                   {createNewListing
-                    ? "Create a separate ATStore app record under this owner account. After publishing, you can register or connect its account host in the same flow."
+                    ? "Create the public profile for the app represented by this account. Each app uses its own Atmosphere account."
                     : explore.manage.subhead}
                 </p>
               </div>
@@ -735,39 +868,12 @@ function ManagePage(
                 publicProfileHandle={publicProfileHandle}
               />
               {!createNewListing && (
-                <section class="glass directory-relationship-entry owner-app-relationship-entry">
-                  <div>
-                    <p class="text-eyebrow">Account hosting</p>
-                    <h2>Add account hosting</h2>
-                    <p>
-                      The app and host keep separate public profiles, while the
-                      owner workspace connects them as the same product or as
-                      services run by the same organization.
-                    </p>
-                  </div>
-                  <div class="owner-app-relationship-actions">
-                    {initialPublished && managedAppListingId
-                      ? (
-                        <a
-                          class="directory-register-button"
-                          href={`/apps/manage/host?app=${
-                            encodeURIComponent(managedAppListingId)
-                          }`}
-                        >
-                          Add account hosting
-                        </a>
-                      )
-                      : (
-                        <p class="profile-form-hint">
-                          Publish the app profile first, then connect a detected
-                          or already-claimed PDS.
-                        </p>
-                      )}
-                    <a class="text-link-button" href="/account/products">
-                      View all managed products
-                    </a>
-                  </div>
-                </section>
+                <AccountHostManagementCard
+                  accountHost={connectedAccountHost}
+                  managedHosts={managedAccountHosts}
+                  initialPublished={initialPublished}
+                  managedAppListingId={managedAppListingId}
+                />
               )}
               {showAtstoreMigration && migrationFocus && (
                 <MigrationSection
@@ -790,6 +896,7 @@ function ManagePage(
                 collectionSuggestions={collectionSuggestions}
                 publicProfileHandle={publicProfileHandle}
                 managedAppIdentifier={managedAppListingId}
+                connectedAccountHost={connectedAccountHost}
                 createNewListing={createNewListing}
                 atstoreListingUri={atstoreListingUri}
                 reauthReturnTo={reauthReturnTo}
@@ -801,6 +908,90 @@ function ManagePage(
         <Footer variant="compact" />
       </div>
     </div>
+  );
+}
+
+export function AccountHostManagementCard(
+  {
+    accountHost,
+    managedHosts = [],
+    initialPublished,
+    managedAppListingId,
+  }: {
+    accountHost: string | null;
+    managedHosts?: Array<Pick<AccountHost, "host" | "displayName">>;
+    initialPublished: boolean;
+    managedAppListingId: string | null;
+  },
+) {
+  const connectedHost = accountHost?.trim() || null;
+  const ownedHosts = managedHosts.filter((host) => host.host.trim());
+  const ownedHost = ownedHosts.length === 1 ? ownedHosts[0] : null;
+  const ownedHostTitle = ownedHost
+    ? ownedHost.displayName?.trim() || ownedHost.host
+    : ownedHosts.length > 1
+    ? `${ownedHosts.length} account host listings`
+    : null;
+  const manageHref = managedAppListingId
+    ? `/apps/manage/host?app=${encodeURIComponent(managedAppListingId)}`
+    : null;
+  return (
+    <section class="glass directory-relationship-entry owner-app-relationship-entry">
+      <div>
+        <p class="text-eyebrow">Account hosting</p>
+        <h2>{connectedHost ?? ownedHostTitle ?? "Add account hosting"}</h2>
+        <p>
+          {connectedHost
+            ? `This app is connected to the ${connectedHost} account host.`
+            : ownedHost
+            ? `This account also manages the ${ownedHost.host} account host listing. Manage account hosting if it provides accounts for this app or is a related service run by the same operator.`
+            : ownedHosts.length > 1
+            ? `This account also manages ${ownedHosts.length} account host listings. Manage account hosting to choose one for this app when there is a direct or same-operator relationship.`
+            : "The app and host keep separate public profiles. Connect an account host if it provides accounts for this app or is a related service run by the same operator."}
+        </p>
+      </div>
+      <div class="owner-app-relationship-actions">
+        {initialPublished && manageHref
+          ? (
+            <a class="directory-register-button" href={manageHref}>
+              {connectedHost
+                ? "Manage connection"
+                : ownedHosts.length > 0
+                ? "Manage account hosting"
+                : "Add account hosting"}
+            </a>
+          )
+          : (
+            <p class="profile-form-hint">
+              Publish the app profile first, then connect a detected or
+              already-claimed PDS.
+            </p>
+          )}
+        {connectedHost
+          ? (
+            <a
+              class="text-link-button"
+              href={`/hosts/${encodeURIComponent(connectedHost)}`}
+            >
+              View host
+            </a>
+          )
+          : ownedHost
+          ? (
+            <a
+              class="text-link-button"
+              href={`/hosts/${encodeURIComponent(ownedHost.host)}/manage`}
+            >
+              Manage host listing
+            </a>
+          )
+          : (
+            <a class="text-link-button" href="/account/products">
+              Manage listings
+            </a>
+          )}
+      </div>
+    </section>
   );
 }
 
@@ -870,10 +1061,10 @@ function OwnerAppSummary(
   const state = atstoreListingUri
     ? {
       tone: "ok",
-      label: "ATStore-backed",
+      label: "Shared record",
       title: "Shared app record active",
       body:
-        "Edits from this page update shared app records for interoperable discovery, reviews, and favorites.",
+        "Edits update interoperable records on this account. Other app directories index and moderate those records independently, so publication here does not guarantee immediate visibility on atstore.fyi.",
     }
     : remoteAtstoreListingUri
     ? {
@@ -896,7 +1087,7 @@ function OwnerAppSummary(
       label: "New app listing",
       title: "Publishes shared records by default",
       body:
-        "When you publish, Atmosphere writes shared app records from this app account.",
+        "When you publish, Atmosphere writes both shared app records from this account. Other directories decide independently when to show them.",
     };
   return (
     <section class={`glass owner-app-summary owner-app-summary--${state.tone}`}>

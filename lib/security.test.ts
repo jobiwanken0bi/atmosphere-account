@@ -223,17 +223,20 @@ Deno.test("bounded response reader rejects oversized responses", async () => {
 });
 
 Deno.test("bounded JSON reader rejects oversized streamed requests", async () => {
-  const request = new Request("https://atmosphereaccount.com/api/passkeys", {
-    method: "POST",
-    body: new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('{"value":"'));
-        controller.enqueue(new TextEncoder().encode("too-large"));
-        controller.enqueue(new TextEncoder().encode('"}'));
-        controller.close();
-      },
-    }),
-  });
+  const request = new Request(
+    "https://atmosphereaccount.com/api/account/type",
+    {
+      method: "POST",
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"value":"'));
+          controller.enqueue(new TextEncoder().encode("too-large"));
+          controller.enqueue(new TextEncoder().encode('"}'));
+          controller.close();
+        },
+      }),
+    },
+  );
   let tooLarge = false;
   try {
     await readJsonRequestWithLimit(request, 8);
@@ -278,9 +281,6 @@ Deno.test("token-bearing Login with Atmosphere pages force private browser heade
       "/hosts/claim",
       "/hosts/register",
       "/hosts/pds.example/claim",
-      "/passkeys",
-      "/api/passkeys/authentication/options",
-      "/api/login/passkeys/options",
     ]
   ) {
     const headers = applySecurityHeadersForTest(pathname);
@@ -290,18 +290,21 @@ Deno.test("token-bearing Login with Atmosphere pages force private browser heade
   }
 });
 
-Deno.test("security policy confines passkey ceremonies to the same origin", () => {
-  const headers = applySecurityHeadersForTest("/passkeys");
-  const policy = headers.get("permissions-policy") ?? "";
-  assertEquals(policy.includes("publickey-credentials-create=(self)"), true);
-  assertEquals(policy.includes("publickey-credentials-get=(self)"), true);
-});
-
 Deno.test("security policy disables inline HTML event handlers", () => {
   const policy = applySecurityHeadersForTest("/apps").get(
     "content-security-policy",
   ) ?? "";
   assertEquals(policy.includes("script-src-attr 'none'"), true);
+});
+
+Deno.test("security policy disables WebAuthn after passkey removal", () => {
+  const policy = applySecurityHeadersForTest("/apps").get(
+    "permissions-policy",
+  ) ?? "";
+  assertEquals(policy.includes("publickey-credentials-create=()"), true);
+  assertEquals(policy.includes("publickey-credentials-get=()"), true);
+  assertEquals(policy.includes("publickey-credentials-create=(self)"), false);
+  assertEquals(policy.includes("publickey-credentials-get=(self)"), false);
 });
 
 Deno.test("ordinary pages keep the default referrer policy", () => {

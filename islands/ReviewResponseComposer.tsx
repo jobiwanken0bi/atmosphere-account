@@ -370,7 +370,6 @@ export default function ReviewResponseComposer(
           currentHandle={currentHandle}
           rememberedAccounts={rememberedAccounts}
           restrictToCurrentAccount
-          closeLabel={copy.cancel}
           onAuthorizationStart={() => {
             armReviewResponseResume(resumeProofKey);
           }}

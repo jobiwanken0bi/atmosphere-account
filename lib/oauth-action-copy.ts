@@ -18,11 +18,10 @@ const ACCOUNT_CREATION_BY_ACTION = {
   favorite: true,
   app: true,
   host_claim: false,
+  host_transfer: false,
   host_manage: false,
   app_host: false,
-  profile: true,
   developer: true,
-  passkey_manage: false,
   relationship_confirm: false,
   admin: false,
 } as const satisfies Record<OAuthAction, boolean>;
@@ -118,7 +117,7 @@ export function authActionCopy(
         eyebrow: "App management",
         title: "Choose your app’s account",
         signInBody:
-          `Use the account that represents ${name}. You’ll approve access to publish and manage its app profile and listing.`,
+          `Use the account that represents ${name}. You’ll approve access to publish and manage its app profile, listing, and images.`,
         upgradeBody: (handle) =>
           `You’re signed in as @${handle}. Approve app-management access to continue.`,
       };
@@ -128,9 +127,21 @@ export function authActionCopy(
       return {
         eyebrow: "Claim an account host",
         title: "Login with Atmosphere",
-        signInBody: `Choose the account that should manage ${name}.`,
+        signInBody:
+          `Choose the account that will claim and manage ${name}, including its public profile and images.`,
         upgradeBody: (handle) =>
-          `Confirm @${handle} to continue the host claim.`,
+          `Continue as @${handle} and approve host-management access to claim ${name}.`,
+      };
+    }
+    case "host_transfer": {
+      const name = targetName || "this account host";
+      return {
+        eyebrow: "Change managing account",
+        title: "Login with Atmosphere",
+        signInBody:
+          `Choose the new managing account for ${name}. The current manager stays in control until DNS verification succeeds.`,
+        upgradeBody: (handle) =>
+          `Continue as @${handle} and approve host-management access for ${name}. The current manager stays in control until DNS verification succeeds.`,
       };
     }
     case "host_manage": {
@@ -139,7 +150,7 @@ export function authActionCopy(
         eyebrow: "Host management",
         title: "Choose the host’s account",
         signInBody:
-          `Use the account that represents ${name}. You’ll approve access to publish and manage its host profile.`,
+          `Use the account that represents ${name}. You’ll approve access to publish and manage its host profile and images.`,
         upgradeBody: (handle) =>
           `You’re signed in as @${handle}. Approve host-management access to continue.`,
       };
@@ -150,35 +161,17 @@ export function authActionCopy(
         eyebrow: "App and host management",
         title: "Choose the account for both profiles",
         signInBody:
-          `Use the account that represents ${name}. You’ll approve access to manage its app and host profiles.`,
+          `Use the account that represents ${name}. You’ll approve access to manage its app and host profiles, including images.`,
         upgradeBody: (handle) =>
           `You’re signed in as @${handle}. Approve app and host management access to continue.`,
       };
     }
-    case "profile":
-      return {
-        eyebrow: "Profile",
-        title: "Login with Atmosphere",
-        signInBody: "Choose the account whose profile you want to edit.",
-        upgradeBody: (handle) =>
-          `Continue as @${handle} to edit this account’s profile.`,
-      };
     case "developer":
       return {
         eyebrow: "Developer settings",
         title: "Manage a login registration",
         signInBody: "Choose the account that owns this registration.",
         upgradeBody: (handle) => `Confirm @${handle} to continue.`,
-      };
-    case "passkey_manage":
-      return {
-        eyebrow: "Passkey verification",
-        title: "Verify your account",
-        signInBody: targetName
-          ? `Use Login with Atmosphere as ${targetName} to continue with its passkeys.`
-          : "Choose the account whose passkeys you want to use.",
-        upgradeBody: (handle) =>
-          `Confirm @${handle} to continue with passkeys.`,
       };
     case "relationship_confirm": {
       const name = targetName || "this app and account host";

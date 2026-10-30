@@ -55,7 +55,6 @@ import {
 import { appImageUrl } from "../../lib/media.ts";
 import { syncProfileByIdentifier } from "../../lib/profile-sync.ts";
 import {
-  type AppAliasRow,
   type AppListing,
   type AppMirroredReview,
   type AppOwnFavorite,
@@ -65,7 +64,6 @@ import {
   getOwnAppFavorite,
   getOwnAppReview,
   getResolvedHostLinkForApp,
-  listAppAliasesForListing,
   listAppReviewsForListing,
   searchAppDirectory,
 } from "../../lib/app-directory.ts";
@@ -80,7 +78,6 @@ import {
   appActionLinks,
 } from "../../lib/app-listing-links.ts";
 import { proxyAppviewPageResponse } from "../../lib/appview-client.ts";
-import { isAdmin } from "../../lib/admin.ts";
 import { isHandle } from "../../lib/identity.ts";
 import { trustedRequestOrigin } from "../../lib/atmosphere-origins.ts";
 import { oauthSigninUrl } from "../../lib/oauth-action.ts";
@@ -142,17 +139,11 @@ export const handler = define.handlers({
         syncLegacy: false,
       }).catch(() => null);
     }
-    const canInspectAppSources = !!(appListing && user &&
-      (user.did === appListing.productDid ||
-        user.did === appListing.profileDid ||
-        user.did === appListing.legacyProfileDid ||
-        isAdmin(user.did)));
     const [
       relatedApps,
       appReviews,
       ownAppReview,
       ownAppFavorite,
-      appSourceAliases,
     ] = appListing
       ? await Promise.all([
         relatedListings(appListing).catch(() => []),
@@ -172,11 +163,8 @@ export const handler = define.handlers({
         user
           ? getOwnAppFavorite(appListing.id, user.did).catch(() => null)
           : null,
-        canInspectAppSources
-          ? listAppAliasesForListing(appListing.id).catch(() => [])
-          : Promise.resolve([] as AppAliasRow[]),
       ])
-      : [[], [] as AppMirroredReview[], null, null, [] as AppAliasRow[]];
+      : [[], [] as AppMirroredReview[], null, null];
     const legacyProfile = profile && !appListing?.atstoreListingUri
       ? profile
       : null;
@@ -256,7 +244,6 @@ export const handler = define.handlers({
      */
     const useAppListingMeta = !!appListing?.atstoreListingUri || !profile;
     if (useAppListingMeta && appListing) {
-      const pageTitle = `${appListing.name} on Atmosphere Apps`;
       const imageUrl = appImageUrl(
         appListing.heroUrl,
         "media",
@@ -264,9 +251,8 @@ export const handler = define.handlers({
         appListing.heroFallbackUrl,
       ) || appImageUrl(appListing.iconUrl, "icon") || undefined;
       ctx.state.pageMeta = {
-        title: pageTitle,
-        description: appListing.description || appListing.tagline ||
-          "An Atmosphere app listing.",
+        title: appListing.name,
+        description: "Atmosphere app",
         ogType: "website",
         canonicalUrl: shareUrl,
         imageUrl: imageUrl?.startsWith("/")
@@ -276,9 +262,6 @@ export const handler = define.handlers({
       };
     } else if (profile) {
       const messages = getMessages(ctx.state.locale).explore;
-      const pageTitle = `${profile.name} on Atmosphere Apps`;
-      const pageDescription = profile.description ||
-        messages.detail.missingProfile;
       const ogImageUrl = profile.bannerCid
         ? new URL(
           `/api/registry/project-og/${encodeURIComponent(profile.handle)}`,
@@ -286,8 +269,8 @@ export const handler = define.handlers({
         ).href
         : undefined;
       ctx.state.pageMeta = {
-        title: pageTitle,
-        description: pageDescription,
+        title: profile.name,
+        description: "Atmosphere app",
         // "website" unfurls more reliably than "profile" (fewer parsers expect
         // profile:* sub-properties). Same visible link card everywhere.
         ogType: "website",
@@ -311,8 +294,6 @@ export const handler = define.handlers({
         ownAppReview={ownAppReview}
         ownAppFavorite={ownAppFavorite}
         appReviewSort={appReviewSort}
-        appSourceAliases={appSourceAliases}
-        canInspectAppSources={canInspectAppSources}
         appAuthorized={Boolean(ownerAppSession)}
         reviewSummary={reviewSummary}
         reviews={displayReviews}
@@ -341,8 +322,6 @@ interface DetailProps {
   ownAppReview: AppOwnReview | null;
   ownAppFavorite: AppOwnFavorite | null;
   appReviewSort: AppReviewSort;
-  appSourceAliases: AppAliasRow[];
-  canInspectAppSources: boolean;
   appAuthorized: boolean;
   reviewSummary: ReviewSummary;
   reviews: DisplayReview[];
@@ -368,8 +347,6 @@ function ProfileDetailPage(
     ownAppReview,
     ownAppFavorite,
     appReviewSort,
-    appSourceAliases,
-    canInspectAppSources,
     appAuthorized,
     reviewSummary,
     reviews,
@@ -395,8 +372,6 @@ function ProfileDetailPage(
         ownReview={ownAppReview}
         ownFavorite={ownAppFavorite}
         reviewSort={appReviewSort}
-        sourceAliases={appSourceAliases}
-        canInspectSources={canInspectAppSources}
         locale={locale}
         signedInUser={signedInUser}
         account={account}
@@ -416,8 +391,6 @@ function ProfileDetailPage(
           ownReview={ownAppReview}
           ownFavorite={ownAppFavorite}
           reviewSort={appReviewSort}
-          sourceAliases={appSourceAliases}
-          canInspectSources={canInspectAppSources}
           locale={locale}
           signedInUser={signedInUser}
           account={account}
@@ -650,8 +623,6 @@ interface AppListingDetailProps {
   ownReview: AppOwnReview | null;
   ownFavorite: AppOwnFavorite | null;
   reviewSort: AppReviewSort;
-  sourceAliases: AppAliasRow[];
-  canInspectSources: boolean;
   locale: Locale;
   signedInUser: { did: string; handle: string } | null;
   account: ReturnType<typeof buildAccountMenuProps>;
@@ -668,8 +639,6 @@ function AppListingDetailPage(
     ownReview,
     ownFavorite,
     reviewSort,
-    sourceAliases,
-    canInspectSources,
     locale,
     signedInUser,
     account,
@@ -769,10 +738,6 @@ function AppListingDetailPage(
               <RelatedAppsSection
                 apps={relatedApps}
               />
-            )}
-
-            {canInspectSources && (
-              <AppTechnicalDetails app={app} aliases={sourceAliases} />
             )}
           </div>
         </section>
@@ -1160,70 +1125,6 @@ function RelatedAppsSection({ apps }: { apps: AppListing[] }) {
         {apps.map((app) => <FreshAppCard key={app.id} app={app} />)}
       </div>
     </section>
-  );
-}
-
-function AppTechnicalDetails(
-  { app, aliases }: { app: AppListing; aliases: AppAliasRow[] },
-) {
-  return (
-    <details class="glass account-home-details app-detail-technical">
-      <summary>Source and merge details</summary>
-      <dl>
-        <div>
-          <dt>Primary URL</dt>
-          <dd>{app.primaryUrl ?? "None"}</dd>
-        </div>
-        {app.productDid && (
-          <div>
-            <dt>Product account DID</dt>
-            <dd>{app.productDid}</dd>
-          </div>
-        )}
-        <div>
-          <dt>Canonical record</dt>
-          <dd>{app.canonicalUri}</dd>
-        </div>
-        {app.atstoreListingUri && (
-          <div>
-            <dt>ATStore listing</dt>
-            <dd>{app.atstoreListingUri}</dd>
-          </div>
-        )}
-        {app.communityProfileUri && (
-          <div>
-            <dt>Community profile</dt>
-            <dd>{app.communityProfileUri}</dd>
-          </div>
-        )}
-        {app.legacyProfileDid && (
-          <div>
-            <dt>Atmosphere profile DID</dt>
-            <dd>{app.legacyProfileDid}</dd>
-          </div>
-        )}
-        {app.sourceRefs.atmosphere && (
-          <div>
-            <dt>Atmosphere source</dt>
-            <dd>{app.sourceRefs.atmosphere}</dd>
-          </div>
-        )}
-        {aliases.length > 0 && (
-          <div>
-            <dt>Merge aliases</dt>
-            <dd>
-              <ul class="app-detail-alias-list">
-                {aliases.slice(0, 16).map((alias) => (
-                  <li key={alias.aliasKey}>
-                    <code>{alias.aliasKey}</code>
-                  </li>
-                ))}
-              </ul>
-            </dd>
-          </div>
-        )}
-      </dl>
-    </details>
   );
 }
 

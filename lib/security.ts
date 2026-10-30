@@ -415,7 +415,7 @@ function applySecurityHeaders(
   setDefault(
     headers,
     "permissions-policy",
-    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-create=(self), publickey-credentials-get=(self)",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-create=(), publickey-credentials-get=()",
   );
   setDefault(headers, "cross-origin-opener-policy", "same-origin");
   setDefault(headers, "content-security-policy", IS_DEV ? DEV_CSP : PROD_CSP);
@@ -427,14 +427,6 @@ function applySecurityHeaders(
     );
   }
   if (isTokenBearingLoginRoute(pathname)) {
-    headers.set("referrer-policy", "no-referrer");
-    headers.set("cache-control", "no-store");
-    headers.set("x-robots-tag", "noindex, nofollow");
-  }
-  if (
-    pathname === "/passkeys" || pathname.startsWith("/api/passkeys") ||
-    pathname.startsWith("/api/login/passkeys")
-  ) {
     headers.set("referrer-policy", "no-referrer");
     headers.set("cache-control", "no-store");
     headers.set("x-robots-tag", "noindex, nofollow");

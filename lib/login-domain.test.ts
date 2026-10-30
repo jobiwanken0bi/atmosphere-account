@@ -13,10 +13,13 @@ Deno.test("login domain serves generated picker assets in place", () => {
   assertEquals(isAllowedLoginHostPathForTest("/assets/client-entry.js"), true);
   assertEquals(isAllowedLoginHostPathForTest("/login-handoff.js"), true);
   assertEquals(isAllowedLoginHostPathForTest("/oauth/create"), true);
-  assertEquals(isAllowedLoginHostPathForTest("/passkeys"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/api/login/account-hosts"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/api/identity/preview"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/passkeys"), false);
+  assertEquals(isAllowedLoginHostPathForTest("/api/passkeys"), false);
   assertEquals(
     isAllowedLoginHostPathForTest("/api/login/passkeys/options"),
-    true,
+    false,
   );
   assertEquals(
     isAllowedLoginHostPathForTest(
@@ -30,6 +33,12 @@ Deno.test("login domain still redirects ordinary app pages", () => {
   assertEquals(isAllowedLoginHostPathForTest("/apps"), false);
   assertEquals(isAllowedLoginHostPathForTest("/account"), false);
   assertEquals(isAllowedLoginHostPathForTest("/hosts/bsky.network"), false);
+});
+
+Deno.test("login domain exposes only the public health endpoints", () => {
+  assertEquals(isAllowedLoginHostPathForTest("/api/health"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/api/health/ready"), true);
+  assertEquals(isAllowedLoginHostPathForTest("/api/health/internal"), false);
 });
 
 Deno.test("single-origin deployments do not enforce login-host routing", () => {

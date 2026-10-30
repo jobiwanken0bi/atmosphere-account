@@ -567,7 +567,6 @@ export default function ProfileReviewComposer(
           action={authAction}
           targetName={authTargetName}
           rememberedAccounts={rememberedAccounts}
-          closeLabel={copy.cancel}
           onClose={() => authOpen.value = false}
         />
       )}
@@ -578,7 +577,6 @@ export default function ProfileReviewComposer(
           currentHandle={currentHandle}
           rememberedAccounts={rememberedAccounts}
           restrictToCurrentAccount
-          closeLabel={copy.cancel}
           onClose={() => {
             if (draftKey) cancelReviewReauthorization(draftKey);
             reauthorization.value = null;

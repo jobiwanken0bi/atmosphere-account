@@ -49,7 +49,7 @@ import {
   appProfileWriteCapabilities,
   type AppProfileWritePayload,
 } from "../lib/profile-write-capabilities.ts";
-import { createAtprotoTid } from "../lib/tid.ts";
+import { createAtprotoTid, isAtprotoTid } from "../lib/tid.ts";
 
 interface ExistingProfile {
   name: string;
@@ -120,7 +120,9 @@ interface Props {
   publicProfileHandle?: string | null;
   /** Directory identifier used to continue into verified host connection. */
   managedAppIdentifier?: string | null;
-  /** Publish a new ATStore record even when this DID already owns an app. */
+  /** Existing account host displayed by the host-management action. */
+  connectedAccountHost?: string | null;
+  /** Legacy creation intent. The server still permits only one app per DID. */
   createNewListing?: boolean;
   /** Exact shared record managed by this form, used for targeted removal. */
   atstoreListingUri?: string | null;
@@ -729,6 +731,7 @@ export default function CreateProfileForm(
     initialPublished,
     publicProfileHandle,
     managedAppIdentifier,
+    connectedAccountHost = null,
     createNewListing = false,
     atstoreListingUri = null,
     reauthReturnTo = "/apps/manage",
@@ -906,13 +909,15 @@ export default function CreateProfileForm(
     atstoreListingUri,
   );
   const createNewListingPending = useSignal(createNewListing);
+  const baseReauthReturnTo = appProfileReturnToWithoutResume(reauthReturnTo);
   // A retry must address the same repository record. Otherwise a successful
   // PDS write followed by a failed local index could create a duplicate app.
   const createListingRkey = useSignal(createAtprotoTid());
   const resumeRetryAvailable = useSignal(false);
-  const baseReauthReturnTo = appProfileReturnToWithoutResume(reauthReturnTo);
   const pendingPublishKey = appProfilePendingKey(did, baseReauthReturnTo);
   const resumeProofKey = appProfileResumeProofKey(pendingPublishKey);
+  const shouldPersistCreationRkey = createNewListing ||
+    (!initialPublished && !atstoreListingUri);
   const resumeReturnTo = appProfileResumeReturnTo(baseReauthReturnTo, did);
   const profileEndpoint = `/api/registry/profile?${new URLSearchParams({
     next: resumeReturnTo,
@@ -920,6 +925,22 @@ export default function CreateProfileForm(
 
   useEffect(() => {
     hydrated.value = true;
+  }, []);
+
+  useEffect(() => {
+    if (!shouldPersistCreationRkey) return;
+    try {
+      createListingRkey.value = appProfileCreationRkeyForSession(
+        did,
+        baseReauthReturnTo,
+        createListingRkey.value,
+        sessionStorage,
+      );
+    } catch {
+      // The server-side lease still provides bounded recovery when storage is
+      // unavailable. Never share this key across tabs: that would let two
+      // different drafts intentionally address the same record.
+    }
   }, []);
 
   useEffect(() => {
@@ -1019,6 +1040,7 @@ export default function CreateProfileForm(
         return;
       }
       await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      clearAppProfileCreationRkey(did, baseReauthReturnTo);
       resumeRetryAvailable.value = false;
       globalThis.location.reload();
     })();
@@ -1292,9 +1314,12 @@ export default function CreateProfileForm(
         },
         accountIndicators: indicators,
         createNewListing: createNewListingPending.value,
-        createListingRkey: createNewListingPending.value
-          ? createListingRkey.value
-          : undefined,
+        createListingRkey: appProfileCreateRkeyForPayload({
+          createNewListing: createNewListingPending.value,
+          published: published.value,
+          atstoreListingUri: currentAtstoreListingUri.value,
+          rkey: createListingRkey.value,
+        }),
         atstoreListingUri: currentAtstoreListingUri.value,
       };
       if (avatarFile.value) {
@@ -1370,6 +1395,7 @@ export default function CreateProfileForm(
         publicPath?: string | null;
         slug?: string | null;
         atstoreListingUri?: string | null;
+        communityProfileUri?: string | null;
         writeTarget?: "atstore_listing" | "legacy_profile";
       };
       if (saved.ok !== true) {
@@ -1378,6 +1404,7 @@ export default function CreateProfileForm(
         );
       }
       await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      clearAppProfileCreationRkey(did, baseReauthReturnTo);
       resumeRetryAvailable.value = false;
       published.value = true;
       publicPath.value = saved.publicPath ??
@@ -1390,7 +1417,10 @@ export default function CreateProfileForm(
       createNewListingPending.value = false;
       message.value = {
         kind: "ok",
-        text: saved.writeTarget === "atstore_listing"
+        text: saved.writeTarget === "atstore_listing" &&
+            saved.communityProfileUri === null
+          ? tManage.savedAtstorePartialToast
+          : saved.writeTarget === "atstore_listing"
           ? tManage.savedAtstoreToast
           : tManage.savedToast,
       };
@@ -1439,10 +1469,17 @@ export default function CreateProfileForm(
         throw new Error("The app profile returned an invalid response.");
       }
       await clearPendingBrowserAction(pendingPublishKey).catch(() => {});
+      clearAppProfileCreationRkey(did, baseReauthReturnTo);
       resumeRetryAvailable.value = false;
-      published.value = false;
-      publicPath.value = null;
+      resetDeletedAppProfileState({
+        published,
+        publicPath,
+        currentAtstoreListingUri,
+        hostAppIdentifier,
+        createNewListingPending,
+      });
       message.value = { kind: "ok", text: tManage.deletedToast };
+      globalThis.location.replace(APP_PROFILE_DELETED_RETURN_TO);
     } catch (err) {
       message.value = {
         kind: "error",
@@ -1985,6 +2022,7 @@ export default function CreateProfileForm(
                   void clearPendingBrowserAction(pendingPublishKey).catch(
                     () => {},
                   );
+                  clearAppProfileCreationRkey(did, baseReauthReturnTo);
                   resumeRetryAvailable.value = false;
                   message.value = null;
                 }}
@@ -2032,7 +2070,9 @@ export default function CreateProfileForm(
             }`}
             class="profile-form-button-secondary profile-form-button-secondary--lg"
           >
-            Add account hosting
+            {connectedAccountHost
+              ? `Manage ${connectedAccountHost} connection`
+              : "Add account hosting"}
           </a>
         )}
         {published.value && (
@@ -2120,6 +2160,87 @@ export function shouldHandleProfileEditorSubmit(
     hasAttribute?: (name: string) => boolean;
   };
   return element.hasAttribute?.("formaction") !== true;
+}
+
+export function appProfileCreateRkeyForPayload(input: {
+  createNewListing: boolean;
+  published: boolean;
+  atstoreListingUri: string | null;
+  rkey: string;
+}): string | undefined {
+  return input.createNewListing ||
+      (!input.published && !input.atstoreListingUri)
+    ? input.rkey
+    : undefined;
+}
+
+export function appProfileCreationRkeyStorageKey(
+  did: string,
+  registrationContext: string,
+): string {
+  const context = appProfileReturnToWithoutResume(registrationContext);
+  return `app-profile:create-rkey:${encodeURIComponent(did.trim())}:${
+    encodeURIComponent(context)
+  }`;
+}
+
+export function appProfileCreationRkeyFromStored(
+  stored: string | null,
+  fallback: string,
+): string {
+  if (!isAtprotoTid(fallback)) {
+    throw new Error("Could not create a valid app profile record key.");
+  }
+  return stored && isAtprotoTid(stored) ? stored : fallback;
+}
+
+export function appProfileCreationRkeyForSession(
+  did: string,
+  registrationContext: string,
+  fallback: string,
+  storage: Pick<Storage, "getItem" | "setItem">,
+): string {
+  const key = appProfileCreationRkeyStorageKey(did, registrationContext);
+  const rkey = appProfileCreationRkeyFromStored(
+    storage.getItem(key),
+    fallback,
+  );
+  storage.setItem(key, rkey);
+  return rkey;
+}
+
+export function clearAppProfileCreationRkey(
+  did: string,
+  registrationContext: string,
+  storage?: Pick<Storage, "removeItem">,
+): void {
+  try {
+    (storage ?? globalThis.sessionStorage).removeItem(
+      appProfileCreationRkeyStorageKey(did, registrationContext),
+    );
+  } catch {
+    // Storage is only a same-tab retry aid.
+  }
+}
+
+export const APP_PROFILE_DELETED_RETURN_TO = "/account/products";
+
+interface DeletedAppProfileState {
+  published: { value: boolean };
+  publicPath: { value: string | null };
+  currentAtstoreListingUri: { value: string | null };
+  hostAppIdentifier: { value: string | null };
+  createNewListingPending: { value: boolean };
+}
+
+export function resetDeletedAppProfileState(
+  state: DeletedAppProfileState,
+): void {
+  state.published.value = false;
+  state.publicPath.value = null;
+  state.currentAtstoreListingUri.value = null;
+  state.hostAppIdentifier.value = null;
+  state.createNewListingPending.value = true;
 }
 
 export async function cancelAppProfileReauthorization(

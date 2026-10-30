@@ -1,7 +1,7 @@
 import {
-  findExistingAtstoreListingForProfile,
   getAtstoreMigrationReadiness,
   indexAtstoreListingMigrationRecord,
+  lookupAtstoreMigrationOwnership,
   publishAtstoreListingMigration,
 } from "../lib/atstore-migration.ts";
 import { getAppListingByIdentifier } from "../lib/app-directory.ts";
@@ -101,10 +101,17 @@ async function migrateProfile(
     return skipped(profile, "no valid OAuth session for this app account");
   }
 
-  const existingRemote = await findExistingAtstoreListingForProfile(
+  const remoteLookup = await lookupAtstoreMigrationOwnership(
     profile.did,
     session.pdsUrl,
-  ).catch(() => null);
+  );
+  if (!remoteLookup.ok) {
+    return skipped(
+      profile,
+      "could not verify existing ATStore records; no write was attempted",
+    );
+  }
+  const existingRemote = remoteLookup.record;
   if (existingRemote) {
     if (!write) {
       return {

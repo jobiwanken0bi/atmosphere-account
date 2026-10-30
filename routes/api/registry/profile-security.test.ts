@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
+  appProfileConflictResponseForTest,
   profileCollectionBoundsErrorForTest,
   profileCreateListingKeyErrorForTest,
 } from "./profile.ts";
@@ -43,6 +44,24 @@ Deno.test("distinct app creation requires a stable retry key", () => {
   );
   assertEquals(
     profileCreateListingKeyErrorForTest(false, tid),
-    "unexpected app listing creation key",
+    null,
   );
+});
+
+Deno.test("direct second-app API attempts receive a stable friendly conflict", async () => {
+  const response = appProfileConflictResponseForTest({
+    id: "reader",
+    slug: "reader.example",
+  });
+  assertEquals(response.status, 409);
+  assertEquals(response.headers.get("cache-control"), "no-store");
+  assertEquals(await response.json(), {
+    error: "app_profile_already_exists",
+    detail:
+      "This account already has an app profile. Manage that profile, or switch to the account for the other app.",
+    existingApp: {
+      id: "reader",
+      publicPath: "/apps/reader.example",
+    },
+  });
 });

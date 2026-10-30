@@ -410,6 +410,20 @@ OAuth lifecycle itself:
 deno task db:maintain
 ```
 
+New OAuth login attempts also prune up to 1,000 expired flow-state rows once per
+minute per runtime. This keeps abandoned attempts from accumulating between
+maintenance runs; active flows and refresh sessions are preserved. The expiry
+index already exists, so this change needs no schema migration.
+
+For a large existing OAuth-state backlog on Postgres, run
+`scripts/prune-expired-oauth-state.sql` through `psql` with autocommit enabled.
+It commits batches of at most 1,000 expired rows, stops after 250 batches, and
+runs ordinary `VACUUM (ANALYZE)` afterward. Its timeouts limit lock waits and
+execution time. If a timeout stops the script, earlier batches stay committed;
+rerun it to finish cleanup and vacuum. Rerun if its final count still shows expired rows. Ordinary
+vacuum makes deleted space reusable; container memory can remain elevated until
+the OS reclaims filesystem cache.
+
 Backfill ATStore listings and configured review/favorite repos:
 
 ```sh
@@ -544,11 +558,9 @@ Hosted environments must set:
   encryption derives a dedicated key from `SESSION_SECRET`.)
 - OAuth keys when Login with Atmosphere or write flows are enabled
 
-Production PDS contact-email claims use Comail. Enroll the sending domain under
-the sender's ATProto DID, publish Comail's DKIM and SPF records, and set
-`COMAIL_API_KEY`, `COMAIL_SENDER_DID`, and `HOST_CLAIM_EMAIL_FROM`. Ownership
-messages are sent with Comail's `verification` category; local development keeps
-using the private on-page preview when these values are absent.
+Production host claims use a temporary, account-bound DNS TXT challenge. They do
+not require an outbound email provider. Explicit local `.test` fixtures keep
+their development-only bypass for visual and integration testing.
 
 The app intentionally refuses local DB and weak session-secret fallbacks in
 hosted runtimes.

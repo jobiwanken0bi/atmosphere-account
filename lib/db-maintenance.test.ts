@@ -26,7 +26,6 @@ Deno.test("database maintenance preserves refresh sessions while removing expire
       if (/app_host_link_intent_consumption/i.test(sql)) {
         return { rowsAffected: 6 };
       }
-      if (/passkey_ceremony/i.test(sql)) return { rowsAffected: 7 };
       if (/rate_limit_bucket/i.test(sql)) return { rowsAffected: 8 };
       if (/worker_lease/i.test(sql)) return { rowsAffected: 9 };
       if (/PRAGMA optimize/i.test(sql)) return { rowsAffected: 0 };
@@ -46,7 +45,6 @@ Deno.test("database maintenance preserves refresh sessions while removing expire
     expiredLoginSelectionReplays: 4,
     expiredLoginPickerIntents: 5,
     expiredAppHostLinkIntents: 6,
-    expiredPasskeyCeremonies: 7,
     expiredRateLimitBuckets: 8,
     expiredWorkerLeases: 9,
     optimized: false,
@@ -54,10 +52,6 @@ Deno.test("database maintenance preserves refresh sessions while removing expire
   assertEquals(
     calls.find((call) => /login_selection_replay/i.test(call.sql))?.args,
     [1_700_000_000],
-  );
-  assertEquals(
-    calls.find((call) => /passkey_ceremony/i.test(call.sql))?.args,
-    [now],
   );
   assertEquals(
     calls.filter((call) => /DELETE FROM oauth_session/i.test(call.sql)).length,

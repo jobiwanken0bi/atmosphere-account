@@ -39,6 +39,8 @@ interface Props {
   intent?: "user" | "project";
   rememberedAccounts?: Array<{ did: string; handle: string }>;
   initialHandle?: string;
+  /** Keep account replacement on the explicit choose-another path. */
+  chooseAnotherAccount?: boolean;
 }
 
 /**
@@ -61,6 +63,7 @@ export default function ContextualSignInLink(
     intent,
     rememberedAccounts = [],
     initialHandle,
+    chooseAnotherAccount = false,
   }: Props,
 ) {
   const open = useSignal(false);
@@ -115,6 +118,7 @@ export default function ContextualSignInLink(
           targetName={targetName}
           rememberedAccounts={rememberedAccounts}
           initialHandle={initialHandle}
+          chooseAnotherAccount={chooseAnotherAccount}
           onClose={() => open.value = false}
         />
       )}

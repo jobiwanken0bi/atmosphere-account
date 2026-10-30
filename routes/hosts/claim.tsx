@@ -35,11 +35,18 @@ export const handler = define.handlers({
       }
       return redirectToSignin(ctx.url);
     }
-    if (
-      !await getSessionForCapabilities(ctx.state.user.did, ["identity"], {
-        quiet: true,
-      })
-    ) {
+    const selectorSession = await getSessionForCapabilities(
+      ctx.state.user.did,
+      rawLinkIntent?.trim() ? ["identity"] : ["host"],
+      { quiet: true },
+    );
+    if (!selectorSession) {
+      if (rawLinkIntent?.trim()) {
+        return new Response(
+          "Return to the app owner account and start the host connection again.",
+          { status: 400, headers: { "cache-control": "no-store" } },
+        );
+      }
       return redirectToSignin(ctx.url);
     }
 
@@ -93,7 +100,7 @@ export const handler = define.handlers({
           });
         }
         error =
-          "We haven’t detected that PDS in relay inventory yet. Check the exact PDS domain, make sure it has an active account visible to the relay, and configure contact.email in com.atproto.server.describeServer before trying again.";
+          "We haven’t detected that PDS in relay inventory yet. Check the exact PDS domain and make sure it has an active account visible to the relay before trying again.";
       }
     }
 
@@ -130,6 +137,8 @@ function DetectedHostClaimPage(
     linkContext: ResolvedAppHostLinkIntent<AppHostLinkSelectorIntent> | null;
   },
 ) {
+  const hintId = "detected-host-domain-hint";
+  const errorId = "detected-host-domain-error";
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -159,8 +168,8 @@ function DetectedHostClaimPage(
               </h1>
               <p class="text-body host-claim-copy">
                 {linkContext
-                  ? "Enter the exact PDS domain. If it is unclaimed, Atmosphere will verify the contact email announced by that PDS. If it is already claimed, its verified operator can approve the connection."
-                  : "Atmosphere keeps likely personal PDSes out of the public directory by default. If you operate one and want it listed, enter its exact PDS domain. We’ll use the relay data already on hand to prefill the claim."}
+                  ? "Enter the exact PDS domain. If it is unclaimed, you can verify control with a temporary DNS record. If it is already claimed, its verified operator can approve the connection."
+                  : "This directory keeps likely personal PDSes out of public listings by default. If you operate one and want it listed, enter its exact PDS domain. We’ll use the relay data already on hand to prefill the claim."}
               </p>
               <form method="GET" action="/hosts/claim" class="host-claim-form">
                 {linkContext && (
@@ -181,25 +190,33 @@ function DetectedHostClaimPage(
                     autoComplete="url"
                     spellcheck={false}
                     required
+                    aria-invalid={error ? "true" : undefined}
+                    aria-describedby={error ? `${hintId} ${errorId}` : hintId}
                   />
-                  <span class="profile-form-hint">
+                  <span id={hintId} class="profile-form-hint">
                     Use the server domain, not necessarily the operator’s social
                     handle or app website.
                   </span>
                 </label>
                 {error && (
-                  <p class="profile-form-status profile-form-status--error">
+                  <p
+                    id={errorId}
+                    class="profile-form-status profile-form-status--error"
+                    role="alert"
+                  >
                     {error}
                   </p>
                 )}
-                <button type="submit" class="directory-register-button">
-                  Find detected PDS
+                <button
+                  type="submit"
+                  class="account-dashboard-button account-dashboard-button--primary host-claim-primary-action"
+                >
+                  Find host
                 </button>
               </form>
               <p class="text-body host-claim-privacy-note">
-                Searches are exact-domain only and require Login with
-                Atmosphere, so this does not expose the hidden personal-PDS
-                inventory as a browseable directory.
+                Only an exact domain match is shown. Hidden personal hosts stay
+                private.
               </p>
             </div>
           </div>
@@ -237,13 +254,13 @@ export function detectedHostClaimAuthorizationHref(url: URL): string {
   return oauthSigninUrl({
     next: `/hosts/claim${url.search}`,
     action: "host_claim",
-    capabilities: ["identity"],
+    capabilities: ["host"],
     name: domain || "an account host",
   });
 }
 
-function appviewUnavailable(err: unknown): Response {
-  console.error("[appview] detected host claim proxy failed:", err);
+function appviewUnavailable(_err: unknown): Response {
+  console.error("[appview] detected host claim proxy failed");
   return new Response("Host claiming is temporarily unavailable.", {
     status: 503,
     headers: {

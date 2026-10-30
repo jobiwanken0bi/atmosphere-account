@@ -24,7 +24,6 @@ import {
   rejectLargeRequest,
   RequestBodyTooLargeError,
 } from "../../lib/security.ts";
-import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 import {
   InvalidOAuthRequestInputError,
   optionalJsonString,
@@ -106,7 +105,6 @@ async function handle(ctx: { req: Request }): Promise<Response> {
   }
 
   const headers = new Headers({ location: "/account" });
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   for (const cookie of await removeRememberedAccountCookies(remembered, did)) {
     headers.append("set-cookie", cookie);
   }

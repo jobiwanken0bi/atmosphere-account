@@ -27,6 +27,7 @@ import {
 } from "./proxy-client-key.ts";
 import { isJsonMediaType, readResponseTextWithLimit } from "./security.ts";
 import { safeBrowserNavigationUrl } from "./browser-navigation.ts";
+import { legacyHostClaimEdgeResponse } from "./host-claim-legacy.ts";
 
 const APPVIEW_BASE_URL = Deno.env.get("ATMOSPHERE_APPVIEW_URL")?.trim() ||
   Deno.env.get("APPVIEW_BASE_URL")?.trim() ||
@@ -86,6 +87,9 @@ export const appviewAssetProxyMiddleware = define.middleware(
 );
 
 export const appviewEarlyProxyMiddleware = define.middleware(async (ctx) => {
+  const retiredHostClaim = await legacyHostClaimEdgeResponse(ctx.url, ctx.req);
+  if (retiredHostClaim) return retiredHostClaim;
+
   if (!shouldProxyAppviewBeforeSession(ctx.url.pathname)) {
     return await ctx.next();
   }
@@ -126,7 +130,6 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/admin" || pathname.startsWith("/admin/") ||
     pathname === "/users" || pathname.startsWith("/users/") ||
     pathname === "/login/select" ||
-    pathname === "/passkeys" ||
     pathname === "/oauth" || pathname.startsWith("/oauth/") ||
     pathname === "/api/apps" || pathname.startsWith("/api/apps/") ||
     pathname === "/api/hosts" || pathname.startsWith("/api/hosts/") ||
@@ -134,8 +137,6 @@ export function shouldProxyAppviewBeforeSession(pathname: string): boolean {
     pathname === "/api/admin" || pathname.startsWith("/api/admin/") ||
     pathname === "/api/login/selection" ||
     pathname === "/api/login/account-hosts" ||
-    pathname.startsWith("/api/login/passkeys/") ||
-    pathname === "/api/passkeys" || pathname.startsWith("/api/passkeys/") ||
     pathname === "/api/registry" || pathname.startsWith("/api/registry/") ||
     pathname === "/api/appview" || pathname.startsWith("/api/appview/") ||
     pathname === "/api/atproto/blob" ||

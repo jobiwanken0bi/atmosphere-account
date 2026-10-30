@@ -4,7 +4,7 @@
  * Most directory hosts are the PDS hostname itself. A small number of curated
  * umbrella entries intentionally use a different canonical directory domain.
  * Those exceptions must be exact origins: mutable database fields cannot add a
- * new cross-domain contact-email authority.
+ * new cross-domain ownership authority.
  */
 const COMPILED_ACCOUNT_HOST_SERVICE_ENDPOINTS = new Map<string, string>([
   ["bsky.network", "https://bsky.social"],

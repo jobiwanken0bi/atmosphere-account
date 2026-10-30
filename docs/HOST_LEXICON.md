@@ -89,11 +89,11 @@ metadata, and host capabilities.
 Host records are self-asserted. They should not automatically make a host
 "verified" in Atmosphere Account.
 
-For new production claims, Atmosphere derives operator authority from one proof:
-a short-lived, one-time challenge sent only to the contact email announced by
-the exact PDS endpoint. Service reachability, social handles, host records,
-curated profile mappings, conformance checks, and local moderation can inform
-directory metadata, but they do not grant host management.
+For production claims, Atmosphere Account derives operator authority from one
+proof: a short-lived, one-time TXT challenge placed at the exact host domain.
+Service reachability, email, social handles, host records, curated profile
+mappings, conformance checks, and local moderation can inform directory
+metadata, but they do not grant host management.
 
 A future standardized, bidirectional PDS operator declaration may add another
 claim proof after the declaration exists in a PDS specification and reference
@@ -105,26 +105,28 @@ does not prove that the author controls every hostname it names.
 
 ## Claim Proof
 
-Atmosphere accepts these claim paths:
+Atmosphere Account accepts these claim paths:
 
-- Production: a short-lived, single-use email link sent to `contact.email` from
-  the PDS's live `com.atproto.server.describeServer` response. The challenge is
-  bound to the exact directory host and signed-in account DID. Atmosphere
-  rechecks the live address before atomically consuming the link and recording
-  ownership.
+- Production: a short-lived, single-use TXT value at
+  `_atmosphere-account.<host>`. The challenge is bound to the exact directory
+  host and signed-in account DID, then consumed in the same transaction that
+  records ownership.
 - Development only: explicit local `.test` fixtures for visual testing.
 
-An operator claims a production host by configuring the PDS so its live
-`com.atproto.server.describeServer` response includes `contact.email`, finding
-the exact PDS domain in Atmosphere's detected-host flow, signing in with the
-account that should manage the listing, and following the emailed link within 20
-minutes. The address is discovered from the PDS rather than accepted from a
-form.
+Contact-email claims completed before the DNS-only policy remain operational so
+existing managers are not silently locked out. New email claims and email-based
+manager changes are not accepted.
 
-Atmosphere does not ask operators to publish a product-specific HTTPS well-known
-file. A PDS without an announced contact address cannot be claimed self-service
-today. Curated social handles remain profile metadata and do not substitute for
-the email proof.
+An operator claims a production host by finding the exact PDS domain in the
+detected-host flow, signing in with the account that should manage the listing,
+and requesting a DNS challenge. They publish the displayed TXT value at
+`_atmosphere-account.<host>` and ask the site to check it before the challenge
+expires. The TXT value can be removed after the claim succeeds.
+
+Atmosphere Account does not accept an email address, social handle, host record,
+or product-specific HTTPS well-known file as ownership proof. Those values can
+remain useful profile metadata, but only the DNS challenge establishes a new
+production claim or completes a manager change.
 
 ## Hosts Page Read Model
 

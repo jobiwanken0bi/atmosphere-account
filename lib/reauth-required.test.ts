@@ -49,14 +49,14 @@ Deno.test("contextual reauthorization parses complete action context", () => {
     contextualReauthorizationFromApiPayload({
       error: "reauth_required",
       reauthUrl:
-        "/signin?next=%2Fapps%2Fgrain%3Freview%3Dcompose&action=app&name=Grain&permission=required&capability=app&capability=media",
+        "/signin?next=%2Fapps%2Fgrain%3Freview%3Dcompose&action=app&name=Grain&permission=required&capability=app",
     }),
     {
       fallbackHref:
-        "/signin?next=%2Fapps%2Fgrain%3Freview%3Dcompose&action=app&name=Grain&permission=required&capability=app&capability=media",
+        "/signin?next=%2Fapps%2Fgrain%3Freview%3Dcompose&action=app&name=Grain&permission=required&capability=app",
       returnTo: "/apps/grain?review=compose",
       action: "app",
-      capabilities: ["app", "media"],
+      capabilities: ["app"],
       targetName: "Grain",
     },
   );
@@ -78,10 +78,10 @@ Deno.test("contextual reauthorization retains interaction-specific intent", () =
         ["legacy_review_manage"],
       ],
       [
-        "/signin?next=%2Faccount&action=profile&name=Alice&permission=required&capability=profile&capability=media",
-        "profile",
-        "/account",
-        ["profile", "media"],
+        "/signin?next=%2Faccount%2Fproducts&action=app_host&name=Example&permission=required&capability=app&capability=host",
+        "app_host",
+        "/account/products",
+        ["app", "host"],
       ],
     ] as const
   ) {

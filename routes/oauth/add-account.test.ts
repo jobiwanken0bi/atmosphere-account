@@ -14,9 +14,9 @@ Deno.test("add-account keeps complete project authorization context", () => {
       intent: "project",
       action: "app",
       targetName: "Example App",
-      capabilities: ["app", "media"],
+      capabilities: ["app"],
     }),
-    "/signin?next=%2Fapps%2Fmanage%3Fnew%3D1%26source%3Ddirectory%23profile&intent=project&action=app&name=Example+App&capability=app&capability=media",
+    "/signin?next=%2Fapps%2Fmanage%3Fnew%3D1%26source%3Ddirectory%23profile&intent=project&action=app&name=Example+App&capability=app",
   );
 });
 

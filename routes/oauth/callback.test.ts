@@ -62,7 +62,7 @@ Deno.test("denied OAuth retries preserve complete contextual intent", () => {
     oauthRetryLocation({
       next: "/apps/manage?new=1#profile",
       permission: "denied",
-      capabilities: ["app", "media"],
+      capabilities: ["app"],
       intent: "project",
       action: "app",
       targetName: "Example App",
@@ -81,7 +81,7 @@ Deno.test("denied OAuth retries preserve complete contextual intent", () => {
   assertEquals(url.searchParams.get("handle"), "app.example");
   assertEquals(url.searchParams.get("mode"), "create");
   assertEquals(url.searchParams.get("choose"), "another");
-  assertEquals(url.searchParams.getAll("capability"), ["app", "media"]);
+  assertEquals(url.searchParams.getAll("capability"), ["app"]);
 });
 
 Deno.test("OAuth provider errors use plain-language recovery states", () => {

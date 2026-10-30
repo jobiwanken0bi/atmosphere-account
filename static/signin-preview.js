@@ -418,8 +418,9 @@ function enhanceForm(form, index) {
       submitButton.textContent = submittingLabel;
     }
     try {
-      const res = await fetch(form.action || "/oauth/login", {
-        method: (form.method || "POST").toUpperCase(),
+      // Named controls such as `action` can shadow native form properties.
+      const res = await fetch(form.getAttribute("action") || "/oauth/login", {
+        method: (form.getAttribute("method") || "POST").toUpperCase(),
         body: new FormData(form),
         credentials: "same-origin",
         headers: {

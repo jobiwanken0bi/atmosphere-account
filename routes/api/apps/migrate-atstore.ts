@@ -2,9 +2,9 @@ import { define } from "../../../utils.ts";
 import { proxyAppviewApiResponse } from "../../../lib/appview-client.ts";
 import {
   type AtstoreMigrationPublishResult,
-  findExistingAtstoreListingForProfile,
   getAtstoreMigrationReadiness,
   indexAtstoreListingMigrationRecord,
+  lookupAtstoreMigrationOwnership,
   publishAtstoreListingMigration,
 } from "../../../lib/atstore-migration.ts";
 import {
@@ -103,10 +103,16 @@ export const handler = define.handlers({
           : null;
 
       if (!result) {
-        const existingRemote = await findExistingAtstoreListingForProfile(
+        const lookup = await lookupAtstoreMigrationOwnership(
           user.did,
           session.pdsUrl,
-        ).catch(() => null);
+        );
+        if (!lookup.ok) {
+          // Never turn an authoritative-PDS read outage into a second shared
+          // app record. The migration is safe to retry when discovery returns.
+          return jsonError(503, "app_ownership_check_failed");
+        }
+        const existingRemote = lookup.record;
         if (existingRemote) {
           result = await indexAtstoreListingMigrationRecord(
             existingRemote,

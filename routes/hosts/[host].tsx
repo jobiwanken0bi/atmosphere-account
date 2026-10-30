@@ -43,17 +43,23 @@ export const handler = define.handlers({
       },
     );
     if (host) {
-      const friendly = hostFriendlyProfile(host);
       const publicOrigin = trustedRequestOrigin(ctx.url, ctx.req.headers);
       ctx.state.pageMeta = {
-        title: `${host.displayName} on Atmosphere Hosts`,
-        description: friendly.summary,
+        title: host.displayName,
+        description: "Atmosphere account host",
         ogType: "website",
         canonicalUrl: new URL(
           `/hosts/${encodeURIComponent(host.host)}`,
           publicOrigin,
         ).href,
-        imageUrl: host.avatarUrl ?? undefined,
+        imageUrl: new URL(
+          `/api/og/host/${encodeURIComponent(host.host)}`,
+          publicOrigin,
+        ).href,
+        imageAlt: `${host.displayName} — Atmosphere account host`,
+        imageType: "image/png",
+        imageWidth: 1200,
+        imageHeight: 630,
       };
     }
     const [pdsDescription, linkedApps] = host
@@ -75,7 +81,7 @@ export const handler = define.handlers({
       : null;
     const account = buildAccountMenuProps(ctx.state);
     const hostAuthorized = Boolean(
-      account.user && verifiedOwnerDid === account.user.did &&
+      account.user && (!claim || verifiedOwnerDid === account.user.did) &&
         await getSessionForCapabilities(account.user.did, ["host"], {
           quiet: true,
         }).catch(() => null),
@@ -303,6 +309,80 @@ function HostDetailPage(
               </div>
             </div>
 
+            <div class="host-detail-claim-row">
+              {outcomeNotice && (
+                <p
+                  class={`profile-form-status ${
+                    outcomeNotice.kind === "error"
+                      ? "profile-form-status--error"
+                      : "profile-form-status--ok"
+                  }`}
+                  role={outcomeNotice.kind === "error" ? "alert" : "status"}
+                >
+                  {outcomeNotice.text}
+                </p>
+              )}
+              {managed && (
+                <p
+                  class="profile-form-status profile-form-status--ok"
+                  role="status"
+                >
+                  Host changes saved.
+                </p>
+              )}
+              {isManagedByCurrentAccount
+                ? (
+                  <OwnerManagementLink
+                    authorized={hostAuthorized}
+                    kind="host"
+                    destinationHref={manageHostHref(host)}
+                    targetName={host.displayName}
+                    label="Manage host"
+                    className="account-dashboard-button account-dashboard-button--primary host-detail-claim-button"
+                    rememberedAccounts={account.rememberedAccounts}
+                    initialHandle={account.user?.handle}
+                  />
+                )
+                : claim && verifiedOwnerDid
+                ? (
+                  <p class="host-detail-claim-note">
+                    {claimed ? "Claim verified. " : ""}
+                    Managed by{" "}
+                    <AtmosphereHandle handle={claim.claimantHandle} />
+                  </p>
+                )
+                : claim
+                ? (
+                  <p class="host-detail-claim-note">
+                    Operator verification is temporarily unavailable. The stored
+                    claimant is not being shown as verified.
+                  </p>
+                )
+                : (
+                  account.user && hostAuthorized
+                    ? (
+                      <a
+                        class="account-dashboard-button account-dashboard-button--primary host-detail-claim-button"
+                        href={claimHostHref(host)}
+                      >
+                        <span>Claim this host</span>
+                      </a>
+                    )
+                    : (
+                      <ContextualSignInLink
+                        href={hostClaimSigninHref(host)}
+                        returnTo={claimHostHref(host)}
+                        action="host_claim"
+                        capabilities={["host"]}
+                        targetName={host.displayName}
+                        label="Claim this host"
+                        className="account-dashboard-button account-dashboard-button--primary host-detail-claim-button"
+                        rememberedAccounts={account.rememberedAccounts}
+                      />
+                    )
+                )}
+            </div>
+
             <section class="host-detail-choice-grid" aria-label="Host summary">
               <article class="glass host-detail-choice-card">
                 <span class="host-detail-choice-icon" aria-hidden="true">
@@ -474,78 +554,6 @@ function HostDetailPage(
                 )}
               </dl>
             </details>
-
-            <div class="host-detail-claim-row">
-              {outcomeNotice && (
-                <p
-                  class={`profile-form-status ${
-                    outcomeNotice.kind === "error"
-                      ? "profile-form-status--error"
-                      : "profile-form-status--ok"
-                  }`}
-                >
-                  {outcomeNotice.text}
-                </p>
-              )}
-              {managed && (
-                <p class="profile-form-status profile-form-status--ok">
-                  Host changes saved.
-                </p>
-              )}
-              {isManagedByCurrentAccount
-                ? (
-                  <OwnerManagementLink
-                    authorized={hostAuthorized}
-                    kind="host"
-                    destinationHref={manageHostHref(host)}
-                    targetName={host.displayName}
-                    label="Manage host"
-                    className="directory-register-button host-detail-claim-button"
-                    rememberedAccounts={account.rememberedAccounts}
-                    initialHandle={account.user?.handle}
-                  />
-                )
-                : claim && verifiedOwnerDid
-                ? (
-                  <p class="host-detail-claim-note">
-                    {claimed ? "Claim verified. " : ""}
-                    Managed by{" "}
-                    <AtmosphereHandle handle={claim.claimantHandle} />
-                  </p>
-                )
-                : claim
-                ? (
-                  <p class="host-detail-claim-note">
-                    Operator verification is temporarily unavailable. The stored
-                    claimant is not being shown as verified.
-                  </p>
-                )
-                : (
-                  account.user
-                    ? (
-                      <a
-                        class="directory-register-button host-detail-claim-button"
-                        href={claimHostHref(host)}
-                      >
-                        <span class="directory-register-button-icon">+</span>
-                        <span>Claim this host</span>
-                      </a>
-                    )
-                    : (
-                      <ContextualSignInLink
-                        href={hostClaimSigninHref(host)}
-                        returnTo={claimHostHref(host)}
-                        action="host_claim"
-                        capabilities={["identity"]}
-                        targetName={host.displayName}
-                        label="Claim this host"
-                        className="directory-register-button host-detail-claim-button"
-                        leadingPlus
-                        rememberedAccounts={account.rememberedAccounts}
-                      />
-                    )
-                )}
-            </div>
           </div>
         </section>
         <Footer variant="compact" />
@@ -609,7 +617,7 @@ function hostClaimSigninHref(host: AccountHost): string {
   return oauthSigninUrl({
     next: claimHostHref(host),
     action: "host_claim",
-    capabilities: ["identity"],
+    capabilities: ["host"],
     name: host.displayName,
   });
 }
@@ -761,7 +769,7 @@ function registryStatusLabel(host: AccountHost): string {
   }
   switch (host.source) {
     case "seeded":
-      return "Seeded by Atmosphere";
+      return "Added by this directory";
     case "manual":
       return "Needs host record";
     default:

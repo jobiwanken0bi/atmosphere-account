@@ -84,9 +84,9 @@ export const docsPages: DocsPage[] = [
         label: "Get started",
       },
       {
-        title: "Register an app",
+        title: "Configure app login",
         body:
-          "Set app identity, exact return URIs, review status, picker warnings, and shared app records.",
+          "Attach client IDs and exact return URIs to an existing app profile, then review picker trust and warnings.",
         href: "/docs/register-app",
         label: "Open guide",
       },
@@ -269,7 +269,7 @@ export const docsPages: DocsPage[] = [
       href: "/examples/atmosphere-login/app",
     },
     secondaryCta: {
-      label: "Register your app",
+      label: "Configure app login",
       href: "/account/developer/apps",
     },
     nextSteps: [
@@ -342,14 +342,14 @@ export const docsPages: DocsPage[] = [
             type: "steps",
             items: [
               {
-                title: "Register app identity",
+                title: "Choose the app account",
                 body:
-                  "Create a development or production app registration with a name, client ID, homepage, logo, and allowed return URI.",
+                  "Sign in with the account that owns the app profile. The picker derives the app name, homepage, and logo from that profile.",
               },
               {
-                title: "Add the SDK button",
+                title: "Add a login environment",
                 body:
-                  "Pass the registered client ID, return URI, and app metadata to the browser SDK.",
+                  "Register a client ID and its exact return URIs, then pass the client ID and return URI to the browser SDK.",
               },
               {
                 title: "Verify the callback",
@@ -433,15 +433,19 @@ return startAtprotoOAuth({
       "The app receives a signed `selection_token` with DID, handle, state, audience, and optional PDS URL.",
       "OAuth tokens stay between the app and the user’s account host.",
     ],
-    primaryCta: { label: "Register your app", href: "/account/developer/apps" },
+    primaryCta: {
+      label: "Configure app login",
+      href: "/account/developer/apps",
+    },
     secondaryCta: {
       label: "Open example app",
       href: "/examples/atmosphere-login/app",
     },
     nextSteps: [
       {
-        title: "Register your app",
-        body: "Set app identity, owner, status, and allowed return URIs.",
+        title: "Configure an app environment",
+        body:
+          "Use your app account, then set its client ID and exact return URIs.",
         href: "/docs/register-app",
         label: "Start here",
       },
@@ -636,7 +640,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "test-console",
         title: "Try it locally",
         intro:
-          "Generate a picker URL from the reference app or your registered app metadata, inspect redirect and popup button snippets, and paste a token to check pass/fail verification.",
+          "Generate a picker URL from the reference app or one of your app's login environments, inspect redirect and popup button snippets, and paste a token to check pass/fail verification.",
         blocks: [
           { type: "atmosphereLoginConsole" },
           {
@@ -706,24 +710,24 @@ return redirect("/oauth/start?" + new URLSearchParams({
       },
       {
         id: "register-app",
-        title: "Register your app",
+        title: "Configure a login environment",
         intro:
-          "Registering gives the picker a clear app identity and a return URI allow-list tied to your signed-in Atmosphere account.",
+          "Each environment belongs to the signed-in account's app profile. The profile supplies its public identity; the environment supplies its client ID and exact return URI allow-list.",
         blocks: [
           {
             type: "endpoint",
             method: "GET",
             path: "/account/developer/apps",
             body:
-              "Signed-in developer page for registering an app name, client ID, logo URL, homepage, allowed return URIs, and an optional verified preferred account host.",
+              "Signed-in developer page for adding client IDs, exact return URIs, and an optional verified preferred account host beneath the current app profile.",
           },
           {
             type: "steps",
             items: [
               {
-                title: "Choose the owner account in Login with Atmosphere",
+                title: "Use the app's account",
                 body:
-                  "The current Atmosphere account becomes the owner of the app registration. That owner can update the name, logo, homepage, and return URI allow-list.",
+                  "The current Atmosphere account must own exactly one app profile. Edit the app's name, logo, and homepage in that profile; edit client IDs and callbacks here.",
               },
               {
                 title: "Use a stable client ID",
@@ -744,9 +748,10 @@ return redirect("/oauth/start?" + new URLSearchParams({
           },
           {
             type: "callout",
-            title: "Preferred hosts are registration data, not request input",
+            title:
+              "Preferred hosts are environment settings, not request input",
             body:
-              "Atmosphere verifies the host claim when the registration is saved and again when the picker opens. Apps cannot nominate an arbitrary host in the picker URL, and revoked, transferred, closed, or unconfigured hosts stop being recommended.",
+              "The host relationship is verified when the environment is saved and again when the picker opens. Apps cannot nominate an arbitrary host in the picker URL, and revoked, transferred, closed, or unconfigured hosts stop being recommended.",
           },
           {
             type: "table",
@@ -787,7 +792,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
         id: "domain-manifest",
         title: "Verify your app domain",
         intro:
-          "Before an app can request Trusted status, its homepage origin must publish a small Login with Atmosphere manifest. This proves the registered app identity is controlled by the same domain users see in the picker.",
+          "Before an app can request Trusted status, its app-profile homepage origin must publish a small Login with Atmosphere manifest. This proves the linked profile identity and environment are controlled by the same domain users see in the picker.",
         blocks: [
           {
             type: "code",
@@ -811,9 +816,9 @@ return redirect("/oauth/start?" + new URLSearchParams({
           {
             type: "list",
             items: [
-              "Host this file at the HTTPS origin of your registered homepage.",
+              "Host this file at the HTTPS origin of the linked app profile's homepage.",
               "Use an `apps` array when one domain hosts more than one relying app.",
-              "`client_id`, `app_name`, `homepage`, `logo_uri`, and every registered `allowed_return_uris` entry must match the Atmosphere registration.",
+              "`app_name`, `homepage`, and `logo_uri` must match the linked app profile; `client_id` and every `allowed_return_uris` entry must match the login environment.",
               "The developer app detail page fetches this file during Run checks and blocks Trusted review until it passes.",
             ],
           },
@@ -839,7 +844,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               ],
               [
                 "HTTPS",
-                "Production client IDs, homepages, logos, and return URIs must use HTTPS.",
+                "Production client IDs and return URIs must use HTTPS. The linked app profile must also provide an HTTPS homepage and logo.",
               ],
               [
                 "Local development",
@@ -931,12 +936,12 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Finalize app identity",
                 body:
-                  "Use the production app name, homepage, logo, and client ID that users will recognize.",
+                  "Finalize the production name, homepage, and logo in the app profile, and use a client ID users can associate with that app.",
               },
               {
                 title: "Remove local URLs",
                 body:
-                  "Replace the local client ID shortcut and every local homepage, logo, or return URI with HTTPS production or staging URLs.",
+                  "Replace the local client ID shortcut and return URIs with HTTPS production or staging URLs, and make sure the app profile uses an HTTPS homepage and logo.",
               },
               {
                 title: "Run the picker test",
@@ -959,7 +964,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
             type: "callout",
             title: "Trust can reset",
             body:
-              "Changing a trusted app's name, homepage, logo, or return URIs returns it to review so the picker does not imply stale trust.",
+              "Changing a trusted app profile's name, homepage, or logo—or changing an environment's return URIs—returns that environment to review so the picker does not imply stale trust.",
             tone: "amber",
           },
         ],
@@ -979,7 +984,7 @@ return redirect("/oauth/start?" + new URLSearchParams({
               {
                 title: "Publish your app identity",
                 body:
-                  "Move to an HTTPS client ID, homepage, and logo URL on a domain your app controls.",
+                  "Publish the production homepage and logo in the app profile, then use an HTTPS client ID on a domain your app controls.",
               },
               {
                 title: "Register production callbacks",
@@ -1146,9 +1151,9 @@ return Response.redirect(oauthUrl);`,
           {
             type: "list",
             items: [
-              "Register the app at `/account/developer/apps` with a stable HTTPS client ID.",
+              "Sign in with the app account and add an environment at `/account/developer/apps` with a stable HTTPS client ID.",
               "Use exact allowed return URIs for production and staging callbacks.",
-              "Show a recognizable app name, homepage, and HTTPS logo.",
+              "Keep a recognizable app name, homepage, and HTTPS logo in the linked app profile.",
               "Verify `iss`, `aud`, `state`, `return_uri`, expiry, signature, and replay key server-side.",
               "Start your own AT Protocol OAuth flow after selection; do not treat the selection token as an app session.",
               "Request trusted review when the app identity and production callbacks are ready.",
@@ -1162,18 +1167,18 @@ return Response.redirect(oauthUrl);`,
     slug: "register-app",
     group: "Guides",
     status: "Stable",
-    navTitle: "Register app",
-    title: "Register your app",
+    navTitle: "Login environments",
+    title: "Configure a login environment",
     description:
-      "Give the picker a clear app identity, an owner account, and an exact return URI allow-list.",
+      "Attach client settings to an existing app profile and use an exact return URI allow-list.",
     summary: [
-      "App registration is tied to the signed-in Atmosphere owner account.",
-      "Production apps use HTTPS identity and exact allowed return URIs.",
-      "Apps may recommend a currently claimed, joinable account host without preventing other choices.",
+      "A login environment is tied to the signed-in account's single app profile.",
+      "The app profile supplies its name, homepage, and logo; each environment supplies a client ID and exact return URIs.",
+      "Apps may recommend a joinable host they manage or have a current verified relationship with, without preventing other choices.",
       "Review states control picker copy and trust warnings.",
     ],
     primaryCta: {
-      label: "Open registrations",
+      label: "Open environments",
       href: "/account/developer/apps",
     },
     secondaryCta: {
@@ -1206,7 +1211,7 @@ return Response.redirect(oauthUrl);`,
       {
         id: "fields",
         eyebrow: "Metadata",
-        title: "Required registration fields",
+        title: "Profile and environment fields",
         blocks: [
           {
             type: "table",
@@ -1214,8 +1219,8 @@ return Response.redirect(oauthUrl);`,
             rows: [
               [
                 "App name",
-                "Primary picker identity users see.",
-                "Use the public product name.",
+                "Primary picker identity users see, derived from the app profile.",
+                "Edit it in the app profile, not the login environment.",
               ],
               [
                 "Client ID",
@@ -1224,13 +1229,13 @@ return Response.redirect(oauthUrl);`,
               ],
               [
                 "Logo URL",
-                "Visual identity in the picker.",
-                "Use HTTPS and a reachable image.",
+                "Visual identity derived from the app profile.",
+                "Publish an HTTPS, reachable image in the app profile.",
               ],
               [
                 "Homepage",
-                "Human-readable app identity.",
-                "Use HTTPS and align with the client ID domain.",
+                "Human-readable identity derived from the app profile.",
+                "Publish an HTTPS homepage aligned with the client ID domain.",
               ],
               [
                 "Allowed return URIs",
@@ -1240,7 +1245,7 @@ return Response.redirect(oauthUrl);`,
               [
                 "Preferred account host (optional)",
                 "Pins a host first in the Create Account chooser and labels it as recommended by the app.",
-                "Must be a joinable grouped host currently claimed by the app owner. Atmosphere re-verifies the claim at picker time.",
+                "Must be a joinable host managed by the app account or connected to the app through a current verified relationship. It is re-verified at picker time.",
               ],
             ],
           },
@@ -1316,11 +1321,11 @@ return Response.redirect(oauthUrl);`,
     secondaryCta: { label: "Browse apps", href: "/apps" },
     nextSteps: [
       {
-        title: "Register your app",
+        title: "Configure app login",
         body:
-          "Create the app identity and exact picker return URIs before publishing records.",
+          "Publish the app profile, then configure its client ID and exact picker return URIs.",
         href: "/docs/register-app",
-        label: "Register",
+        label: "Configure",
       },
       {
         title: "API reference",
@@ -1401,6 +1406,13 @@ return Response.redirect(oauthUrl);`,
                   "Legacy Atmosphere-only listings should move to shared records. The old record can remain indexed as a fallback until the migration is complete.",
               },
             ],
+          },
+          {
+            type: "callout",
+            title: "Publication is not universal approval",
+            body:
+              "Each appview indexes and moderates shared records independently. A record can be live in Atmosphere while another directory is still processing or reviewing it, so protocol compatibility does not guarantee immediate visibility everywhere.",
+            tone: "amber",
           },
           {
             type: "callout",
@@ -1908,13 +1920,13 @@ return Response.redirect(oauthUrl);`,
           {
             type: "checklist",
             items: [
-              "Registered app name matches the public product.",
+              "The linked app profile uses the public product name.",
               "Client ID is HTTPS and controlled by the app.",
-              "Homepage is HTTPS and reachable.",
-              "Logo is HTTPS, reachable, and recognizable.",
+              "The app profile homepage is HTTPS and reachable.",
+              "The app profile logo is HTTPS, reachable, and recognizable.",
               "Every production return URI is listed exactly.",
-              "No local development URLs remain in production registration.",
-              "Domain manifest matches the registered app metadata and return URIs.",
+              "No local development URLs remain in the production environment.",
+              "Domain manifest matches the linked app profile and environment return URIs.",
               "Picker test URL completes successfully.",
               "Selection token verification happens server-side.",
               "AT Protocol OAuth starts after selection and is owned by the app.",
@@ -1993,7 +2005,7 @@ return Response.redirect(oauthUrl);`,
               [
                 "Selection token failed verification",
                 "Issuer, audience, signature, expiry, return URI, or state mismatch.",
-                "Log the verifier error and compare against registered app metadata.",
+                "Log the verifier error and compare against the linked app profile and environment settings.",
               ],
               [
                 "Replayed token",
@@ -2050,7 +2062,7 @@ return Response.redirect(oauthUrl);`,
             type: "callout",
             title: "Developers still need local docs",
             body:
-              "Even if an app ultimately runs in production, developers usually test the picker and OAuth callback on a local server first. The docs separate local integration rules from production registration rules.",
+              "Even if an app ultimately runs in production, developers usually test the picker and OAuth callback on a local server first. The docs separate local integration rules from production environment rules.",
           },
         ],
       },

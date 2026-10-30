@@ -41,7 +41,6 @@ import {
 } from "../../lib/browser-handoff.ts";
 import { devPickerAccountForDid } from "../../lib/dev-picker-demo.ts";
 import { IS_DEV } from "../../lib/env.ts";
-import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 import {
   hasOAuthCapabilities,
   normalizeOAuthCapabilities,
@@ -275,8 +274,6 @@ function redirectToReauth(
   targetName: string | null,
   chooseAnotherAccount: boolean,
 ): Response {
-  const headers = new Headers();
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   return browserHandoffResponse(
     buildSwitchReauthLocation(
       identifier,
@@ -289,7 +286,6 @@ function redirectToReauth(
     ),
     {
       json: wantsBrowserHandoffJson(req),
-      headers,
     },
   );
 }
@@ -297,7 +293,6 @@ function redirectToReauth(
 function switchedSessionHeaders(sessionCookie: string): Headers {
   const headers = new Headers();
   headers.append("set-cookie", sessionCookie);
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   return headers;
 }
 

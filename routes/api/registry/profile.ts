@@ -40,11 +40,13 @@ import { sanitizeSvgBytes } from "../../../lib/svg-sanitize.ts";
 import { getEffectiveAccountType } from "../../../lib/account-types.ts";
 import {
   deleteAppRecord,
+  listManagedAppListingsByAccountDid,
   upsertLegacyProfileAsApp,
 } from "../../../lib/app-directory.ts";
 import {
   atmosphereProfileAtUri,
   findExistingAtstoreListingForProfile,
+  findExistingAtstoreListingsForProfile,
   publishAtstoreListingFromProfileRecord,
 } from "../../../lib/atstore-migration.ts";
 import {
@@ -57,11 +59,21 @@ import {
   publishCommunityAppProfileFromProfileRecord,
 } from "../../../lib/community-app-profile.ts";
 import { resolveAppListingWriteTarget } from "../../../lib/app-listing-lifecycle.ts";
+import { normalizeAppStoreLinks } from "../../../lib/app-store-links.ts";
 import { appProfileWriteCapabilities } from "../../../lib/profile-write-capabilities.ts";
 import { isJsonMediaType, isSafeRelativePath } from "../../../lib/security.ts";
 import { isAtprotoTid } from "../../../lib/tid.ts";
 import { enforceDurableRateLimit } from "../../../lib/rate-limit.ts";
 import { matchesRasterImageSignature } from "../../../lib/raster-image-security.ts";
+import {
+  appProfileConflictBody,
+  appProfileLookupFailureBlocksWrite,
+  appProfileRegistrationInProgressBody,
+  distinctAppCreationConflicts,
+  implicitAppCreationConflicts,
+  reserveAppProfileTarget,
+  rotateStaleAppProfileTarget,
+} from "../../../lib/app-profile-cardinality.ts";
 
 const OG_W = 1200;
 const OG_H = 630;
@@ -193,11 +205,11 @@ interface ProfileFormPayload {
   /** Existing screenshots to keep plus new uploads to append. */
   screenshots?: ScreenshotEntry[];
   screenshotUploads?: { dataBase64: string; mimeType: string }[];
-  /** Create a distinct ATStore listing instead of updating the first one. */
+  /** Legacy creation intent flag; a DID with an app cannot create another. */
   createNewListing?: boolean;
-  /** Client-stable TID used to make a distinct listing retry idempotent. */
+  /** Client-stable TID used to make first publication retry idempotent. */
   createListingRkey?: string;
-  /** Existing ATStore record to update when this DID owns several apps. */
+  /** Exact existing ATStore record to update (including grandfathered apps). */
   atstoreListingUri?: string | null;
 }
 
@@ -350,12 +362,13 @@ export function profileCreateListingKeyErrorForTest(
   const rkey = typeof createListingRkey === "string"
     ? createListingRkey.trim()
     : "";
-  if (createNewListing === true) {
-    return rkey && isAtprotoTid(rkey)
-      ? null
-      : "invalid app listing creation key";
+  if (rkey && !isAtprotoTid(rkey)) {
+    return "invalid app listing creation key";
   }
-  return rkey ? "unexpected app listing creation key" : null;
+  if (createNewListing === true) {
+    return rkey ? null : "invalid app listing creation key";
+  }
+  return null;
 }
 
 async function readJsonBodyLimited<T>(
@@ -496,6 +509,9 @@ export const handler = define.handlers({
     if (body.atstoreListingUri && !requestedAtstoreTarget) {
       return new Response("invalid app listing target", { status: 400 });
     }
+    if (body.createNewListing === true && requestedAtstoreTarget) {
+      return new Response("invalid app listing target", { status: 400 });
+    }
     const creationKeyError = profileCreateListingKeyErrorForTest(
       body.createNewListing,
       body.createListingRkey,
@@ -506,6 +522,24 @@ export const handler = define.handlers({
     const requestedCreateRkey = typeof body.createListingRkey === "string"
       ? body.createListingRkey.trim()
       : null;
+
+    // Public visibility is intentionally irrelevant here. A hidden or
+    // moderated app still belongs to this DID and must block creation of a
+    // distinct second app. Legacy duplicate rows remain target-editable.
+    let managedApps: Awaited<
+      ReturnType<typeof listManagedAppListingsByAccountDid>
+    > = [];
+    if (!requestedAtstoreTarget) {
+      try {
+        managedApps = await listManagedAppListingsByAccountDid(user.did, {
+          syncLegacy: false,
+        });
+      } catch {
+        return new Response("App ownership could not be checked.", {
+          status: 503,
+        });
+      }
+    }
 
     const accountType = await getEffectiveAccountType(user.did).catch(() =>
       null
@@ -541,16 +575,196 @@ export const handler = define.handlers({
      * later republish would face the report queue afresh, which is
      * fine).
      */
-    const existing = await getProfileByDid(user.did, {
-      includeTakenDown: true,
-      profileType: "project",
-    }).catch(() => null);
+    let existing: Awaited<ReturnType<typeof getProfileByDid>> = null;
+    try {
+      existing = await getProfileByDid(user.did, {
+        includeTakenDown: true,
+        profileType: "project",
+      });
+    } catch {
+      // An exact existing ATStore URI can still be safely updated. Every
+      // untargeted path might create, so a registry read failure must not be
+      // interpreted as proof that the DID has no legacy app.
+      if (appProfileLookupFailureBlocksWrite(Boolean(requestedAtstoreTarget))) {
+        return new Response("App ownership could not be checked.", {
+          status: 503,
+        });
+      }
+    }
     if (existing?.takedownStatus === "taken_down") {
       return new Response(
         "This app listing has been taken down by an Atmosphere admin. " +
           "You can delete it from your PDS, but you can't update it.",
         { status: 403 },
       );
+    }
+
+    let preflightCreateRecord: Awaited<
+      ReturnType<typeof findExistingAtstoreListingForProfile>
+    > = null;
+    let preflightImplicitAtstore: Awaited<
+      ReturnType<typeof findExistingAtstoreListingForProfile>
+    > = null;
+    let knownCreateTargetExists = false;
+    if (body.createNewListing === true && requestedCreateRkey) {
+      const requestedCreateUri =
+        `at://${user.did}/${ATSTORE_LISTING_NSID}/${requestedCreateRkey}`;
+      const locallyIndexedRetry = managedApps.find((app) =>
+        app.atstoreListingUri === requestedCreateUri
+      );
+      knownCreateTargetExists = Boolean(locallyIndexedRetry);
+      if (locallyIndexedRetry) {
+        try {
+          // Lazily backfill the concurrency guard for pre-enforcement apps.
+          // A different historical reservation never blocks editing this exact
+          // existing URI; legacy duplicate apps remain editable by design.
+          await reserveAppProfileTarget(user.did, requestedCreateRkey);
+        } catch {
+          return new Response("App ownership could not be reserved.", {
+            status: 503,
+          });
+        }
+      }
+      if (!locallyIndexedRetry) {
+        let remoteApps: Awaited<
+          ReturnType<typeof findExistingAtstoreListingsForProfile>
+        >;
+        try {
+          remoteApps = await findExistingAtstoreListingsForProfile(
+            user.did,
+            session.pdsUrl,
+          );
+        } catch {
+          // Creation must fail closed when the authoritative repository cannot
+          // be checked; otherwise an AppView/index outage could mint app #2.
+          return new Response("App ownership could not be checked.", {
+            status: 503,
+          });
+        }
+        preflightCreateRecord = remoteApps.find((record) =>
+          record.uri === requestedCreateUri
+        ) ?? null;
+        knownCreateTargetExists = Boolean(preflightCreateRecord);
+        if (remoteApps[0]) {
+          try {
+            // The PDS is authoritative when the local AppView is lagging. Seed
+            // its existing target before returning either retry success or a
+            // second-app conflict.
+            await reserveAppProfileTarget(
+              user.did,
+              (preflightCreateRecord ?? remoteApps[0]).rkey,
+            );
+          } catch {
+            return new Response("App ownership could not be reserved.", {
+              status: 503,
+            });
+          }
+        }
+        const existingUris = [
+          ...managedApps.map((app) =>
+            app.atstoreListingUri ?? app.canonicalUri ?? app.id
+          ),
+          ...remoteApps.map((record) => record.uri),
+          ...(existing ? [atmosphereProfileAtUri(user.did)] : []),
+        ];
+        if (
+          !preflightCreateRecord &&
+          distinctAppCreationConflicts({
+            createNewListing: true,
+            requestedUri: requestedCreateUri,
+            existingUris,
+          })
+        ) {
+          return appProfileConflictResponse(managedApps[0]);
+        }
+      }
+
+      if (!locallyIndexedRetry && !preflightCreateRecord) {
+        let reservation;
+        try {
+          reservation = await reserveAppProfileTarget(
+            user.did,
+            requestedCreateRkey,
+          );
+        } catch {
+          return new Response("App ownership could not be reserved.", {
+            status: 503,
+          });
+        }
+        if (reservation.rkey !== requestedCreateRkey) {
+          try {
+            reservation = await rotateStaleAppProfileTarget(
+              user.did,
+              reservation.rkey,
+              requestedCreateRkey,
+            );
+          } catch {
+            return new Response("App ownership could not be reserved.", {
+              status: 503,
+            });
+          }
+          if (reservation.rkey !== requestedCreateRkey) {
+            return appProfileRegistrationInProgressResponse();
+          }
+        }
+      }
+    }
+    if (body.createNewListing !== true && !requestedAtstoreTarget) {
+      try {
+        preflightImplicitAtstore = await findExistingAtstoreListingForProfile(
+          user.did,
+          session.pdsUrl,
+        );
+      } catch {
+        if (!existing) {
+          return new Response("App ownership could not be checked.", {
+            status: 503,
+          });
+        }
+      }
+      if (
+        implicitAppCreationConflicts({
+          targetedExistingRecord: false,
+          hasLegacyProfile: Boolean(existing),
+          hasAtstoreListing: Boolean(preflightImplicitAtstore),
+          managedAppCount: managedApps.length,
+        })
+      ) {
+        // A client cannot bypass the explicit createNew guard by omitting the
+        // flag. The indexed app may be temporarily absent from its PDS, but it
+        // still occupies this DID until explicitly removed and re-indexed.
+        return appProfileConflictResponse(managedApps[0]);
+      }
+      if (
+        !preflightImplicitAtstore && !existing && managedApps.length === 0
+      ) {
+        if (!requestedCreateRkey) {
+          return new Response("app listing creation key required", {
+            status: 400,
+          });
+        }
+        let reservation;
+        try {
+          reservation = await reserveAppProfileTarget(
+            user.did,
+            requestedCreateRkey,
+          );
+          if (reservation.rkey !== requestedCreateRkey) {
+            reservation = await rotateStaleAppProfileTarget(
+              user.did,
+              reservation.rkey,
+              requestedCreateRkey,
+            );
+          }
+        } catch {
+          return new Response("App ownership could not be reserved.", {
+            status: 503,
+          });
+        }
+        if (reservation.rkey !== requestedCreateRkey) {
+          return appProfileRegistrationInProgressResponse();
+        }
+      }
     }
 
     let avatar = body.avatar ?? undefined;
@@ -823,8 +1037,10 @@ export const handler = define.handlers({
     );
 
     const mainLink = trimOrNull(body.mainLink);
-    const iosLink = trimOrNull(body.iosLink);
-    const androidLink = trimOrNull(body.androidLink);
+    const { iosLink, androidLink } = normalizeAppStoreLinks({
+      iosLink: trimOrNull(body.iosLink),
+      androidLink: trimOrNull(body.androidLink),
+    });
     if (!mainLink && !iosLink && !androidLink) {
       return new Response(
         "at least one Web, iOS, or Android link is required",
@@ -837,8 +1053,8 @@ export const handler = define.handlers({
       name: trimOrNull(body.name) ?? "",
       description: trimOrNull(body.description) ?? "",
       mainLink,
-      iosLink,
-      androidLink,
+      iosLink: iosLink ?? undefined,
+      androidLink: androidLink ?? undefined,
       categories: normalizedCategories,
       subcategories: asArray(body.subcategories),
       links: links.length > 0 ? links : undefined,
@@ -879,28 +1095,25 @@ export const handler = define.handlers({
     if (requestedAtstoreTarget && !targetedAtstore) {
       return new Response("app listing target not found", { status: 404 });
     }
-    const createRetryRecord = body.createNewListing === true &&
-        requestedCreateRkey
-      ? await getRecordPublic(
-        session.pdsUrl,
-        user.did,
-        ATSTORE_LISTING_NSID,
-        requestedCreateRkey,
-      ).then((record) =>
-        record
-          ? {
-            ...record,
-            rkey: requestedCreateRkey,
-          }
-          : null
-      ).catch(() => null)
-      : null;
+    const createRetryRecord = preflightCreateRecord ??
+      (body.createNewListing === true && requestedCreateRkey
+        ? await getRecordPublic(
+          session.pdsUrl,
+          user.did,
+          ATSTORE_LISTING_NSID,
+          requestedCreateRkey,
+        ).then((record) =>
+          record
+            ? {
+              ...record,
+              rkey: requestedCreateRkey,
+            }
+            : null
+        ).catch(() => null)
+        : null);
     const existingAtstore = body.createNewListing === true
       ? createRetryRecord
-      : targetedAtstore ?? await findExistingAtstoreListingForProfile(
-        user.did,
-        session.pdsUrl,
-      ).catch(() => null);
+      : targetedAtstore ?? preflightImplicitAtstore;
     const writeTarget = body.createNewListing === true
       ? "atstore_listing" as const
       : resolveAppListingWriteTarget({
@@ -909,6 +1122,28 @@ export const handler = define.handlers({
         categories: validation.value.categories,
       });
     if (writeTarget === "atstore_listing") {
+      let publishRkey = requestedCreateRkey;
+      if (!existingAtstore && !knownCreateTargetExists) {
+        if (!publishRkey) {
+          return new Response("app listing creation key required", {
+            status: 400,
+          });
+        }
+        try {
+          const reservation = await reserveAppProfileTarget(
+            user.did,
+            publishRkey,
+          );
+          if (reservation.rkey !== publishRkey) {
+            return appProfileRegistrationInProgressResponse();
+          }
+          publishRkey = reservation.rkey;
+        } catch {
+          return new Response("App ownership could not be reserved.", {
+            status: 503,
+          });
+        }
+      }
       try {
         const atstoreResult = await publishAtstoreListingFromProfileRecord({
           did: user.did,
@@ -916,19 +1151,19 @@ export const handler = define.handlers({
           pdsUrl: session.pdsUrl,
           record: validation.value,
           existingRecord: existingAtstore,
-          createDistinctListing: body.createNewListing === true,
-          rkeyOverride: body.createNewListing === true
-            ? requestedCreateRkey
-            : null,
+          // `createNewListing` is retained only as a retry-compatible API flag
+          // for a DID that has no app yet; it no longer changes app identity.
+          rkeyOverride: publishRkey,
         });
-        const communityResult = body.createNewListing === true
-          ? null
-          : await tryPublishCommunityProfile({
-            did: user.did,
-            handle: user.handle,
-            pdsUrl: session.pdsUrl,
-            record: validation.value,
-          });
+        // New listings and updates publish the same interoperable record pair.
+        // `createNewListing` only controls the idempotent ATStore rkey; it must
+        // not suppress the companion community app profile.
+        const communityResult = await tryPublishCommunityProfile({
+          did: user.did,
+          handle: user.handle,
+          pdsUrl: session.pdsUrl,
+          record: validation.value,
+        });
         return new Response(
           JSON.stringify({
             ok: true,
@@ -1200,6 +1435,40 @@ function appviewProxyError(err: unknown): Response {
     status: 503,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+function appProfileConflictResponse(existing?: {
+  id?: string | null;
+  slug?: string | null;
+}): Response {
+  return new Response(JSON.stringify(appProfileConflictBody(existing)), {
+    status: 409,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+function appProfileRegistrationInProgressResponse(): Response {
+  return new Response(
+    JSON.stringify(appProfileRegistrationInProgressBody()),
+    {
+      status: 409,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "retry-after": String(60 * 60),
+      },
+    },
+  );
+}
+
+export function appProfileConflictResponseForTest(existing?: {
+  id?: string | null;
+  slug?: string | null;
+}): Response {
+  return appProfileConflictResponse(existing);
 }
 
 function appReauthRequired(input: {

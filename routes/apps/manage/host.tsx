@@ -299,9 +299,9 @@ function AppHostRelationshipsPage(props: {
               <p class="text-eyebrow">Host identity</p>
               <h1 class="host-claim-title">{app.name}</h1>
               <p class="text-body host-claim-copy">
-                Connect this app to a host run as part of the product or by the
-                same organization. Explicit, verified connections override
-                Atmosphere's DID-based fallback.
+                Connect this app to an account host. Choose whether the host
+                provides accounts for the app or is a separate related service.
+                Each keeps its own public profile.
               </p>
               {apps.length > 1 && (
                 <form method="GET" class="managed-app-switcher">
@@ -349,8 +349,8 @@ function AppHostRelationshipsPage(props: {
                         <strong>{link.hostDisplayName}</strong>
                         <p>
                           {link.relationship === "same_product"
-                            ? "Same product"
-                            : "Same organization, separate product"}
+                            ? "Provides accounts for this app"
+                            : "Related service, same operator"}
                         </p>
                         <span
                           class={`relationship-status relationship-status--${link.status}`}
@@ -407,10 +407,11 @@ function AppHostRelationshipsPage(props: {
                     <span class="profile-form-label">Relationship</span>
                     <select class="profile-form-input" name="relationship">
                       <option value="same_product">
-                        Same product — this host is part of the app
+                        Account hosting — this host provides accounts for the
+                        app
                       </option>
                       <option value="same_operator">
-                        Same operator — we also run this separate host
+                        Related service — run by the same operator
                       </option>
                     </select>
                   </label>
@@ -447,10 +448,11 @@ function AppHostRelationshipsPage(props: {
                     <span class="profile-form-label">Relationship</span>
                     <select class="profile-form-input" name="relationship">
                       <option value="same_product">
-                        Same product — this host is part of the app
+                        Account hosting — this host provides accounts for the
+                        app
                       </option>
                       <option value="same_operator">
-                        Same operator — we also run this host
+                        Related service — run by the same operator
                       </option>
                     </select>
                   </label>

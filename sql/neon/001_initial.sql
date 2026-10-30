@@ -143,45 +143,6 @@ CREATE INDEX IF NOT EXISTS oauth_grant_did ON oauth_grant(did, purpose);
 CREATE INDEX IF NOT EXISTS oauth_grant_updated ON oauth_grant(updated_at);
 CREATE INDEX IF NOT EXISTS app_session_grant_id ON app_session_grant(grant_id);
 
-CREATE TABLE IF NOT EXISTS passkey_account (
-  did text PRIMARY KEY,
-  user_handle text NOT NULL UNIQUE,
-  created_at bigint NOT NULL,
-  updated_at bigint NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS passkey_credential (
-  credential_id text PRIMARY KEY,
-  did text NOT NULL REFERENCES passkey_account(did) ON DELETE CASCADE,
-  public_key text NOT NULL,
-  counter bigint NOT NULL DEFAULT 0,
-  device_type text NOT NULL,
-  backed_up integer NOT NULL DEFAULT 0,
-  transports text NOT NULL DEFAULT '[]',
-  name text,
-  created_at bigint NOT NULL,
-  updated_at bigint NOT NULL,
-  last_used_at bigint,
-  revoked_at bigint
-);
-
-CREATE INDEX IF NOT EXISTS passkey_credential_did ON passkey_credential(did, revoked_at);
-
-CREATE TABLE IF NOT EXISTS passkey_ceremony (
-  code_hash text PRIMARY KEY,
-  kind text NOT NULL,
-  challenge text NOT NULL,
-  did text,
-  rp_id text NOT NULL,
-  origin text NOT NULL,
-  login_request_json text,
-  created_at bigint NOT NULL,
-  expires_at bigint NOT NULL,
-  consumed_at bigint
-);
-
-CREATE INDEX IF NOT EXISTS passkey_ceremony_expires ON passkey_ceremony(expires_at);
-
 CREATE TABLE IF NOT EXISTS app_user (
   did text PRIMARY KEY,
   handle text NOT NULL,
@@ -387,12 +348,24 @@ CREATE TABLE IF NOT EXISTS account_host_claim_challenge (
   consumed_at bigint
 );
 
+CREATE TABLE IF NOT EXISTS account_host_owner_transfer (
+  jti TEXT PRIMARY KEY,
+  host TEXT NOT NULL,
+  previous_owner_did TEXT NOT NULL,
+  new_owner_did TEXT NOT NULL,
+  proof_method TEXT NOT NULL,
+  initiated_at BIGINT NOT NULL,
+  completed_at BIGINT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS account_host_claim_challenge_host
   ON account_host_claim_challenge(host, created_at);
 CREATE INDEX IF NOT EXISTS account_host_claim_challenge_did
   ON account_host_claim_challenge(claimant_did, created_at);
 CREATE INDEX IF NOT EXISTS account_host_claim_challenge_expires
   ON account_host_claim_challenge(expires_at);
+CREATE INDEX IF NOT EXISTS account_host_owner_transfer_host
+  ON account_host_owner_transfer(host, completed_at);
 
 CREATE TABLE IF NOT EXISTS host_conformance (
   host text PRIMARY KEY REFERENCES account_host(host) ON DELETE CASCADE,
@@ -566,6 +539,15 @@ CREATE INDEX IF NOT EXISTS app_listing_public_trending ON app_listing(deleted_at
 CREATE INDEX IF NOT EXISTS app_listing_public_newest ON app_listing(deleted_at, published_at DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS app_listing_public_name ON app_listing(deleted_at, lower(name));
 
+-- A client-stable ATStore record target closes concurrent second-app creates
+-- without imposing a uniqueness migration on legacy app_listing rows.
+CREATE TABLE IF NOT EXISTS app_profile_target (
+  did text PRIMARY KEY,
+  rkey text NOT NULL,
+  created_at bigint NOT NULL,
+  updated_at bigint NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS directory_entity_link (
   host text NOT NULL REFERENCES account_host(host) ON DELETE CASCADE,
   app_listing_id text NOT NULL REFERENCES app_listing(id) ON DELETE CASCADE,
@@ -727,6 +709,12 @@ CREATE TABLE IF NOT EXISTS login_app (
   allowed_origins text NOT NULL DEFAULT '[]',
   status text NOT NULL DEFAULT 'unverified',
   contact_did text,
+  app_did text,
+  app_profile_uri text,
+  link_status text NOT NULL DEFAULT 'relink_required',
+  profile_identity_fingerprint text,
+  profile_identity_updated_at bigint,
+  review_revision text,
   preferred_account_host text,
   review_status text NOT NULL DEFAULT 'none',
   review_requested_at bigint,
@@ -740,10 +728,60 @@ CREATE TABLE IF NOT EXISTS login_app (
 
 ALTER TABLE login_app
   ADD COLUMN IF NOT EXISTS preferred_account_host text;
+ALTER TABLE login_app
+  ADD COLUMN IF NOT EXISTS app_did text;
+ALTER TABLE login_app
+  ADD COLUMN IF NOT EXISTS app_profile_uri text;
+ALTER TABLE login_app
+  ADD COLUMN IF NOT EXISTS link_status text NOT NULL DEFAULT 'relink_required';
+ALTER TABLE login_app
+  ADD COLUMN IF NOT EXISTS profile_identity_fingerprint text;
+ALTER TABLE login_app
+  ADD COLUMN IF NOT EXISTS profile_identity_updated_at bigint;
+ALTER TABLE login_app
+  ADD COLUMN IF NOT EXISTS review_revision text;
+
+-- Legacy environments become active only when the former owner DID controls
+-- exactly one live app profile. No rows are removed; ambiguous and host-only
+-- registrations remain present and inactive until the account has one clear
+-- app profile or an operator performs an explicit support migration.
+UPDATE login_app
+SET app_did = contact_did,
+    app_profile_uri = (
+      SELECT MIN(l.canonical_uri)
+      FROM app_listing l
+      WHERE l.deleted_at IS NULL
+        AND (
+          l.product_did = login_app.contact_did OR
+          l.profile_did = login_app.contact_did OR
+          l.legacy_profile_did = login_app.contact_did
+        )
+    ),
+    link_status = 'linked'
+WHERE app_did IS NULL
+  AND contact_did IS NOT NULL
+  AND (
+    SELECT COUNT(*)
+    FROM app_listing l
+    WHERE l.deleted_at IS NULL
+      AND (
+        l.product_did = login_app.contact_did OR
+        l.profile_did = login_app.contact_did OR
+        l.legacy_profile_did = login_app.contact_did
+      )
+  ) = 1;
+
+UPDATE login_app
+SET link_status = 'relink_required'
+WHERE app_did IS NULL
+  AND link_status <> 'relink_required'
+  AND link_status <> 'system_fixture';
 
 CREATE INDEX IF NOT EXISTS login_app_status ON login_app(status);
 CREATE INDEX IF NOT EXISTS login_app_review_status ON login_app(review_status, review_requested_at);
 CREATE INDEX IF NOT EXISTS login_app_contact_did ON login_app(contact_did, updated_at);
+CREATE INDEX IF NOT EXISTS login_app_app_did ON login_app(app_did, updated_at);
+CREATE INDEX IF NOT EXISTS login_app_profile_uri ON login_app(app_profile_uri);
 
 CREATE TABLE IF NOT EXISTS login_app_connection (
   client_id text NOT NULL REFERENCES login_app(client_id) ON DELETE CASCADE,

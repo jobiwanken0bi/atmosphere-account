@@ -25,7 +25,7 @@ import {
   getAccountHost,
   listManagedAccountHosts,
 } from "../../lib/account-hosts.ts";
-import { listVisibleAppListingsByAccountDid } from "../../lib/app-directory.ts";
+import { listManagedAppListingsByAccountDid } from "../../lib/app-directory.ts";
 import {
   buildHostAccountRoute,
   type HostAccountRouteState,
@@ -40,7 +40,6 @@ import type { RememberedAccount } from "../../lib/remembered-accounts.ts";
 import { getProfileMicroblogViewer } from "../../lib/bsky-clients.ts";
 import { getProfileByDid } from "../../lib/registry.ts";
 import { effectiveUserProfile } from "../../lib/user-profile-source.ts";
-import { IS_DEV, loginOrigin } from "../../lib/env.ts";
 import { isSafeRelativePath } from "../../lib/security.ts";
 
 function safeNext(raw: string | null): string | null {
@@ -58,6 +57,27 @@ function safeHandle(raw: string | null): string | undefined {
     return undefined;
   }
   return handle;
+}
+
+export function shouldAutoOpenAppRegistration(
+  upgradeIntent: "app" | null,
+  managesApps: boolean,
+): boolean {
+  return upgradeIntent === "app" && !managesApps;
+}
+
+export function managedProfileRoleLabels(
+  appCount: number,
+  hostCount: number,
+): string[] {
+  return [
+    ...(appCount > 0
+      ? [appCount > 1 ? `Manages ${appCount} apps` : "Manages an app"]
+      : []),
+    ...(hostCount > 0
+      ? [hostCount > 1 ? `Manages ${hostCount} hosts` : "Manages a host"]
+      : []),
+  ];
 }
 
 const APP_UPGRADE_COPY = {
@@ -164,13 +184,12 @@ async function AccountPage(
   const [loginConnections, managedHosts, managedApps] = await Promise.all([
     listLoginConnectionsForAccount(user.did).catch(() => []),
     listManagedAccountHosts(user.did).catch(() => []),
-    listVisibleAppListingsByAccountDid(user.did).catch(() => []),
+    listManagedAppListingsByAccountDid(user.did).catch(() => []),
   ]);
   const primaryManagedHost = managedHosts[0] ?? null;
   const managesHost = managedHosts.length > 0;
-  const isAppAccount = ctx.state.accountType === "project";
-  const managesApps = isAppAccount || managedApps.length > 0;
-  const managementSession = isAppAccount || primaryManagedHost
+  const managesApps = managedApps.length > 0;
+  const managementSession = managesApps || primaryManagedHost
     ? await getValidSession(user.did, { quiet: true }).catch(() => null)
     : null;
   const managementScope = managementSession
@@ -183,7 +202,10 @@ async function AccountPage(
       app.legacyProfileDid === user.did ||
       (!app.atstoreListingUri && app.profileDid === user.did)
     )?.name ?? displayName;
-  const autoOpenAppUpgrade = upgradeIntent === "app";
+  const autoOpenAppUpgrade = shouldAutoOpenAppRegistration(
+    upgradeIntent,
+    managesApps,
+  );
   const showAdvancedDetails = managesApps || managesHost;
   const rememberedAccounts = account.rememberedAccounts;
   const hasKnownHost = Boolean(accountHost?.displayName);
@@ -193,31 +215,14 @@ async function AccountPage(
     : "Account host not detected";
   const hostDirectoryUrl = hostRoute?.directoryUrl ?? "/hosts";
   const browserLabel = currentBrowserLabel(ctx.req.headers);
-  const roleLabels = [
-    ...(managesApps
-      ? [
-        managedApps.length > 1
-          ? `Manages ${managedApps.length} apps`
-          : "Manages an app",
-      ]
-      : []),
-    ...(managesHost
-      ? [
-        managedHosts.length > 1
-          ? `Manages ${managedHosts.length} hosts`
-          : "Manages a host",
-      ]
-      : []),
-  ];
+  const roleLabels = managedProfileRoleLabels(
+    managedApps.length,
+    managedHosts.length,
+  );
   const microblogViewer = getProfileMicroblogViewer(
     appUser?.bskyClientId ?? null,
   );
   const publicProfileUrl = microblogViewer.profileUrl(user.handle);
-  const passkeyManagementUrl = new URL(
-    "/passkeys",
-    IS_DEV ? ctx.url.origin : loginOrigin(),
-  );
-  passkeyManagementUrl.searchParams.set("handle", user.handle);
 
   return (
     <div id="page-top">
@@ -246,7 +251,7 @@ async function AccountPage(
                 copy={APP_UPGRADE_COPY}
               />
               <p>
-                Manage your profile, connected apps, and account security.
+                Manage your profile, connected apps, and saved accounts.
               </p>
             </header>
 
@@ -281,17 +286,17 @@ async function AccountPage(
                 </div>
               </div>
               <div class="account-dashboard-hero-side">
-                <div class="account-dashboard-actions">
+                <div class="account-dashboard-owner-actions">
                   {(managesApps || managesHost) && (
                     <a
                       href="/account/products"
                       class="account-dashboard-button account-dashboard-button--primary"
                     >
                       <AccountIcon name="apps" />
-                      <span>Manage products</span>
+                      <span>Manage listings</span>
                     </a>
                   )}
-                  {isAppAccount && (
+                  {managesApps && (
                     <OwnerManagementLink
                       authorized={appAuthorized}
                       kind="app"
@@ -304,22 +309,6 @@ async function AccountPage(
                       initialHandle={user.handle}
                     />
                   )}
-                  <ProfileSourcePanel
-                    did={user.did}
-                    currentHandle={user.handle}
-                    rememberedAccounts={rememberedAccounts}
-                    profileUrl={publicProfileUrl}
-                    profileViewerName={microblogViewer.name}
-                    displayName={displayName}
-                    bio={effectiveProfile.bio}
-                    avatarUrl={avatarUrl}
-                    microblogVisible={appUser?.bskyButtonVisible ?? true}
-                    websiteUrl={effectiveProfile.websiteUrl}
-                    websiteVisible={effectiveProfile.hasAtmosphereProfile
-                      ? Boolean(effectiveProfile.websiteUrl)
-                      : appUser?.websiteVisible ?? false}
-                    hasAtmosphereProfile={effectiveProfile.hasAtmosphereProfile}
-                  />
                   {managesHost && primaryManagedHost && (
                     <OwnerManagementLink
                       authorized={hostAuthorized}
@@ -336,6 +325,22 @@ async function AccountPage(
                     />
                   )}
                 </div>
+                <ProfileSourcePanel
+                  did={user.did}
+                  currentHandle={user.handle}
+                  rememberedAccounts={rememberedAccounts}
+                  profileUrl={publicProfileUrl}
+                  profileViewerName={microblogViewer.name}
+                  displayName={displayName}
+                  bio={effectiveProfile.bio}
+                  avatarUrl={avatarUrl}
+                  microblogVisible={appUser?.bskyButtonVisible ?? true}
+                  websiteUrl={effectiveProfile.websiteUrl}
+                  websiteVisible={effectiveProfile.hasAtmosphereProfile
+                    ? Boolean(effectiveProfile.websiteUrl)
+                    : appUser?.websiteVisible ?? false}
+                  hasAtmosphereProfile={effectiveProfile.hasAtmosphereProfile}
+                />
               </div>
             </article>
 
@@ -343,23 +348,22 @@ async function AccountPage(
               {(managesApps || managesHost) && (
                 <DashboardSection
                   id="managed-products"
-                  eyebrow="Owner workspace"
-                  title="Managed products"
+                  eyebrow="Profiles"
+                  title="Apps and hosts"
                   icon="apps"
-                  description="Keep app profiles, account hosts, and universal login registrations together without merging their public identities."
+                  description="Use this account for one app, one or more account hosts, or both."
                   badge={`${managedApps.length} app${
                     managedApps.length === 1 ? "" : "s"
                   } · ${managedHosts.length} host${
                     managedHosts.length === 1 ? "" : "s"
                   }`}
                 >
-                  <div class="account-dashboard-passkey">
+                  <div class="account-dashboard-callout account-dashboard-callout--section-content">
                     <div>
-                      <strong>One place for every role</strong>
+                      <strong>Manage each profile separately</strong>
                       <p>
-                        Connect an app to a host as the same product or as a
-                        separately operated service, and manage approvals when
-                        the owner accounts differ.
+                        Your app and each host have their own details and
+                        images.
                       </p>
                     </div>
                     <a
@@ -367,7 +371,7 @@ async function AccountPage(
                       class="account-dashboard-button account-dashboard-button--primary"
                     >
                       <AccountIcon name="apps" />
-                      <span>Open managed products</span>
+                      <span>Manage listings</span>
                     </a>
                   </div>
                 </DashboardSection>
@@ -392,44 +396,16 @@ async function AccountPage(
                 >
                   <ApplicationsPanel
                     connections={loginConnections}
-                    showDeveloperAction
                   />
                 </DashboardSection>
               </div>
-
-              <DashboardSection
-                id="passkeys"
-                eyebrow="Security"
-                title="Passkeys"
-                icon="key"
-                description="Use your device to confirm this account faster in Login with Atmosphere."
-                badge="Optional"
-              >
-                <div class="account-dashboard-passkey">
-                  <div>
-                    <strong>Faster account confirmation</strong>
-                    <p>
-                      A passkey lets you confirm this account without signing in
-                      again. Your account host may still ask you to approve a
-                      new app or feature.
-                    </p>
-                  </div>
-                  <a
-                    href={passkeyManagementUrl.toString()}
-                    class="account-dashboard-button account-dashboard-button--primary"
-                  >
-                    <AccountIcon name="key" />
-                    <span>Manage passkeys</span>
-                  </a>
-                </div>
-              </DashboardSection>
 
               <DashboardSection
                 id="saved-accounts"
                 eyebrow="This browser"
                 title="Saved accounts"
                 icon="browser"
-                description="Atmosphere can offer these accounts when you switch accounts on this browser."
+                description="Login with Atmosphere can offer these accounts when you switch accounts in this browser."
                 badge={rememberedCountLabel(rememberedAccounts.length)}
               >
                 <div class="account-dashboard-browser-summary">
@@ -632,9 +608,8 @@ function HostAccountRouterPanel(
             )
             : (
               <p>
-                Atmosphere could not identify where this account is hosted yet.
-                Host management will appear here when we know where the account
-                lives.
+                This site could not identify where this account is hosted yet.
+                Host management will appear here when the account host is known.
               </p>
             )}
           <div class="account-dashboard-host-router-actions">
@@ -681,10 +656,9 @@ function HostAccountRouterPanel(
   );
 }
 
-function ApplicationsPanel(
-  { connections, showDeveloperAction }: {
+export function ApplicationsPanel(
+  { connections }: {
     connections: LoginConnection[];
-    showDeveloperAction: boolean;
   },
 ) {
   if (connections.length === 0) {
@@ -703,17 +677,6 @@ function ApplicationsPanel(
             </span>
           </div>
         </article>
-        {showDeveloperAction && (
-          <div class="account-dashboard-panel-actions">
-            <a
-              href="/account/developer/apps"
-              class="account-dashboard-button account-dashboard-button--secondary"
-            >
-              <AccountIcon name="code" />
-              <span>Register an app</span>
-            </a>
-          </div>
-        )}
       </div>
     );
   }
@@ -770,17 +733,6 @@ function ApplicationsPanel(
           </article>
         ))}
       </div>
-      {showDeveloperAction && (
-        <div class="account-dashboard-panel-actions">
-          <a
-            href="/account/developer/apps"
-            class="account-dashboard-button account-dashboard-button--secondary"
-          >
-            <AccountIcon name="code" />
-            <span>Register an app</span>
-          </a>
-        </div>
-      )}
     </>
   );
 }
@@ -863,8 +815,7 @@ type AccountIconName =
   | "directory"
   | "edit"
   | "external"
-  | "host"
-  | "key";
+  | "host";
 
 function AccountIcon(
   { name, class: className = "" }: { name: AccountIconName; class?: string },
@@ -935,15 +886,6 @@ function AccountIcon(
           <path d="M4.5 10.5 12 4l7.5 6.5" />
           <path d="M6.5 9.5V19h11V9.5" />
           <path d="M10 19v-5h4v5" />
-        </svg>
-      );
-    case "key":
-      return (
-        <svg {...common}>
-          <circle cx="8.5" cy="12" r="3.5" />
-          <path d="M12 12h8" />
-          <path d="M17 12v3" />
-          <path d="M20 12v2" />
         </svg>
       );
   }

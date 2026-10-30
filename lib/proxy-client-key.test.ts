@@ -66,13 +66,13 @@ Deno.test("proxy client keys reject forgery, wrong secrets, and expiry", async (
 
 Deno.test("untrusted direct appview requests cannot vary identity with forwarded headers", async () => {
   const first = new Request(
-    "https://appview.example/api/login/passkeys/options",
+    "https://appview.example/api/login/selection",
     {
       headers: { "x-forwarded-for": "198.51.100.1" },
     },
   );
   const second = new Request(
-    "https://appview.example/api/login/passkeys/options",
+    "https://appview.example/api/login/selection",
     {
       headers: { "x-forwarded-for": "198.51.100.2" },
     },

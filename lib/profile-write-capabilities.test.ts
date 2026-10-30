@@ -4,7 +4,7 @@ import {
   userProfileWriteCapabilities,
 } from "./profile-write-capabilities.ts";
 
-Deno.test("app profile writes request media only for new blob bytes", () => {
+Deno.test("app profile writes always use the complete app capability", () => {
   assertEquals(appProfileWriteCapabilities({}), ["app"]);
   assertEquals(
     appProfileWriteCapabilities({
@@ -17,13 +17,13 @@ Deno.test("app profile writes request media only for new blob bytes", () => {
     appProfileWriteCapabilities({
       bannerUpload: { dataBase64: "aGVsbG8=" },
     }),
-    ["app", "media"],
+    ["app"],
   );
   assertEquals(
     appProfileWriteCapabilities({
       screenshotUploads: [{ dataBase64: "aGVsbG8=" }],
     }),
-    ["app", "media"],
+    ["app"],
   );
   assertEquals(
     appProfileWriteCapabilities({

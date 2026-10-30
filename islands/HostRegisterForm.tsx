@@ -94,10 +94,11 @@ export default function HostRegisterForm(
       {linkingApp && (
         <section class="host-register-form-section host-register-link-section">
           <header class="host-register-section-head">
-            <p class="text-eyebrow">Connected product</p>
+            <p class="text-eyebrow">Connected app</p>
             <h2>{linkingApp.name}</h2>
             <p class="text-body">
-              The new host will be linked as soon as registration succeeds.
+              This host will be connected to the app when registration succeeds.
+              Each keeps its own public profile.
             </p>
           </header>
           <input
@@ -107,8 +108,8 @@ export default function HostRegisterForm(
           />
           <p class="profile-form-hint">
             {linkingApp.relationship === "same_operator"
-              ? "Same operator — this is a separate service run by the app owner."
-              : "Same product — this host is part of the app."}
+              ? "Related service — this host and app are run by the same operator."
+              : "Account hosting — this host provides accounts for the app."}
           </p>
         </section>
       )}
@@ -440,18 +441,18 @@ export default function HostRegisterForm(
         <section class="host-register-form-section host-register-app-section">
           <div>
             <p class="text-eyebrow">Apps and hosts</p>
-            <h2>Connect products without merging them</h2>
+            <h2>Connect apps to this host</h2>
             <p class="text-body">
-              Host records describe where accounts live. Your owner workspace
-              can connect this host to one or more separately managed app
-              profiles after registration.
+              If this account also represents an app, you can connect that app
+              after creating the host profile. Each keeps its own public
+              profile.
             </p>
           </div>
           <a
             class="profile-form-button-secondary profile-form-button-secondary--lg"
             href="/account/products"
           >
-            View managed products
+            Manage listings
           </a>
         </section>
       )}

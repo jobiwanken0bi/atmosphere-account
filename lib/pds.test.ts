@@ -2,6 +2,7 @@ import {
   fetchBlobPublic,
   isPdsScopeMissingError,
   PdsRecordWriteError,
+  putRecordInputForTest,
   readPdsErrorBodyForTest,
   readPdsJsonForTest,
 } from "./pds.ts";
@@ -40,6 +41,35 @@ Deno.test("PDS scope failures are distinguishable from other write errors", () =
     ),
     false,
   );
+});
+
+Deno.test("PDS putRecord includes explicit record compare-and-swap values", () => {
+  const create = putRecordInputForTest(
+    "did:plc:test",
+    "example.collection",
+    "self",
+    { value: "new" },
+    { swapRecord: null },
+  );
+  assertEquals(Object.hasOwn(create, "swapRecord"), true);
+  assertEquals(create.swapRecord, null);
+
+  const update = putRecordInputForTest(
+    "did:plc:test",
+    "example.collection",
+    "self",
+    { value: "updated" },
+    { swapRecord: "bafyreicurrent" },
+  );
+  assertEquals(update.swapRecord, "bafyreicurrent");
+
+  const unconditional = putRecordInputForTest(
+    "did:plc:test",
+    "example.collection",
+    "self",
+    { value: "legacy" },
+  );
+  assertEquals(Object.hasOwn(unconditional, "swapRecord"), false);
 });
 
 Deno.test("PDS error bodies are bounded before custom errors retain them", async () => {

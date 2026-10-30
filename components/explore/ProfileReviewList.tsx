@@ -102,7 +102,7 @@ export default function ProfileReviewList(
                           </span>
                         )}
                     </span>
-                    <div>
+                    <div class="profile-review-author-meta">
                       <p class="profile-review-author">
                         {review.reviewerName ?? review.reviewerHandle ??
                           copy.reviewerFallback}

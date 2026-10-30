@@ -4,7 +4,6 @@ import ContextualSignInDialog from "./ContextualSignInDialog.tsx";
 interface Props {
   authorization: ContextualReauthorization;
   onClose: () => void;
-  closeLabel?: string;
   currentHandle: string;
   currentDid: string;
   rememberedAccounts?: Array<{ did: string; handle: string }>;
@@ -22,7 +21,6 @@ export default function ContextualReauthorizationDialog(
   {
     authorization,
     onClose,
-    closeLabel,
     currentHandle,
     currentDid,
     rememberedAccounts = [],
@@ -41,7 +39,6 @@ export default function ContextualReauthorizationDialog(
       initialHandle={currentHandle}
       initialDid={currentDid}
       rememberedAccounts={rememberedAccounts}
-      closeLabel={closeLabel}
       allowAccountCreation={false}
       forceReauthorization
       restrictToInitialHandle={restrictToCurrentAccount}

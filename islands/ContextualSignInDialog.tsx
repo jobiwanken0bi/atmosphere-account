@@ -18,7 +18,6 @@ interface Props {
   capabilities: readonly OAuthCapability[];
   targetName: string;
   onClose: () => void;
-  closeLabel?: string;
   intent?: "user" | "project";
   rememberedAccounts?: Array<{ did: string; handle: string }>;
   initialHandle?: string;
@@ -27,6 +26,7 @@ interface Props {
   allowAccountCreation?: boolean;
   forceReauthorization?: boolean;
   restrictToInitialHandle?: boolean;
+  chooseAnotherAccount?: boolean;
 }
 
 /**
@@ -42,7 +42,6 @@ export default function ContextualSignInDialog(
     capabilities,
     targetName,
     onClose,
-    closeLabel = "Cancel",
     intent,
     rememberedAccounts = [],
     initialHandle,
@@ -51,6 +50,7 @@ export default function ContextualSignInDialog(
     allowAccountCreation: allowAccountCreationOverride,
     forceReauthorization = false,
     restrictToInitialHandle = false,
+    chooseAnotherAccount = false,
   }: Props,
 ) {
   const copy = authActionCopy(action, targetName);
@@ -141,6 +141,7 @@ export default function ContextualSignInDialog(
           submitLabel="Continue"
           forceReauthorization={forceReauthorization}
           lockInitialHandle={restrictAccount}
+          chooseAnotherAccount={chooseAnotherAccount}
           onAuthorizationStart={onAuthorizationStart}
         />
         {allowAccountCreation && (
@@ -149,15 +150,6 @@ export default function ContextualSignInDialog(
             <a href={accountCreationFallbackHref(fallbackHref)}>Create one</a>.
           </p>
         )}
-        <div class="profile-review-composer-actions">
-          <button
-            type="button"
-            class="profile-form-button-link"
-            onClick={onClose}
-          >
-            {closeLabel}
-          </button>
-        </div>
       </div>
     </div>,
     document.body,

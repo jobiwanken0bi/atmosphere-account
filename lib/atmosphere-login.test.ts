@@ -5,6 +5,9 @@ import {
   isUnregisteredDevLoginReturnAllowed,
   type LoginApp,
   loginAppManifestUrl,
+  loginAppProfileIdentityChanged,
+  loginAppProfileIdentityFromListing,
+  loginAppStatusAfterProfileIdentityChange,
   LoginRequestError,
   readLoginRequest,
   resolveLoginAppForRequest,
@@ -29,6 +32,12 @@ function app(overrides: Partial<LoginApp> = {}): LoginApp {
     appName: "Example App",
     appUri: "https://app.example.com",
     logoUri: "https://app.example.com/icon.png",
+    appDid: "did:plc:owner",
+    appProfileUri: "at://did:plc:owner/app.profile/example",
+    appProfileSlug: "example",
+    linkStatus: "linked",
+    identityAvailable: true,
+    loginAvailability: "available",
     allowedReturnUris: [
       "https://app.example.com/auth/atmosphere/selected",
     ],
@@ -40,6 +49,7 @@ function app(overrides: Partial<LoginApp> = {}): LoginApp {
     reviewDecisionAt: null,
     reviewDecisionBy: null,
     reviewDecisionReason: null,
+    reviewRevision: "review-1",
     contactDid: "did:plc:owner",
     preferredAccountHost: null,
     registered: true,
@@ -65,6 +75,82 @@ const preferredClaim: AccountHostClaim = {
   updatedAt: 1,
 };
 
+const preferredAppProfile = {
+  did: "did:plc:owner",
+  listingId: "app-example",
+  profileUri: "at://did:plc:owner/app.profile/example",
+  slug: "example",
+  name: "Example App",
+  homepage: "https://app.example.com/",
+  logoUri: "https://app.example.com/icon.png",
+  updatedAt: 1,
+  loginAvailability: "available" as const,
+  identityFingerprint: "profile-v1",
+};
+
+Deno.test("app profile identity is canonical and versioned for trust invalidation", () => {
+  const first = loginAppProfileIdentityFromListing("did:plc:owner", {
+    id: "app-example",
+    canonicalUri: "at://did:plc:owner/app.profile/example",
+    slug: "example",
+    name: "Example App",
+    primaryUrl: "https://app.example.com",
+    iconUrl: "https://app.example.com/icon.png",
+    updatedAt: 100,
+  });
+  const updated = { ...first, identityFingerprint: "new-profile-version" };
+  assertEquals(
+    loginAppProfileIdentityChanged({
+      appName: first.name,
+      appUri: first.homepage,
+      logoUri: first.logoUri,
+      identityFingerprint: first.identityFingerprint,
+    }, first),
+    false,
+  );
+  assertEquals(
+    loginAppProfileIdentityChanged({
+      appName: first.name,
+      appUri: first.homepage,
+      logoUri: first.logoUri,
+      identityFingerprint: first.identityFingerprint,
+    }, updated),
+    true,
+  );
+  assertEquals(
+    loginAppStatusAfterProfileIdentityChange(
+      "trusted",
+      "https://app.example.com/client.json",
+      ["https://app.example.com/callback"],
+    ),
+    "unverified",
+  );
+  assertEquals(
+    loginAppStatusAfterProfileIdentityChange(
+      "blocked",
+      "https://app.example.com/client.json",
+      ["https://app.example.com/callback"],
+    ),
+    "blocked",
+  );
+});
+
+Deno.test("moderation suspends login without erasing the owner-facing app identity", () => {
+  const profile = loginAppProfileIdentityFromListing("did:plc:owner", {
+    id: "app-example",
+    canonicalUri: "at://did:plc:owner/app.profile/example",
+    slug: "example",
+    name: "Example App",
+    primaryUrl: "https://app.example.com",
+    iconUrl: "https://app.example.com/icon.png",
+    updatedAt: 100,
+  }, "moderated");
+
+  assertEquals(profile.name, "Example App");
+  assertEquals(profile.profileUri, "at://did:plc:owner/app.profile/example");
+  assertEquals(profile.loginAvailability, "moderated");
+});
+
 Deno.test("preferred account host registration requires the app owner's claim", async () => {
   const verified = await verifyPreferredAccountHostForOwner(
     "did:plc:owner",
@@ -72,6 +158,8 @@ Deno.test("preferred account host registration requires the app owner's claim", 
     {
       getHost: () => Promise.resolve(preferredHost),
       getClaim: () => Promise.resolve(preferredClaim),
+      getAppProfile: () => Promise.resolve(preferredAppProfile),
+      listVerifiedLinks: () => Promise.resolve([]),
     },
   );
   assertEquals(verified, preferredHost.host);
@@ -83,6 +171,12 @@ Deno.test("preferred account host registration requires the app owner's claim", 
       {
         getHost: () => Promise.resolve(preferredHost),
         getClaim: () => Promise.resolve(preferredClaim),
+        getAppProfile: () =>
+          Promise.resolve({
+            ...preferredAppProfile,
+            did: "did:plc:different-owner",
+          }),
+        listVerifiedLinks: () => Promise.resolve([]),
       },
     );
     throw new Error("Expected preferred host verification to fail");
@@ -101,10 +195,63 @@ Deno.test("preferred account host registration fails closed when seeded ownershi
         getHost: () =>
           Promise.resolve({ ...preferredHost, source: "seeded" as const }),
         getClaim: () => Promise.resolve(preferredClaim),
+        getAppProfile: () => Promise.resolve(preferredAppProfile),
         verifyOwner: () => Promise.resolve(null),
+        listVerifiedLinks: () => Promise.resolve([]),
       },
     );
     throw new Error("Expected stale seeded ownership to be rejected");
+  } catch (err) {
+    if (!(err instanceof LoginRequestError)) throw err;
+    assertEquals(err.status, 400);
+  }
+});
+
+Deno.test("preferred account host accepts a currently verified app-host relationship", async () => {
+  const verified = await verifyPreferredAccountHostForOwner(
+    "did:plc:owner",
+    preferredHost.host,
+    {
+      getHost: () => Promise.resolve(preferredHost),
+      getClaim: () =>
+        Promise.resolve({
+          ...preferredClaim,
+          claimantDid: "did:plc:host-operator",
+        }),
+      getAppProfile: () => Promise.resolve(preferredAppProfile),
+      verifyOwner: () => Promise.resolve("did:plc:host-operator"),
+      listVerifiedLinks: () =>
+        Promise.resolve([{
+          host: preferredHost.host,
+          relationship: "same_operator",
+        }]),
+    },
+  );
+  assertEquals(verified, preferredHost.host);
+});
+
+Deno.test("host-only directory links cannot recommend a preferred host", async () => {
+  try {
+    await verifyPreferredAccountHostForOwner(
+      "did:plc:owner",
+      preferredHost.host,
+      {
+        getHost: () => Promise.resolve(preferredHost),
+        getClaim: () =>
+          Promise.resolve({
+            ...preferredClaim,
+            claimantDid: "did:plc:host-operator",
+          }),
+        getAppProfile: () => Promise.resolve(preferredAppProfile),
+        verifyOwner: () => Promise.resolve("did:plc:host-operator"),
+        listVerifiedLinks: () =>
+          Promise.resolve([{
+            host: preferredHost.host,
+            relationship: "host_only",
+          }]),
+      },
+    );
+    throw new Error("Expected host-only relationship to be rejected");
   } catch (err) {
     if (!(err instanceof LoginRequestError)) throw err;
     assertEquals(err.status, 400);
@@ -117,6 +264,8 @@ Deno.test("preferred account host is re-verified when the picker opens", async (
     {
       getHost: () => Promise.resolve(preferredHost),
       getClaim: () => Promise.resolve(preferredClaim),
+      getAppProfile: () => Promise.resolve(preferredAppProfile),
+      listVerifiedLinks: () => Promise.resolve([]),
     },
   );
   assertEquals(resolved?.host, preferredHost.host);
@@ -126,6 +275,8 @@ Deno.test("preferred account host is re-verified when the picker opens", async (
     {
       getHost: () => Promise.resolve(preferredHost),
       getClaim: () => Promise.resolve(null),
+      getAppProfile: () => Promise.resolve(preferredAppProfile),
+      listVerifiedLinks: () => Promise.resolve([]),
     },
   );
   assertEquals(revoked, null);
@@ -139,6 +290,8 @@ Deno.test("preferred account host is re-verified when the picker opens", async (
           signupStatus: "closed" as const,
         }),
       getClaim: () => Promise.resolve(preferredClaim),
+      getAppProfile: () => Promise.resolve(preferredAppProfile),
+      listVerifiedLinks: () => Promise.resolve([]),
     },
   );
   assertEquals(closed, null);
@@ -385,6 +538,63 @@ Deno.test("resolveLoginAppForRequest normalizes client IDs before registered loo
     "https://app.example.com/callback",
   );
 });
+
+Deno.test("resolveLoginAppForRequest rejects an orphaned owner registration", async () => {
+  try {
+    await resolveLoginAppForRequest({
+      clientId: "https://app.example.com/client.json",
+      returnUri: "https://app.example.com/callback",
+      state: "state",
+      scope: null,
+    }, {
+      getLoginApp: (clientId) =>
+        Promise.resolve(app({
+          clientId,
+          appName: "Unlinked login configuration",
+          appUri: null,
+          logoUri: null,
+          appDid: "did:plc:owner",
+          appProfileUri: "at://did:plc:owner/app.profile/deleted",
+          appProfileSlug: null,
+          linkStatus: "linked",
+          identityAvailable: false,
+          allowedReturnUris: ["https://app.example.com/callback"],
+        })),
+    });
+    throw new Error("Expected orphaned registration to be rejected");
+  } catch (err) {
+    if (!(err instanceof LoginRequestError)) throw err;
+    assertEquals(err.status, 403);
+  }
+});
+
+for (const availability of ["moderated", "taken_down", "deleted"] as const) {
+  Deno.test(`resolveLoginAppForRequest rejects a ${availability} app profile`, async () => {
+    try {
+      await resolveLoginAppForRequest({
+        clientId: "https://app.example.com/client.json",
+        returnUri: "https://app.example.com/callback",
+        state: "state",
+        scope: null,
+      }, {
+        getLoginApp: (clientId) =>
+          Promise.resolve(app({
+            clientId,
+            loginAvailability: availability,
+            allowedReturnUris: ["https://app.example.com/callback"],
+          })),
+      });
+      throw new Error("Expected unavailable app profile to be rejected");
+    } catch (err) {
+      if (!(err instanceof LoginRequestError)) throw err;
+      assertEquals(err.status, 403);
+      assertEquals(
+        err.message,
+        "This app is not available for Login with Atmosphere.",
+      );
+    }
+  });
+}
 
 Deno.test("resolveLoginAppForRequest keeps query strings exact for registered callbacks", async () => {
   const resolved = await resolveLoginAppForRequest({

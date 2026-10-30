@@ -8,7 +8,6 @@ import { renderToString } from "preact-render-to-string";
 import { OAUTH_ACTIONS } from "../lib/oauth-action.ts";
 import {
   authActionCopy,
-  authMediaContext,
   AuthorizationExitLink,
   permissionStatusCopy,
   PermissionUpgradeForm,
@@ -145,7 +144,7 @@ Deno.test("permission upgrade forms retain complete project context", () => {
     user: { did: "did:plc:app", handle: "app.example" },
     returnTo: "/apps/manage?new=1#profile",
     intent: "project",
-    capabilities: ["app", "media"],
+    capabilities: ["app"],
     action: "app",
     targetName: "Example App",
   }));
@@ -165,7 +164,7 @@ Deno.test("permission upgrade forms retain complete project context", () => {
   assertEquals(count(html, 'name="action" value="app"'), 2);
   assertEquals(count(html, 'name="name" value="Example App"'), 2);
   assertEquals(count(html, 'name="capability" value="app"'), 2);
-  assertEquals(count(html, 'name="capability" value="media"'), 2);
+  assertEquals(count(html, 'name="capability" value="media"'), 0);
   assertStringIncludes(html, "Approve and continue");
 });
 
@@ -201,16 +200,8 @@ Deno.test("identity-only confirmation does not claim to add permission", () => {
     "Confirm your account",
   );
   assertEquals(
-    signedInAuthHeading(["profile", "media"]),
+    signedInAuthHeading(["app"]),
     "Approve access to continue",
-  );
-});
-
-Deno.test("media permission gets explicit image-upload context", () => {
-  assertEquals(authMediaContext(["app"]), null);
-  assertEquals(
-    authMediaContext(["app", "media"]),
-    "This also allows the new image you selected to be uploaded.",
   );
 });
 

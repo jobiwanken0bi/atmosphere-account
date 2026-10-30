@@ -5,6 +5,7 @@ import {
   type BskyClient,
   getProfileMicroblogViewer,
 } from "./bsky-clients.ts";
+import { appStorePlatformForUrl } from "./app-store-links.ts";
 
 export type AppActionLinkKind =
   | "website"
@@ -139,16 +140,17 @@ export function appActionLinkKind(
   ) {
     return "tangled";
   }
+  const storePlatform = appStorePlatformForUrl(link.uri);
+  if (storePlatform) return storePlatform;
   if (
     text.includes("appstore") || text.includes("app store") ||
-    text.includes("ios") || host === "apps.apple.com"
+    text.includes("ios")
   ) {
     return "ios";
   }
   if (
     text.includes("playstore") || text.includes("play store") ||
-    text.includes("google play") || text.includes("android") ||
-    host === "play.google.com"
+    text.includes("google play") || text.includes("android")
   ) {
     return "android";
   }

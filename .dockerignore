@@ -5,6 +5,8 @@
 **/.env.test.local
 **/.env.production.local
 **/.env.local
+**/.env.*
+!**/.env.example
 
 # Fresh build directory
 **/_fresh
@@ -14,6 +16,14 @@
 
 # Local-only state and repo metadata
 .git
-local.db
+local.db*
+.claude
+.codex
+.agents
+.aws
 
 fly.toml
+
+# Local credential-rotation inventory and operator progress
+tools/railway-rotation/state
+tools/railway-rotation/__pycache__

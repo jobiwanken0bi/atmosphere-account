@@ -269,15 +269,14 @@ export function SignInPageContent(
     )
     ? account.user
     : null;
-  const mediaContext = authMediaContext(capabilities);
   const signInHeading = choosingAnotherAccount && action === "account"
     ? "Choose another account"
     : signedInUser
     ? signedInAuthHeading(capabilities)
     : copy.title;
-  const signInBody = `${
-    signedInUser ? copy.upgradeBody(signedInUser.handle) : copy.signInBody
-  }${mediaContext ? ` ${mediaContext}` : ""}`;
+  const signInBody = signedInUser
+    ? copy.upgradeBody(signedInUser.handle)
+    : copy.signInBody;
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -521,14 +520,6 @@ export function signedInAuthHeading(
   return capabilities.some((capability) => capability !== "identity")
     ? "Approve access to continue"
     : "Confirm your account";
-}
-
-export function authMediaContext(
-  capabilities: readonly OAuthCapability[],
-): string | null {
-  return capabilities.includes("media")
-    ? "This also allows the new image you selected to be uploaded."
-    : null;
 }
 
 export function permissionStatusCopy(state: string | null): string | null {

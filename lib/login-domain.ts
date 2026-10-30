@@ -9,7 +9,6 @@ import { IS_DEV, loginOrigin, siteOrigin } from "./env.ts";
 const LOGIN_HOST_PATHS = [
   "/login/select",
   "/signin",
-  "/passkeys",
   "/oauth/create",
   "/oauth/login",
   "/oauth/callback",
@@ -19,6 +18,11 @@ const LOGIN_HOST_PATHS = [
   "/oauth/switch",
   "/oauth/forget",
   "/api/login/selection",
+  "/api/login/account-hosts",
+  "/api/identity/preview",
+  // Each origin must report its own health to the deployment router.
+  "/api/health",
+  "/api/health/ready",
   "/api/locale",
   "/favicon.ico",
   "/union.svg",
@@ -36,9 +40,6 @@ function isAllowedLoginHostPath(pathname: string): boolean {
   }
   return pathname.startsWith("/_fresh/") ||
     pathname.startsWith("/assets/") ||
-    pathname.startsWith("/api/login/passkeys/") ||
-    pathname === "/api/passkeys" ||
-    pathname.startsWith("/api/passkeys/") ||
     pathname.startsWith("/api/registry/avatar/");
 }
 

@@ -55,11 +55,11 @@ Deno.test("ordinary actions name the task without permission jargon", () => {
 Deno.test("app and host management state what access is approved", () => {
   assertStringIncludes(
     authActionCopy("app", "Grain").signInBody,
-    "publish and manage its app profile and listing",
+    "app profile, listing, and images",
   );
   assertStringIncludes(
     authActionCopy("host_manage", "Example Host").signInBody,
-    "publish and manage its host profile",
+    "host profile and images",
   );
 });
 
@@ -75,11 +75,10 @@ Deno.test("account creation policy explicitly covers every OAuth action", () => 
     favorite: true,
     app: true,
     host_claim: false,
+    host_transfer: false,
     host_manage: false,
     app_host: false,
-    profile: true,
     developer: true,
-    passkey_manage: false,
     relationship_confirm: false,
     admin: false,
   } as const satisfies Record<typeof OAUTH_ACTIONS[number], boolean>;
@@ -93,16 +92,25 @@ Deno.test("account creation policy explicitly covers every OAuth action", () => 
   }
 });
 
-Deno.test("host claim and passkey copy match their actual account choice", () => {
+Deno.test("host claim copy matches its actual account choice", () => {
   const hostClaim = authActionCopy("host_claim", "Example Host");
   assertEquals(
     hostClaim.signInBody,
-    "Choose the account that should manage Example Host.",
+    "Choose the account that will claim and manage Example Host, including its public profile and images.",
   );
   assertEquals(hostClaim.signInBody.includes("hosted there"), false);
+});
 
-  const passkey = authActionCopy("passkey_manage", "alice.example");
-  assertEquals(passkey.title, "Verify your account");
-  assertStringIncludes(passkey.signInBody, "alice.example");
-  assertStringIncludes(passkey.upgradeBody("alice.example"), "passkeys");
+Deno.test("host transfer copy keeps the current manager in control", () => {
+  const transfer = authActionCopy("host_transfer", "Example Host");
+  assertEquals(transfer.eyebrow, "Change managing account");
+  assertEquals(transfer.title, "Login with Atmosphere");
+  assertEquals(
+    transfer.signInBody,
+    "Choose the new managing account for Example Host. The current manager stays in control until DNS verification succeeds.",
+  );
+  assertEquals(
+    transfer.upgradeBody("alice.example"),
+    "Continue as @alice.example and approve host-management access for Example Host. The current manager stays in control until DNS verification succeeds.",
+  );
 });

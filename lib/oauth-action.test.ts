@@ -30,9 +30,9 @@ Deno.test("combined actions keep each capability as a repeated parameter", () =>
       handle: "alice.example",
       next: "/account/products",
       action: "app_host",
-      capabilities: ["app", "host", "media"],
+      capabilities: ["app", "host"],
     }),
-    "/oauth/login?next=%2Faccount%2Fproducts&action=app_host&capability=app&capability=host&capability=media&handle=alice.example",
+    "/oauth/login?next=%2Faccount%2Fproducts&action=app_host&capability=app&capability=host&handle=alice.example",
   );
 });
 
@@ -57,13 +57,12 @@ Deno.test("each OAuth action accepts only its intended capability bundles", () =
     review_response: [["identity"]],
     report_review: [["identity"]],
     favorite: [["favorite"]],
-    app: [["app"], ["app", "media"]],
-    host_claim: [["identity"]],
-    host_manage: [["host"], ["host", "media"]],
-    app_host: [["app", "host"], ["media", "host", "app"]],
-    profile: [["profile"], ["profile", "media"]],
+    app: [["app"]],
+    host_claim: [["host"]],
+    host_transfer: [["host"]],
+    host_manage: [["host"]],
+    app_host: [["app", "host"]],
     developer: [["identity"]],
-    passkey_manage: [["identity"]],
     relationship_confirm: [["identity"]],
     admin: [["identity"]],
   } as const satisfies Record<
@@ -88,7 +87,7 @@ Deno.test("each OAuth action accepts only its intended capability bundles", () =
   // Repeated parameters are normalized before this check at HTTP boundaries,
   // but treating them as a set also keeps the policy stable for internal URLs.
   assertEquals(
-    isOAuthActionCapabilityRequest("app", ["app", "media", "app"]),
+    isOAuthActionCapabilityRequest("app_host", ["host", "app", "app"]),
     true,
   );
 });
@@ -104,15 +103,15 @@ Deno.test("OAuth action policy rejects cross-action and additive mismatches", ()
     { action: "review_manage", capabilities: ["review"] },
     { action: "legacy_review_manage", capabilities: ["legacy_review"] },
     { action: "report_review", capabilities: ["review"] },
-    { action: "host_claim", capabilities: ["host"] },
-    { action: "host_manage", capabilities: ["media"] },
+    { action: "host_claim", capabilities: ["identity"] },
+    { action: "host_manage", capabilities: ["favorite"] },
+    { action: "host_manage", capabilities: ["host", "identity"] },
+    { action: "app", capabilities: ["app", "identity"] },
     { action: "app", capabilities: ["app", "host"] },
     { action: "app_host", capabilities: ["app"] },
-    { action: "profile", capabilities: ["profile", "favorite"] },
     { action: "developer", capabilities: ["app"] },
-    { action: "passkey_manage", capabilities: ["profile"] },
     { action: "relationship_confirm", capabilities: ["host"] },
-    { action: "admin", capabilities: ["profile"] },
+    { action: "admin", capabilities: ["app"] },
   ];
 
   for (const request of invalid) {

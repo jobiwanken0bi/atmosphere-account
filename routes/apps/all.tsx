@@ -4,17 +4,22 @@ import Footer from "../../components/Footer.tsx";
 import StoreHero from "../../components/explore/StoreHero.tsx";
 import AppGrid from "../../components/explore/AppGrid.tsx";
 import AppBrowseControls from "../../islands/AppBrowseControls.tsx";
+import AppDirectoryOwnerCta, {
+  appRegistrationSigninHref,
+} from "../../components/explore/AppDirectoryOwnerCta.tsx";
 import { buildAccountMenuProps } from "../../lib/account-menu-props.ts";
 import {
   type AppDirectorySort,
+  type AppListing,
   type AppSearchResult,
+  getManagedAppListingByAccountDid,
 } from "../../lib/app-directory.ts";
 import { searchAppsFromAppview } from "../../lib/appview-client.ts";
 import { appCollectionLabel } from "../../lib/app-collections.ts";
 import { EdgeStaleCache } from "../../lib/edge-cache.ts";
-import ContextualSignInLink from "../../islands/ContextualSignInLink.tsx";
-import { oauthSigninUrl } from "../../lib/oauth-action.ts";
 import { getSessionForCapabilities } from "../../lib/oauth.ts";
+
+export { appRegistrationSigninHref };
 
 interface BrowseAppsData {
   query: string;
@@ -26,6 +31,7 @@ interface BrowseAppsData {
   result: AppSearchResult;
   account: ReturnType<typeof buildAccountMenuProps>;
   appAuthorized: boolean;
+  managedApp: AppListing | null | undefined;
 }
 
 const APP_BROWSE_CACHE_TTL_MS = 30 * 1000;
@@ -56,13 +62,16 @@ export const handler = define.handlers({
       .catch(() => emptyBrowseResult(page));
 
     const account = buildAccountMenuProps(ctx.state);
-    const appAuthorized = account.user
-      ? Boolean(
-        await getSessionForCapabilities(account.user.did, ["app"], {
+    const [appAuthorized, managedApp] = account.user
+      ? await Promise.all([
+        getSessionForCapabilities(account.user.did, ["app"], {
           quiet: true,
-        }).catch(() => null),
-      )
-      : false;
+        }).then(Boolean).catch(() => false),
+        getManagedAppListingByAccountDid(account.user.did).catch(() =>
+          undefined
+        ),
+      ])
+      : [false, null] as const;
     const data: BrowseAppsData = {
       query,
       tags,
@@ -73,6 +82,7 @@ export const handler = define.handlers({
       result,
       account,
       appAuthorized,
+      managedApp,
     };
 
     return ctx.render(<BrowseAppsPage data={data} />);
@@ -189,11 +199,10 @@ function BrowseAppsPage({ data }: { data: BrowseAppsData }) {
               tags={data.tags}
               sort={data.sort}
             />
-            <DirectoryRegisterCta
-              href="/apps/manage?new=1"
-              label="Register an app"
+            <AppDirectoryOwnerCta
               account={data.account}
               appAuthorized={data.appAuthorized}
+              managedApp={data.managedApp}
             />
           </div>
         </section>
@@ -297,52 +306,4 @@ function AppPagination(
         : <span class="app-pagination-link is-disabled">Next</span>}
     </nav>
   );
-}
-
-function DirectoryRegisterCta(
-  { href, label, account, appAuthorized }: {
-    href: string;
-    label: string;
-    account: ReturnType<typeof buildAccountMenuProps>;
-    appAuthorized: boolean;
-  },
-) {
-  return (
-    <div class="directory-register-cta">
-      {account.user && appAuthorized
-        ? (
-          <a href={href} class="directory-register-button">
-            <span class="directory-register-button-icon" aria-hidden="true">
-              +
-            </span>
-            <span>{label}</span>
-          </a>
-        )
-        : (
-          <ContextualSignInLink
-            href={appRegistrationSigninHref()}
-            returnTo="/apps/manage?new=1"
-            intent="project"
-            action="app"
-            capabilities={["app"]}
-            targetName="your app"
-            label={label}
-            className="directory-register-button"
-            leadingPlus
-            rememberedAccounts={account.rememberedAccounts}
-            initialHandle={account.user?.handle}
-          />
-        )}
-    </div>
-  );
-}
-
-export function appRegistrationSigninHref(): string {
-  return oauthSigninUrl({
-    next: "/apps/manage?new=1",
-    intent: "project",
-    action: "app",
-    capabilities: ["app"],
-    name: "your app",
-  });
 }

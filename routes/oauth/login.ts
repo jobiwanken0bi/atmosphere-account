@@ -21,7 +21,6 @@ import {
   RequestBodyTooLargeError,
 } from "../../lib/security.ts";
 import { enforceDurableRateLimit } from "../../lib/rate-limit.ts";
-import { isPasskeyManagementReturnTo } from "../../lib/passkey-management.ts";
 import {
   IDENTITY_OAUTH_SCOPE,
   normalizeOAuthCapabilities,
@@ -332,7 +331,6 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
         ...oauthOptions,
         continuation: continuation ?? undefined,
         chooseAnotherAccount,
-        reauthenticate: isPasskeyManagementReturnTo(returnTo),
         action: action ?? undefined,
         targetName: targetName ?? undefined,
         grantId: selectedGrantId,

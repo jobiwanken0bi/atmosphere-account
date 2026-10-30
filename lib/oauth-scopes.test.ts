@@ -42,7 +42,7 @@ Deno.test("capability parser rejects raw or unknown browser values", () => {
   assertEquals(normalizeOAuthCapabilities(["both"]), null);
 });
 
-Deno.test("review scope is narrow and media remains opt-in", () => {
+Deno.test("review scope is narrow", () => {
   const scope = scopeForCapabilities(["review"]);
   assertEquals(scopeTokens(scope), [
     "atproto",
@@ -50,19 +50,30 @@ Deno.test("review scope is narrow and media remains opt-in", () => {
   ]);
   assertEquals(hasOAuthCapabilities(scope, ["review"]), true);
   assertEquals(hasOAuthCapabilities(scope, ["review_manage"]), false);
-  assertEquals(hasOAuthCapabilities(scope, ["media"]), false);
+  assertEquals(hasOAuthCapabilities(scope, ["app"]), false);
 });
 
-Deno.test("scope upgrades retain existing capabilities without using metadata maximum", () => {
+Deno.test("app and host management include images without using metadata maximum", () => {
   const app = scopeForCapabilities(["app"]);
   const upgraded = scopeForCapabilities(["host"], app);
   assertEquals(hasOAuthCapabilities(upgraded, ["app", "host"]), true);
   assertEquals(hasOAuthCapabilities(upgraded, ["review", "favorite"]), false);
-  assertEquals(scopeTokens(upgraded).includes("blob:image/*"), false);
+  assertEquals(scopeTokens(upgraded).includes("blob:image/*"), true);
   assertEquals(
     scopeTokens(upgraded).includes("include:fyi.atstore.authBasic"),
     false,
   );
+});
+
+Deno.test("app and host grants are incomplete without image upload access", () => {
+  const appWithoutImages = scopeTokens(scopeForCapabilities(["app"]))
+    .filter((token) => token !== "blob:image/*")
+    .join(" ");
+  const hostWithoutImages = scopeTokens(scopeForCapabilities(["host"]))
+    .filter((token) => token !== "blob:image/*")
+    .join(" ");
+  assertEquals(hasOAuthCapabilities(appWithoutImages, ["app"]), false);
+  assertEquals(hasOAuthCapabilities(hostWithoutImages, ["host"]), false);
 });
 
 Deno.test("review management adds only update and delete to a prior create grant", () => {
@@ -98,24 +109,6 @@ Deno.test("legacy review creation and management stay action-attenuated", () => 
   );
 });
 
-Deno.test("user profile editing never requests delete access", () => {
-  const profile = scopeForCapabilities(["profile"]);
-  assertEquals(hasOAuthCapabilities(profile, ["profile"]), true);
-  assertEquals(
-    scopeTokens(profile).includes(
-      "repo:com.atmosphereaccount.registry.profile?action=create&action=update",
-    ),
-    true,
-  );
-  assertEquals(
-    scopeCoversScope(
-      profile,
-      "atproto repo:com.atmosphereaccount.registry.profile?action=delete",
-    ),
-    false,
-  );
-});
-
 Deno.test("legacy broad grants satisfy the progressive capability checks", () => {
   assertEquals(
     hasOAuthCapabilities(LEGACY_OAUTH_SCOPE, [
@@ -127,8 +120,6 @@ Deno.test("legacy broad grants satisfy the progressive capability checks", () =>
       "favorite",
       "app",
       "host",
-      "profile",
-      "media",
     ]),
     true,
   );

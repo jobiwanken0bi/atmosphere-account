@@ -51,11 +51,13 @@ import { hasValidLoginSelectionContinuationBinding } from "./oauth-continuation.
 import { readResponseTextWithLimit } from "./security.ts";
 import { currentOAuthGrantContext } from "./oauth-grant-context.ts";
 import { decryptStoredSecret, encryptStoredSecret } from "./secret-storage.ts";
+import { OAuthStateCleanup } from "./oauth-state-cleanup.ts";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_REFRESH_THRESHOLD_MS = 60 * 1000;
 const IDENTITY_RECHECK_INTERVAL_MS = 10 * 60 * 1000;
 const MAX_OAUTH_SERVER_RESPONSE_BYTES = 64 * 1024;
+const oauthStateCleanup = new OAuthStateCleanup();
 
 export class OAuthNotConfiguredError extends Error {
   constructor() {
@@ -80,7 +82,6 @@ export interface OAuthClientOptions {
   continuation?: "login_selection";
   /** Restore the alternate-account chooser if authorization is interrupted. */
   chooseAnotherAccount?: boolean;
-  reauthenticate?: boolean;
   /** Context retained only to explain a partial/conflicting grant on retry. */
   action?: OAuthAction;
   targetName?: string;
@@ -240,7 +241,7 @@ interface FlowState {
   did?: string;
   handle?: string;
   pdsUrl: string;
-  prompt?: "create" | "login";
+  prompt?: "create";
   continuation?: "login_selection";
   chooseAnotherAccount?: boolean;
   returnTo?: string;
@@ -355,6 +356,7 @@ async function saveFlowState(state: FlowState): Promise<void> {
            expires_at = excluded.expires_at`,
       args: [state.state, value, Date.now() + STATE_TTL_MS],
     });
+    await oauthStateCleanup.run(c);
   });
 }
 
@@ -943,11 +945,6 @@ export async function startLogin(
     : DEFAULT_OAUTH_SCOPE);
   const config = oauthClientConfig({ ...options, scope: requestedScope });
   const asMeta = await discoverAuthServer(id.pdsUrl);
-  const prompt = oauthReauthenticationPrompt(
-    asMeta.prompt_values_supported,
-    options?.reauthenticate === true,
-    new URL(asMeta.issuer).hostname,
-  );
   const clientId = oauthClientId(config);
 
   const dpop = await generateEs256KeyPair();
@@ -975,7 +972,6 @@ export async function startLogin(
     did: id.did,
     handle: id.handle,
     pdsUrl: id.pdsUrl,
-    prompt,
     continuation: options?.continuation,
     chooseAnotherAccount: options?.chooseAnotherAccount,
     returnTo: returnTo ?? undefined,
@@ -992,34 +988,6 @@ export async function startLogin(
   authUrl.searchParams.set("request_uri", parRes.requestUri);
 
   return { redirectUrl: authUrl.toString(), state, browserBinding };
-}
-
-export class OAuthReauthenticationUnsupportedError extends Error {
-  constructor(host: string) {
-    super(
-      `${host} does not advertise the OAuth login prompt required for passkey changes`,
-    );
-    this.name = "OAuthReauthenticationUnsupportedError";
-  }
-}
-
-function oauthReauthenticationPrompt(
-  supported: readonly string[] | undefined,
-  required: boolean,
-  host: string,
-): "login" | undefined {
-  if (!required) return undefined;
-  if (!supported?.includes("login")) {
-    throw new OAuthReauthenticationUnsupportedError(host);
-  }
-  return "login";
-}
-
-export function oauthReauthenticationPromptForTest(
-  supported: readonly string[] | undefined,
-  required: boolean,
-): "login" | undefined {
-  return oauthReauthenticationPrompt(supported, required, "host.example");
 }
 
 export class OAuthAccountCreationUnsupportedError extends Error {
@@ -1210,7 +1178,6 @@ export interface CallbackResult {
   continuation?: "login_selection";
   chooseAnotherAccount?: boolean;
   mode?: "create";
-  reauthenticated: boolean;
   capabilities?: OAuthCapability[];
   grantedScope: string;
   authorizationSufficient: boolean;
@@ -1258,7 +1225,7 @@ export function flowMatchesCallbackClientForTest(
 }
 
 export function oauthRecoveryModeForPrompt(
-  prompt: "create" | "login" | undefined,
+  prompt: "create" | undefined,
 ): "create" | undefined {
   return prompt === "create" ? "create" : undefined;
 }
@@ -1433,7 +1400,6 @@ export async function completeCallback(
     continuation: flow.continuation,
     chooseAnotherAccount: flow.chooseAnotherAccount,
     mode: oauthRecoveryModeForPrompt(flow.prompt),
-    reauthenticated: flow.prompt === "login",
     capabilities: flow.capabilities,
     grantedScope: tokenRes.scope,
     authorizationSufficient,

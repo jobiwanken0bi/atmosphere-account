@@ -1,0 +1,379 @@
+{
+  "dnsMigration": "on_hold",
+  "steps": [
+    {
+      "id": "provider:stripe",
+      "kind": "provider",
+      "providerId": "stripe",
+      "label": "Stripe API key",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "atcash",
+          "projectId": "fixture-project-atcash",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-stripe-0",
+          "serviceId": "fixture-service-stripe-0",
+          "sealed": {
+            "STRIPE_SECRET_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:railway-monitor",
+      "kind": "provider",
+      "providerId": "railway-monitor",
+      "label": "Railway backup-monitor project token",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "ATM Moderation",
+          "projectId": "fixture-project-ATM-Moderation",
+          "environment": "staging",
+          "environmentId": "fixture-environment-staging",
+          "service": "fixture-railway-monitor-0",
+          "serviceId": "fixture-service-railway-monitor-0",
+          "sealed": {
+            "MODERATION_BACKUP_MONITOR_TOKEN": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:openai",
+      "kind": "provider",
+      "providerId": "openai",
+      "label": "OpenAI moderation",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "ATM Moderation",
+          "projectId": "fixture-project-ATM-Moderation",
+          "environment": "staging",
+          "environmentId": "fixture-environment-staging",
+          "service": "fixture-openai-0",
+          "serviceId": "fixture-service-openai-0",
+          "sealed": {
+            "OPENAI_API_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:photodna",
+      "kind": "provider",
+      "providerId": "photodna",
+      "label": "Microsoft PhotoDNA moderation",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "ATM Moderation",
+          "projectId": "fixture-project-ATM-Moderation",
+          "environment": "staging",
+          "environmentId": "fixture-environment-staging",
+          "service": "fixture-photodna-0",
+          "serviceId": "fixture-service-photodna-0",
+          "sealed": {
+            "PHOTODNA_API_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:resend-moderation",
+      "kind": "provider",
+      "providerId": "resend-moderation",
+      "label": "Resend moderation email",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "ATM Moderation",
+          "projectId": "fixture-project-ATM-Moderation",
+          "environment": "staging",
+          "environmentId": "fixture-environment-staging",
+          "service": "fixture-resend-moderation-0",
+          "serviceId": "fixture-service-resend-moderation-0",
+          "sealed": {
+            "RESEND_API_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:draft-alerts",
+      "kind": "provider",
+      "providerId": "draft-alerts",
+      "label": "Draft-storage email provider key",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "Supper AppView",
+          "projectId": "fixture-project-Supper-AppView",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-draft-alerts-0",
+          "serviceId": "fixture-service-draft-alerts-0",
+          "sealed": {
+            "DRAFT_STORAGE_ALERT_API_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:comail",
+      "kind": "provider",
+      "providerId": "comail",
+      "label": "Comail email",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "Atmosphere Account",
+          "projectId": "fixture-project-Atmosphere-Account",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-comail-0",
+          "serviceId": "fixture-service-comail-0",
+          "sealed": {
+            "COMAIL_API_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:turso",
+      "kind": "provider",
+      "providerId": "turso",
+      "label": "Legacy Turso database API token",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "Atmosphere Account",
+          "projectId": "fixture-project-Atmosphere-Account",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-turso-0",
+          "serviceId": "fixture-service-turso-0",
+          "sealed": {
+            "TURSO_AUTH_TOKEN": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:stripe-connect",
+      "kind": "provider",
+      "providerId": "stripe-connect",
+      "label": "Stripe Connect OAuth client secret",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "atcash",
+          "projectId": "fixture-project-atcash",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-stripe-connect-0",
+          "serviceId": "fixture-service-stripe-connect-0",
+          "sealed": {
+            "STRIPE_LINK_OAUTH_CLIENT_SECRET": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:privy-production",
+      "kind": "provider",
+      "providerId": "privy-production",
+      "label": "Privy production app secret",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "atcash",
+          "projectId": "fixture-project-atcash",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-privy-production-0",
+          "serviceId": "fixture-service-privy-production-0",
+          "sealed": {
+            "PRIVY_APP_SECRET": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:privy-sandbox",
+      "kind": "provider",
+      "providerId": "privy-sandbox",
+      "label": "Privy hackathon sandbox app secret",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "atcash",
+          "projectId": "fixture-project-atcash",
+          "environment": "hackathon-sandbox",
+          "environmentId": "fixture-environment-hackathon-sandbox",
+          "service": "fixture-privy-sandbox-0",
+          "serviceId": "fixture-service-privy-sandbox-0",
+          "sealed": {
+            "PRIVY_APP_SECRET": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:bridge",
+      "kind": "provider",
+      "providerId": "bridge",
+      "label": "Bridge API key",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "atcash",
+          "projectId": "fixture-project-atcash",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-bridge-0",
+          "serviceId": "fixture-service-bridge-0",
+          "sealed": {
+            "BRIDGE_API_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:expo",
+      "kind": "provider",
+      "providerId": "expo",
+      "label": "Expo access token",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "atcash",
+          "projectId": "fixture-project-atcash",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-expo-0",
+          "serviceId": "fixture-service-expo-0",
+          "sealed": {
+            "EXPO_ACCESS_TOKEN": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:r2-read",
+      "kind": "provider",
+      "providerId": "r2-read",
+      "label": "Cloudflare R2 reader credentials",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "Supper AppView",
+          "projectId": "fixture-project-Supper-AppView",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-r2-read-0",
+          "serviceId": "fixture-service-r2-read-0",
+          "sealed": {
+            "R2_ACCESS_KEY_ID": false,
+            "R2_SECRET_ACCESS_KEY": false
+          }
+        },
+        {
+          "project": "Supper AppView",
+          "projectId": "fixture-project-Supper-AppView",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-r2-read-1",
+          "serviceId": "fixture-service-r2-read-1",
+          "sealed": {
+            "R2_ACCESS_KEY_ID": false,
+            "R2_SECRET_ACCESS_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider:r2-operator",
+      "kind": "provider",
+      "providerId": "r2-operator",
+      "label": "Cloudflare R2 operator credentials",
+      "readiness": "prompt_ready",
+      "targets": [
+        {
+          "project": "Supper AppView",
+          "projectId": "fixture-project-Supper-AppView",
+          "environment": "production",
+          "environmentId": "fixture-environment-production",
+          "service": "fixture-r2-operator-0",
+          "serviceId": "fixture-service-r2-operator-0",
+          "sealed": {
+            "R2_OPERATOR_ACCESS_KEY_ID": false,
+            "R2_OPERATOR_SECRET_ACCESS_KEY": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "database:fixture-postgres",
+      "kind": "database",
+      "label": "atcash / production / Postgres",
+      "engine": "postgres",
+      "credentialField": "POSTGRES_PASSWORD",
+      "target": {
+        "project": "atcash",
+        "projectId": "fixture-atcash",
+        "environment": "production",
+        "environmentId": "fixture-production",
+        "service": "Postgres",
+        "serviceId": "fixture-postgres"
+      },
+      "consumers": [
+        {
+          "project": "atcash",
+          "projectId": "fixture-atcash",
+          "environment": "production",
+          "environmentId": "fixture-production",
+          "service": "atpay-api",
+          "serviceId": "fixture-atpay-api",
+          "variables": [
+            "DATABASE_URL"
+          ],
+          "latestDeployment": {
+            "id": "old-api",
+            "status": "SUCCESS"
+          }
+        }
+      ],
+      "latestDeployment": {
+        "id": "old-postgres",
+        "status": "SUCCESS"
+      },
+      "readiness": "consumer_and_external_access_review_required",
+      "externalConsumersReviewed": false,
+      "url": "https://example.invalid/database"
+    },
+    {
+      "id": "encryption_migration",
+      "kind": "encryption_migration",
+      "label": "encryption_migration",
+      "readiness": "coordination_required"
+    },
+    {
+      "id": "identity_or_signing_rekey",
+      "kind": "identity_or_signing_rekey",
+      "label": "identity_or_signing_rekey",
+      "readiness": "coordination_required"
+    },
+    {
+      "id": "webhook",
+      "kind": "webhook",
+      "label": "webhook",
+      "readiness": "coordination_required"
+    }
+  ],
+  "namedSecretLocations": 20,
+  "nestedSecretLocations": 1,
+  "uninspectedScopes": []
+}

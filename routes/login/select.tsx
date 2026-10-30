@@ -1,7 +1,6 @@
 import { define, type State } from "../../utils.ts";
 import AtmosphereHandle from "../../components/AtmosphereHandle.tsx";
 import SignInForm from "../../islands/SignInForm.tsx";
-import PasskeyLogin from "../../islands/PasskeyLogin.tsx";
 import type { CreateAccountHostOption } from "../../lib/create-account-hosts.ts";
 import { listCreateAccountHostOptions } from "../../lib/create-account-hosts.ts";
 import {
@@ -501,7 +500,6 @@ function LoginPickerPage(props: PickerPageProps) {
               : (
                 <LoginPickerBody
                   app={app}
-                  request={request}
                   selectPath={selectPath}
                   pickerAccounts={pickerAccounts}
                   createAccountHosts={createAccountHosts}
@@ -515,9 +513,8 @@ function LoginPickerPage(props: PickerPageProps) {
 }
 
 function LoginPickerBody(
-  { app, request, selectPath, pickerAccounts, createAccountHosts }: {
+  { app, selectPath, pickerAccounts, createAccountHosts }: {
     app: LoginApp;
-    request: LoginRequest;
     selectPath: string;
     pickerAccounts: PickerAccount[];
     createAccountHosts: CreateAccountHostOption[];
@@ -537,14 +534,6 @@ function LoginPickerBody(
         <StatusPill app={app} />
       </header>
       <PickerTrustNotice app={app} />
-
-      <PasskeyLogin
-        clientId={request.clientId}
-        returnUri={request.returnUri}
-        state={request.state}
-        scope={request.scope}
-        appName={app.appName}
-      />
 
       {pickerAccounts.length > 0
         ? (

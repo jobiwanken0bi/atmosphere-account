@@ -51,14 +51,15 @@ function copyFor(status: Status): {
     return {
       tone: "fail",
       badge: "Fix",
-      body: "The browser could not load the logo URL.",
+      body: "The browser could not load the logo from the app profile.",
     };
   }
   if (status === "missing") {
     return {
       tone: "warn",
       badge: "Check",
-      body: "Add a logo URL so people can recognize the app in the picker.",
+      body:
+        "Add a logo to the app profile so people can recognize it in the picker.",
     };
   }
   return {

@@ -1,8 +1,16 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assertEquals,
+  assertStringIncludes,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { renderToString } from "preact-render-to-string";
 import type { AccountHost } from "../../lib/account-hosts.ts";
 import type { AppListing } from "../../lib/app-directory.ts";
-import { ManagedAppCard, ManagedHostCard } from "./products.tsx";
+import type { LoginApp } from "../../lib/atmosphere-login.ts";
+import {
+  ManagedAppCard,
+  ManagedHostCard,
+  ManagedProductsPage,
+} from "./products.tsx";
 
 const OWNER_DID = "did:plc:owner";
 const APP = {
@@ -20,6 +28,141 @@ const HOST = {
   avatarUrl: null,
   matchPatterns: [],
 } as unknown as AccountHost;
+
+const LOGIN_APP = {
+  clientId: "https://skywriter.example/client-metadata.json",
+  appName: "Skywriter login",
+  appUri: "https://skywriter.example",
+  logoUri: null,
+  appDid: OWNER_DID,
+  appProfileUri: APP.atstoreListingUri,
+  appProfileSlug: APP.slug,
+  linkStatus: "linked",
+  identityAvailable: true,
+  loginAvailability: "available",
+  allowedReturnUris: ["https://skywriter.example/callback"],
+  allowedOrigins: ["https://skywriter.example"],
+  status: "unverified",
+  reviewStatus: "none",
+  reviewRequestedAt: null,
+  reviewNotes: null,
+  reviewDecisionAt: null,
+  reviewDecisionBy: null,
+  reviewDecisionReason: null,
+  reviewRevision: "review-1",
+  contactDid: OWNER_DID,
+  preferredAccountHost: null,
+  registered: true,
+} satisfies LoginApp;
+
+Deno.test("manage listings page separates profiles from developer settings", () => {
+  const html = renderToString(
+    <ManagedProductsPage
+      account={{
+        user: { did: OWNER_DID, handle: "owner.example" },
+        hasManagedProfiles: true,
+        accountType: "project",
+        avatarUrl: null,
+        publicProfileHandle: null,
+        accountHost: null,
+        rememberedAccounts: [],
+      }}
+      apps={[APP]}
+      hosts={[]}
+      loginApps={[LOGIN_APP]}
+      appLinks={{}}
+      hostLinks={{}}
+      discoveredAtstoreCount={0}
+      syncUnavailable={false}
+      appAuthorized
+      hostAuthorized
+      managedApp={APP}
+    />,
+  );
+
+  assertStringIncludes(html, "<h1>Manage listings</h1>");
+  assertStringIncludes(html, "<h2>App profile</h2>");
+  assertStringIncludes(html, "<h2>Host profiles</h2>");
+  assertStringIncludes(html, "Developer settings");
+  assertStringIncludes(html, "<h3>Login with Atmosphere</h3>");
+  assertStringIncludes(html, "1 app");
+  assertStringIncludes(html, "0 hosts");
+  assertStringIncludes(html, "Manage environments");
+  assertStringIncludes(html, "skywriter.example");
+  assertEquals(html.includes("Skywriter login"), false);
+  assertEquals(html.includes(">1 login registration<"), false);
+  assertEquals(html.includes("Managed products"), false);
+  assertEquals(html.includes("Owner workspace"), false);
+});
+
+Deno.test("a host-only account does not see Login with Atmosphere registration", () => {
+  const html = renderToString(
+    <ManagedProductsPage
+      account={{
+        user: { did: OWNER_DID, handle: "owner.example" },
+        hasManagedProfiles: true,
+        accountType: "user",
+        avatarUrl: null,
+        publicProfileHandle: null,
+        accountHost: null,
+        rememberedAccounts: [],
+      }}
+      apps={[]}
+      hosts={[HOST]}
+      loginApps={[LOGIN_APP]}
+      appLinks={{}}
+      hostLinks={{}}
+      discoveredAtstoreCount={0}
+      syncUnavailable={false}
+      appAuthorized={false}
+      hostAuthorized
+      managedApp={null}
+    />,
+  );
+
+  assertEquals(html.includes("Developer settings"), false);
+  assertEquals(html.includes("Login with Atmosphere"), false);
+  assertEquals(html.includes('href="/account/developer/apps"'), false);
+});
+
+Deno.test("a hidden existing app never enables another registration", () => {
+  const html = renderToString(
+    <ManagedProductsPage
+      account={{
+        user: { did: OWNER_DID, handle: "owner.example" },
+        hasManagedProfiles: true,
+        accountType: "project",
+        avatarUrl: null,
+        publicProfileHandle: null,
+        accountHost: null,
+        rememberedAccounts: [],
+      }}
+      apps={[]}
+      hosts={[]}
+      loginApps={[]}
+      appLinks={{}}
+      hostLinks={{}}
+      discoveredAtstoreCount={0}
+      syncUnavailable={false}
+      appAuthorized
+      hostAuthorized
+      managedApp={APP}
+    />,
+  );
+
+  assertStringIncludes(
+    html,
+    "This account already has an app profile, but it is not currently visible",
+  );
+  assertStringIncludes(html, "1 app");
+  assertStringIncludes(html, "Manage your app");
+  assertStringIncludes(
+    html,
+    `href="/apps/manage?app=${encodeURIComponent(APP.id)}"`,
+  );
+  assertEquals(html.includes("Register an app"), false);
+  assertEquals(html.includes("Register another app"), false);
+});
 
 Deno.test("managed app card keeps view public and contextualizes app management", () => {
   const html = renderToString(

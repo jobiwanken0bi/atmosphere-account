@@ -20,7 +20,7 @@ const en = {
       "Already use Bluesky, Blacksky, Spark, Tangled, or another AT Protocol service? You already have an Atmosphere account.",
     ogTitle: "Atmosphere Account",
     ogDescription:
-      "You may already have one account for a growing open ecosystem of apps.",
+      "One account for all your apps. Yours to keep, wherever you go.",
     ogImageAlt: "Atmosphere Account — sky, glass clouds, and hero headline",
   },
 
@@ -40,7 +40,7 @@ const en = {
       signInHint: "Use Login with Atmosphere to publish an app listing.",
       hostedBy: (host: string): string => `Hosted by ${host}`,
       manageAccount: "Manage account",
-      managedProducts: "Managed products",
+      managedProducts: "Manage listings",
       manageProfile: "Manage app listing",
       manageReviews: "Your reviews",
       viewProfile: "View app listing",
@@ -214,9 +214,17 @@ const en = {
     },
   },
 
+  accountHostChooser: {
+    aboutHost: (name: string): string => `About ${name}`,
+    closeDetails: "Close host details",
+    continueLabel: "Continue",
+  },
+
   hostsDirectory: {
+    metaTitle: "Account hosts",
+    metaDescription: "Find the home where your account lives.",
     eyebrow: "Account hosts",
-    headline: "Choose where your account lives.",
+    headline: "Find the home where your account lives.",
     intro:
       "Account hosts keep your Atmosphere account online so you can use it across apps. Compare who each host is for, where account data is hosted, and whether signup is open.",
     searchLabel: "Search account hosts",
@@ -337,6 +345,14 @@ const en = {
     },
     footnote:
       "Account ownership, moderation, and algorithmic choice — the system is locked open by design.",
+  },
+
+  join: {
+    lead: "Join",
+    tail: "others and counting.",
+    fallback: "Join the Atmosphere.",
+    createAccount: "Create an account",
+    countSource: "Account count from Jaz’s tracker (opens in a new tab)",
   },
 
   footer: {
@@ -592,8 +608,8 @@ const en = {
   },
 
   explore: {
-    metaTitle: "Apps — Atmosphere Account",
-    metaDescription: "Discover apps built for the Atmosphere.",
+    metaTitle: "Apps",
+    metaDescription: "Discover apps and services in the Atmosphere.",
     heroEyebrow: "Apps",
     heroHeadline: "Atmosphere apps, all in one place.",
     heroSubhead:
@@ -665,12 +681,14 @@ const en = {
       savingButton: "Publishing…",
       savedToast: "Saved. It’ll appear in Apps shortly.",
       savedAtstoreToast:
-        "Published as a shared ATStore app record. It’ll appear in Apps shortly.",
+        "Published to shared records and visible in Atmosphere Apps. Other directories index and review listings independently.",
+      savedAtstorePartialToast:
+        "Published in Atmosphere, but the companion community app profile could not be synced. Publish again to retry.",
       deleteButton: "Remove from Apps",
       deletingButton: "Removing…",
       deletedToast: "Removed from Apps.",
       statusLiveTitle: "Live in Apps",
-      statusLiveSub: "Your app listing is visible to everyone.",
+      statusLiveSub: "Your app listing is visible in Atmosphere Apps.",
       statusInactiveTitle: "Not listed yet",
       statusInactiveSub:
         "Publish to add this app listing to Apps. Nothing is shared until you do.",

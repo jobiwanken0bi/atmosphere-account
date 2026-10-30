@@ -42,11 +42,6 @@ import { isSafeRelativePath } from "../../lib/security.ts";
 import { readLoginRequest } from "../../lib/atmosphere-login.ts";
 import { createLoginSelectionIntent } from "../../lib/login-selection-intent.ts";
 import {
-  buildPasskeyManagementCookie,
-  clearPasskeyManagementCookie,
-  isPasskeyManagementReturnTo,
-} from "../../lib/passkey-management.ts";
-import {
   InvalidOAuthRequestInputError,
   singleSearchValue,
 } from "../../lib/oauth-request-input.ts";
@@ -377,10 +372,6 @@ export const handler = define.handlers({
           handle: result.handle,
         });
       }
-      const passkeyManagementCookie =
-        isPasskeyManagementReturnTo(returnTo) && result.reauthenticated
-          ? await buildPasskeyManagementCookie(result.did)
-          : clearPasskeyManagementCookie();
       const sessionCookie = result.grantId
         ? buildSessionCookie(
           await createSession({
@@ -402,9 +393,6 @@ export const handler = define.handlers({
       for (const cookie of rememberedCookies) {
         headers.append("set-cookie", cookie);
       }
-      // OAuth can switch the active identity. A previous account's short-lived
-      // passkey-management elevation is replaced or explicitly cleared.
-      headers.append("set-cookie", passkeyManagementCookie);
       const clearBinding = clearOAuthFlowBindingCookie(state);
       if (clearBinding) headers.append("set-cookie", clearBinding);
       return new Response(null, { status: 303, headers });

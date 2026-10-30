@@ -754,9 +754,9 @@ async function seededProjectionAuthorization(
   );
   if (!authority) return { seeded: false, allowed: true };
 
-  // A live PDS contact-email claim is the operational authority, including
-  // when a curated host's social/profile DID is intentionally different. Once
-  // that stronger proof exists, the compiled social DID must not keep writing
+  // A live email or DNS claim is the operational authority, including when a
+  // curated host's social/profile DID is intentionally different. Once that
+  // stronger proof exists, the compiled social DID must not keep writing
   // operational service metadata over the verified operator's changes.
   const claimResult = await c.execute({
     sql: `SELECT claimant_did, method FROM account_host_claim
@@ -764,7 +764,7 @@ async function seededProjectionAuthorization(
     args: [host],
   });
   const claim = claimResult.rows[0];
-  if (claim?.method === "pds_contact_email") {
+  if (claim?.method === "pds_contact_email" || claim?.method === "dns_txt") {
     return {
       seeded: true,
       allowed: String(claim.claimant_did ?? "").trim() === repoDid,

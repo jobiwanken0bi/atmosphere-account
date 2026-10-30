@@ -16,11 +16,11 @@ const ACCOUNT_CREATION_POLICY = {
   favorite: true,
   app: true,
   host_claim: false,
+  host_transfer: false,
   host_manage: false,
   app_host: false,
   profile: true,
   developer: true,
-  passkey_manage: false,
   relationship_confirm: false,
   admin: false,
 } as const satisfies Record<OAuthAction, boolean>;

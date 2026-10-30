@@ -233,9 +233,7 @@ export const handler = define.handlers({
         linkContext,
       );
     }
-    const requiredCapabilities = fileFromForm(form?.get("avatarUpload"))
-      ? ["host", "media"] as const
-      : ["host"] as const;
+    const requiredCapabilities = ["host"] as const;
     const session = await getSessionForCapabilities(
       ctx.state.user.did,
       requiredCapabilities,
@@ -365,7 +363,7 @@ function redirectToSignin(url: URL, name: string): Response {
 
 function redirectToAuthorization(
   url: URL,
-  capabilities: readonly ("host" | "media")[],
+  capabilities: readonly ["host"],
   name: string,
   force = false,
 ): Response {
@@ -384,7 +382,7 @@ function redirectToAuthorization(
 
 export function hostRegistrationAuthorizationHref(
   url: URL,
-  capabilities: readonly ("host" | "media")[],
+  capabilities: readonly ["host"],
   name: string,
   force = false,
 ): string {
@@ -835,16 +833,15 @@ function RegisterHostPage(
               </h1>
               <p class="text-body host-claim-copy">
                 This form is only available for local <code>.test</code>{" "}
-                fixtures while Atmosphere is running in development mode.
+                fixtures while this site is running in development mode.
                 Production hosts must be detected from relay activity and
-                verified through the PDS contact email.
+                verified with a temporary DNS record.
               </p>
               <div class="host-claim-panel">
                 <p class="host-claim-panel-title">Running a production PDS?</p>
                 <p class="text-body">
-                  Configure <code>contact.email</code> in{" "}
-                  <code>com.atproto.server.describeServer</code>, then find the
-                  exact PDS domain in the detected-host flow.
+                  Find the exact PDS domain in the detected-host flow, then add
+                  the temporary TXT record shown there with your DNS provider.
                 </p>
                 <a class="text-link-button" href="/hosts/claim">
                   Find and claim a detected PDS

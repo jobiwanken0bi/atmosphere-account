@@ -5,7 +5,6 @@
 import { define } from "../../utils.ts";
 import { proxyAppviewApiResponse } from "../../lib/appview-client.ts";
 import { clearSessionCookie, destroySession } from "../../lib/session.ts";
-import { clearPasskeyManagementCookie } from "../../lib/passkey-management.ts";
 
 async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   const proxied = await proxyAppviewApiResponse(ctx.url, ctx.req).catch(
@@ -16,7 +15,6 @@ async function handle(ctx: { req: Request; url: URL }): Promise<Response> {
   await destroySession(ctx.req);
   const headers = new Headers({ location: "/apps" });
   headers.append("set-cookie", clearSessionCookie());
-  headers.append("set-cookie", clearPasskeyManagementCookie());
   return new Response(null, {
     status: 303,
     headers,

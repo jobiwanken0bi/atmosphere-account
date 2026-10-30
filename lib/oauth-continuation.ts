@@ -16,7 +16,7 @@ export function isValidLoginSelectionContinuation(
   if (
     !returnTo || intent !== null || capabilities.length !== 1 ||
     capabilities[0] !== "identity" ||
-    (action !== null && action !== "account" && action !== "passkey_manage")
+    (action !== null && action !== "account")
   ) return false;
   try {
     const url = new URL(returnTo, "https://login.invalid");

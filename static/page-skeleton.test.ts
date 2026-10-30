@@ -31,7 +31,6 @@ const routeCases = [
   ["/account/manage", "account-section"],
   ["/account/reviews", "account-section"],
   ["/account/developer/apps", "workspace-form"],
-  ["/passkeys", "passkeys"],
   ["/login/select", "picker"],
   ["/developer-resources", "docs"],
   ["/docs/oauth", "docs"],

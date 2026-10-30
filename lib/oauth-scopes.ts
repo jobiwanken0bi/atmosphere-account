@@ -15,8 +15,6 @@ export const OAUTH_CAPABILITIES = [
   "favorite",
   "app",
   "host",
-  "profile",
-  "media",
 ] as const;
 
 export type OAuthCapability = typeof OAUTH_CAPABILITIES[number];
@@ -48,17 +46,13 @@ const CAPABILITY_SCOPES: Record<OAuthCapability, readonly string[]> = {
     // still be edited and publish What's New records.
     "repo:com.atmosphereaccount.registry.profile",
     "repo:com.atmosphereaccount.registry.update",
+    "blob:image/*",
   ],
   host: [
     "repo:account.atmosphere.host.profile",
     "repo:account.atmosphere.host.service",
+    "blob:image/*",
   ],
-  // The user-profile record currently shares the legacy registry collection
-  // with app profiles, but it is a separate product capability.
-  profile: [
-    "repo:com.atmosphereaccount.registry.profile?action=create&action=update",
-  ],
-  media: ["blob:image/*"],
 };
 
 /**
@@ -309,22 +303,14 @@ function capabilityIsGranted(
         "com.atmosphereaccount.registry.update",
       ].every((collection) =>
         repoActionsGranted(grants, collection, ALL_REPO_ACTIONS)
-      );
+      ) && blobScopeGranted(grants.blobs, "image/*");
     case "host":
       return [
         "account.atmosphere.host.profile",
         "account.atmosphere.host.service",
       ].every((collection) =>
         repoActionsGranted(grants, collection, ALL_REPO_ACTIONS)
-      );
-    case "profile":
-      return repoActionsGranted(
-        grants,
-        "com.atmosphereaccount.registry.profile",
-        ["create", "update"],
-      );
-    case "media":
-      return blobScopeGranted(grants.blobs, "image/*");
+      ) && blobScopeGranted(grants.blobs, "image/*");
   }
 }
 

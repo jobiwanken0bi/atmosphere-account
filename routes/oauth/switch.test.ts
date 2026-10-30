@@ -25,11 +25,11 @@ Deno.test("saved-account switch fallback can pin OAuth to the target DID", () =>
     buildSwitchReauthLocation(
       "project.example",
       "/apps/create?new=1",
-      ["app", "media"],
+      ["app"],
       "project",
       "app",
     ),
-    "/oauth/login?handle=project.example&next=%2Fapps%2Fcreate%3Fnew%3D1&intent=project&action=app&capability=app&capability=media",
+    "/oauth/login?handle=project.example&next=%2Fapps%2Fcreate%3Fnew%3D1&intent=project&action=app&capability=app",
   );
 });
 
@@ -55,7 +55,6 @@ Deno.test("saved-account switch preserves action capabilities and project intent
         ["next", "/apps/create?new=1"],
         ["intent", "project"],
         ["capability", "app"],
-        ["capability", "media"],
         ["action", "app"],
         ["name", "Example App"],
       ]),
@@ -65,7 +64,7 @@ Deno.test("saved-account switch preserves action capabilities and project intent
     did: "did:plc:project",
     next: "/apps/create?new=1",
     intent: "project",
-    capabilities: ["app", "media"],
+    capabilities: ["app"],
     action: "app",
     targetName: "Example App",
     chooseAnotherAccount: false,

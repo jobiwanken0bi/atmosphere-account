@@ -143,6 +143,6 @@ export function signupFriendlyDetail(status: HostSignupStatus): string {
     case "closed":
       return "This host is not currently accepting new accounts.";
     default:
-      return "Atmosphere has not confirmed the signup process yet.";
+      return "This directory has not confirmed the signup process yet.";
   }
 }

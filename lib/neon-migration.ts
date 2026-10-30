@@ -8,9 +8,6 @@ export const NEON_APP_TABLES = [
   "oauth_key",
   "app_session",
   "app_session_grant",
-  "passkey_account",
-  "passkey_credential",
-  "passkey_ceremony",
   "app_user",
   "report",
   "review",
@@ -20,6 +17,7 @@ export const NEON_APP_TABLES = [
   "account_host",
   "account_host_claim",
   "account_host_claim_challenge",
+  "account_host_owner_transfer",
   "host_conformance",
   "host_record",
   "pds_instance",
@@ -27,6 +25,7 @@ export const NEON_APP_TABLES = [
   "pds_inventory_scan",
   "app_record",
   "app_listing",
+  "app_profile_target",
   "directory_entity_link",
   "app_host_link_intent_consumption",
   "app_alias",
@@ -62,7 +61,6 @@ export const NEON_TABLES_WITH_FOREIGN_KEYS: readonly NeonAppTable[] = [
   "app_featured",
   "app_moderation",
   "login_app_connection",
-  "passkey_credential",
 ] as const;
 
 export function quoteIdent(identifier: string): string {

@@ -26,6 +26,14 @@ export interface PutRecordResult {
   validationStatus?: string;
 }
 
+export interface PutRecordOptions {
+  /**
+   * Compare-and-swap against the current record CID. Passing null asserts
+   * that the record does not exist; omitting the option performs no CAS.
+   */
+  swapRecord?: string | null;
+}
+
 const PDS_ERROR_BODY_MAX_BYTES = 8 * 1024;
 const PDS_WRITE_RESPONSE_MAX_BYTES = 256 * 1024;
 const PDS_RECORD_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
@@ -292,6 +300,7 @@ export async function putRecord(
   collection: string,
   rkey: string,
   record: Record<string, unknown>,
+  options: PutRecordOptions = {},
 ): Promise<PutRecordResult> {
   const url = `${
     normalizeServiceEndpoint(pdsUrl)
@@ -299,12 +308,9 @@ export async function putRecord(
   const res = await authedFetch(did, url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      repo: did,
-      collection,
-      rkey,
-      record: { ...record, $type: collection },
-    }),
+    body: JSON.stringify(
+      putRecordInput(did, collection, rkey, record, options),
+    ),
   });
   if (!res.ok) {
     const text = await readPdsErrorBody(res);
@@ -316,6 +322,34 @@ export async function putRecord(
     );
   }
   return await readPdsJson<PutRecordResult>(res, PDS_WRITE_RESPONSE_MAX_BYTES);
+}
+
+function putRecordInput(
+  did: string,
+  collection: string,
+  rkey: string,
+  record: Record<string, unknown>,
+  options: PutRecordOptions,
+): Record<string, unknown> {
+  return {
+    repo: did,
+    collection,
+    rkey,
+    record: { ...record, $type: collection },
+    ...(Object.hasOwn(options, "swapRecord")
+      ? { swapRecord: options.swapRecord }
+      : {}),
+  };
+}
+
+export function putRecordInputForTest(
+  did: string,
+  collection: string,
+  rkey: string,
+  record: Record<string, unknown>,
+  options: PutRecordOptions = {},
+): Record<string, unknown> {
+  return putRecordInput(did, collection, rkey, record, options);
 }
 
 export async function deleteProfileRecord(

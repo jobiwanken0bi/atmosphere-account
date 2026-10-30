@@ -5,6 +5,8 @@ import type { BlobRef, LinkEntry, ProfileRecord } from "./lexicons.ts";
 import { listRecordsPublic, putRecord } from "./pds.ts";
 import type { ProfileRow } from "./registry.ts";
 import { createAtprotoTid, isAtprotoTid } from "./tid.ts";
+import { reserveAppProfileTarget } from "./app-profile-cardinality.ts";
+import { normalizeAppStoreLinks } from "./app-store-links.ts";
 
 export interface AtstoreListingLink {
   type: string;
@@ -198,6 +200,25 @@ export async function findExistingAtstoreListingForProfile(
   return records[0] ?? null;
 }
 
+export async function lookupAtstoreMigrationOwnership(
+  did: string,
+  pdsUrl: string,
+  lookup: typeof findExistingAtstoreListingForProfile =
+    findExistingAtstoreListingForProfile,
+): Promise<
+  | {
+    ok: true;
+    record: Awaited<ReturnType<typeof findExistingAtstoreListingForProfile>>;
+  }
+  | { ok: false }
+> {
+  try {
+    return { ok: true, record: await lookup(did, pdsUrl) };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /**
  * Discover every ATStore listing the signed-in repository identifies as one
  * of its products. The previous single-result helper remains for legacy write
@@ -277,7 +298,11 @@ export async function publishAtstoreListingMigration(
     input.profile,
     input.sourceRecord,
   );
-  const rkey = createAtstoreListingRkey();
+  const target = await reserveAppProfileTarget(
+    input.did,
+    createAtstoreListingRkey(),
+  );
+  const rkey = target.rkey;
   const result = await putRecord(
     input.did,
     input.pdsUrl,
@@ -305,7 +330,6 @@ export async function publishAtstoreListingFromProfileRecord(
     pdsUrl: string;
     record: ProfileRecord;
     existingRecord?: AtstoreMigrationRecordRef | null;
-    createDistinctListing?: boolean;
     rkeyOverride?: string | null;
   },
 ): Promise<AtstoreMigrationPublishResult> {
@@ -321,9 +345,9 @@ export async function publishAtstoreListingFromProfileRecord(
     createdAt: typeof existing?.createdAt === "string"
       ? existing.createdAt
       : null,
-    slugOverride: input.createDistinctListing
-      ? distinctAppSlug(input.record.name, rkey)
-      : null,
+    slugOverride: appListingSlugOverrideForWrite({
+      existingValue: existing,
+    }),
   });
   const result = await putRecord(
     input.did,
@@ -345,6 +369,15 @@ export async function publishAtstoreListingFromProfileRecord(
   return indexed;
 }
 
+export function appListingSlugOverrideForWrite(input: {
+  existingValue: Record<string, unknown> | null;
+}): string | null {
+  const existingSlug = typeof input.existingValue?.slug === "string"
+    ? input.existingValue.slug.trim()
+    : "";
+  return existingSlug || null;
+}
+
 export function atstoreListingPublishRkey(
   existingRkey?: string | null,
   requestedRkey?: string | null,
@@ -357,16 +390,6 @@ export function atstoreListingPublishRkey(
     return requestedRkey;
   }
   return createAtstoreListingRkey();
-}
-
-function distinctAppSlug(name: string, rkey: string): string {
-  const suffix = rkey.toLowerCase().replaceAll(/[^a-z0-9]+/g, "").slice(-10) ||
-    "app";
-  const base = slugForHandleNameOrDid("", name, rkey).slice(
-    0,
-    Math.max(1, 500 - suffix.length),
-  );
-  return `${base}-${suffix}`;
 }
 
 export function createAtstoreListingRkey(): string {
@@ -476,8 +499,9 @@ function directoryLinksFromParts(
   input: { handle: string; iosLink: string | null; androidLink: string | null },
 ): AtstoreListingLink[] {
   const out: AtstoreListingLink[] = [];
-  addLink(out, "ios", input.iosLink, "App Store");
-  addLink(out, "android", input.androidLink, "Google Play");
+  const stores = normalizeAppStoreLinks(input);
+  addLink(out, "ios", stores.iosLink, "App Store");
+  addLink(out, "android", stores.androidLink, "Google Play");
   for (const link of links) {
     const url = linkUrl(link, input.handle);
     if (!url) continue;

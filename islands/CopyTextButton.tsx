@@ -1,9 +1,11 @@
 import { useSignal } from "@preact/signals";
+import { useEffect } from "preact/hooks";
 
 interface Props {
   text: string;
   label?: string;
   copiedLabel?: string;
+  failedLabel?: string;
   className?: string;
 }
 
@@ -12,26 +14,45 @@ export default function CopyTextButton(
     text,
     label = "Copy",
     copiedLabel = "Copied",
+    failedLabel = "Copy failed",
     className = "directory-register-button",
   }: Props,
 ) {
-  const copied = useSignal(false);
+  const status = useSignal<"idle" | "copied" | "failed">("idle");
+  const ready = useSignal(false);
+
+  useEffect(() => {
+    ready.value = true;
+  }, []);
 
   const onClick = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      copied.value = true;
+      status.value = "copied";
       setTimeout(() => {
-        copied.value = false;
+        status.value = "idle";
       }, 1600);
     } catch {
-      copied.value = false;
+      status.value = "failed";
+      setTimeout(() => {
+        status.value = "idle";
+      }, 2000);
     }
   };
 
   return (
-    <button type="button" class={className} onClick={onClick}>
-      {copied.value ? copiedLabel : label}
+    <button
+      type="button"
+      class={className}
+      onClick={onClick}
+      aria-live="polite"
+      hidden={!ready.value}
+    >
+      {status.value === "copied"
+        ? copiedLabel
+        : status.value === "failed"
+        ? failedLabel
+        : label}
     </button>
   );
 }

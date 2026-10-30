@@ -65,7 +65,6 @@ export function routeKind(pathname) {
   if (pathname === "/account") return "account";
   if (pathname.startsWith("/account/developer/")) return "workspace-form";
   if (pathname.startsWith("/account/")) return "account-section";
-  if (pathname === "/passkeys") return "passkeys";
   if (pathname === "/login/select") return "picker";
   if (
     pathname === "/developer-resources" || pathname === "/docs" ||
@@ -443,9 +442,8 @@ export function templateFor(kind) {
           <section class="page-skeleton-card page-skeleton-form-card">
             ${sectionHeading()}
             ${shape("page-skeleton-field")}
-            ${shape("page-skeleton-field")}
-            ${shape("page-skeleton-field")}
             ${shape("page-skeleton-field page-skeleton-field--tall")}
+            ${shape("page-skeleton-field")}
           </section>
           ${panel("page-skeleton-panel--workspace-side")}
         </section>
@@ -471,7 +469,7 @@ export function templateFor(kind) {
     `;
   }
 
-  if (kind === "passkeys" || kind === "picker") {
+  if (kind === "picker") {
     return `
       <main class="page-skeleton-stage page-skeleton-stage--picker">
         ${shape("page-skeleton-brand")}
@@ -686,7 +684,10 @@ function installPageSkeleton() {
 
     globalThis.setTimeout(() => {
       if (event.defaultPrevented) return;
-      const url = new URL(form.action || globalThis.location.href);
+      const url = new URL(
+        form.getAttribute("action") || globalThis.location.href,
+        globalThis.location.href,
+      );
       if (!isSkeletonPage(url)) return;
       scheduleSkeleton(url);
     }, 0);

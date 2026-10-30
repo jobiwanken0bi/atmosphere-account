@@ -9,18 +9,27 @@ import {
   AppDiscoverySplit,
   AppSpotlight,
 } from "../components/explore/AppDirectoryShowcase.tsx";
+import AppDirectoryOwnerCta, {
+  appRegistrationSigninHref,
+} from "../components/explore/AppDirectoryOwnerCta.tsx";
 import { buildAccountMenuProps } from "../lib/account-menu-props.ts";
-import type { AppSearchResult } from "../lib/app-directory.ts";
+import {
+  type AppListing,
+  type AppSearchResult,
+  getManagedAppListingByAccountDid,
+} from "../lib/app-directory.ts";
 import { loadAppsHomeFromAppview } from "../lib/appview-client.ts";
 import { EdgeStaleCache } from "../lib/edge-cache.ts";
-import ContextualSignInLink from "../islands/ContextualSignInLink.tsx";
-import { oauthSigninUrl } from "../lib/oauth-action.ts";
 import { getSessionForCapabilities } from "../lib/oauth.ts";
+import { getMessages } from "../i18n/mod.ts";
+
+export { appRegistrationSigninHref };
 
 interface ExploreData {
   result: AppSearchResult;
   account: ReturnType<typeof buildAccountMenuProps>;
   appAuthorized: boolean;
+  managedApp: AppListing | null | undefined;
 }
 
 const APPS_HOME_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -41,22 +50,33 @@ export const handler = define.handlers({
       return redirectBrowseAllUrl(url);
     }
 
+    const meta = getMessages(ctx.state.locale).explore;
+    ctx.state.pageMeta = {
+      title: meta.metaTitle,
+      description: meta.metaDescription,
+      canonicalUrl: new URL("/apps", ctx.url.origin).href,
+    };
+
     const result = await loadAppsHomeResult(ctx.req.headers).catch(() =>
       emptyAppsHomeResult()
     );
 
     const account = buildAccountMenuProps(ctx.state);
-    const appAuthorized = account.user
-      ? Boolean(
-        await getSessionForCapabilities(account.user.did, ["app"], {
+    const [appAuthorized, managedApp] = account.user
+      ? await Promise.all([
+        getSessionForCapabilities(account.user.did, ["app"], {
           quiet: true,
-        }).catch(() => null),
-      )
-      : false;
+        }).then(Boolean).catch(() => false),
+        getManagedAppListingByAccountDid(account.user.did).catch(() =>
+          undefined
+        ),
+      ])
+      : [false, null] as const;
     const data: ExploreData = {
       result,
       account,
       appAuthorized,
+      managedApp,
     };
     return ctx.render(<ExplorePage data={data} locale={ctx.state.locale} />);
   },
@@ -127,13 +147,12 @@ function ExplorePage({ data, locale: _locale }: ExplorePageProps) {
 
         <section class="section app-directory-bottom-cta">
           <div class="container">
-            <DirectoryRegisterCta
-              href="/apps/manage?new=1"
-              label="Register an app"
+            <AppDirectoryOwnerCta
               secondaryHref="/apps/all"
               secondaryLabel="See all apps"
               account={data.account}
               appAuthorized={data.appAuthorized}
+              managedApp={data.managedApp}
             />
           </div>
         </section>
@@ -175,63 +194,5 @@ function redirectBrowseAllUrl(url: URL): Response {
   return new Response(null, {
     status: 308,
     headers: { location: `/apps/all${qs ? `?${qs}` : ""}` },
-  });
-}
-
-function DirectoryRegisterCta(
-  { href, label, secondaryHref, secondaryLabel, account, appAuthorized }: {
-    href: string;
-    label: string;
-    secondaryHref?: string;
-    secondaryLabel?: string;
-    account: ReturnType<typeof buildAccountMenuProps>;
-    appAuthorized: boolean;
-  },
-) {
-  return (
-    <div class="directory-register-cta">
-      {secondaryHref && secondaryLabel && (
-        <a href={secondaryHref} class="directory-register-button">
-          <span class="directory-register-button-icon" aria-hidden="true">
-            ↗
-          </span>
-          <span>{secondaryLabel}</span>
-        </a>
-      )}
-      {account.user && appAuthorized
-        ? (
-          <a href={href} class="directory-register-button">
-            <span class="directory-register-button-icon" aria-hidden="true">
-              +
-            </span>
-            <span>{label}</span>
-          </a>
-        )
-        : (
-          <ContextualSignInLink
-            href={appRegistrationSigninHref()}
-            returnTo="/apps/manage?new=1"
-            intent="project"
-            action="app"
-            capabilities={["app"]}
-            targetName="your app"
-            label={label}
-            className="directory-register-button"
-            leadingPlus
-            rememberedAccounts={account.rememberedAccounts}
-            initialHandle={account.user?.handle}
-          />
-        )}
-    </div>
-  );
-}
-
-export function appRegistrationSigninHref(): string {
-  return oauthSigninUrl({
-    next: "/apps/manage?new=1",
-    intent: "project",
-    action: "app",
-    capabilities: ["app"],
-    name: "your app",
   });
 }

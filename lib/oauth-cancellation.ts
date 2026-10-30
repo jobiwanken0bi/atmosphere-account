@@ -45,7 +45,7 @@ function relativeLocation(url: URL): string {
  */
 export function oauthAuthorizationExitHref(
   returnTo: string,
-  action: OAuthAction,
+  _action: OAuthAction,
 ): string {
   const safeReturnTo = isSafeRelativePath(returnTo) ? returnTo : "/account";
   const url = new URL(safeReturnTo, PARSE_ORIGIN);
@@ -91,9 +91,6 @@ export function oauthAuthorizationExitHref(
   }
   if (url.searchParams.has(USER_PROFILE_RESUME_PARAM)) {
     url.searchParams.delete(USER_PROFILE_RESUME_PARAM);
-    cancellations.add("user-profile");
-  } else if (action === "profile") {
-    // Keep handling in-flight authorization links from older deployments.
     cancellations.add("user-profile");
   }
 

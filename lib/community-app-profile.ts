@@ -5,6 +5,7 @@ import {
 import { upsertAppRecordFromDraft } from "./app-directory.ts";
 import type { BlobRef, LinkEntry, ProfileRecord } from "./lexicons.ts";
 import { getRecordPublic, putRecord } from "./pds.ts";
+import { normalizeAppStoreLinks } from "./app-store-links.ts";
 
 export interface CommunityAppLink {
   uri: string;
@@ -189,11 +190,15 @@ function communityLinksFromProfile(
   handle: string,
 ): CommunityAppLink[] {
   const out: CommunityAppLink[] = [];
+  const stores = normalizeAppStoreLinks({
+    iosLink: record.iosLink,
+    androidLink: record.androidLink,
+  });
   addCommunityLink(out, record.mainLink, "Website", LINK_ROLE_WEBSITE);
-  addCommunityLink(out, record.iosLink, "App Store", LINK_ROLE_APP_STORE);
+  addCommunityLink(out, stores.iosLink, "App Store", LINK_ROLE_APP_STORE);
   addCommunityLink(
     out,
-    record.androidLink,
+    stores.androidLink,
     "Play Store",
     LINK_ROLE_PLAY_STORE,
   );
@@ -241,10 +246,14 @@ function communityImagesFromProfile(
 }
 
 function communityPlatformsFromProfile(record: ProfileRecord): string[] {
+  const stores = normalizeAppStoreLinks({
+    iosLink: record.iosLink,
+    androidLink: record.androidLink,
+  });
   return uniqueStrings([
     record.mainLink ? PLATFORM_WEB : null,
-    record.iosLink ? PLATFORM_IOS : null,
-    record.androidLink ? PLATFORM_ANDROID : null,
+    stores.iosLink ? PLATFORM_IOS : null,
+    stores.androidLink ? PLATFORM_ANDROID : null,
   ]);
 }
 

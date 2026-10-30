@@ -104,7 +104,10 @@ document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
 
-  const action = new URL(form.action || globalThis.location.href);
+  const action = new URL(
+    form.getAttribute("action") || globalThis.location.href,
+    globalThis.location.href,
+  );
   if (
     action.origin !== globalThis.location.origin ||
     !HANDOFF_PATHS.has(action.pathname)

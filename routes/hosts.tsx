@@ -23,6 +23,7 @@ import { getMessages } from "../i18n/mod.ts";
 import ContextualSignInLink from "../islands/ContextualSignInLink.tsx";
 import { oauthSigninUrl } from "../lib/oauth-action.ts";
 import { EdgeStaleCache } from "../lib/edge-cache.ts";
+import { getSessionForCapabilities } from "../lib/oauth.ts";
 
 const HOST_BROWSE_CACHE_TTL_MS = 30_000;
 const HOST_BROWSE_CACHE_STALE_MS = 2 * 60_000;
@@ -36,6 +37,11 @@ const hostBrowseCache = new EdgeStaleCache<AccountHostDirectoryResult>({
 
 export default define.page(async function HostsPage(ctx) {
   const copy = getMessages(ctx.state.locale).hostsDirectory;
+  ctx.state.pageMeta = {
+    title: copy.metaTitle,
+    description: copy.metaDescription,
+    canonicalUrl: new URL("/hosts", ctx.url.origin).href,
+  };
   const input = readDirectoryInput(ctx.url.searchParams);
   const appliedFilterCount = activeFilterCount(input);
   let loadFailed = false;
@@ -48,6 +54,12 @@ export default define.page(async function HostsPage(ctx) {
   const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
   const directoryReturnTo = hostDirectoryHref(input, result.page);
   const account = buildAccountMenuProps(ctx.state);
+  const hostAuthorized = Boolean(
+    account.user &&
+      await getSessionForCapabilities(account.user.did, ["host"], {
+        quiet: true,
+      }).catch(() => null),
+  );
   return (
     <div id="page-top">
       <div class="content-layer">
@@ -252,7 +264,11 @@ export default define.page(async function HostsPage(ctx) {
                 copy={copy}
               />
             )}
-            <DirectoryHiddenHostCta copy={copy} account={account} />
+            <DirectoryHiddenHostCta
+              copy={copy}
+              account={account}
+              hostAuthorized={hostAuthorized}
+            />
           </div>
         </section>
         <Footer variant="compact" />
@@ -403,9 +419,10 @@ function activeFilterCount(input: HostDirectoryInput): number {
 }
 
 function DirectoryHiddenHostCta(
-  { copy, account }: {
+  { copy, account, hostAuthorized }: {
     copy: HostsDirectoryCopy;
     account: ReturnType<typeof buildAccountMenuProps>;
+    hostAuthorized: boolean;
   },
 ) {
   return (
@@ -414,7 +431,7 @@ function DirectoryHiddenHostCta(
         <h2>{copy.missingHostTitle}</h2>
         <p>{copy.missingHostCopy}</p>
       </div>
-      {account.user
+      {account.user && hostAuthorized
         ? (
           <a href="/hosts/claim" class="directory-register-button">
             <span>{copy.claimDetectedHost}</span>
@@ -426,7 +443,7 @@ function DirectoryHiddenHostCta(
             href={detectedHostClaimSigninHref()}
             returnTo="/hosts/claim"
             action="host_claim"
-            capabilities={["identity"]}
+            capabilities={["host"]}
             targetName="your account host"
             label={copy.claimDetectedHost}
             className="directory-register-button"
@@ -442,7 +459,7 @@ function detectedHostClaimSigninHref(): string {
   return oauthSigninUrl({
     next: "/hosts/claim",
     action: "host_claim",
-    capabilities: ["identity"],
+    capabilities: ["host"],
     name: "your account host",
   });
 }

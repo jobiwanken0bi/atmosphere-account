@@ -1,4 +1,4 @@
-import { siteOrigin } from "./env.ts";
+import { loginOrigin, siteOrigin } from "./env.ts";
 import { trustedRequestOrigin } from "./atmosphere-origins.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -19,4 +19,27 @@ Deno.test("trustedRequestOrigin recovers public origin for appview-proxied reque
     ),
     siteOrigin(),
   );
+});
+
+Deno.test("trustedRequestOrigin recovers the configured login host after TLS termination", () => {
+  const internalUrl = new URL("/oauth/client-metadata.json", loginOrigin());
+  internalUrl.protocol = "http:";
+  assertEquals(trustedRequestOrigin(internalUrl), loginOrigin());
+});
+
+Deno.test("trustedRequestOrigin does not trust lookalike hosts or forwarded host headers", () => {
+  const hostname = new URL(loginOrigin()).hostname;
+  const headers = new Headers({
+    "x-forwarded-host": hostname,
+    "x-forwarded-proto": "https",
+  });
+  for (
+    const url of [
+      `http://${hostname}.untrusted.example/oauth/callback`,
+      `http://${hostname}:12345/oauth/callback`,
+      "http://untrusted.example/oauth/callback",
+    ]
+  ) {
+    assertEquals(trustedRequestOrigin(new URL(url), headers), siteOrigin());
+  }
 });

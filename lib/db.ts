@@ -25,6 +25,7 @@ import {
   createPostgresExecuteClient,
   postgresDatabaseUrl,
 } from "./postgres.ts";
+import { LOGIN_APP_LINK_BACKFILL_STATEMENTS } from "./atmosphere-login-migration.ts";
 
 export type DatabaseBackend = "turso" | "neon" | "postgres";
 
@@ -290,48 +291,6 @@ const SCHEMA_STATEMENTS: string[] = [
     grant_id TEXT NOT NULL
   )`,
   /**
-   * WebAuthn user handles are stable, opaque RP-local identifiers. Keeping the
-   * handle separate from credentials lets one account enroll multiple
-   * passkeys without putting the account DID into authenticator storage.
-   */
-  `CREATE TABLE IF NOT EXISTS passkey_account (
-    did TEXT PRIMARY KEY,
-    user_handle TEXT NOT NULL UNIQUE,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS passkey_credential (
-    credential_id TEXT PRIMARY KEY,
-    did TEXT NOT NULL REFERENCES passkey_account(did) ON DELETE CASCADE,
-    public_key TEXT NOT NULL,
-    counter INTEGER NOT NULL DEFAULT 0,
-    device_type TEXT NOT NULL,
-    backed_up INTEGER NOT NULL DEFAULT 0,
-    transports TEXT NOT NULL DEFAULT '[]',
-    name TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    last_used_at INTEGER,
-    revoked_at INTEGER
-  )`,
-  /**
-   * Short-lived, one-use WebAuthn ceremonies. Only the hash of the opaque
-   * browser token is persisted. Authentication ceremonies may carry a
-   * previously validated Login with Atmosphere request for the final handoff.
-   */
-  `CREATE TABLE IF NOT EXISTS passkey_ceremony (
-    code_hash TEXT PRIMARY KEY,
-    kind TEXT NOT NULL,
-    challenge TEXT NOT NULL,
-    did TEXT,
-    rp_id TEXT NOT NULL,
-    origin TEXT NOT NULL,
-    login_request_json TEXT,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL,
-    consumed_at INTEGER
-  )`,
-  /**
    * App-level account type and the cached identity fallback imported at
    * sign-in. Users may publish an Atmosphere profile, but they do not need
    * one before using reviews or connected apps.
@@ -522,6 +481,15 @@ const SCHEMA_STATEMENTS: string[] = [
     consumed_at INTEGER,
     FOREIGN KEY(host) REFERENCES account_host(host) ON DELETE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS account_host_owner_transfer (
+    jti TEXT PRIMARY KEY,
+    host TEXT NOT NULL,
+    previous_owner_did TEXT NOT NULL,
+    new_owner_did TEXT NOT NULL,
+    proof_method TEXT NOT NULL,
+    initiated_at INTEGER NOT NULL,
+    completed_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS host_conformance (
     host TEXT PRIMARY KEY,
     status TEXT NOT NULL,
@@ -663,6 +631,17 @@ const SCHEMA_STATEMENTS: string[] = [
     updated_at INTEGER NOT NULL,
     indexed_at INTEGER NOT NULL,
     deleted_at INTEGER
+  )`,
+  /**
+   * One durable ATStore write target per controlling DID. Existing legacy
+   * multi-app rows are deliberately not collapsed; this table only prevents
+   * new, concurrent creation requests from allocating distinct record keys.
+   */
+  `CREATE TABLE IF NOT EXISTS app_profile_target (
+    did TEXT PRIMARY KEY,
+    rkey TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   )`,
   /**
    * Owner-defined relationships between account hosts and app listings.
@@ -808,6 +787,12 @@ const SCHEMA_STATEMENTS: string[] = [
     allowed_origins TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'unverified',
     contact_did TEXT,
+    app_did TEXT,
+    app_profile_uri TEXT,
+    link_status TEXT NOT NULL DEFAULT 'relink_required',
+    profile_identity_fingerprint TEXT,
+    profile_identity_updated_at INTEGER,
+    review_revision TEXT,
     preferred_account_host TEXT,
     review_status TEXT NOT NULL DEFAULT 'none',
     review_requested_at INTEGER,
@@ -910,6 +895,7 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_host ON account_host_claim_challenge(host, created_at)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_did ON account_host_claim_challenge(claimant_did, created_at)`,
   `CREATE INDEX IF NOT EXISTS account_host_claim_challenge_expires ON account_host_claim_challenge(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS account_host_owner_transfer_host ON account_host_owner_transfer(host, completed_at)`,
   `CREATE INDEX IF NOT EXISTS host_conformance_status ON host_conformance(status, expires_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_host ON host_record(host, deleted_at)`,
   `CREATE INDEX IF NOT EXISTS host_record_collection ON host_record(collection, deleted_at)`,
@@ -950,6 +936,8 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS login_app_status ON login_app(status)`,
   `CREATE INDEX IF NOT EXISTS login_app_review_status ON login_app(review_status, review_requested_at)`,
   `CREATE INDEX IF NOT EXISTS login_app_contact_did ON login_app(contact_did, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS login_app_app_did ON login_app(app_did, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS login_app_profile_uri ON login_app(app_profile_uri)`,
   `CREATE INDEX IF NOT EXISTS login_app_connection_did ON login_app_connection(did, last_selected_at)`,
   `CREATE INDEX IF NOT EXISTS login_selection_replay_expires ON login_selection_replay(expires_at)`,
   `CREATE INDEX IF NOT EXISTS login_picker_intent_expires ON login_picker_intent(expires_at)`,
@@ -960,8 +948,6 @@ const POST_MIGRATION_INDEX_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS oauth_grant_updated ON oauth_grant(updated_at)`,
   `CREATE INDEX IF NOT EXISTS app_session_grant_id ON app_session_grant(grant_id)`,
   `CREATE INDEX IF NOT EXISTS app_session_expires ON app_session(expires_at)`,
-  `CREATE INDEX IF NOT EXISTS passkey_credential_did ON passkey_credential(did, revoked_at)`,
-  `CREATE INDEX IF NOT EXISTS passkey_ceremony_expires ON passkey_ceremony(expires_at)`,
   `CREATE INDEX IF NOT EXISTS worker_lease_expires ON worker_lease(expires_at)`,
 ];
 
@@ -1402,6 +1388,39 @@ async function applyAdditiveMigrations(
       },
       {
         table: "login_app",
+        column: "app_did",
+        ddl: "ALTER TABLE login_app ADD COLUMN app_did TEXT",
+      },
+      {
+        table: "login_app",
+        column: "app_profile_uri",
+        ddl: "ALTER TABLE login_app ADD COLUMN app_profile_uri TEXT",
+      },
+      {
+        table: "login_app",
+        column: "link_status",
+        ddl:
+          "ALTER TABLE login_app ADD COLUMN link_status TEXT NOT NULL DEFAULT 'relink_required'",
+      },
+      {
+        table: "login_app",
+        column: "profile_identity_fingerprint",
+        ddl:
+          "ALTER TABLE login_app ADD COLUMN profile_identity_fingerprint TEXT",
+      },
+      {
+        table: "login_app",
+        column: "profile_identity_updated_at",
+        ddl:
+          "ALTER TABLE login_app ADD COLUMN profile_identity_updated_at INTEGER",
+      },
+      {
+        table: "login_app",
+        column: "review_revision",
+        ddl: "ALTER TABLE login_app ADD COLUMN review_revision TEXT",
+      },
+      {
+        table: "login_app",
         column: "review_status",
         ddl:
           "ALTER TABLE login_app ADD COLUMN review_status TEXT NOT NULL DEFAULT 'none'",
@@ -1453,6 +1472,9 @@ async function applyAdditiveMigrations(
         msg,
       );
     }
+  }
+  for (const statement of LOGIN_APP_LINK_BACKFILL_STATEMENTS) {
+    await c.execute(statement);
   }
 }
 

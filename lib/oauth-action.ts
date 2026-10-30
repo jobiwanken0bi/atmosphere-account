@@ -12,11 +12,10 @@ export const OAUTH_ACTIONS = [
   "favorite",
   "app",
   "host_claim",
+  "host_transfer",
   "host_manage",
   "app_host",
-  "profile",
   "developer",
-  "passkey_manage",
   "relationship_confirm",
   "admin",
 ] as const;
@@ -27,8 +26,8 @@ export type OAuthAction = typeof OAUTH_ACTIONS[number];
  * Browser-supplied action labels are presentation context, not permission
  * selectors. Keep the capability bundle for each label here so a caller cannot
  * combine reassuring copy for one action with the repository access of
- * another. Optional media access is only valid alongside the write capability
- * that can actually consume it.
+ * another. App and host management are complete jobs that include their image
+ * uploads.
  */
 const OAUTH_ACTION_CAPABILITY_BUNDLES = {
   account: [["identity"]],
@@ -39,13 +38,12 @@ const OAUTH_ACTION_CAPABILITY_BUNDLES = {
   review_response: [["identity"]],
   report_review: [["identity"]],
   favorite: [["favorite"]],
-  app: [["app"], ["app", "media"]],
-  host_claim: [["identity"]],
-  host_manage: [["host"], ["host", "media"]],
-  app_host: [["app", "host"], ["app", "host", "media"]],
-  profile: [["profile"], ["profile", "media"]],
+  app: [["app"]],
+  host_claim: [["host"]],
+  host_transfer: [["host"]],
+  host_manage: [["host"]],
+  app_host: [["app", "host"]],
   developer: [["identity"]],
-  passkey_manage: [["identity"]],
   relationship_confirm: [["identity"]],
   admin: [["identity"]],
 } as const satisfies Record<

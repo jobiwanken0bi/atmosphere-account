@@ -1,5 +1,5 @@
 import type { InValue } from "@libsql/client";
-import { isPostgresBackend, withDb } from "./db.ts";
+import { type DbClient, isPostgresBackend, withDb } from "./db.ts";
 import {
   type AppDirectoryLink,
   type AppFavoriteDraft,
@@ -15,6 +15,8 @@ import {
   normalizeAppCollectionSlug,
   normalizeAppTag,
 } from "./app-collections.ts";
+import { releaseAppProfileTarget } from "./app-profile-cardinality.ts";
+import { isAtprotoTid } from "./tid.ts";
 import {
   bayesianAverageRating,
   blendRatingSignals,
@@ -49,6 +51,18 @@ import { escapeSqlLikePattern } from "./sql-pattern.ts";
 
 export type AppDirectorySort = "trending" | "newest" | "az";
 export type AppReviewSort = "newest" | "highest" | "lowest";
+
+/**
+ * Safety state used by Login with Atmosphere. This is intentionally separate
+ * from public-directory visibility: an owner choosing not to appear in the
+ * directory is not, by itself, a reason to disable the app's login handoff.
+ * Only deletion and the two operator moderation planes suspend login.
+ */
+export type AppListingLoginAvailability =
+  | "available"
+  | "moderated"
+  | "taken_down"
+  | "deleted";
 
 export interface AppListingSourceRefs {
   atmosphere?: string;
@@ -1023,9 +1037,30 @@ export async function deleteAppRecord(uri: string): Promise<void> {
         await recomputeListing(c, listingId);
       }
     });
+    const deletedTarget = appProfileTargetFromUri(uri);
+    if (deletedTarget) {
+      // Release last. Until this exact conditional delete succeeds, any new
+      // registration still conflicts with either the indexed app or its
+      // reservation. A delayed retry cannot erase a newer target.
+      await releaseAppProfileTarget(deletedTarget.did, deletedTarget.rkey);
+    }
   } finally {
     clearAppDirectorySearchCache();
   }
+}
+
+export function appProfileTargetFromUri(
+  uri: string,
+): { did: string; rkey: string } | null {
+  const match = uri.match(
+    new RegExp(
+      `^at://(did:[^/]+)/${
+        ATSTORE_LISTING_NSID.replaceAll(".", "\\.")
+      }/([^/]+)$`,
+    ),
+  );
+  if (!match?.[1] || !match[2] || !isAtprotoTid(match[2])) return null;
+  return { did: match[1], rkey: match[2] };
 }
 
 export async function upsertAppReview(draft: AppReviewDraft): Promise<void> {
@@ -2132,9 +2167,118 @@ export async function getVisibleAppListingByAccountDid(
 }
 
 /**
- * Return every visible app controlled by an account DID. A single AT Protocol
- * repository may publish multiple ATStore listings, so owner-facing tools must
- * not collapse this relationship to the first matching row.
+ * Return the first non-deleted app controlled by an account DID, including an
+ * app that is currently hidden by moderation. Creation and owner-management
+ * checks must use this owner-facing lookup rather than the public visibility
+ * lookup: hiding an app must never make the same DID eligible to register a
+ * second app.
+ */
+export async function getManagedAppListingByAccountDid(
+  did: string,
+  options: { syncLegacy?: boolean } = {},
+): Promise<AppListing | null> {
+  const listings = await listManagedAppListingsByAccountDid(did, options);
+  return listings[0] ?? null;
+}
+
+/**
+ * Return every non-deleted app controlled through any of the directory's DID
+ * identity fields. Legacy data can contain more than one result; callers must
+ * preserve those records for targeted editing while refusing a new distinct
+ * app for the same DID.
+ */
+export async function listManagedAppListingsByAccountDid(
+  did: string,
+  options: { syncLegacy?: boolean } = {},
+): Promise<AppListing[]> {
+  if (options.syncLegacy !== false) {
+    await syncLegacyAppProfilesToDirectory().catch(() => {});
+  }
+  const normalized = did.trim();
+  if (!normalized.startsWith("did:")) return [];
+  return await withDb((c) =>
+    listManagedAppListingsByAccountDidWithClient(c, normalized)
+  );
+}
+
+export async function listManagedAppListingsByAccountDidWithClient(
+  c: DbClient,
+  normalizedDid: string,
+): Promise<AppListing[]> {
+  const result = await c.execute({
+    sql: `
+      SELECT ${listSelect("l")}
+      FROM app_listing l
+      WHERE l.deleted_at IS NULL
+        AND (
+          l.product_did = ? OR
+          l.profile_did = ? OR
+          l.legacy_profile_did = ?
+        )
+      ORDER BY
+        CASE WHEN l.atstore_listing_uri IS NOT NULL THEN 0 ELSE 1 END,
+        l.updated_at DESC,
+        l.slug ASC
+    `,
+    args: [normalizedDid, normalizedDid, normalizedDid],
+  });
+  return result.rows.map(rowToAppListing);
+}
+
+/**
+ * Read the explicit safety controls for an app listing without consulting the
+ * public directory query. `app_moderation` is the operator moderation plane;
+ * owner-controlled directory privacy must remain a separate setting and must
+ * not be added to this predicate. The legacy `profile` takedown is checked as
+ * well because migrated listings can still be backed by that profile row.
+ */
+export async function getAppListingLoginAvailability(
+  listingId: string,
+): Promise<AppListingLoginAvailability> {
+  return await withDb((c) =>
+    getAppListingLoginAvailabilityWithClient(c, listingId)
+  );
+}
+
+export async function getAppListingLoginAvailabilityWithClient(
+  c: DbClient,
+  listingId: string,
+): Promise<AppListingLoginAvailability> {
+  const result = await c.execute({
+    sql: `
+      SELECT
+        l.deleted_at,
+        COALESCE(m.status, 'visible') AS moderation_status,
+        CASE WHEN EXISTS (
+          SELECT 1
+          FROM profile p
+          WHERE p.profile_type = 'project'
+            AND p.takedown_status = 'taken_down'
+            AND p.did IN (
+              l.product_did,
+              l.profile_did,
+              l.legacy_profile_did
+            )
+        ) THEN 1 ELSE 0 END AS profile_taken_down
+      FROM app_listing l
+      LEFT JOIN app_moderation m ON m.listing_id = l.id
+      WHERE l.id = ?
+      LIMIT 1
+    `,
+    args: [listingId],
+  });
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+  if (!row || row.deleted_at != null) return "deleted";
+  if (Number(row.profile_taken_down) === 1) return "taken_down";
+  return String(row.moderation_status ?? "visible").toLowerCase() === "visible"
+    ? "available"
+    : "moderated";
+}
+
+/**
+ * Return every visible app controlled by an account DID. Grandfathered data
+ * can still contain multiple ATStore listings, so owner-facing tools must not
+ * hide those existing records even though new second-app creation is blocked.
  */
 export async function listVisibleAppListingsByAccountDid(
   did: string,

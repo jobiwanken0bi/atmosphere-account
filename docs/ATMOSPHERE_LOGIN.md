@@ -78,40 +78,38 @@ reachable, claimed, verified, or seeded, and backed by a safe public HTTPS
 signup URL. Raw relay-observed personal PDSes are never offered as
 account-creation providers.
 
+## App-owned login environments
+
+An owner-managed Login with Atmosphere configuration belongs to one live app
+profile. The signed-in DID must control that profile; an account that manages
+only an account host cannot create a login environment.
+
+The app profile supplies the name, homepage, and logo shown in the picker. Those
+fields are not copied into an editable registration form. A profile can have
+several technical environments—for example web, verified HTTPS app links for
+native apps, staging, or local development—and each environment keeps its own
+client ID, exact return-URL allow-list, review state, and optional preferred
+account host. Custom app URL schemes are not accepted. If the linked profile
+identity changes, its stored trust decision is reset before the new identity can
+be presented as trusted.
+
+Legacy registrations are linked automatically only when their owner DID controls
+exactly one live app profile. Ambiguous, host-only, and orphaned rows remain
+inactive; they are never trusted as standalone app identities. Resolve a legacy
+account with several app profiles before setting up a new environment. Orphaned
+registrations require an explicit support migration rather than being guessed
+into a profile.
+
 A registered app may set an optional `preferredAccountHost`. The host is pinned
 first and labelled “Recommended by [app]”, but users can choose any other host.
-Atmosphere accepts this field only when the app owner has a current verified
-claim for that grouped host. The claim, signup URL, and joinable status are
-checked again when the picker opens. A request URL cannot nominate a preferred
-host.
+This field is accepted only when the host is joinable and either managed by the
+app's DID or connected to the app through a current, verified relationship.
+Ownership, relationship approval, signup URL, and joinable status are checked
+again when the picker opens. A request URL cannot nominate a preferred host.
 
 For local visual testing, `GET /dev/login-picker` seeds four fictional saved
 accounts with profile portraits and opens the redirect picker. The route and its
 avatar mapping are disabled in hosted production environments.
-
-## Passkey-assisted selection
-
-Atmosphere may offer a passkey as a faster way to authenticate a saved account
-and confirm its selection in the picker. A passkey is enrolled only after an AT
-Protocol OAuth login that capability-gates and sends `prompt=login`, and is
-bound to the account's immutable DID. Hosts that do not advertise that prompt
-cannot issue the short-lived passkey-management proof. Production credentials
-are scoped strictly to RP ID `login.atmosphereaccount.com` and origin
-`https://login.atmosphereaccount.com`.
-
-The passkey authenticates the user to **Login with Atmosphere**, not to the
-destination app or the account's PDS. After a successful Face ID, Touch ID,
-device-PIN, or security-key assertion, Atmosphere returns the same short-lived
-selection token described below. The destination app must verify it and still
-start its own AT Protocol OAuth flow. The passkey neither transfers Atmosphere's
-PDS grant nor approves the app's requested PDS permissions.
-
-Enrollment is explicit, never silent. Credentials are discoverable, require user
-verification, and request no attestation. Existing OAuth selection remains the
-fallback for unsupported browsers, cancelled ceremonies, recovery, expired
-links, and revoked credentials. See
-[Passkeys in Login with Atmosphere](./PASSKEYS.md) for the full architecture,
-threat model, recovery policy, and official sources.
 
 ## Selection Token
 
@@ -189,13 +187,11 @@ const result = await verifyAtmosphereSelectionToken({
 Login with Atmosphere is an account picker and signed handoff. It is not:
 
 - an OAuth token exchange service,
-- a passkey-based substitute for an app-owned PDS OAuth grant or consent,
 - a grant revocation authority,
 - a device or session manager,
 - a password, recovery, or account deletion surface,
 - a key backup service,
 - a PDS migration proxy.
 
-An Atmosphere passkey can authenticate and confirm account selection at the
-picker. OAuth authorization, PDS tokens, app sessions, account-host credentials,
-and host-owned recovery remain outside that passkey's authority.
+OAuth authorization, PDS tokens, app sessions, account-host credentials, and
+host-owned recovery remain outside the picker's authority.
